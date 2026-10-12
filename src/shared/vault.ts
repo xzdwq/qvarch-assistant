@@ -1,0 +1,80 @@
+/** The notebook (Markdown files): a node of the tree, a search hit, and the helpers both sides use. */
+
+export interface VaultNode {
+  /** Relative to the vault, "/" separated, with ".md" for notes. */
+  path: string
+  /** Shown name (a note — without ".md"). */
+  name: string
+  dir: boolean
+  mtime: number
+  /** When the file was created (ms). */
+  ctime: number
+  /** A colour mark set by the user (the icon in the tree takes it). */
+  color?: string
+  children?: VaultNode[]
+}
+
+/** The colours a note / folder can be marked with. */
+export const MARK_COLORS = ['#f87171', '#fb923c', '#facc15', '#4ade80', '#38bdf8', '#818cf8', '#e879f9'] as const
+
+/** The recordings a text embeds. */
+export function audiosOf(text: string): string[] {
+  const out: string[] = []
+  for (const l of text.split('\n')) {
+    const m = l.match(AUDIO_EMBED)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+export interface VaultHit {
+  path: string
+  name: string
+  inName: boolean
+  /** How many times the text has it. */
+  count: number
+  /** A few lines with it: the line number, the match in the line, and a snippet with the match at `at`. */
+  lines: Array<{ line: number; col: number; len: number; text: string; at: number }>
+}
+
+/** A voice recording in a note: a line `![[.audio/<file>.webm]]` (Obsidian's embed syntax). */
+export const AUDIO_EMBED = /^!\[\[(\.audio\/[\w.-]+\.webm)\]\]\s*$/
+export const audioEmbed = (rel: string) => `![[${rel}]]`
+
+/** The note a wiki link `[[Name]]` / `[[folder/Name|text]]` points to: by path, else by name anywhere. */
+export function resolveWiki(target: string, files: string[]): string | undefined {
+  const t = target.split('|')[0].split('#')[0].trim().replace(/\.md$/i, '').toLowerCase()
+  if (!t) return undefined
+  const exact = files.find((f) => f.toLowerCase() === `${t}.md`)
+  if (exact) return exact
+  return files.find((f) => (f.split('/').pop() ?? '').toLowerCase() === `${t}.md`)
+}
+
+/** Markdown with the audio lines cut out (they are shown as players): text and audio parts in order. */
+export function splitAudio(text: string): Array<{ md: string } | { audio: string; line: number }> {
+  const out: Array<{ md: string } | { audio: string; line: number }> = []
+  let buf: string[] = []
+  text.split('\n').forEach((l, i) => {
+    const m = l.match(AUDIO_EMBED)
+    if (!m) return void buf.push(l)
+    if (buf.length) out.push({ md: buf.join('\n') })
+    buf = []
+    out.push({ audio: m[1], line: i })
+  })
+  if (buf.length) out.push({ md: buf.join('\n') })
+  return out
+}
+
+/** All note paths of a tree. */
+export function filesOf(nodes: VaultNode[]): string[] {
+  const out: string[] = []
+  const walk = (ns: VaultNode[]) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : out.push(n.path)))
+  walk(nodes)
+  return out
+}
+
+/** A path renamed / moved: everything that pointed into it follows. */
+export function remapPath(p: string, from: string, to: string): string {
+  if (p === from) return to
+  return p.startsWith(from + '/') ? to + p.slice(from.length) : p
+}

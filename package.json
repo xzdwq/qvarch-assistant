@@ -1,0 +1,36 @@
+{
+  "name": "qvarch-assistant",
+  "version": "0.63.0",
+  "description": "Desktop work-time tracker with an always-on-top timeline island",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "author": "xzdwq",
+  "devDependencies": {
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@types/node": "^26.6.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "codemirror": "^6.0.2",
+    "dompurify": "^3.4.16",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "marked": "^18.1.0",
+    "simple-git": "^3.36.0",
+    "thinking-orbs": "^0.3.2",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.3",
+    "vue": "^3.5.43",
+    "vue-tsc": "^3.3.12"
+  },
+  "productName": "Qvarch Assistant",
+  "private": true
+}

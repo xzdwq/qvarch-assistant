@@ -1,0 +1,1416 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { audioEmbed, MARK_COLORS, resolveWiki, type VaultHit, type VaultNode } from '@shared/vault'
+import Icon from '../components/Icon.vue'
+import MdEditor from '../components/MdEditor.vue'
+import EventModal from '../components/EventModal.vue'
+import { fmtSec, useRecorder } from '../lib/recorder'
+import {
+  closeEverywhere,
+  closeTab,
+  curPane,
+  dirOf,
+  doc,
+  docs,
+  dropAudio,
+  moveTab,
+  SORTS,
+  sortNodes,
+  files,
+  layout,
+  loadTree,
+  noteName,
+  onOutside,
+  openFile,
+  putTranscript,
+  remap,
+  saveAll,
+  setText,
+  toggleSplit,
+  transcribe,
+  transcribeError,
+  tree,
+  type Pane,
+} from '../lib/notebook'
+
+/**
+ * Блокнот — Markdown notes like in Obsidian: sections (folders) on the left, tabs, two notes side by side,
+ * search through everything, voice recordings right in a note (transcribed locally). Saved while typing.
+ */
+
+const msg = ref('')
+let msgTimer: ReturnType<typeof setTimeout> | undefined
+function say(t: string): void {
+  msg.value = t
+  clearTimeout(msgTimer)
+  msgTimer = setTimeout(() => (msg.value = ''), 4000)
+}
+const reveal = (p: string) => window.qa.vaultReveal(p)
+const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+
+onMounted(async () => {
+  await loadTree()
+  // tabs remembered from last time: gone files close, the rest load
+  const all = new Set(files.value)
+  for (let i = layout.panes.length - 1; i >= 0; i--) for (const t of [...layout.panes[i].tabs]) (all.has(t.path) ? doc(t.path) : closeTab(i, t.path))
+  if (!layout.panes.some((p) => p.tabs.length) && files.value.length) openFile(files.value[0])
+})
+const offVault = window.qa.onVault((paths) => void onOutside(paths))
+onBeforeUnmount(() => {
+  offVault()
+  void saveAll()
+})
+
+// ---------- the tree ----------
+/** The folder new notes go to: the one clicked last, else the active note's. */
+const folder = ref<string>()
+const targetDir = computed(() => folder.value ?? dirOf(curPane()?.active ?? ''))
+const rows = computed(() => {
+  const out: Array<{ node: VaultNode; depth: number }> = []
+  const walk = (ns: VaultNode[], depth: number) => {
+    for (const n of ns) {
+      out.push({ node: n, depth })
+      if (n.dir && layout.open.includes(n.path)) walk(sortNodes(n.children ?? [], layout.sort), depth + 1)
+    }
+  }
+  walk(sortNodes(tree.value, layout.sort), 0)
+  return out
+})
+const noteCount = computed(() => files.value.length)
+function clickRow(n: VaultNode, e: MouseEvent): void {
+  if (n.dir) {
+    folder.value = n.path
+    const i = layout.open.indexOf(n.path)
+    if (i >= 0) layout.open.splice(i, 1)
+    else layout.open.push(n.path)
+    return
+  }
+  folder.value = undefined
+  openFile(n.path, { newPane: e.ctrlKey || e.metaKey })
+}
+
+// ---------- create / rename / move / delete ----------
+const titleEls = new Map<string, HTMLInputElement>()
+async function newNote(dir = targetDir.value, pane?: number): Promise<void> {
+  try {
+    const path = await window.qa.vaultCreate(dir, 'note')
+    await loadTree()
+    openFile(path, { pane })
+    // like Obsidian: the title first, Enter — to the text
+    await nextTick()
+    const el = titleEls.get(curPane().id)
+    el?.focus()
+    el?.select()
+  } catch (e) {
+    say(errText(e))
+  }
+}
+async function newFolder(dir = targetDir.value): Promise<void> {
+  try {
+    const path = await window.qa.vaultCreate(dir, 'folder')
+    await loadTree()
+    if (dir && !layout.open.includes(dir)) layout.open.push(dir)
+    folder.value = path
+    startRename(path)
+  } catch (e) {
+    say(errText(e))
+  }
+}
+async function rename(path: string, name: string): Promise<void> {
+  const clean = name.trim()
+  const node = findNode(path)
+  const old = node ? node.name : noteName(path)
+  if (!clean || clean === old) return
+  try {
+    const to = await window.qa.vaultMove(path, dirOf(path), clean)
+    remap(path, to)
+    if (folder.value) folder.value = folder.value === path ? to : folder.value
+    await loadTree()
+  } catch (e) {
+    say(errText(e))
+  }
+}
+async function moveTo(path: string, dir: string): Promise<void> {
+  if (dirOf(path) === dir || path === dir) return
+  try {
+    const to = await window.qa.vaultMove(path, dir)
+    remap(path, to)
+    if (dir && !layout.open.includes(dir)) layout.open.push(dir)
+    await loadTree()
+  } catch (e) {
+    say(errText(e))
+  }
+}
+async function remove(n: VaultNode): Promise<void> {
+  if (!confirm(n.dir ? `Удалить папку «${n.name}» со всеми заметками? (в корзину)` : `Удалить заметку «${n.name}»? (в корзину)`)) return
+  try {
+    closeEverywhere(n.path)
+    await window.qa.vaultDelete(n.path)
+    for (const k of [...docs.keys()]) if (k === n.path || k.startsWith(n.path + '/')) docs.delete(k)
+    if (folder.value && (folder.value === n.path || folder.value.startsWith(n.path + '/'))) folder.value = undefined
+    await loadTree()
+  } catch (e) {
+    say(errText(e))
+  }
+}
+function findNode(path: string): VaultNode | undefined {
+  const walk = (ns: VaultNode[]): VaultNode | undefined => {
+    for (const n of ns) {
+      if (n.path === path) return n
+      const c = n.dir ? walk(n.children ?? []) : undefined
+      if (c) return c
+    }
+  }
+  return walk(tree.value)
+}
+
+// inline rename in the tree
+const renaming = ref<string>()
+const renameText = ref('')
+const renameEl = ref<HTMLInputElement[]>()
+async function startRename(path: string): Promise<void> {
+  renaming.value = path
+  renameText.value = findNode(path)?.name ?? noteName(path)
+  await nextTick()
+  renameEl.value?.[0]?.focus()
+  renameEl.value?.[0]?.select()
+}
+async function finishRename(apply: boolean): Promise<void> {
+  const p = renaming.value
+  renaming.value = undefined
+  if (apply && p) await rename(p, renameText.value)
+}
+
+// drag & drop in the tree: onto a folder (or the empty space — the top level)
+const dragPath = ref<string>()
+const dropDir = ref<string>()
+function onDragStart(n: VaultNode, e: DragEvent): void {
+  dragPath.value = n.path
+  e.dataTransfer?.setData('text/plain', n.path)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function onDragOver(n: VaultNode | undefined): void {
+  if (!dragPath.value) return
+  dropDir.value = n ? (n.dir ? n.path : dirOf(n.path)) : ''
+}
+async function onDrop(): Promise<void> {
+  const from = dragPath.value
+  const to = dropDir.value
+  dragPath.value = undefined
+  dropDir.value = undefined
+  if (from !== undefined && to !== undefined) await moveTo(from, to)
+}
+
+// the right-click menu
+const ctx = ref<{ x: number; y: number; node?: VaultNode }>()
+function openCtx(e: MouseEvent, node?: VaultNode): void {
+  ctx.value = { x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 260), node }
+  if (node?.dir) folder.value = node.path
+}
+/** The menu closes first — the action gets the node it was opened on. */
+function ctxRun(fn: (n?: VaultNode) => unknown): void {
+  const n = ctx.value?.node
+  ctx.value = undefined
+  void fn(n)
+}
+const closeCtx = () => (ctx.value = undefined)
+onMounted(() => window.addEventListener('pointerdown', closeCtx))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', closeCtx))
+
+// ---------- search through all notes ----------
+const q = ref('')
+const hits = ref<VaultHit[]>([])
+const searching = ref(false)
+const searchEl = ref<HTMLInputElement>()
+let qTimer: ReturnType<typeof setTimeout> | undefined
+watch(q, (v) => {
+  clearTimeout(qTimer)
+  qTimer = setTimeout(async () => {
+    searching.value = true
+    // unsaved typing is searched too
+    await saveAll()
+    hits.value = await window.qa.vaultSearch(v)
+    searching.value = false
+  }, 160)
+})
+async function toggleSearch(on = layout.sideTab !== 'search'): Promise<void> {
+  layout.sideTab = on ? 'search' : 'files'
+  if (on) {
+    await nextTick()
+    searchEl.value?.focus()
+    searchEl.value?.select()
+  }
+}
+async function openHit(h: VaultHit, line?: VaultHit['lines'][number]): Promise<void> {
+  openFile(h.path)
+  const p = curPane()
+  if (!line) return
+  // once the editor is there (the note may still be loading)
+  for (let i = 0; i < 40; i++) {
+    await nextTick()
+    const ed = editorOf(p)
+    if (ed && docs.get(h.path)?.loaded) {
+      ed.reveal(line.line, line.col, line.len)
+      return
+    }
+    await new Promise((r) => setTimeout(r, 25))
+  }
+}
+const parts = (s: string, at: number, len: number) => ({ a: s.slice(0, at), m: s.slice(at, at + len), b: s.slice(at + len) })
+
+// ---------- panes ----------
+/** `widget` — the dashboard's notebook: the files panel is shown / hidden there on its own. */
+const props = defineProps<{ widget?: boolean }>()
+const WIDGET_SIDE = 'qa.nb.widgetSideHidden'
+const widgetSide = ref(readWidgetSide())
+function readWidgetSide(): boolean {
+  try {
+    return localStorage.getItem(WIDGET_SIDE) === '1'
+  } catch {
+    return false
+  }
+}
+const sideHidden = computed({
+  get: () => (props.widget ? widgetSide.value : !!layout.sideHidden),
+  set: (v: boolean) => {
+    if (!props.widget) {
+      layout.sideHidden = v
+      return
+    }
+    widgetSide.value = v
+    try {
+      localStorage.setItem(WIDGET_SIDE, v ? '1' : '0')
+    } catch {
+      // not remembered — fine
+    }
+  },
+})
+/** "В событие" from the editor's menu: the selected text for a new block. */
+const eventText = ref<string>()
+type Ed = InstanceType<typeof MdEditor>
+const editors = new Map<string, Ed>()
+/** Editors by pane and note: a renamed note's new editor may come before the old one is gone. */
+function setEditor(key: string, el: unknown): void {
+  if (el) editors.set(key, el as Ed)
+  else editors.delete(key)
+}
+const editorOf = (p: Pane | undefined) => (p?.active ? editors.get(`${p.id}:${p.active}`) : undefined)
+const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
+const dirty = (path: string) => {
+  const d = docs.get(path)
+  return !!d && d.loaded && d.text !== d.saved
+}
+function openWiki(target: string, newPane = false): void {
+  const path = resolveWiki(target, files.value)
+  if (path) openFile(path, { newPane })
+  else
+    void (async () => {
+      // no such note — make it (as Obsidian does)
+      const created = await window.qa.vaultCreate(targetDir.value, 'note', target.split('|')[0].split('/').pop())
+      await loadTree()
+      openFile(created, { newPane })
+    })()
+}
+function stats(path: string): string {
+  const t = docs.get(path)?.text ?? ''
+  const words = (t.match(/[\p{L}\p{N}]+/gu) ?? []).length
+  return `Слов: ${words} · Символов: ${t.length}`
+}
+async function onTitleKey(e: KeyboardEvent, p: Pane): Promise<void> {
+  const el = e.target as HTMLInputElement
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    // renamed first (the editor comes back under the new name), then the cursor goes into the text
+    if (p.active) await rename(p.active, el.value)
+    await nextTick()
+    editorOf(p)?.focus()
+  } else if (e.key === 'Escape') {
+    el.value = noteName(p.active ?? '')
+    el.blur()
+  }
+}
+
+// pane / side widths
+function dragWidth(e: PointerEvent, apply: (dx: number) => void): void {
+  const x0 = e.clientX
+  const move = (ev: PointerEvent) => apply(ev.clientX - x0)
+  const up = () => {
+    window.removeEventListener('pointermove', move)
+    document.body.style.cursor = ''
+  }
+  document.body.style.cursor = 'col-resize'
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up, { once: true })
+}
+function onSideResize(e: PointerEvent): void {
+  const w0 = layout.side
+  dragWidth(e, (dx) => (layout.side = Math.min(520, Math.max(180, w0 + dx))))
+}
+const panesEl = ref<HTMLElement>()
+function onSplitResize(e: PointerEvent): void {
+  const s0 = layout.split
+  const w = panesEl.value?.clientWidth ?? 1000
+  dragWidth(e, (dx) => (layout.split = Math.min(0.8, Math.max(0.2, s0 + dx / w))))
+}
+
+// ---------- voice: into the open note, or a note of its own ----------
+const recorder = useRecorder()
+const recInto = ref<{ path: string; pane: string }>()
+async function startRec(p: Pane): Promise<void> {
+  if (!p.active) return
+  if (recorder.rec.value) return void stopRec()
+  if (await recorder.start('voice')) recInto.value = { path: p.active, pane: p.id }
+  else say(recorder.error.value)
+}
+async function stopRec(): Promise<void> {
+  const into = recInto.value
+  recInto.value = undefined
+  const r = await recorder.stop()
+  if (!into) return
+  if (!r) return say('Слишком короткая запись')
+  try {
+    const rel = await window.qa.vaultSaveAudio(new Uint8Array(await r.blob.arrayBuffer()))
+    const pane = layout.panes.find((x) => x.id === into.pane)
+    const ed = editorOf(pane)
+    if (ed && pane?.active === into.path) ed.insertBlock(audioEmbed(rel))
+    else {
+      const d = doc(into.path)
+      setText(into.path, `${d.text.replace(/\s*$/, '')}\n\n${audioEmbed(rel)}\n`)
+    }
+    const s = await window.qa.getSettings()
+    if (s.voice.enabled && s.voice.autoTranscribe && (await window.qa.voiceState()).modelReady) void transcribeInto(into.path, rel)
+  } catch (e) {
+    say(errText(e))
+  }
+}
+async function transcribeInto(path: string, rel: string): Promise<void> {
+  try {
+    putTranscript(path, rel, await transcribe(rel))
+  } catch {
+    say(transcribeError.value || 'Не удалось расшифровать')
+  }
+}
+async function newVoiceNote(): Promise<void> {
+  const now = new Date()
+  const stamp = `${now.toLocaleDateString('ru-RU')} ${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`
+  try {
+    const path = await window.qa.vaultCreate(targetDir.value, 'note', `Голосовая ${stamp}`, `# Голосовая заметка\n\n`)
+    await loadTree()
+    openFile(path)
+    await nextTick()
+    await startRec(curPane())
+  } catch (e) {
+    say(errText(e))
+  }
+}
+
+// ---------- the text's scale: Ctrl + wheel, or the badge in the status line ----------
+const ZOOM_MIN = 50
+const ZOOM_MAX = 250
+function setZoom(z: number): void {
+  layout.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z / 10) * 10))
+}
+function onPaneWheel(e: WheelEvent): void {
+  if (!(e.ctrlKey || e.metaKey) || !e.deltaY) return
+  e.preventDefault()
+  setZoom((layout.zoom || 100) + (e.deltaY < 0 ? 10 : -10))
+}
+const BASE_PX = 14.5
+
+// ---------- created / colour ----------
+const created = (path: string) => {
+  const c = findNode(path)?.ctime
+  return c ? new Date(c).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+}
+const colorOf = (path: string) => findNode(path)?.color
+async function setColor(n: VaultNode, color?: string): Promise<void> {
+  await window.qa.vaultSetColor(n.path, color)
+  await loadTree()
+}
+
+// ---------- tabs: drag to reorder (or to the other pane) ----------
+const tabDrag = ref<{ pane: number; path: string }>()
+const tabDrop = ref<{ pane: number; index: number }>()
+function onTabDragStart(pi: number, path: string, e: DragEvent): void {
+  tabDrag.value = { pane: pi, path }
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', path)
+  }
+}
+function onTabDragOver(pi: number, index: number, e: DragEvent): void {
+  if (!tabDrag.value) return
+  e.preventDefault()
+  const el = e.currentTarget as HTMLElement
+  // before or after this tab — by the pointer's half
+  const r = el.getBoundingClientRect()
+  tabDrop.value = { pane: pi, index: e.clientX > r.left + r.width / 2 ? index + 1 : index }
+}
+function onTabDrop(): void {
+  const d = tabDrag.value
+  const to = tabDrop.value
+  tabDrag.value = undefined
+  tabDrop.value = undefined
+  if (d && to) moveTab(d.pane, d.path, to.pane, to.index)
+}
+
+// sort menu
+const sortOpen = ref(false)
+const closeSort = () => (sortOpen.value = false)
+onMounted(() => window.addEventListener('pointerdown', closeSort))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', closeSort))
+
+// ---------- keys ----------
+function onKey(e: KeyboardEvent): void {
+  const mod = e.ctrlKey || e.metaKey
+  if (!mod) return
+  const k = e.key.toLowerCase()
+  if (k === 'n' && !e.shiftKey) {
+    e.preventDefault()
+    void newNote()
+  } else if (k === 'f' && e.shiftKey) {
+    e.preventDefault()
+    void toggleSearch(true)
+  } else if (k === 'w') {
+    e.preventDefault()
+    const p = curPane()
+    if (p?.active) closeTab(layout.cur, p.active)
+  } else if (e.key === '\\') {
+    e.preventDefault()
+    toggleSplit()
+  } else if (e.key === 'Tab') {
+    e.preventDefault()
+    const p = curPane()
+    const i = p.tabs.findIndex((t) => t.path === p.active)
+    if (p.tabs.length) p.active = p.tabs[(i + (e.shiftKey ? -1 : 1) + p.tabs.length) % p.tabs.length].path
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+</script>
+
+<template>
+  <div class="nb">
+    <!-- sections & files / search -->
+    <aside v-if="!sideHidden" class="nside" :style="{ width: `${layout.side}px` }">
+      <div class="ntools">
+        <button title="Скрыть панель" @click="sideHidden = true"><Icon name="sidebar" :size="15" /></button>
+        <button title="Новая заметка (Ctrl+N)" @click="newNote()"><Icon name="filePlus" :size="15" /></button>
+        <button title="Новый раздел (папка)" @click="newFolder()"><Icon name="folderPlus" :size="15" /></button>
+        <button title="Голосовая заметка" @click="newVoiceNote"><Icon name="mic" :size="15" /></button>
+        <span class="grow"></span>
+        <button :class="{ on: layout.sideTab === 'search' }" title="Поиск по всем заметкам" @click="toggleSearch()"><Icon name="search" :size="15" /></button>
+        <span class="sortwrap" @pointerdown.stop>
+          <button :class="{ on: sortOpen }" title="Сортировка" @click="sortOpen = !sortOpen"><Icon name="sort" :size="15" /></button>
+          <div v-if="sortOpen" class="sortmenu">
+            <button v-for="s in SORTS" :key="s.id" :class="{ on: layout.sort === s.id }" @click="(layout.sort = s.id), (sortOpen = false)">
+              <Icon v-if="layout.sort === s.id" name="check" :size="12" /><span v-else class="sp"></span>{{ s.label }}
+            </button>
+          </div>
+        </span>
+        <button title="Свернуть все разделы" @click="layout.open = []"><Icon name="collapse" :size="15" /></button>
+      </div>
+
+      <div
+        v-if="layout.sideTab === 'files'"
+        class="ntree"
+        :class="{ drop: dropDir === '' }"
+        @dragover.prevent="onDragOver(undefined)"
+        @drop.prevent="onDrop"
+        @dragend="(dragPath = undefined), (dropDir = undefined)"
+        @contextmenu.prevent="openCtx($event)"
+        @click.self="folder = undefined"
+      >
+        <div
+          v-for="r in rows"
+          :key="r.node.path"
+          class="nrow"
+          :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: r.node.dir && folder === r.node.path, drop: r.node.dir && dropDir === r.node.path }"
+          :style="{ paddingLeft: `${6 + r.depth * 14}px` }"
+          :title="r.node.path"
+          draggable="true"
+          @dragstart="onDragStart(r.node, $event)"
+          @dragover.prevent.stop="onDragOver(r.node)"
+          @drop.prevent.stop="onDrop"
+          @click="clickRow(r.node, $event)"
+          @dblclick="r.node.dir || startRename(r.node.path)"
+          @contextmenu.prevent.stop="openCtx($event, r.node)"
+          @keydown.f2="startRename(r.node.path)"
+        >
+          <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev" />
+          <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic" :style="r.node.color ? { color: r.node.color } : {}" />
+          <span v-else-if="r.node.color" class="fmark" :style="{ background: r.node.color }"></span>
+          <Icon v-else name="note" :size="13" class="fic note" />
+          <input
+            v-if="renaming === r.node.path"
+            ref="renameEl"
+            v-model="renameText"
+            class="rin"
+            spellcheck="false"
+            @click.stop
+            @keydown.enter.prevent="finishRename(true)"
+            @keydown.esc.prevent="finishRename(false)"
+            @blur="finishRename(true)"
+          />
+          <span v-else class="nname">{{ r.node.name }}</span>
+          <span v-if="!r.node.dir && dirty(r.node.path)" class="ndot" title="Сохраняется…"></span>
+        </div>
+        <div v-if="!rows.length" class="nempty">
+          Пока пусто.
+          <button class="lnk" @click="newNote('')">Создать заметку</button>
+        </div>
+      </div>
+
+      <div v-else class="nsearch">
+        <div class="sbox">
+          <Icon name="search" :size="13" />
+          <input ref="searchEl" v-model="q" placeholder="Искать во всех заметках" spellcheck="false" @keydown.esc="toggleSearch(false)" />
+          <button v-if="q" class="sx" title="Очистить" @click="q = ''"><Icon name="x" :size="12" /></button>
+        </div>
+        <div class="sres">
+          <p v-if="q.trim() && !hits.length && !searching" class="nempty">Ничего не найдено</p>
+          <div v-for="h in hits" :key="h.path" class="hit">
+            <button class="hname" :title="h.path" @click="openHit(h)">
+              <Icon name="note" :size="12" /><span>{{ h.name }}</span><em v-if="h.count">{{ h.count }}</em>
+            </button>
+            <button v-for="l in h.lines" :key="l.line" class="hline" @click="openHit(h, l)">
+              <span>{{ parts(l.text, l.at, l.len).a }}</span><mark>{{ parts(l.text, l.at, l.len).m }}</mark><span>{{ parts(l.text, l.at, l.len).b }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nfoot">
+        <span>{{ noteCount }} {{ noteCount % 10 === 1 && noteCount % 100 !== 11 ? 'заметка' : [2, 3, 4].includes(noteCount % 10) && ![12, 13, 14].includes(noteCount % 100) ? 'заметки' : 'заметок' }}</span>
+        <span class="grow"></span>
+        <button class="lnk" title="Папка с файлами заметок" @click="reveal('')"><Icon name="external" :size="12" />Папка</button>
+      </div>
+    </aside>
+    <div v-if="!sideHidden" class="nresize" @pointerdown.prevent="onSideResize"></div>
+
+    <!-- one or two panes of tabs -->
+    <div ref="panesEl" class="npanes">
+      <template v-for="(p, pi) in layout.panes" :key="p.id">
+        <div v-if="pi" class="psplit" title="Потяните — ширина" @pointerdown.prevent="onSplitResize"></div>
+        <section class="pane" :class="{ cur: layout.cur === pi && layout.panes.length > 1 }" :style="{ flex: layout.panes.length > 1 ? `${pi ? 1 - layout.split : layout.split} 1 0` : '1 1 0' }" @pointerdown.capture="layout.cur = pi">
+          <div class="tabs">
+            <button v-if="sideHidden && pi === 0" class="tb" title="Показать панель" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
+            <div class="tscroll">
+              <div
+                v-for="(t, ti) in p.tabs"
+                :key="t.path"
+                class="tab"
+                :class="{ on: p.active === t.path, dragging: tabDrag?.path === t.path && tabDrag?.pane === pi, dropl: tabDrop?.pane === pi && tabDrop.index === ti, dropr: tabDrop?.pane === pi && tabDrop.index === ti + 1 && ti === p.tabs.length - 1 }"
+                :title="t.path"
+                draggable="true"
+                @click="p.active = t.path"
+                @mousedown.middle.prevent="closeTab(pi, t.path)"
+                @dragstart="onTabDragStart(pi, t.path, $event)"
+                @dragover="onTabDragOver(pi, ti, $event)"
+                @drop.prevent="onTabDrop"
+                @dragend="(tabDrag = undefined), (tabDrop = undefined)"
+              >
+                <span v-if="colorOf(t.path)" class="fmark sm" :style="{ background: colorOf(t.path) }"></span>
+                <Icon v-else name="note" :size="12" class="tic" />
+                <span class="tname">{{ noteName(t.path) }}</span>
+                <span v-if="dirty(t.path)" class="ndot"></span>
+                <button class="tx" title="Закрыть (Ctrl+W)" @click.stop="closeTab(pi, t.path)"><Icon name="x" :size="11" /></button>
+              </div>
+              <button
+                class="tnew"
+                title="Новая заметка (Ctrl+N)"
+                @click="newNote(undefined, pi)"
+                @dragover.prevent="tabDrag && (tabDrop = { pane: pi, index: p.tabs.length })"
+                @drop.prevent="onTabDrop"
+              ><Icon name="plus" :size="13" /></button>
+            </div>
+            <template v-if="tabOf(p)">
+              <button
+                class="tb"
+                :class="{ rec: recInto?.pane === p.id }"
+                :title="recInto?.pane === p.id ? 'Остановить запись' : 'Записать голос в эту заметку'"
+                :disabled="!!recInto && recInto.pane !== p.id"
+                @click="startRec(p)"
+              >
+                <Icon :name="recInto?.pane === p.id ? 'stop' : 'mic'" :size="14" />
+              </button>
+            </template>
+            <button class="tb" :class="{ on: layout.panes.length > 1 }" :title="layout.panes.length > 1 ? 'Одна колонка (Ctrl+\\)' : 'Разделить'" @click="toggleSplit">
+              <Icon name="columns" :size="14" />
+            </button>
+          </div>
+
+          <div v-if="tabOf(p) && p.active" class="pbody">
+            <div v-if="recInto?.pane === p.id" class="recbar">
+              <span class="rdot"></span>
+              <span class="meter"><span :style="{ width: `${recorder.level.value * 100}%` }"></span></span>
+              <b>{{ fmtSec(recorder.sec.value) }}</b>
+              <span class="muted">запись в заметку…</span>
+              <button class="stop" @click="stopRec"><Icon name="stop" :size="11" />Остановить</button>
+            </div>
+            <div class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
+              <div class="crumbs">
+                <template v-for="(c, ci) in dirOf(p.active).split('/').filter(Boolean)" :key="ci"><span>{{ c }}</span><Icon name="chevronRight" :size="10" /></template>
+                <span class="leaf">{{ noteName(p.active) }}</span>
+              </div>
+              <input
+                :ref="(el) => el && titleEls.set(p.id, el as HTMLInputElement)"
+                class="ntitle"
+                :value="noteName(p.active)"
+                spellcheck="false"
+                title="Название заметки — это имя файла"
+                @change="rename(p.active!, ($event.target as HTMLInputElement).value)"
+                @keydown="onTitleKey($event, p)"
+              />
+              <div class="nmeta">
+                <span v-if="created(p.active)" title="Дата создания файла"><Icon name="clock" :size="11" />Создано {{ created(p.active) }}</span>
+              </div>
+              <template v-if="docs.get(p.active)?.loaded">
+                <MdEditor
+                  :key="`${p.id}:${p.active}`"
+                  :ref="(el) => setEditor(`${p.id}:${p.active}`, el)"
+                  :text="docs.get(p.active)!.text"
+                  @change="(t) => setText(p.active!, t)"
+                  @wiki="(w) => openWiki(w)"
+                  @transcribe="(a) => transcribeInto(p.active!, a)"
+                  @drop-audio="(a) => dropAudio(p.active!, a)"
+                  @to-event="(t) => (eventText = t)"
+                />
+              </template>
+            </div>
+            <div class="pstatus">
+              <span v-if="docs.get(p.active)?.error" class="err">{{ docs.get(p.active)!.error }}</span>
+              <span v-else>{{ dirty(p.active) ? 'Сохраняется…' : 'Сохранено' }}</span>
+              <span class="grow"></span>
+              <span>{{ stats(p.active) }}</span>
+              <span class="zoom" title="Масштаб текста">
+                <button title="Мельче (−10%)" @click="setZoom((layout.zoom || 100) - 10)"><Icon name="chevronLeft" :size="12" /></button>
+                <button class="zv" title="Сбросить на 100%" @click="setZoom(100)">{{ layout.zoom || 100 }}%</button>
+                <button title="Крупнее (+10%)" @click="setZoom((layout.zoom || 100) + 10)"><Icon name="chevronRight" :size="12" /></button>
+              </span>
+            </div>
+          </div>
+          <div v-else class="pempty">
+            <Icon name="notebook" :size="34" />
+            <p>Нет открытой заметки</p>
+            <div class="erow">
+              <button class="primary" @click="newNote(undefined, pi)"><Icon name="filePlus" :size="14" />Новая заметка</button>
+              <button @click="toggleSearch(true)"><Icon name="search" :size="14" />Найти</button>
+            </div>
+            <p class="muted small">Ctrl+N — новая · Ctrl+Shift+F — поиск · Ctrl+\ — две колонки · Ctrl + колесо — масштаб</p>
+          </div>
+        </section>
+      </template>
+      <Transition name="fade"><div v-if="msg" class="toast">{{ msg }}</div></Transition>
+    </div>
+
+    <EventModal v-if="eventText !== undefined" :text="eventText" @close="eventText = undefined" />
+    <Teleport to="body">
+      <div v-if="ctx" class="nctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop>
+        <template v-if="!ctx.node || ctx.node.dir">
+          <button @click="ctxRun((n) => newNote(n?.path ?? ''))"><Icon name="filePlus" :size="13" />Новая заметка</button>
+          <button @click="ctxRun((n) => newFolder(n?.path ?? ''))"><Icon name="folderPlus" :size="13" />Новый раздел</button>
+        </template>
+        <template v-if="ctx.node && !ctx.node.dir">
+          <button @click="ctxRun((n) => openFile(n!.path))"><Icon name="note" :size="13" />Открыть</button>
+          <button @click="ctxRun((n) => openFile(n!.path, { newPane: true }))"><Icon name="columns" :size="13" />Открыть справа</button>
+        </template>
+        <template v-if="ctx.node">
+          <div class="csep"></div>
+          <button @click="ctxRun((n) => startRename(n!.path))"><Icon name="pencil" :size="13" />Переименовать</button>
+          <button @click="ctxRun((n) => reveal(n!.path))"><Icon name="external" :size="13" />Показать в проводнике</button>
+          <div class="csep"></div>
+          <div class="ccolors" title="Цветная метка">
+            <button class="cnone" :class="{ on: !ctx.node.color }" title="Без метки" @click="ctxRun((n) => setColor(n!))"><Icon name="x" :size="11" /></button>
+            <button v-for="c in MARK_COLORS" :key="c" class="cdot" :class="{ on: ctx.node.color === c }" :style="{ background: c }" @click="ctxRun((n) => setColor(n!, c))"></button>
+          </div>
+          <div class="csep"></div>
+          <button class="danger" @click="ctxRun((n) => remove(n!))"><Icon name="trash" :size="13" />Удалить</button>
+        </template>
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+.nb {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: #0f1219;
+}
+.grow {
+  flex: 1;
+}
+/* ---------- the side ---------- */
+.nside {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #12151d;
+}
+.ntools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 6px;
+}
+.ntools button,
+.tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+.ntools button:hover,
+.tb:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.ntools button.on,
+.tb.on {
+  background: rgba(124, 108, 246, 0.22);
+  color: #c7c2ff;
+}
+.ntree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 20px;
+}
+.ntree.drop {
+  box-shadow: inset 0 0 0 1px rgba(124, 108, 246, 0.5);
+}
+.nrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 27px;
+  padding-right: 6px;
+  border-radius: 6px;
+  color: #c3c8d6;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.nrow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.nrow.cur {
+  background: rgba(124, 108, 246, 0.2);
+  color: #fff;
+}
+.nrow.sel {
+  background: rgba(255, 255, 255, 0.06);
+}
+.nrow.drop {
+  background: rgba(124, 108, 246, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(124, 108, 246, 0.7);
+}
+.chev {
+  flex: none;
+  color: var(--muted);
+}
+.fic {
+  flex: none;
+  color: #a5b4fc;
+}
+.fmark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px 0 19px;
+  border-radius: 3px;
+}
+.fmark.sm {
+  margin: 0;
+  width: 9px;
+  height: 9px;
+}
+.fic.note {
+  margin-left: 17px;
+  color: #8b93a7;
+}
+.nname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rin {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--accent);
+  background: #0b0d13;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.ndot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+}
+.nempty {
+  padding: 12px 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lnk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #a5b4fc;
+  font-size: 12px;
+}
+.nfoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.nresize,
+.psplit {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--border);
+  background-clip: content-box;
+  padding: 0 2px;
+  margin: 0 -2px;
+  z-index: 2;
+  transition: background-color 0.12s;
+}
+.nresize:hover,
+.psplit:hover {
+  background-color: rgba(124, 108, 246, 0.85);
+}
+/* ---------- search ---------- */
+.nsearch {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0b0d13;
+  color: var(--muted);
+}
+.sbox:focus-within {
+  border-color: var(--accent);
+}
+.sbox input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.sx {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+.sres {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 20px;
+}
+.hit {
+  margin-bottom: 6px;
+}
+.hname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.hname span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hname em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.hline {
+  display: block;
+  width: 100%;
+  padding: 3px 6px 3px 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #aab1c3;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hname:hover,
+.hline:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+mark {
+  background: rgba(250, 204, 21, 0.3);
+  color: #fff;
+  border-radius: 2px;
+}
+/* ---------- panes ---------- */
+.npanes {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.pane.cur::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(124, 108, 246, 0.8);
+}
+.tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 6px 0 4px;
+  background: #12151d;
+  border-bottom: 1px solid var(--border);
+}
+.tscroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  flex: 0 1 190px;
+  min-width: 90px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 6px 0 10px;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+.tab.on {
+  background: #0f1219;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.tic {
+  flex: none;
+  opacity: 0.7;
+}
+.tname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tx {
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  opacity: 0;
+}
+.tab:hover .tx,
+.tab.on .tx {
+  opacity: 1;
+}
+.tx:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.tnew {
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 4px;
+  display: inline-flex;
+  padding: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+}
+.tnew:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.tb.rec {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+.tb:disabled {
+  opacity: 0.35;
+}
+.pbody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.crumbs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.crumbs .leaf {
+  color: #c3c8d6;
+}
+.pscroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.pscroll > :last-child {
+  flex: 1;
+}
+.nmeta {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  margin: -2px auto 8px;
+  padding: 0 24px 0 52px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.nmeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.zoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+.zoom button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.zoom .zv {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+  color: #c7d2fe;
+}
+.tab.dragging {
+  opacity: 0.45;
+}
+.tab.dropl {
+  box-shadow: inset 2px 0 0 #8b7cff;
+}
+.tab.dropr {
+  box-shadow: inset -2px 0 0 #8b7cff;
+}
+.sortwrap {
+  display: inline-flex;
+}
+.ntools {
+  position: relative;
+}
+.sortmenu {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 8px;
+  right: 8px;
+  z-index: 20;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1b1e29;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+}
+.ntools .sortmenu button {
+  justify-content: flex-start;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: #dfe2ea;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.ntools .sortmenu button.on {
+  background: rgba(124, 108, 246, 0.16);
+}
+.sortmenu .sp {
+  display: inline-block;
+  width: 12px;
+}
+.ntitle {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  margin: 18px auto 6px;
+  padding: 0 24px 0 52px;
+  border: 0;
+  background: transparent;
+  color: #f1f2f8;
+  font: inherit;
+  font-size: 1.8em;
+  font-weight: 700;
+  outline: none;
+}
+.recbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px auto 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  font-size: 12.5px;
+}
+.rdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: blink 1s infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+.meter {
+  width: 90px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: #f87171;
+}
+.recbar b {
+  font-variant-numeric: tabular-nums;
+}
+.stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.pstatus {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.err {
+  color: #fca5a5;
+}
+.pempty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.pempty p {
+  margin: 0;
+}
+.erow {
+  display: flex;
+  gap: 8px;
+}
+.erow button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.small {
+  font-size: 12px;
+}
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #262b3b;
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 12.5px;
+  z-index: 10;
+}
+</style>
+
+<style>
+/* the right-click menu of the notebook's tree — teleported to <body> */
+.nctx {
+  position: fixed;
+  z-index: 1000;
+  min-width: 210px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1b1e29;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+}
+.nctx button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #dfe2ea;
+  font-size: 12.5px;
+  text-align: left;
+}
+.nctx button:hover {
+  background: rgba(124, 108, 246, 0.2);
+}
+.nctx button.danger {
+  color: #fca5a5;
+}
+.nctx .ccolors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 6px;
+}
+.nctx .ccolors button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  justify-content: center;
+}
+.nctx .ccolors .cdot.on {
+  box-shadow: 0 0 0 2px #1b1e29, 0 0 0 3.5px #fff;
+}
+.nctx .ccolors .cnone {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #8b93a7;
+}
+.nctx .ccolors .cnone.on {
+  border-color: #fff;
+}
+.nctx .csep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+</style>

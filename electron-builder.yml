@@ -1,0 +1,27 @@
+appId: com.qvarch.assistant
+productName: Qvarch Assistant
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/winprobe.ps1
+    to: winprobe.ps1
+  - from: resources/whisper
+    to: whisper
+win:
+  icon: build/icon.png
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  artifactName: ${productName} Setup ${version}.${ext}
+portable:
+  artifactName: ${productName} ${version} portable.${ext}
+asar: true
