@@ -932,6 +932,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on(IPC.islandSolid, (_e, solid: boolean) => island?.setSolid(solid))
+  ipcMain.on(IPC.islandRect, (_e, r: { x: number; y: number; width: number; height: number }) => island?.setRect(r))
   ipcMain.on(IPC.islandBlur, () => island?.blur())
   ipcMain.on(IPC.islandFocus, () => island?.focus())
   ipcMain.handle(IPC.getIslandLayout, () => island?.islandLayout ?? { up: false })

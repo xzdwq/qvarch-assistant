@@ -1,7 +1,7 @@
 import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron'
 import { join } from 'node:path'
 import { IPC, type IslandLayout } from '../shared/api'
-import { ISLAND_PILL, ISLAND_WINDOW } from '../shared/island'
+import { ISLAND_PILL, ISLAND_WINDOW, nextDock, type Dock } from '../shared/island'
 import { makeIcon } from './icon'
 
 function load(win: BrowserWindow, page: 'index' | 'island'): void {
@@ -59,16 +59,20 @@ function intersects(a: Rectangle, b: Rectangle): boolean {
 export class Island {
   readonly win: BrowserWindow
   private pill: { x: number; y: number }
+  private dock: Dock | undefined
   private layout: IslandLayout
+  /** Where the content is in the window (reported by the renderer) — the pill's real rectangle. */
+  private rect = { x: (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2, y: 0, width: ISLAND_PILL.width, height: ISLAND_PILL.height }
   private ignoring = true
   private placing = false
   private timers: NodeJS.Timeout[] = []
 
   constructor(
-    saved: { x?: number; y?: number },
-    private persist: (pos: { x: number; y: number }) => void,
+    saved: { x?: number; y?: number; dock?: Dock },
+    private persist: (pos: { x: number; y: number; dock?: Dock }) => void,
   ) {
     this.pill = this.validPill(saved)
+    this.dock = saved.x !== undefined && saved.dock ? saved.dock : undefined
     this.layout = this.layoutFor(this.pill)
     this.win = new BrowserWindow({
       ...ISLAND_WINDOW,
@@ -118,17 +122,43 @@ export class Island {
     return { x: Math.round(wa.x + (wa.width - ISLAND_PILL.width) / 2), y: wa.y + 6 }
   }
 
+  private workArea(): Rectangle {
+    return screen.getDisplayNearestPoint({ x: Math.round(this.pill.x), y: Math.round(this.pill.y) }).workArea
+  }
+
   private layoutFor(pill: { x: number; y: number }): IslandLayout {
-    const wa = screen.getDisplayNearestPoint(pill).workArea
+    const wa = screen.getDisplayNearestPoint({ x: Math.round(pill.x), y: Math.round(pill.y) }).workArea
+    if (this.dock === 'top') return { up: false, dock: 'top' }
+    if (this.dock === 'bottom') return { up: true, dock: 'bottom' }
+    if (this.dock === 'left' || this.dock === 'right') return { up: false, dock: this.dock, offset: Math.round(pill.y - this.sideTop(wa)) }
     // downward by default; upward only when the expanded island would not fit below the pill
     return { up: pill.y + ISLAND_WINDOW.height > wa.y + wa.height }
   }
 
+  /** At a side edge the window stands around the pill's centre (pill.y), inside the work area. */
+  private sideTop(wa: Rectangle): number {
+    return Math.round(Math.max(wa.y, Math.min(wa.y + wa.height - ISLAND_WINDOW.height, this.pill.y - ISLAND_WINDOW.height / 2)))
+  }
+
   private windowPos(): { x: number; y: number } {
-    return {
-      x: Math.round(this.pill.x - (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2),
-      y: this.layout.up ? this.pill.y + ISLAND_PILL.height - ISLAND_WINDOW.height : this.pill.y,
+    const wa = this.workArea()
+    const cx = Math.round(this.pill.x - (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2)
+    switch (this.dock) {
+      case 'top':
+        return { x: cx, y: wa.y }
+      case 'bottom':
+        return { x: cx, y: wa.y + wa.height - ISLAND_WINDOW.height }
+      case 'left':
+        return { x: wa.x, y: this.sideTop(wa) }
+      case 'right':
+        return { x: wa.x + wa.width - ISLAND_WINDOW.width, y: this.sideTop(wa) }
+      default:
+        return { x: cx, y: this.layout.up ? this.pill.y + ISLAND_PILL.height - ISLAND_WINDOW.height : this.pill.y }
     }
+  }
+
+  setRect(r: { x: number; y: number; width: number; height: number }): void {
+    if ([r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0) this.rect = r
   }
 
   private place(): void {
@@ -138,30 +168,52 @@ export class Island {
     setTimeout(() => (this.placing = false), 50)
   }
 
-  /** After a drag: derive the pill anchor from the window position, persist it, flip the layout if needed. */
+  /** The pill's rectangle on screen and its display, for a window at (x, y). */
+  private pillAt(x: number, y: number) {
+    const pill = { x: x + this.rect.x, y: y + this.rect.y, width: this.rect.width, height: this.rect.height }
+    const cx = pill.x + pill.width / 2
+    const cy = pill.y + pill.height / 2
+    const display = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) })
+    return { pill, cx, cy, display, dock: nextDock(pill, display, screen.getAllDisplays().filter((d) => d.id !== display.id), this.dock) }
+  }
+
+  /**
+   * After a drag: released near an outer screen edge — the island sticks to it; anywhere else it floats there
+   * (a stuck island is unstuck just by dragging it away). Edges between two monitors never catch it.
+   */
   private onMoved(): void {
     if (this.placing || this.win.isDestroyed()) return
     const [x, y] = this.win.getPosition()
-    this.pill = {
-      x: Math.round(x + (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2),
-      y: this.layout.up ? y + ISLAND_WINDOW.height - ISLAND_PILL.height : y,
-    }
+    const { cx, cy, display, dock } = this.pillAt(x, y)
+    const wa = display.workArea
+    const wasDocked = !!this.dock
+    this.dock = dock
+    if (dock === 'top' || dock === 'bottom') this.pill = { x: Math.round(Math.max(wa.x, Math.min(wa.x + wa.width - ISLAND_PILL.width, cx - ISLAND_PILL.width / 2))), y: dock === 'top' ? wa.y : wa.y + wa.height - ISLAND_PILL.height }
+    else if (dock) this.pill = { x: dock === 'left' ? wa.x : wa.x + wa.width - 1, y: Math.round(cy) }
+    else if (wasDocked)
+      // unstuck: the full pill takes the place where the slim one was let go
+      this.pill = { x: Math.round(cx - ISLAND_PILL.width / 2), y: Math.round(Math.max(wa.y, Math.min(wa.y + wa.height - ISLAND_PILL.height, cy - ISLAND_PILL.height / 2))) }
+    else
+      this.pill = {
+        x: Math.round(x + (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2),
+        y: this.layout.up ? y + ISLAND_WINDOW.height - ISLAND_PILL.height : y,
+      }
     const layout = this.layoutFor(this.pill)
-    if (layout.up !== this.layout.up) {
-      this.layout = layout
-      this.win.webContents.send(IPC.islandLayout, layout)
-      this.place()
-    }
-    this.persist(this.pill)
+    const changed = layout.up !== this.layout.up || layout.dock !== this.layout.dock || layout.offset !== this.layout.offset
+    this.layout = layout
+    if (changed) this.win.webContents.send(IPC.islandLayout, layout)
+    if (changed || dock || wasDocked) this.place()
+    this.persist({ ...this.pill, dock: this.dock })
     this.win.webContents.send(IPC.islandHover, { moved: true })
   }
 
   reset(): void {
+    this.dock = undefined
     this.pill = this.validPill({})
     this.layout = this.layoutFor(this.pill)
     this.win.webContents.send(IPC.islandLayout, this.layout)
     this.place()
-    this.persist(this.pill)
+    this.persist({ ...this.pill, dock: undefined })
   }
 
   focus(): void {

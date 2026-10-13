@@ -3,9 +3,11 @@
  * pushes the ones it covers down; then everything floats up into free space — so widgets line up in rows,
  * columns and stacks by themselves.
  */
-export const COLS = 12
+export const COLS = 60
+/** Layouts saved on the old 12-column grid are scaled by this. */
+export const OLD_COLS_SCALE = 5
 
-export type WidgetType = 'stats' | 'timeline' | 'entries' | 'notes' | 'calendar' | 'week' | 'tasks' | 'orb' | 'notebook' | 'create'
+export type WidgetType = 'stats' | 'timeline' | 'entries' | 'notes' | 'calendar' | 'week' | 'tasks' | 'orb' | 'notebook' | 'create' | 'sheet'
 export interface Widget {
   i: string
   type: WidgetType
@@ -16,27 +18,28 @@ export interface Widget {
 }
 
 export const WIDGETS: Array<{ type: WidgetType; label: string; icon: string; w: number; h: number; minW: number; minH: number }> = [
-  { type: 'stats', label: 'Итоги дня', icon: 'clock', w: 12, h: 2, minW: 3, minH: 2 },
-  { type: 'timeline', label: 'Таймлайн', icon: 'timeline', w: 12, h: 7, minW: 4, minH: 5 },
-  { type: 'entries', label: 'Записи дня', icon: 'list', w: 6, h: 7, minW: 3, minH: 3 },
-  { type: 'notes', label: 'Заметки дня', icon: 'note', w: 6, h: 7, minW: 3, minH: 3 },
-  { type: 'calendar', label: 'Календарь месяца', icon: 'calendar', w: 6, h: 9, minW: 4, minH: 6 },
-  { type: 'week', label: 'Календарь задач', icon: 'checkSquare', w: 12, h: 10, minW: 6, minH: 7 },
-  { type: 'tasks', label: 'Задачи Jira', icon: 'jira', w: 6, h: 9, minW: 4, minH: 4 },
-  { type: 'orb', label: 'Состояние', icon: 'sparkles', w: 3, h: 4, minW: 2, minH: 3 },
-  { type: 'notebook', label: 'Блокнот', icon: 'notebook', w: 6, h: 9, minW: 4, minH: 5 },
-  { type: 'create', label: 'Новое событие', icon: 'plus', w: 4, h: 7, minW: 3, minH: 6 },
+  { type: 'stats', label: 'Итоги дня', icon: 'clock', w: 60, h: 2, minW: 15, minH: 2 },
+  { type: 'timeline', label: 'Таймлайн', icon: 'timeline', w: 60, h: 7, minW: 20, minH: 5 },
+  { type: 'entries', label: 'Записи дня', icon: 'list', w: 30, h: 7, minW: 15, minH: 3 },
+  { type: 'notes', label: 'Заметки дня', icon: 'note', w: 30, h: 7, minW: 15, minH: 3 },
+  { type: 'calendar', label: 'Календарь месяца', icon: 'calendar', w: 30, h: 9, minW: 20, minH: 6 },
+  { type: 'week', label: 'Календарь задач', icon: 'checkSquare', w: 60, h: 10, minW: 30, minH: 7 },
+  { type: 'tasks', label: 'Задачи Jira', icon: 'jira', w: 30, h: 9, minW: 20, minH: 4 },
+  { type: 'orb', label: 'Состояние', icon: 'sparkles', w: 15, h: 4, minW: 10, minH: 3 },
+  { type: 'notebook', label: 'Блокнот', icon: 'notebook', w: 30, h: 9, minW: 20, minH: 5 },
+  { type: 'create', label: 'Новое событие', icon: 'plus', w: 20, h: 7, minW: 15, minH: 6 },
+  { type: 'sheet', label: 'Заполнение', icon: 'table', w: 30, h: 7, minW: 20, minH: 4 },
 ]
 export const widgetInfo = (t: WidgetType) => WIDGETS.find((w) => w.type === t)!
 
 export const DEFAULT_DASHBOARD: Widget[] = [
-  { i: 'stats', type: 'stats', x: 0, y: 0, w: 12, h: 2 },
-  { i: 'timeline', type: 'timeline', x: 0, y: 2, w: 12, h: 7 },
-  { i: 'create', type: 'create', x: 0, y: 9, w: 4, h: 7 },
-  { i: 'entries', type: 'entries', x: 4, y: 9, w: 4, h: 7 },
-  { i: 'notes', type: 'notes', x: 8, y: 9, w: 4, h: 7 },
-  { i: 'notebook', type: 'notebook', x: 0, y: 16, w: 8, h: 9 },
-  { i: 'orb', type: 'orb', x: 8, y: 16, w: 4, h: 4 },
+  { i: 'stats', type: 'stats', x: 0, y: 0, w: 60, h: 2 },
+  { i: 'timeline', type: 'timeline', x: 0, y: 2, w: 60, h: 7 },
+  { i: 'create', type: 'create', x: 0, y: 9, w: 20, h: 7 },
+  { i: 'entries', type: 'entries', x: 20, y: 9, w: 20, h: 7 },
+  { i: 'notes', type: 'notes', x: 40, y: 9, w: 20, h: 7 },
+  { i: 'notebook', type: 'notebook', x: 0, y: 16, w: 40, h: 9 },
+  { i: 'orb', type: 'orb', x: 40, y: 16, w: 20, h: 4 },
 ]
 
 const overlap = (a: Widget, b: Widget) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h

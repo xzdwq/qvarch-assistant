@@ -5,6 +5,8 @@ import { bars, daysBetween, groupItems, matches, sourceOf, taskType, unionOf, we
 import { entryIcon, kindColor, kindLabel, kinds } from '../lib/palette'
 import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
+import DateRangePicker from '../components/DateRangePicker.vue'
+import { onNewDay } from '../lib/today'
 
 /**
  * Отчёты — where the time went over a period: totals, a chart by day / week / month and a breakdown by
@@ -48,6 +50,9 @@ function writeJson(key: string, v: unknown): void {
 const DEFAULT: State = { period: 'week', anchor: today(), from: shiftDay(today(), -6), to: today(), filter: {}, group: 'kind', color: 'kind' }
 const st = ref<State>({ ...DEFAULT, ...readJson<Partial<State>>(KEY, {}), anchor: today() })
 watch(st, (v) => writeJson(KEY, { ...v, anchor: undefined }), { deep: true })
+onNewDay((prev, next) => {
+  if (st.value.anchor === prev) st.value.anchor = next
+})
 
 // ---------- the period ----------
 const PERIODS: Array<{ id: Period; label: string }> = [
@@ -111,6 +116,13 @@ const periodLabel = computed(() => {
     default:
       return ''
   }
+})
+
+const rangeOpen = ref(false)
+const rangeEl = ref<HTMLElement>()
+const customLabel = computed(() => {
+  const [a, b] = range.value
+  return a === b ? fmt(a, { day: 'numeric', month: 'short', year: 'numeric' }) : `${fmt(a, { day: 'numeric', month: 'short' })} – ${fmt(b, { day: 'numeric', month: 'short', year: 'numeric' })}`
 })
 
 // ---------- the data ----------
@@ -312,11 +324,10 @@ function exportCsv(): void {
       <div class="nav">
         <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
         <span v-if="st.period !== 'custom'" class="pl">{{ periodLabel }}</span>
-        <template v-else>
-          <input v-model="st.from" type="date" class="dt" />
-          <span class="muted">–</span>
-          <input v-model="st.to" type="date" class="dt" />
-        </template>
+        <button v-else ref="rangeEl" class="rng" :class="{ on: rangeOpen }" title="Выбрать период" @click="rangeOpen = !rangeOpen">
+          <Icon name="calendar" :size="12" />{{ customLabel }}
+        </button>
+        <DateRangePicker v-if="rangeOpen" :from="range[0]" :to="range[1]" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (rangeOpen = false))" @close="rangeOpen = false" />
         <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
         <button v-if="!isCurrent && st.period !== 'custom'" class="ib" title="Сейчас" @click="st.anchor = today()"><Icon name="clock" :size="13" /></button>
       </div>
@@ -984,5 +995,25 @@ function exportCsv(): void {
   .gc {
     display: none;
   }
+}
+.rng {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.rng:hover,
+.rng.on {
+  background: rgba(255, 255, 255, 0.06);
+}
+.rng :deep(svg) {
+  color: var(--muted);
 }
 </style>

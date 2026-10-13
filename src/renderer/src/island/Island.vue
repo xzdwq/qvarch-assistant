@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { breakdown, gapAround, infoAt } from '@shared/breakdown'
-import { ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW } from '@shared/island'
-import { clipEntries, dayEnd, dayKey, dayStart, flattenForDisplay, formatDuration, formatHM, HOUR, joinTitle, laneIsFree, MINUTE, parseQuickDuration, quickRange, scheduleRanges, shiftDay, sortByStart, splitTitle, unionMs, uncutMs as uncutTime } from '@shared/timeline'
+import { ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW, DOCK_SIDE, DOCK_STRIP, type Dock } from '@shared/island'
+import { clipEntries, dayEnd, dayStart, flattenForDisplay, formatDuration, formatHM, HOUR, joinTitle, laneIsFree, MINUTE, parseQuickDuration, quickRange, scheduleRanges, shiftDay, sortByStart, splitTitle, unionMs, uncutMs as uncutTime } from '@shared/timeline'
 import type { Entry, EntryKind, LinkEnd, Ms, Note, PlanBlock, PublicSettings, Selection } from '@shared/types'
 import Icon from '../components/Icon.vue'
+import { todayKey } from '../lib/today'
 import ThinkingOrb from '../components/ThinkingOrb.vue'
 import DictateButton from '../components/DictateButton.vue'
 import { VOICE_PENDING } from '@shared/voice'
@@ -34,9 +35,8 @@ import { useSelection } from '../lib/selection'
 import { useDay } from '../lib/useDay'
 import { pctOf, segBox, snap, ticks, useViewport, visible } from '../lib/viewport'
 
-const today = ref(dayKey(Date.now()))
+const today = todayKey
 const { data, live, now, cursor } = useDay(today)
-setInterval(() => (today.value = dayKey(Date.now())), 30_000)
 const sel = useSelection()
 const openMain = (entryId?: string) => window.qa.openMain(undefined, entryId)
 
@@ -59,8 +59,31 @@ const recent = computed(() => recentLabels(data.value.entries, yesterday.value))
 // ---------- layout / expand ----------
 
 const up = ref(false)
-void window.qa.getIslandLayout().then((l) => (up.value = l.up))
-const offLayout = window.qa.onIslandLayout((l) => (up.value = l.up))
+/** Stuck to a screen edge: a slim pill flush with it (upright at a side edge); the panel opens from it. */
+const dock = ref<Dock>()
+/** At a side edge: the pill's centre from the window's top. */
+const dockOffset = ref(ISLAND_WINDOW.height / 2)
+function applyLayout(l: { up: boolean; dock?: Dock; offset?: number }): void {
+  up.value = l.up
+  dock.value = l.dock
+  if (l.offset !== undefined) dockOffset.value = l.offset
+}
+void window.qa.getIslandLayout().then(applyLayout)
+const offLayout = window.qa.onIslandLayout(applyLayout)
+const sideDock = computed(() => dock.value === 'left' || dock.value === 'right')
+/** The slim pill's length: the handle and the dot, plus what is switched on (Настройки → Интерфейс). */
+const dockLen = computed(() => {
+  const d = ui.value.dock
+  return Math.max(150, 64 + (d.time ? 58 : 0) + (d.next && nextMeeting.value ? 84 : 0) + (d.orb ? 34 : 0) + (d.wave ? 76 : 0))
+})
+/** The next Outlook meeting today (the countdown on the slim pill). */
+const nextMeeting = computed(() => data.value.entries.filter((e) => e.outlook && e.start > now.value).sort((a, b) => a.start - b.start)[0])
+const nextIn = computed(() => {
+  const m = nextMeeting.value
+  if (!m) return ''
+  const min = Math.max(1, Math.round((m.start - now.value) / 60_000))
+  return min < 60 ? `${min}м` : `${Math.floor(min / 60)}ч ${String(min % 60).padStart(2, '0')}м`
+})
 /** A transcription is running / queued (the orb "thinks" meanwhile). */
 const voiceBusy = ref(false)
 void window.qa.voiceState().then((v) => (voiceBusy.value = v.busy.length > 0))
@@ -109,8 +132,28 @@ const NOTE_H = 136
 const size = computed(() =>
   expanded.value
     ? { w: ISLAND_PANEL_WIDTH, h: panelH.value }
-    : { w: Math.max(pillW.value, noteOpen.value ? 440 : 0), h: pillH.value + (noteOpen.value ? NOTE_H : 0) },
+    : dock.value && !noteOpen.value
+      ? sideDock.value
+        ? { w: DOCK_SIDE.w, h: dockLen.value }
+        : { w: dockLen.value, h: DOCK_STRIP.h }
+      : { w: Math.max(pillW.value, noteOpen.value ? 440 : 0), h: pillH.value + (noteOpen.value ? NOTE_H : 0) },
 )
+/** At a side edge the island stands on the pill's centre (inside the window). */
+const shellTop = computed(() => (sideDock.value ? Math.max(0, Math.min(ISLAND_WINDOW.height - size.value.h, Math.round(dockOffset.value - size.value.h / 2))) : 0))
+// main docks the island by its real rectangle in the window
+let rectTimer: ReturnType<typeof setTimeout> | undefined
+function reportRect(): void {
+  clearTimeout(rectTimer)
+  rectTimer = setTimeout(() => {
+    const r = shell.value?.getBoundingClientRect()
+    if (r && r.width) window.qa.islandRect({ x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) })
+  }, 480)
+}
+// (watched once mounted: size reads state declared further down)
+onMounted(() => {
+  watch([size, dock, shellTop], reportRect)
+  reportRect()
+})
 
 
 function setExpanded(v: boolean): void {
@@ -1491,11 +1534,11 @@ function onKey(e: KeyboardEvent): void {
 
 <template>
   <SeriesAsk />
-  <div class="stage" :class="{ up }" @keydown="onKey">
-    <div ref="shell" class="shell" :class="{ expanded }" :style="{ width: `${size.w}px`, height: `${size.h}px`, '--bga': bgAlpha }">
+  <div class="stage" :class="[{ up }, dock ? `dock-${dock}` : '']" @keydown="onKey">
+    <div ref="shell" class="shell" :class="{ expanded }" :style="{ width: `${size.w}px`, height: `${size.h}px`, marginTop: `${shellTop}px`, '--bga': bgAlpha }">
       <!-- ===== collapsed pill ===== -->
       <Transition name="ifade">
-        <div v-if="!expanded" class="pill" :style="{ height: `${pillH}px` }" @click="!noteOpen && setExpanded(true)">
+        <div v-if="!expanded" class="pill" :class="{ docked: !!dock && !noteOpen }" :style="{ height: dock && !noteOpen ? '100%' : `${pillH}px` }" @click="!noteOpen && setExpanded(true)">
           <span ref="pillHandle" class="handle drag" title="Переместить">
             <Icon name="grip" :size="16" />
           </span>
@@ -1521,14 +1564,16 @@ function onKey(e: KeyboardEvent): void {
                 </span>
                 <span v-else class="cbest">{{ combo.best }}</span>
               </span>
-              <ActivityWave v-if="ui.pill.wave" class="pwave" title="Активность" />
+              <ActivityWave v-if="dock && !noteOpen ? ui.dock.wave : ui.pill.wave" class="pwave" title="Активность" />
               <span v-else class="pfill"></span>
               <span class="pend">
                 <span v-if="marker" class="pmarker">
                   <Icon name="scissors" :size="11" />{{ formatHM(marker.start) }}–{{ marker.end ? formatHM(marker.end) : 'сейчас' }}
                 </span>
                 <span v-if="ui.pill.date" class="pday">{{ dateText }}</span>
+                <span v-if="dock && !noteOpen && ui.dock.next && nextMeeting" class="pnext" :title="`До встречи «${nextMeeting.label}» в ${formatHM(nextMeeting.start)}`"><Icon name="calendar" :size="11" />{{ nextIn }}</span>
                 <b
+                  v-if="!dock || noteOpen || ui.dock.time"
                   class="ptime"
                   :title="`Продуктивно ${formatDuration(productive)}${workMs ? ` (${productivePct}% рабочего дня)` : ''}: в рабочие часы ${formatDuration(split.within)}, сверх ${formatDuration(split.over)}. Не размечено за день ${formatDuration(unlabelled)}, в приложениях ${formatDuration(appsMs)}.`"
                   >{{ formatDuration(productive) }}</b
@@ -1569,8 +1614,8 @@ function onKey(e: KeyboardEvent): void {
               <span v-if="workMs" class="st pct" :title="pctTitle">{{ productivePct }}% полезного</span>
             </div>
           </div>
-          <button ref="orbEl" class="orb-btn" :class="{ on: noteOpen, rec: !!recording }" :title="recording ? 'Идёт запись — клик: открыть' : mascot.title" @click.stop="toggleNote">
-            <ThinkingOrb :state="mascot.state" :size="32" :px="40" :speed="mascot.speed" :tint="mascot.tint" />
+          <button v-if="!dock || noteOpen || ui.dock.orb" ref="orbEl" class="orb-btn" :class="{ on: noteOpen, rec: !!recording }" :title="recording ? 'Идёт запись — клик: открыть' : mascot.title" @click.stop="toggleNote">
+            <ThinkingOrb :state="mascot.state" :size="dock && !noteOpen ? 20 : 32" :px="dock && !noteOpen ? 24 : 40" :speed="mascot.speed" :tint="mascot.tint" />
           </button>
           <div v-if="noteOpen && note" class="pnote" @click.stop>
             <div class="nhead">
@@ -2037,6 +2082,121 @@ function onKey(e: KeyboardEvent): void {
 }
 .stage.up {
   align-items: flex-end;
+}
+/* ---------- stuck to a screen edge: flush with it, no rounding on that side ---------- */
+.stage.dock-left {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.stage.dock-right {
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+.stage.dock-top .shell {
+  border-top-width: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.stage.dock-bottom .shell {
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.stage.dock-left .shell {
+  border-left-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.stage.dock-right .shell {
+  border-right-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.stage[class*='dock-'] .shell:not(.expanded) {
+  border-radius: 14px;
+}
+.stage.dock-top .shell:not(.expanded) {
+  border-radius: 0 0 14px 14px;
+}
+.stage.dock-bottom .shell:not(.expanded) {
+  border-radius: 14px 14px 0 0;
+}
+.stage.dock-left .shell:not(.expanded) {
+  border-radius: 0 14px 14px 0;
+}
+.stage.dock-right .shell:not(.expanded) {
+  border-radius: 14px 0 0 14px;
+}
+/* the slim pill: the move handle, the status and the day's time — nothing else */
+.pill.docked {
+  inset: 0;
+  gap: 6px;
+  padding: 0 12px 0 4px;
+}
+.pill.docked .chips,
+.pill.docked .pstats,
+.pill.docked .papp,
+.pill.docked .pcombo,
+.pill.docked .pstatus,
+.pill.docked .pday,
+.pill.docked .pmarker {
+  display: none;
+}
+.pill.docked .pwave {
+  width: 64px;
+  height: 18px;
+  flex: none;
+}
+/* at a side edge the wave runs along the edge too: a 64×18 wave turned a quarter (its box made 18×64 by margins) */
+.stage.dock-left .pill.docked .pwave,
+.stage.dock-right .pill.docked .pwave {
+  writing-mode: horizontal-tb;
+  width: 64px;
+  height: 18px;
+  margin: 23px -23px;
+}
+.stage.dock-right .pill.docked .pwave {
+  transform: rotate(90deg);
+}
+.stage.dock-left .pill.docked .pwave {
+  transform: rotate(-90deg);
+}
+.pill.docked .orb-btn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+}
+.pnext {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #93c5fd;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pill.docked .pinfo {
+  display: flex;
+  align-items: center;
+}
+.pill.docked .pline {
+  flex: 1;
+}
+.pill.docked .handle {
+  width: 26px;
+  height: 26px;
+}
+/* at a side edge it stands upright: text along the edge (layout, not a transform — the drag region follows) */
+.stage.dock-left .pill.docked {
+  writing-mode: sideways-lr;
+  padding: 4px 0 12px;
+}
+.stage.dock-right .pill.docked {
+  writing-mode: vertical-rl;
+  padding: 4px 0 12px;
 }
 .shell {
   position: relative;

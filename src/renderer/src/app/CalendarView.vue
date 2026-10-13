@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { todayKey } from '../lib/today'
 import { computed, ref, watch } from 'vue'
-import { dayKey, formatDuration, formatHM, pad2 } from '@shared/timeline'
+import { formatDuration, formatHM, pad2 } from '@shared/timeline'
 import type { DaySummary, SearchHit } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import { kindColor, kindLabel } from '../lib/palette'
@@ -67,7 +68,7 @@ const title = computed(() => {
   return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
 })
 
-const today = dayKey(Date.now())
+const today = todayKey
 
 /** Weeks Mon..Sun covering the month (days of neighbouring months are blank). */
 const weeks = computed(() => {

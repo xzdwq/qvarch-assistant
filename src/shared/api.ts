@@ -1,5 +1,6 @@
 import type { DayData, DayStateMessage, DaySummary, Entry, LinkEnd, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
+import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
@@ -11,6 +12,10 @@ import type { Remind, RepeatRule } from './repeat'
 export interface IslandLayout {
   /** Island sits in the lower half of the screen → content grows upward. */
   up: boolean
+  /** Stuck to a screen edge (a slim pill without the rounding on that side; upright at a side edge). */
+  dock?: Dock
+  /** At a side edge: where the pill's centre is, from the window's top (px). */
+  offset?: number
 }
 
 export type AppCommand = 'island-toggle' | 'island-reset' | 'quit' | 'devtools' | 'open-data-folder'
@@ -94,6 +99,8 @@ export interface QaApi {
    * robust across monitors with different scaling). Everything else stays click-through.
    */
   islandSolid(solid: boolean): void
+  /** Where the island's content is in its window (px) — main docks it by that rectangle. */
+  islandRect(r: { x: number; y: number; width: number; height: number }): void
   /** Island: drag by the move handle/header — main moves the window after the OS cursor between start and end. */
   /** Island: give keyboard focus back to the previous app. */
   islandBlur(): void
@@ -228,6 +235,7 @@ export const IPC = {
   getSettings: 'qa:getSettings',
   updateSettings: 'qa:updateSettings',
   islandSolid: 'qa:islandSolid',
+  islandRect: 'qa:islandRect',
   islandBlur: 'qa:islandBlur',
   islandFocus: 'qa:islandFocus',
   getIslandLayout: 'qa:getIslandLayout',

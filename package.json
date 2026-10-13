@@ -1,6 +1,6 @@
 {
   "name": "qvarch-assistant",
-  "version": "0.63.0",
+  "version": "0.71.0",
   "description": "Desktop work-time tracker with an always-on-top timeline island",
   "main": "./out/main/index.js",
   "scripts": {
@@ -14,7 +14,12 @@
   },
   "author": "xzdwq",
   "devDependencies": {
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/legacy-modes": "^6.5.5",
     "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^6.0.10",
     "codemirror": "^6.0.2",
@@ -23,7 +28,9 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "marked": "^18.1.0",
+    "prettier": "^3.9.10",
     "simple-git": "^3.36.0",
+    "sql-formatter": "^15.9.0",
     "thinking-orbs": "^0.3.2",
     "typescript": "^6.0.3",
     "vite": "^7.3.7",

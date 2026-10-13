@@ -17,7 +17,9 @@ import {
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language'
+import { codeFolding, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language'
+import { CODE_LANGUAGES, FENCE_PICK, fenceLang, FORMATTABLE, formatCode, indentFold } from '../lib/codeblocks'
+import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
 import { AUDIO_EMBED } from '@shared/vault'
@@ -49,6 +51,20 @@ const mdStyle = HighlightStyle.define([
   { tag: t.quote, color: '#b8c0d6' },
   { tag: [t.processingInstruction, t.meta], color: '#6f7894' },
   { tag: t.contentSeparator, color: '#6f7894' },
+])
+/** Code inside the blocks: a dark palette close to VS Code's. */
+const codeStyle = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword], color: '#c792ea' },
+  { tag: [t.string, t.special(t.string), t.regexp], color: '#c3e88d' },
+  { tag: [t.number, t.bool, t.null, t.atom], color: '#f78c6c' },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#697098', fontStyle: 'italic' },
+  { tag: [t.propertyName, t.attributeName], color: '#82aaff' },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
+  { tag: [t.typeName, t.className, t.tagName, t.standard(t.tagName)], color: '#ffcb6b' },
+  { tag: [t.operator, t.punctuation, t.separator, t.bracket, t.angleBracket], color: '#89ddff' },
+  { tag: [t.variableName, t.definition(t.variableName)], color: '#e6e9f2' },
+  { tag: t.special(t.variableName), color: '#f07178' },
+  { tag: t.attributeValue, color: '#c3e88d' },
 ])
 const theme = EditorView.theme(
   {
@@ -135,7 +151,21 @@ const theme = EditorView.theme(
     '.cm-lp-quote': { borderLeft: '3px solid rgba(124,108,246,0.6)', paddingLeft: '12px !important', color: '#b8c0d6' },
     '.cm-lp-code': { backgroundColor: 'rgba(255,255,255,0.045)', fontFamily: 'Consolas, "Cascadia Mono", monospace !important', fontSize: '0.88em', paddingLeft: '16px !important', paddingRight: '16px !important' },
     // inside code nothing is Markdown: one colour, one weight
-    '.cm-lp-code *': { fontFamily: 'inherit !important', fontSize: 'inherit !important', fontWeight: '400 !important', fontStyle: 'normal !important', textDecoration: 'none !important', color: '#d6dae6 !important' },
+    '.cm-line.cm-lp-code': { color: '#d6dae6' },
+    '.cm-lp-code *': { fontFamily: 'inherit !important', fontSize: 'inherit !important', fontWeight: '400 !important', textDecoration: 'none !important' },
+    '.cm-lp-bar': { position: 'absolute', top: '4px', right: '6px', zIndex: '2', display: 'inline-flex', alignItems: 'center', gap: '2px' },
+    '.cm-lp-bar .cm-lp-copy': { position: 'static' },
+    '.cm-lp-lang': { marginRight: '4px', color: '#5d6580', fontSize: '11px', fontFamily: 'Consolas, monospace', textTransform: 'lowercase', userSelect: 'none' },
+    '.cm-lp-copy.err': { color: '#f87171' },
+    '.cm-tooltip.cm-tooltip-autocomplete': { border: '1px solid rgba(255,255,255,0.1)', borderRadius: '9px', background: '#1c2030', boxShadow: '0 12px 30px rgba(0,0,0,0.5)', overflow: 'hidden' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'inherit', maxHeight: '240px', padding: '4px' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '4px 10px', borderRadius: '6px', color: '#d6dae6', fontSize: '12.5px' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'rgba(124,108,246,0.3)', color: '#fff' },
+    '.cm-completionDetail': { marginLeft: '10px', color: '#7d8599', fontStyle: 'normal' },
+    '.cm-completionMatchedText': { textDecoration: 'none', color: '#c4b5fd' },
+    '.cm-foldGutter .cm-gutterElement': { padding: '0 2px', color: '#5d6580', cursor: 'pointer' },
+    '.cm-foldGutter .cm-gutterElement:hover': { color: '#c7d2fe' },
+    '.cm-foldPlaceholder': { margin: '0 4px', padding: '0 6px', border: '1px solid rgba(124,108,246,0.4)', borderRadius: '6px', background: 'rgba(124,108,246,0.14)', color: '#c4b5fd', cursor: 'pointer' },
     '.cm-lp-code-top': { borderTopLeftRadius: '8px', borderTopRightRadius: '8px', position: 'relative' },
     '.cm-lp-code-bot': { borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' },
     // a hidden fence is a thin edge of the block: the code starts right at its top
@@ -250,32 +280,136 @@ class AudioWidget extends WidgetType {
     return true
   }
 }
-/** The copy button of a code block (top right, like Obsidian). */
-class CopyWidget extends WidgetType {
-  constructor(readonly code: string) {
+const FORMAT = ICON('<path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/>', 15)
+/** The bar of a code block (top right, like Obsidian): its language, "Форматировать" (known languages), "Скопировать". */
+class CodeBarWidget extends WidgetType {
+  constructor(
+    readonly code: string,
+    readonly lang: string | undefined,
+  ) {
     super()
   }
-  eq(o: CopyWidget): boolean {
-    return o.code === this.code
+  eq(o: CodeBarWidget): boolean {
+    return o.code === this.code && o.lang === this.lang
   }
-  toDOM(): HTMLElement {
-    const b = document.createElement('button')
-    b.className = 'cm-lp-copy'
-    b.title = 'Скопировать код'
-    b.innerHTML = COPY
-    b.onmousedown = (e) => e.preventDefault()
-    b.onclick = (e) => {
-      e.preventDefault()
-      void navigator.clipboard.writeText(this.code).then(() => {
-        b.innerHTML = CHECK
-        setTimeout(() => (b.innerHTML = COPY), 1200)
-      })
+  toDOM(v: EditorView): HTMLElement {
+    const bar = document.createElement('span')
+    bar.className = 'cm-lp-bar'
+    const btn = (svg: string, title: string, fn: (b: HTMLButtonElement) => void) => {
+      const b = document.createElement('button')
+      b.className = 'cm-lp-copy'
+      b.title = title
+      b.innerHTML = svg
+      b.onmousedown = (e) => e.preventDefault()
+      b.onclick = (e) => {
+        e.preventDefault()
+        fn(b)
+      }
+      return b
     }
-    return b
+    if (this.lang) {
+      const l = document.createElement('span')
+      l.className = 'cm-lp-lang'
+      l.textContent = this.lang
+      bar.append(l)
+    }
+    if (this.lang && FORMATTABLE.has(this.lang)) {
+      const lang = this.lang
+      bar.append(
+        btn(FORMAT, 'Форматировать', (b) => {
+          const pos = v.posAtDOM(bar)
+          void formatBlock(v, pos, lang).then(
+            () => {
+              b.innerHTML = CHECK
+              setTimeout(() => (b.innerHTML = FORMAT), 1200)
+            },
+            (err: unknown) => {
+              b.classList.add('err')
+              b.title = `Не получилось: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`
+              setTimeout(() => {
+                b.classList.remove('err')
+                b.title = 'Форматировать'
+              }, 4000)
+            },
+          )
+        }),
+      )
+    }
+    bar.append(
+      btn(COPY, 'Скопировать код', (b) => {
+        void navigator.clipboard.writeText(this.code).then(() => {
+          b.innerHTML = CHECK
+          setTimeout(() => (b.innerHTML = COPY), 1200)
+        })
+      }),
+    )
+    return bar
   }
   ignoreEvent(): boolean {
     return true
   }
+}
+/**
+ * Typing ``` opens the language list at once — nothing picked: Enter / space just go on typing; the arrows
+ * pick, Enter takes the picked one (and closes the block if it is not closed yet, the cursor inside).
+ */
+function fenceLangs(ctx: CompletionContext): CompletionResult | null {
+  const line = ctx.state.doc.lineAt(ctx.pos)
+  const m = /^(\s*)(`{3,}|~{3,})(\w*)$/.exec(line.text.slice(0, ctx.pos - line.from))
+  if (!m || line.text.slice(ctx.pos - line.from).trim()) return null
+  // an opening fence only: an even number of fences above it
+  let fences = 0
+  for (let no = 1; no < line.number; no++) if (/^\s*(`{3,}|~{3,})/.test(ctx.state.doc.line(no).text)) fences++
+  if (fences % 2) return null
+  const from = ctx.pos - m[3].length
+  return {
+    from,
+    validFor: /^\w*$/,
+    options: FENCE_PICK.map((l) => ({
+      label: l.name,
+      detail: l.title,
+      apply: (v: EditorView, _c: unknown, a: number, b: number) => {
+        // the block is closed further down already — only the name
+        let closed = false
+        for (let no = line.number + 1; no <= v.state.doc.lines; no++) {
+          const t2 = v.state.doc.line(no).text.trim()
+          if (t2.startsWith(m[2])) {
+            closed = !/^(`{3,}|~{3,})\w/.test(t2)
+            break
+          }
+        }
+        if (closed) v.dispatch({ changes: { from: a, to: b, insert: l.name }, selection: { anchor: a + l.name.length } })
+        else {
+          const ins = `${l.name}\n${m[1]}\n${m[1]}${m[2]}`
+          v.dispatch({ changes: { from: a, to: b, insert: ins }, selection: { anchor: a + l.name.length + 1 + m[1].length } })
+        }
+      },
+    })),
+  }
+}
+const fencePicker = autocompletion({ override: [fenceLangs], activateOnTyping: true, selectOnOpen: false, icons: false, closeOnBlur: true })
+
+/** Formats the code of the block whose opening fence is at `pos` (one undo step). */
+async function formatBlock(v: EditorView, pos: number, lang: string): Promise<void> {
+  const doc = v.state.doc
+  const open = doc.lineAt(pos)
+  const m = /^\s*(`{3,}|~{3,})/.exec(open.text)
+  if (!m) throw new Error('Блок не найден')
+  let close = 0
+  for (let no = open.number + 1; no <= doc.lines; no++) {
+    const t2 = doc.line(no).text.trim()
+    if (t2.startsWith(m[1]) && !t2.slice(m[1].length).trim()) {
+      close = no
+      break
+    }
+  }
+  if (!close || close === open.number + 1) return
+  const from = doc.line(open.number + 1).from
+  const to = doc.line(close - 1).to
+  const code = v.state.sliceDoc(from, to)
+  const out = await formatCode(lang, code)
+  // the text may have changed while formatting — only the same code is replaced
+  if (v.state.sliceDoc(from, to) === code && out !== code) v.dispatch({ changes: { from, to, insert: out } })
 }
 class BulletWidget extends WidgetType {
   eq(): boolean {
@@ -384,7 +518,7 @@ function decorate(v: EditorView): DecorationSet {
       const code: string[] = []
       for (let no = b.open + 1; no < (b.close ?? last + 1); no++) code.push(s.doc.line(no).text)
       const open = s.doc.line(b.open)
-      out.push(Decoration.replace({ widget: new CopyWidget(code.join('\n')) }).range(open.from, open.to))
+      out.push(Decoration.replace({ widget: new CodeBarWidget(code.join('\n'), fenceLang(open.text.replace(/^\s*(`{3,}|~{3,})/, ''))) }).range(open.from, open.to))
       if (b.close) {
         const cl = s.doc.line(b.close)
         if (cl.length) out.push(hide.range(cl.from, cl.to))
@@ -680,8 +814,13 @@ onMounted(() => {
         lineNumbers(),
         highlightActiveLineGutter(),
         EditorView.lineWrapping,
-        markdown({ base: markdownLanguage, extensions: [{ remove: ['SetextHeading'] }] }),
+        markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES, extensions: [{ remove: ['SetextHeading'] }] }),
         syntaxHighlighting(mdStyle),
+        syntaxHighlighting(codeStyle),
+        codeFolding({ placeholderText: '…' }),
+        foldGutter({ openText: '▾', closedText: '▸' }),
+        indentFold,
+        fencePicker,
         highlightSelectionMatches(),
         search({ top: true }),
         phrases,
@@ -690,7 +829,7 @@ onMounted(() => {
         clicks,
         contextMenu,
         placeholder('Пишите… # заголовок, **жирный**, - список, - [ ] задача, [[другая заметка]]'),
-        keymap.of([{ key: 'Mod-b', run: wrap('**') }, { key: 'Mod-i', run: wrap('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        keymap.of([{ key: 'Mod-b', run: wrap('**') }, { key: 'Mod-i', run: wrap('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) emit('change', u.state.doc.toString())
         }),

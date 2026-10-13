@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { clipEntries, dayEnd, dayKey, dayStart, formatDuration, formatHM, HOUR, mergeIntervals, MINUTE, scheduleRanges, trackedMs } from '@shared/timeline'
+import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, mergeIntervals, MINUTE, scheduleRanges, trackedMs } from '@shared/timeline'
 import { productiveMs } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
 import type { LinkEnd, PublicSettings } from '@shared/types'
-import { addWidget, arrange, COLS, resizeWidget, DEFAULT_DASHBOARD, WIDGETS, widgetInfo, type Widget, type WidgetType } from '@shared/dashboard'
+import { addWidget, arrange, COLS, OLD_COLS_SCALE, resizeWidget, DEFAULT_DASHBOARD, WIDGETS, widgetInfo, type Widget, type WidgetType } from '@shared/dashboard'
 import Icon from '../components/Icon.vue'
 import Timeline from '../components/Timeline.vue'
 import NoteList from '../components/NoteList.vue'
@@ -14,12 +14,14 @@ import CalendarView from './CalendarView.vue'
 import TaskList from './TaskList.vue'
 import { kinds } from '../lib/palette'
 import { useDay } from '../lib/useDay'
+import { todayKey } from '../lib/today'
 import { useTitleActions } from '../lib/titlebar'
 import { askSeries } from '../lib/seriesAsk'
 import DayStrip from '../components/DayStrip.vue'
 import EntryRecords from '../components/EntryRecords.vue'
 import EntryEditor, { type AddPrefs, type Draft } from '../components/EntryEditor.vue'
 import NotebookView from './NotebookView.vue'
+import SheetView from './SheetView.vue'
 import NoteEditor from '../components/NoteEditor.vue'
 
 /**
@@ -30,11 +32,16 @@ const props = defineProps<{ settings: PublicSettings }>()
 const emit = defineEmits<{ go: [view: 'day' | 'calendar' | 'tasks' | 'notebook' | 'settings', day?: string, entryId?: string] }>()
 
 // ---------- the layout (remembered) ----------
-const KEY = 'qa.dash'
+/** The layout on the 60-column grid; one saved on the old 12-column grid (qa.dash) is scaled over once. */
+const KEY = 'qa.dash.v60'
+const OLD_KEY = 'qa.dash'
 function readLayout(): Widget[] {
+  const valid = (v: unknown): v is Widget[] => Array.isArray(v) && v.every((w) => w && WIDGETS.some((x) => x.type === (w as Widget).type))
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Widget[] | null
-    if (Array.isArray(v) && v.every((w) => w && WIDGETS.some((x) => x.type === w.type))) return arrange(v)
+    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as unknown
+    if (valid(v)) return arrange(v)
+    const old = JSON.parse(localStorage.getItem(OLD_KEY) ?? 'null') as unknown
+    if (valid(old)) return arrange(old.map((w) => ({ ...w, x: w.x * OLD_COLS_SCALE, w: w.w * OLD_COLS_SCALE })))
   } catch {
     // a broken layout — the default one
   }
@@ -149,7 +156,7 @@ function endDrag(): void {
 onBeforeUnmount(() => window.removeEventListener('pointermove', onDrag))
 
 // ---------- today's data for the widgets ----------
-const today = ref(dayKey(Date.now()))
+const today = todayKey
 const { data, live, now, cursor, reload } = useDay(today)
 // the timeline widget edits like the timeline page: move, resize, kind, delete, merge
 async function onMove(c: { id: string; start: number; end: number; lane: number }): Promise<void> {
@@ -275,7 +282,7 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
     <div ref="grid" class="grid" :class="{ editing }" :style="{ height: `${gridH}px` }">
       <!-- grid cells while editing -->
       <template v-if="editing">
-        <div v-for="c in COLS" :key="`g${c}`" class="gcol" :style="{ left: `${(c - 1) * (colW + GAP)}px`, width: `${colW}px` }"></div>
+        <div v-for="c in COLS" :key="`g${c}`" class="gcol" :class="{ major: c % 5 === 1 }" :style="{ left: `${(c - 1) * (colW + GAP)}px`, width: `${colW}px` }"></div>
       </template>
       <section v-for="w in shown" :key="w.i" class="wd" :class="{ dragging: drag?.i === w.i }" :style="box(w)">
         <header v-if="editing" class="wh" @pointerdown="startDrag($event, w, 'move')">
@@ -345,6 +352,7 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
           </div>
 
           <NotebookView v-else-if="w.type === 'notebook'" widget />
+          <SheetView v-else-if="w.type === 'sheet'" :settings="settings" widget @go="(v, d, id) => emit('go', v, d, id)" />
 
           <div v-else-if="w.type === 'create'" class="cre">
             <EntryEditor
@@ -441,9 +449,10 @@ async function window_follow(on: boolean): Promise<void> {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 8px;
-  background: rgba(124, 108, 246, 0.05);
-  outline: 1px dashed rgba(124, 108, 246, 0.18);
+  background: rgba(124, 108, 246, 0.025);
+}
+.gcol.major {
+  border-left: 1px dashed rgba(124, 108, 246, 0.22);
 }
 .wd {
   position: absolute;
@@ -669,7 +678,8 @@ async function window_follow(on: boolean): Promise<void> {
   flex-direction: column;
   min-height: 100%;
 }
-.wb.t-notebook {
+.wb.t-notebook,
+.wb.t-sheet {
   overflow: hidden;
 }
 .wb.t-notebook :deep(.nb) {
@@ -683,6 +693,38 @@ async function window_follow(on: boolean): Promise<void> {
 .wb.t-notes {
   padding: 8px 10px;
 }
+/* every widget's own header: one line, the same height (34px), no gap above it */
+.wb.t-calendar,
+.wb.t-tasks,
+.wb.t-notes,
+.wb.t-week {
+  padding-top: 0;
+}
+.elist {
+  padding-top: 0 !important;
+}
+.wb.t-entries :deep(.esum),
+.wb.t-sheet :deep(.bar),
+.wb.t-notebook :deep(.tabs),
+.wb.t-notebook :deep(.ntools),
+.wb.t-calendar :deep(.head),
+.wb.t-week :deep(.bar),
+.wb.t-tasks :deep(.topbar) {
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+}
+.wb.t-calendar :deep(.head h2) {
+  font-size: 14px;
+}
+
 .elist {
   padding: 6px 4px;
 }

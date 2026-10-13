@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { dayKey, shiftDay } from '@shared/timeline'
+import { shiftDay } from '@shared/timeline'
 import type { AppCommand } from '@shared/api'
 import type { PublicSettings } from '@shared/types'
 import Icon from '../components/Icon.vue'
@@ -17,10 +17,14 @@ import SheetView from './SheetView.vue'
 import ReleaseView from './ReleaseView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import { titleActions } from '../lib/titlebar'
+import { onNewDay, todayKey } from '../lib/today'
 
 type View = 'dashboard' | 'day' | 'calendar' | 'sheet' | 'reports' | 'log' | 'tasks' | 'notebook' | 'release' | 'settings'
 const view = ref<View>('day')
-const day = ref(dayKey(Date.now()))
+const day = ref(todayKey.value)
+onNewDay((prev, next) => {
+  if (day.value === prev) day.value = next
+})
 const focusEntry = ref<string>()
 const settings = ref<PublicSettings>()
 const menuOpen = ref(false)
@@ -77,7 +81,7 @@ const VIEWS: Array<{ id: View; icon: string; label: string }> = [
 ]
 
 const title = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
-const today = () => dayKey(Date.now())
+const today = () => todayKey.value
 // "Удалить" in the date picker empties the value — back to today then
 watch(day, (v) => {
   if (!v) day.value = today()

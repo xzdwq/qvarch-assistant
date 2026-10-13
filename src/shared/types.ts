@@ -214,9 +214,11 @@ export interface WorkSchedule {
 }
 
 export interface IslandPrefs {
-  /** Top-left of the collapsed pill. */
+  /** Top-left of the collapsed pill (at a side edge: x — that edge, y — the pill's centre). */
   x?: number
   y?: number
+  /** Stuck to a screen edge. */
+  dock?: 'top' | 'bottom' | 'left' | 'right'
   /** Keep expanded regardless of hover. */
   pinned?: boolean
   /** Opacity of the collapsed pill, 0.2–1 (the expanded island is always opaque). */
@@ -227,6 +229,8 @@ export interface IslandPrefs {
 export interface UiPrefs {
   /** Mini island: app/call name, date, typing combo, activity wave, block chips, totals line, work-day bar. */
   pill: { app: boolean; date: boolean; combo: boolean; wave: boolean; chips: boolean; stats: boolean; dayBar: boolean; plan: boolean }
+  /** The island stuck to a screen edge (slim): the orb, the day's time, the countdown to the next Outlook meeting, the wave. */
+  dock: { orb: boolean; time: boolean; next: boolean; wave: boolean }
   /** Island: date, activity wave, apps lane, totals under the timeline. */
   island: { date: boolean; wave: boolean; apps: boolean; totals: boolean; plan: boolean }
   /** Main window: every counter in the day header (else the main three), "План дня", "AI анализ". */

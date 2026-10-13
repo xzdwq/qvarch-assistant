@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { dayKey, MINUTE } from '@shared/timeline'
+import { MINUTE } from '@shared/timeline'
 import { useDay } from '../lib/useDay'
+import { todayKey } from '../lib/today'
 import EntryEditor, { type AddPrefs, type Draft } from './EntryEditor.vue'
 import Icon from './Icon.vue'
 
@@ -9,7 +10,7 @@ import Icon from './Icon.vue'
 const props = defineProps<{ text: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-const today = ref(dayKey(Date.now()))
+const today = todayKey
 const { data, now } = useDay(today)
 const add = ref<AddPrefs>({ from: 'now', back: false, min: 30 })
 const draft = computed<Draft>(() => {

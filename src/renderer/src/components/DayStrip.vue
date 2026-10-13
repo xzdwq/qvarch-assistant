@@ -6,8 +6,9 @@ import { entryIcon, kindColor } from '../lib/palette'
 import Icon from './Icon.vue'
 
 /**
- * The day as a chain under the dashboard's timeline: the last two blocks · now · how long until the next ·
- * the next ones. Pills joined by little connectors; overflow scrolls sideways (the arrows move it).
+ * The day as a chain under the dashboard's timeline: what was (faded, joined by a dotted line) · now · in
+ * how long the next one starts · what is next (joined by plain lines). Flat cards with a coloured edge;
+ * overflow scrolls sideways (the arrows move it).
  */
 const props = defineProps<{ entries: Entry[]; now: Ms; countdown: 'any' | 'outlook' }>()
 
@@ -48,41 +49,43 @@ onMounted(() => {
 })
 onBeforeUnmount(() => ro?.disconnect())
 const tint = (c: string) => ({ '--c': c })
+const NOW = '#ef4444'
+const NEXT = '#8b7cff'
 </script>
 
 <template>
   <div class="ds">
     <button v-if="canL" class="arr l" @click="scrollBy(-1)"><Icon name="chevronLeft" :size="16" /></button>
     <div ref="row" class="chain" @scroll="measure">
-      <!-- what was -->
+      <!-- what was: faded, a dotted line on to the next -->
       <template v-for="e in past" :key="e.id">
-        <div class="pill past" :style="tint(kindColor(e.kind))" :title="e.label">
-          <span class="ic"><Icon :name="entryIcon(e)" :size="13" :stroke="2.2" /></span>
-          <span class="tx"><small>{{ formatHM(e.start) }}–{{ formatHM(e.end) }} · {{ formatDuration(e.end - e.start) }}</small><b>{{ e.label }}</b></span>
+        <div class="card past" :style="tint(kindColor(e.kind))" :title="e.label">
+          <span class="ic"><Icon :name="entryIcon(e)" :size="15" :stroke="2" /></span>
+          <span class="tx"><small>{{ formatHM(e.start) }} – {{ formatHM(e.end) }}</small><b>{{ e.label }}</b></span>
         </div>
-        <span class="link" :style="tint(kindColor(e.kind))"><i></i></span>
+        <span class="link dotted" style="--c: #6b7387"><i></i></span>
       </template>
 
       <!-- now -->
-      <div class="pill now">
-        <span class="ic"><Icon name="clock" :size="14" :stroke="2.2" /></span>
+      <div class="card now" :style="tint(NOW)">
+        <span class="ic"><Icon name="clock" :size="15" :stroke="2.2" /></span>
         <span class="tx"><b class="big">{{ formatHM(now) }}</b><small>Сейчас</small></span>
       </div>
 
-      <!-- how long until the next -->
+      <!-- in how long the next one starts -->
       <template v-if="target">
-        <span class="link" style="--c: #8b7cff"><i></i></span>
-        <div class="pill cd" :class="{ soon }">
-          <span class="ic"><Icon name="clock" :size="13" :stroke="2.2" /></span>
-          <span class="tx"><b>через {{ leftText }}</b><small>{{ countdown === 'outlook' ? 'до встречи' : 'до следующего события' }}</small></span>
+        <span class="link dashed" :style="tint(NOW)"><i></i></span>
+        <div class="card cd" :class="{ soon }" :style="tint(soon ? '#f59e0b' : NEXT)" :title="countdown === 'outlook' ? 'До встречи' : 'До следующего события'">
+          <span class="ic"><Icon :name="entryIcon(target)" :size="15" :stroke="2.2" /></span>
+          <span class="tx"><b>через {{ leftText }}</b></span>
         </div>
       </template>
 
-      <!-- what is next -->
-      <template v-for="e in upcoming" :key="e.id">
-        <span class="link" :style="tint(kindColor(e.kind))"><i></i></span>
-        <div class="pill ev" :class="{ first: e.id === target?.id }" :style="tint(kindColor(e.kind))" :title="e.label">
-          <span class="ic"><Icon :name="entryIcon(e)" :size="13" :stroke="2.2" /></span>
+      <!-- what is next: plain lines -->
+      <template v-for="(e, i) in upcoming" :key="e.id">
+        <span class="link" :style="{ '--c': i === 0 ? NEXT : kindColor(upcoming[i - 1].kind), '--d': kindColor(e.kind) }"><i></i></span>
+        <div class="card" :style="tint(kindColor(e.kind))" :title="e.label">
+          <span class="ic"><Icon :name="entryIcon(e)" :size="15" :stroke="2.2" /></span>
           <span class="tx"><small>{{ formatHM(e.start) }} – {{ formatHM(e.end) }}</small><b>{{ e.label }}</b></span>
         </div>
       </template>
@@ -104,36 +107,37 @@ const tint = (c: string) => ({ '--c': c })
   min-width: 0;
   display: flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 7px 10px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .chain::-webkit-scrollbar {
   display: none;
 }
-.pill {
+/* a flat card with a coloured edge on the left */
+.card {
   --c: #8b7cff;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 7px;
-  max-width: 230px;
-  height: 34px;
+  gap: 9px;
+  max-width: 260px;
+  height: 40px;
   box-sizing: border-box;
-  padding: 0 12px 0 4px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  background: color-mix(in srgb, var(--c) 12%, #141824);
+  padding: 0 14px 0 8px;
+  border-radius: 5px;
+  border-left: 3px solid var(--c);
+  background: #1b2030;
 }
 .ic {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--c) 55%, #1b2030);
+  background: color-mix(in srgb, var(--c) 32%, #1b2030);
   color: #fff;
 }
 .tx {
@@ -144,14 +148,14 @@ const tint = (c: string) => ({ '--c': c })
 }
 .tx small {
   color: #9aa3b8;
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .tx b {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -161,42 +165,49 @@ const tint = (c: string) => ({ '--c': c })
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
+/* what was: no colour, faded */
 .past {
-  opacity: 0.55;
+  border-left-color: transparent;
+  background: #171b28;
+  opacity: 0.6;
 }
-.now {
-  --c: #ef4444;
+.past .ic {
+  background: transparent;
+  color: #9aa3b8;
 }
-.now .tx small {
-  max-width: 180px;
+.now .ic {
+  background: var(--c);
 }
-.cd {
-  --c: #6366f1;
+.cd .tx b {
+  font-size: 13px;
 }
-.cd.soon {
-  --c: #f59e0b;
-}
-.ev.first {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent), 0 0 18px color-mix(in srgb, var(--c) 25%, transparent);
-}
-/* a connector: a short line with a dot */
+/* a connector: a line and a dot at its end, in the colour of what comes next */
 .link {
   --c: #8b7cff;
+  --d: var(--c);
   flex: none;
   position: relative;
-  width: 18px;
+  width: 44px;
   height: 2px;
-  background: color-mix(in srgb, var(--c) 55%, transparent);
+  margin-right: 4px;
+  background: color-mix(in srgb, var(--c) 75%, transparent);
 }
 .link i {
   position: absolute;
-  left: 50%;
+  right: -4px;
   top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
   border-radius: 50%;
-  background: var(--c);
+  background: var(--d);
+}
+.link.dotted {
+  background: radial-gradient(circle, var(--c) 1px, transparent 1.5px) 0 50% / 6px 2px repeat-x;
+}
+.link.dashed {
+  width: 28px;
+  background: linear-gradient(90deg, var(--c) 50%, transparent 50%) 0 0 / 6px 2px repeat-x;
 }
 .none {
   margin-left: 14px;

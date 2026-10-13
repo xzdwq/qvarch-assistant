@@ -52,6 +52,7 @@ const api: QaApi = {
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   updateSettings: (patch) => ipcRenderer.invoke(IPC.updateSettings, patch),
   islandSolid: (solid) => ipcRenderer.send(IPC.islandSolid, solid),
+  islandRect: (r) => ipcRenderer.send(IPC.islandRect, r),
   islandBlur: () => ipcRenderer.send(IPC.islandBlur),
   islandFocus: () => ipcRenderer.send(IPC.islandFocus),
   getIslandLayout: () => ipcRenderer.invoke(IPC.getIslandLayout),

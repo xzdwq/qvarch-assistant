@@ -4,13 +4,14 @@ import type { LinkStyle } from '@shared/linkpath'
 import { linkedTo } from '@shared/links'
 import { isProductive } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
-import { clipEntries, dayEnd, dayKey, dayStart, formatDuration, formatHM, HOUR, MINUTE, unionMs } from '@shared/timeline'
+import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, MINUTE, unionMs } from '@shared/timeline'
 import type { DayData, Entry, Link, LinkEnd } from '@shared/types'
 import { OWN_PREFIX } from '@shared/board'
 import { entryIcon, kindColor, kindLabel, kinds } from '../lib/palette'
 import { useJira } from '../lib/jira'
 import { useLocalTasks } from '../lib/tasks'
 import Icon from './Icon.vue'
+import { todayKey } from '../lib/today'
 import LinkLayer from './LinkLayer.vue'
 import EntryEditor, { type Draft } from './EntryEditor.vue'
 import NoteEditor from './NoteEditor.vue'
@@ -35,7 +36,7 @@ const own = useLocalTasks()
 const DAY_MS = 86_400_000
 const toNum = (d: string) => Math.round(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / DAY_MS)
 const toKey = (n: number) => new Date(n * DAY_MS).toISOString().slice(0, 10)
-const today = ref(dayKey(Date.now()))
+const today = todayKey
 const todayNum = computed(() => toNum(today.value))
 const weekday = (n: number) => new Date(n * DAY_MS).getUTCDay()
 const isOff = (n: number) => !(props.workDays ?? [1, 2, 3, 4, 5]).includes(weekday(n))
@@ -228,7 +229,6 @@ watch([firstDay, lastDay], () => {
 void ensure().then(async () => (totals.value = await window.qa.jiraTracked()))
 let last = 0
 const off = window.qa.onDayState(() => {
-  today.value = dayKey(Date.now())
   nowMs.value = Date.now()
   // a change elsewhere (island, sync) — but not while the user drags here
   if (Date.now() - last > 15_000 && !g.value) {

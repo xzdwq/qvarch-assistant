@@ -7,27 +7,120 @@ import type { TaskRef } from '@shared/jira'
 import { kindColor, kindLabel, kinds, entryIcon } from '../lib/palette'
 import Icon from '../components/Icon.vue'
 import TaskPicker from '../components/TaskPicker.vue'
+import { onNewDay } from '../lib/today'
+import FilterMenu from '../components/FilterMenu.vue'
+import DateRangePicker from '../components/DateRangePicker.vue'
+import { placeFloat, useAnchor } from '../lib/floating'
 
 /**
  * Заполнение — the week (or a day) as a table: a row per task (or kind + text), a column per day. Typing
  * hours into a cell makes real blocks on the timeline (into free working time) or takes time away from
  * the row's blocks; Outlook meetings are never changed.
  */
-const props = defineProps<{ settings: PublicSettings }>()
+/** `widget` — on the dashboard: a day by default, tighter. */
+const props = defineProps<{ settings: PublicSettings; widget?: boolean }>()
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
 
 const today = () => new Date().toLocaleDateString('sv-SE')
-const mode = ref<'week' | 'day'>('week')
-const anchor = ref(today())
-const cols = computed(() => (mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : [anchor.value]))
+/**
+ * The period: a day, a week or any range picked on the calendar — remembered (the dashboard's apart);
+ * "today" is remembered as today, so the next day it shows the new day.
+ */
+type Mode = 'week' | 'day' | 'range'
+const VIEW_KEY = props.widget ? 'qa.sheet.view.widget' : 'qa.sheet.view'
+const saved = (() => {
+  try {
+    return (JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null') as { mode?: Mode; anchor?: string; from?: string; to?: string } | null) ?? {}
+  } catch {
+    return {}
+  }
+})()
+const mode = ref<Mode>(saved.mode ?? (props.widget ? 'day' : 'week'))
+const anchor = ref(!saved.anchor || saved.anchor === 'today' ? today() : saved.anchor)
+const rangeFrom = ref(saved.from ?? today())
+const rangeTo = ref(saved.to ?? today())
+watch([mode, anchor, rangeFrom, rangeTo], () => {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: mode.value, anchor: anchor.value === today() ? 'today' : anchor.value, from: rangeFrom.value, to: rangeTo.value }))
+  } catch {
+    // not remembered — fine
+  }
+})
+onNewDay((prev, next) => {
+  if (anchor.value === prev) anchor.value = next
+})
+const cols = computed(() =>
+  mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : mode.value === 'range' ? daysBetween(rangeFrom.value, rangeTo.value).slice(0, 62) : [anchor.value],
+)
+/** The calendar: one day → "день", Monday..Sunday → "неделя", anything else → that range. */
+const pickerOpen = ref(false)
+const plEl = ref<HTMLElement>()
+function applyRange(from: string, to: string): void {
+  pickerOpen.value = false
+  if (from === to) {
+    mode.value = 'day'
+    anchor.value = from
+  } else if (weekStart(from) === from && shiftDay(from, 6) === to) {
+    mode.value = 'week'
+    anchor.value = from
+  } else {
+    mode.value = 'range'
+    rangeFrom.value = from
+    rangeTo.value = to
+  }
+}
+function setMode(m: 'day' | 'week'): void {
+  if (mode.value === 'range') anchor.value = cols.value.includes(today()) ? today() : cols.value[0]
+  mode.value = m
+}
+function goToday(): void {
+  if (mode.value === 'range') mode.value = props.widget ? 'day' : 'week'
+  anchor.value = today()
+}
 const fmt = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', o)
 const label = computed(() => {
   const a = cols.value[0]
   const b = cols.value[cols.value.length - 1]
-  return mode.value === 'day' ? fmt(a, { weekday: 'short', day: 'numeric', month: 'short' }) : `${fmt(a, { day: 'numeric', month: a.slice(5, 7) === b.slice(5, 7) ? undefined : 'short' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`
+  return cols.value.length === 1 ? fmt(a, { weekday: 'short', day: 'numeric', month: 'short' }) : `${fmt(a, { day: 'numeric', month: a.slice(5, 7) === b.slice(5, 7) ? undefined : 'short' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`
 })
 const isCurrent = computed(() => cols.value.includes(today()))
-const shift = (dir: 1 | -1) => (anchor.value = shiftDay(anchor.value, dir * (mode.value === 'week' ? 7 : 1)))
+function shift(dir: 1 | -1): void {
+  if (mode.value === 'range') {
+    const n = cols.value.length
+    rangeFrom.value = shiftDay(rangeFrom.value, dir * n)
+    rangeTo.value = shiftDay(rangeTo.value, dir * n)
+  } else anchor.value = shiftDay(anchor.value, dir * (mode.value === 'week' ? 7 : 1))
+}
+
+// ---------- the columns' widths (dragged by their edge; remembered, the dashboard's apart) ----------
+const COLS_KEY = props.widget ? 'qa.sheet.cols.widget' : 'qa.sheet.cols'
+type ColW = { rl: number; dc: number; tc: number }
+const colW = ref<ColW>(
+  (() => {
+    try {
+      return { rl: props.widget ? 190 : 300, dc: 76, tc: 76, ...(JSON.parse(localStorage.getItem(COLS_KEY) ?? '{}') as Partial<ColW>) }
+    } catch {
+      return { rl: props.widget ? 190 : 300, dc: 76, tc: 76 }
+    }
+  })(),
+)
+const tableW = computed(() => colW.value.rl + cols.value.length * colW.value.dc + (cols.value.length > 1 ? colW.value.tc : 0))
+function startColResize(e: PointerEvent, key: keyof ColW): void {
+  const x0 = e.clientX
+  const w0 = colW.value[key]
+  const min = key === 'rl' ? 110 : 44
+  const move = (ev: PointerEvent) => (colW.value = { ...colW.value, [key]: Math.max(min, Math.min(700, Math.round(w0 + ev.clientX - x0))) })
+  const up = () => {
+    window.removeEventListener('pointermove', move)
+    try {
+      localStorage.setItem(COLS_KEY, JSON.stringify(colW.value))
+    } catch {
+      // not remembered — fine
+    }
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up, { once: true })
+}
 
 // ---------- the data ----------
 const days = ref<RangeDay[]>([])
@@ -41,6 +134,39 @@ watch(cols, () => void load(), { immediate: true })
 const onFocus = () => void load()
 onMounted(() => window.addEventListener('focus', onFocus))
 onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
+// today's blocks come live (the island, a call, another window) — shown at once, no reload
+const offDay = window.qa.onDayState((msg) => {
+  const d = msg.day
+  if (!cols.value.includes(d.day)) return
+  const cur = dayOf(d.day)
+  if (cur && cur.entries === d.entries) return
+  const pcOnMs = unionMs(d.spans.map((s) => ({ start: s.start, end: s.open ? Math.max(s.end, Date.now()) : s.end })))
+  const next = { day: d.day, entries: d.entries, pcOnMs }
+  days.value = cur ? days.value.map((x) => (x.day === d.day ? next : x)) : [...days.value, next]
+})
+onBeforeUnmount(offDay)
+
+// ---------- the kind filter (remembered; the dashboard's apart) ----------
+const KINDS_KEY = props.widget ? 'qa.sheet.kinds.widget' : 'qa.sheet.kinds'
+function readKinds(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(KINDS_KEY) ?? '[]') as unknown
+    return Array.isArray(v) ? (v as string[]) : []
+  } catch {
+    return []
+  }
+}
+const kindFilter = ref<string[]>(readKinds())
+watch(kindFilter, (v) => {
+  try {
+    localStorage.setItem(KINDS_KEY, JSON.stringify(v))
+  } catch {
+    // not remembered — fine
+  }
+})
+const kindOpts = computed(() => kinds.value.map((k) => ({ id: k.id, label: k.label, color: k.color })))
+const shownKind = (k: string) => !kindFilter.value.length || kindFilter.value.includes(k)
+const entriesOf = (d: RangeDay | undefined) => (d?.entries ?? []).filter((e) => shownKind(e.kind))
 const dayOf = (d: string) => days.value.find((x) => x.day === d)
 
 // ---------- rows: from the blocks + the ones added by hand (remembered per week) ----------
@@ -64,7 +190,7 @@ watch(
   },
   { deep: true },
 )
-const periodKey = computed(() => (mode.value === 'week' ? weekStart(anchor.value) : anchor.value))
+const periodKey = computed(() => (mode.value === 'week' ? weekStart(anchor.value) : mode.value === 'range' ? `${rangeFrom.value}_${rangeTo.value}` : anchor.value))
 const kindOrder = (k: string) => {
   const i = kinds.value.findIndex((x) => x.id === k)
   return i < 0 ? 99 : i
@@ -84,13 +210,13 @@ const rows = computed<Row[]>(() => {
     return row
   }
   for (const d of days.value)
-    for (const e of d.entries) {
+    for (const e of entriesOf(d)) {
       const row = ensure(rowOf(e), false)
       const c = row.cells.get(d.day) ?? { ms: 0, blocks: [] }
       c.blocks.push(e)
       row.cells.set(d.day, c)
     }
-  for (const r of added.value[periodKey.value] ?? []) ensure(r, true)
+  for (const r of added.value[periodKey.value] ?? []) if (shownKind(r.kind)) ensure(r, true)
   for (const row of m.values()) {
     for (const c of row.cells.values()) c.ms = unionMs(c.blocks)
     row.total = unionMs([...row.cells.values()].flatMap((c) => c.blocks))
@@ -99,7 +225,7 @@ const rows = computed<Row[]>(() => {
   }
   return [...m.values()].sort((a, b) => Number(!a.task) - Number(!b.task) || kindOrder(a.kind) - kindOrder(b.kind) || (a.task?.key ?? a.label).localeCompare(b.task?.key ?? b.label))
 })
-const dayTotal = (d: string) => unionMs(dayOf(d)?.entries ?? [])
+const dayTotal = (d: string) => unionMs(entriesOf(dayOf(d)))
 const pcOn = (d: string) => dayOf(d)?.pcOnMs ?? 0
 const grand = computed(() => cols.value.reduce((s, d) => s + dayTotal(d), 0))
 const isOff = (d: string) => !props.settings.schedule.workDays.includes(new Date(`${d}T12:00:00`).getDay())
@@ -192,6 +318,10 @@ const newKind = ref('task')
 const newTask = ref<TaskRef[]>([])
 const newLabel = ref('')
 const addEl = ref<HTMLElement>()
+/** The menus float over everything (teleported): the dashboard widget would clip them. */
+const addPd = ref<HTMLElement>()
+const addStyle = ref<Record<string, string>>({})
+useAnchor(adding, addEl, () => addEl.value && (addStyle.value = placeFloat(addEl.value, 320, false, 40).style))
 const pickable = computed(() => kinds.value.filter((k) => !k.hidden))
 function addRow(): void {
   const t = newTask.value[0]
@@ -210,9 +340,12 @@ function removeRow(r: Row): void {
 // ---------- copying the previous week ----------
 const copyOpen = ref(false)
 const copyEl = ref<HTMLElement>()
+const copyPd = ref<HTMLElement>()
+const copyStyle = ref<Record<string, string>>({})
+useAnchor(copyOpen, copyEl, () => copyEl.value && (copyStyle.value = placeFloat(copyEl.value, 200, false, 40).style))
 async function copyPrev(withHours: boolean): Promise<void> {
   copyOpen.value = false
-  const span = mode.value === 'week' ? 7 : 1
+  const span = cols.value.length
   const prevCols = cols.value.map((d) => shiftDay(d, -span))
   const prev = await window.qa.rangeDays(prevCols[0], prevCols[prevCols.length - 1])
   // what came by itself (meetings, found calls) is not copied
@@ -248,31 +381,34 @@ async function copyPrev(withHours: boolean): Promise<void> {
   }
 }
 function onDown(e: MouseEvent): void {
-  if (copyOpen.value && !copyEl.value?.contains(e.target as Node)) copyOpen.value = false
-  if (adding.value && !addEl.value?.contains(e.target as Node) && !(e.target as HTMLElement).closest('.dd')) adding.value = false
+  if (copyOpen.value && !copyEl.value?.contains(e.target as Node) && !copyPd.value?.contains(e.target as Node)) copyOpen.value = false
+  if (adding.value && !addEl.value?.contains(e.target as Node) && !addPd.value?.contains(e.target as Node) && !(e.target as HTMLElement).closest('.dd')) adding.value = false
 }
 onMounted(() => window.addEventListener('mousedown', onDown, true))
 onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 </script>
 
 <template>
-  <div class="sh">
+  <div class="sh" :class="{ widget }">
     <div class="bar">
       <div class="seg">
-        <button :class="{ on: mode === 'week' }" @click="mode = 'week'">Неделя</button>
-        <button :class="{ on: mode === 'day' }" @click="mode = 'day'">День</button>
+        <button :class="{ on: mode === 'week' }" @click="setMode('week')">Неделя</button>
+        <button :class="{ on: mode === 'day' }" @click="setMode('day')">День</button>
       </div>
       <div class="nav">
         <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
-        <span class="pl">{{ label }}</span>
+        <button ref="plEl" class="pl" :class="{ on: pickerOpen }" title="Выбрать период" @click="pickerOpen = !pickerOpen"><Icon name="calendar" :size="12" />{{ label }}</button>
         <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
-        <button v-if="!isCurrent" class="ib" title="Сейчас" @click="anchor = today()"><Icon name="clock" :size="13" /></button>
+        <button v-if="!isCurrent" class="ib" title="Сейчас" @click="goToday"><Icon name="clock" :size="13" /></button>
       </div>
+      <DateRangePicker v-if="pickerOpen" :from="cols[0]" :to="cols[cols.length - 1]" :anchor="plEl" :max="62" @apply="applyRange" @close="pickerOpen = false" />
       <span class="sp"></span>
+      <FilterMenu v-model="kindFilter" label="Вид" icon="tag" :options="kindOpts" />
       <span v-if="busy" class="busy"><Icon name="refresh" :size="13" /></span>
       <div ref="addEl" class="pop">
-        <button class="btn" :class="{ on: adding }" @click="adding = !adding"><Icon name="plus" :size="13" />Строка</button>
-        <div v-if="adding" class="pd add">
+        <button class="btn" :class="{ on: adding }" title="Добавить строку" @click="adding = !adding"><Icon name="plus" :size="13" /><span class="bl">Строка</span></button>
+        <Teleport to="body">
+        <div v-if="adding" ref="addPd" class="pd add" :style="addStyle">
           <div class="kinds">
             <button v-for="k in pickable" :key="k.id" :class="{ on: newKind === k.id }" :style="{ '--c': k.color }" :title="k.label" @click="newKind = k.id"><Icon :name="k.icon" :size="13" /></button>
           </div>
@@ -282,28 +418,37 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
           </div>
           <button class="btn pri" @click="addRow"><Icon name="check" :size="13" />Добавить</button>
         </div>
+        </Teleport>
       </div>
       <div ref="copyEl" class="pop">
-        <button class="ib" :class="{ on: copyOpen }" :title="mode === 'week' ? 'Как на прошлой неделе' : 'Как вчера'" @click="copyOpen = !copyOpen"><Icon name="copy" :size="14" /></button>
-        <div v-if="copyOpen" class="pd menu">
+        <button class="ib" :class="{ on: copyOpen }" :title="cols.length === 1 ? 'Как вчера' : 'Как в прошлый период'" @click="copyOpen = !copyOpen"><Icon name="copy" :size="14" /></button>
+        <Teleport to="body">
+        <div v-if="copyOpen" ref="copyPd" class="pd menu" :style="copyStyle">
           <button @click="copyPrev(false)"><Icon name="list" :size="13" />Только строки</button>
           <button @click="copyPrev(true)"><Icon name="clock" :size="13" />Строки и часы</button>
         </div>
+        </Teleport>
       </div>
       <button class="ib" title="Обновить" @click="load"><Icon name="refresh" :size="14" /></button>
     </div>
 
     <div class="wrap">
-      <table class="sheet" :class="{ one: mode === 'day' }">
+      <table class="sheet" :style="{ width: `${tableW}px` }">
+        <colgroup>
+          <col :style="{ width: `${colW.rl}px` }" />
+          <col v-for="d in cols" :key="d" :style="{ width: `${colW.dc}px` }" />
+          <col v-if="cols.length > 1" :style="{ width: `${colW.tc}px` }" />
+        </colgroup>
         <thead>
           <tr>
-            <th class="rl">Задача</th>
+            <th class="rl">Задача<span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'rl')"></span></th>
             <th v-for="d in cols" :key="d" class="dc" :class="{ off: isOff(d), today: d === today() }">
               <button class="dh" title="Открыть день" @click="emit('go', 'day', d)">
-                <span>{{ fmt(d, { weekday: 'short' }) }}</span><b>{{ fmt(d, { day: 'numeric' }) }}</b>
+                <span class="dw">{{ fmt(d, { weekday: 'short' }) }}</span><b>{{ fmt(d, { day: 'numeric' }) }}</b>
               </button>
+              <span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'dc')"></span>
             </th>
-            <th v-if="mode === 'week'" class="tc">Итого</th>
+            <th v-if="cols.length > 1" class="tc">Итого<span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'tc')"></span></th>
           </tr>
         </thead>
         <tbody>
@@ -328,7 +473,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
               />
               <span v-else class="cv" :class="{ zero: !r.cells.get(d)?.ms }">{{ formatHours(r.cells.get(d)?.ms ?? 0) }}</span>
             </td>
-            <td v-if="mode === 'week'" class="tc">{{ formatHours(r.total) }}</td>
+            <td v-if="cols.length > 1" class="tc">{{ formatHours(r.total) }}</td>
           </tr>
           <tr v-if="!rows.length">
             <td :colspan="cols.length + 2" class="empty">Пусто — добавьте строку</td>
@@ -338,12 +483,12 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
           <tr class="sum">
             <td class="rl">Итого</td>
             <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(dayTotal(d)) }}</td>
-            <td v-if="mode === 'week'" class="tc">{{ formatHours(grand) }}</td>
+            <td v-if="cols.length > 1" class="tc">{{ formatHours(grand) }}</td>
           </tr>
-          <tr class="qa">
+          <tr v-if="!widget" class="qa">
             <td class="rl">QA включено</td>
             <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d) }">{{ formatHours(pcOn(d)) }}</td>
-            <td v-if="mode === 'week'" class="tc">{{ formatHours(cols.reduce((s, d) => s + pcOn(d), 0)) }}</td>
+            <td v-if="cols.length > 1" class="tc">{{ formatHours(cols.reduce((s, d) => s + pcOn(d), 0)) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -557,7 +702,8 @@ thead th {
   top: 0;
   z-index: 3;
   background: var(--bg, #0f1218);
-  padding: 8px 0 6px;
+  padding: 5px 0;
+  white-space: nowrap;
   color: var(--muted);
   font-weight: 500;
   font-size: 11.5px;
@@ -581,17 +727,28 @@ thead .rl {
   width: 76px;
   text-align: right;
 }
+/* one line: "пн 13"; a narrow column keeps only the date (never a second line) */
 .dh {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
+  container-type: inline-size;
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
   padding: 2px 10px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: inherit;
   line-height: 1.15;
+}
+@container (max-width: 52px) {
+  .dw {
+    display: none;
+  }
 }
 .dh:hover {
   background: rgba(255, 255, 255, 0.05);
@@ -730,5 +887,107 @@ tfoot .cell {
 .empty {
   padding: 18px 4px;
   color: var(--muted);
+}
+/* the dashboard's: tighter */
+.sh.widget .bar {
+  padding: 6px 8px;
+  gap: 4px 6px;
+}
+.sh.widget .wrap {
+  padding: 0 8px 8px;
+}
+.sh.widget .sheet,
+.sh.widget .sheet.one {
+  min-width: 0;
+  max-width: none;
+  font-size: 12px;
+}
+.sh.widget .rl {
+  min-width: 140px;
+}
+.sh.widget .rlab,
+.sh.widget .cell {
+  height: 30px;
+}
+.sh.widget .pl {
+  min-width: 80px;
+  font-size: 12px;
+}
+/* the period label opens the calendar */
+button.pl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+}
+button.pl:hover,
+button.pl.on {
+  background: rgba(255, 255, 255, 0.07);
+}
+button.pl :deep(svg) {
+  color: var(--muted);
+}
+/* fixed columns, each edge drags */
+.sheet {
+  table-layout: fixed;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+th {
+  position: sticky;
+}
+.crz {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  right: -3px;
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+  border-radius: 3px;
+}
+.crz:hover {
+  background: rgba(139, 124, 255, 0.55);
+}
+.rt {
+  min-width: 0;
+}
+/* the dashboard's bar: one line */
+.sh.widget .bar {
+  flex-wrap: nowrap;
+  height: 34px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+.sh.widget .seg button {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11.5px;
+}
+.sh.widget .ib {
+  width: 24px;
+  height: 24px;
+}
+.sh.widget .btn {
+  height: 24px;
+  padding: 0 7px;
+}
+.sh.widget .bl,
+.sh.widget :deep(.fl) {
+  display: none;
+}
+.sh.widget :deep(.fb) {
+  height: 24px;
+  padding: 0 6px;
+}
+.sh.widget button.pl {
+  height: 24px;
+  white-space: nowrap;
 }
 </style>

@@ -882,7 +882,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
               <Icon :name="entryIcon(e)" :size="11" :stroke="2.4" class="sic" />
               <template v-if="e.outlook"><b>{{ e.label }}</b></template>
               <template v-else-if="e.task"><b>{{ e.task.key }}</b> {{ labelWithoutKey(e.label, e.task.key) }}</template>
-              <template v-else><b>{{ kindLabel(e.kind) }}</b>{{ e.label && e.label !== kindLabel(e.kind) ? ` · ${e.label}` : '' }}</template>
+              <template v-else>{{ e.label }}</template>
             </span>
             <span
               v-if="crossLinks.get(e.id)"

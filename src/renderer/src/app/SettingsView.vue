@@ -87,6 +87,12 @@ const UI_PILL: Array<{ k: keyof UiPrefs['pill']; label: string; hint?: string }>
   { k: 'stats', label: 'Итоги по видам и задачам', hint: 'Третья строка' },
   { k: 'plan', label: 'Плашки из плана дня', hint: 'Запланированные блоки' },
 ]
+const UI_DOCK: Array<{ k: keyof UiPrefs['dock']; label: string }> = [
+  { k: 'orb', label: 'Шар (быстрая заметка)' },
+  { k: 'time', label: 'Время за день' },
+  { k: 'next', label: 'До встречи Outlook' },
+  { k: 'wave', label: 'Волна активности' },
+]
 const UI_ISLAND: Array<{ k: keyof UiPrefs['island']; label: string }> = [
   { k: 'date', label: 'Дата' },
   { k: 'wave', label: 'Волна активности' },
@@ -121,12 +127,14 @@ async function uiPreset(p: 'full' | 'minimal'): Promise<void> {
       ? { ...DEFAULT_UI, main: { ...DEFAULT_UI.main, allStats: true }, links: { ...ui.links }, timeline: { ...ui.timeline } }
       : {
           pill: { app: true, date: false, combo: false, wave: false, chips: true, stats: false, dayBar: true, plan: false },
+          dock: { orb: true, time: true, next: true, wave: false },
           island: { date: false, wave: false, apps: true, totals: true, plan: false },
           main: { allStats: false, plan: true, ai: false },
           links: { ...ui.links },
           timeline: { ...ui.timeline },
         }
   Object.assign(ui.pill, next.pill)
+  if (next.dock) Object.assign(ui.dock, next.dock)
   Object.assign(ui.island, next.island)
   Object.assign(ui.main, next.main)
   Object.assign(ui.links, next.links)
@@ -400,6 +408,10 @@ function toggleDay(id: number): void {
               <b>{{ f.pillOpacity }}%</b>
             </span>
           </label>
+        </div>
+        <div class="uigroup">
+          <h4>У края экрана</h4>
+          <label v-for="o in UI_DOCK" :key="o.k" class="switch"><input v-model="ui.dock[o.k]" type="checkbox" @change="applyUi" /><span>{{ o.label }}</span></label>
         </div>
         <div class="uigroup">
           <h4>Остров</h4>

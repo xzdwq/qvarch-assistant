@@ -4,6 +4,7 @@ import { isLinkStyle } from './linkpath'
 /** Everything is shown by default; the user hides what they do not need (nothing is lost — only hidden). */
 export const DEFAULT_UI: UiPrefs = {
   pill: { app: true, date: true, combo: true, wave: true, chips: true, stats: true, dayBar: true, plan: false },
+  dock: { orb: true, time: true, next: true, wave: false },
   island: { date: true, wave: true, apps: true, totals: true, plan: false },
   main: { allStats: false, plan: true, ai: true },
   links: { style: 'curve' },
@@ -13,6 +14,7 @@ export const DEFAULT_UI: UiPrefs = {
 export function mergeUi(base: UiPrefs, patch?: UiPrefsPatch): UiPrefs {
   return {
     pill: { ...base.pill, ...patch?.pill },
+    dock: { ...DEFAULT_UI.dock, ...base.dock, ...patch?.dock },
     island: { ...base.island, ...patch?.island },
     main: { ...base.main, ...patch?.main },
     links: { style: isLinkStyle(patch?.links?.style) ? patch.links.style : base.links.style },

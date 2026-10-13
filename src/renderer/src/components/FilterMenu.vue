@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from './Icon.vue'
+import { placeFloat, useAnchor } from '../lib/floating'
 
 /** A filter button: a list of options with checkboxes (a search when it is long); the button shows how many are on. */
 export interface FilterOption {
@@ -16,6 +17,11 @@ const open = ref(false)
 const q = ref('')
 const root = ref<HTMLElement>()
 const search = ref<HTMLInputElement>()
+const dd = ref<HTMLElement>()
+const btn = ref<HTMLElement>()
+/** Teleported to <body> and fixed under the button: a widget's / card's overflow never clips it. */
+const fstyle = ref<Record<string, string>>({})
+useAnchor(open, btn, () => btn.value && (fstyle.value = placeFloat(btn.value, 260, true, 60).style))
 const shown = computed(() => {
   const s = q.value.trim().toLowerCase()
   return s ? props.options.filter((o) => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(s)) : props.options
@@ -32,7 +38,7 @@ async function flip(): Promise<void> {
   }
 }
 function onDown(e: MouseEvent): void {
-  if (open.value && !root.value?.contains(e.target as Node)) open.value = false
+  if (open.value && !root.value?.contains(e.target as Node) && !dd.value?.contains(e.target as Node)) open.value = false
 }
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') open.value = false
@@ -49,13 +55,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="fm">
-    <button class="fb" :class="{ on: model.length, open }" :title="title ?? label" @click="flip">
+    <button ref="btn" class="fb" :class="{ on: model.length, open }" :title="title ?? label" @click="flip">
       <Icon :name="icon" :size="13" />
       <span class="fl">{{ label }}</span>
       <b v-if="model.length" class="cnt">{{ model.length }}</b>
       <Icon name="chevronDown" :size="12" class="cv" />
     </button>
-    <div v-if="open" class="fd">
+    <Teleport to="body">
+    <div v-if="open" ref="dd" class="fd" :style="fstyle">
       <input v-if="options.length > 8" ref="search" v-model="q" class="fs" placeholder="Поиск" />
       <div class="fo">
         <label v-for="o in shown" :key="o.id" class="opt">
@@ -68,6 +75,7 @@ onBeforeUnmount(() => {
       </div>
       <button v-if="model.length" class="clr" @click="model = []"><Icon name="x" :size="12" />Сбросить</button>
     </div>
+    </Teleport>
   </div>
 </template>
 
@@ -110,10 +118,8 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 .fd {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 40;
+  position: fixed;
+  z-index: 1000;
   width: 260px;
   padding: 6px;
   border-radius: 10px;

@@ -1,6 +1,7 @@
 import { reactive, ref, shallowRef } from 'vue'
 import type { BranchCommitInfo, BranchDiffStat, BranchRef, ConflictSource, MainStatus, ProjectProfile, ReleasePlan, StaleBranchHint } from '@shared/release'
 import { makeColors } from './releaseRail'
+import { onNewDay } from './today'
 
 /**
  * The "Релиз" section's state — kept here, outside the component, so that leaving the section and coming
@@ -50,6 +51,12 @@ export const rs = reactive({
   /** The last error was a cherry-pick conflict — "Открыть в VS Code" is offered. */
   conflict: false,
   busy: { refresh: false, pull: false, plan: false, create: false, start: false, publish: false },
+})
+onNewDay((prev, next) => {
+  if (rs.releaseDate === prev) {
+    rs.releaseDate = next
+    requestDateCheck()
+  }
 })
 /** Bumped on every change of the chronology — the rail is redrawn. */
 export const planTick = ref(0)
