@@ -2,8 +2,8 @@ import { powerMonitor } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { uptime } from 'node:os'
 import { classifyApp, isCallApp, pushSample } from '../shared/apps'
-import { syncCallEntry } from '../shared/calls'
-import { linkCallsToMeetings, meetingsFollowCalls } from '../shared/outlook'
+import { callTitle, syncCallEntry } from '../shared/calls'
+import { linkCallsToMeetings } from '../shared/outlook'
 import { dayKey, fillFromActivity, splitByDay } from '../shared/timeline'
 import type { CallSegment, LiveStatus, Ms, Span } from '../shared/types'
 import type { ProbeSample } from './probe'
@@ -177,7 +177,11 @@ export class Tracker {
     // the microphone held by a call app, or the Teams status "in a call" (it also covers a muted mic)
     const micApp = s.mic.map(isCallApp).find(Boolean)
     const callApp = micApp ?? (this.presenceCall ? 'Teams' : undefined)
-    if (callApp) this.addCall(now, callApp, sampleIntervalMs, micApp ? 'mic' : 'teams')
+    // who the call is with: the call window's title (only with title capture on)
+    const cw = captureTitles ? (s.cw ?? []) : []
+    const title = callApp ? callTitle(callApp, cw, this.preCallWindows) : undefined
+    if (!callApp) this.preCallWindows = new Set(cw.map((w) => w.split('\t')[1] ?? ''))
+    if (callApp) this.addCall(now, callApp, sampleIntervalMs, micApp ? 'mic' : 'teams', title)
 
     const idleSec = powerMonitor.getSystemIdleTime()
     let app: { name: string; kind: ReturnType<typeof classifyApp>['kind'] }
@@ -214,22 +218,23 @@ export class Tracker {
 
   /** The Teams status (Microsoft Graph presence) says the user is in a call. */
   private presenceCall = false
+  /** Call-app window titles seen while not in a call — the call's own window is a new one. */
+  private preCallWindows = new Set<string>()
   setPresenceCall(on: boolean): void {
     this.presenceCall = on
   }
 
-  private addCall(now: Ms, app: string, intervalMs: number, source: CallSegment['source'] = 'mic'): void {
+  private addCall(now: Ms, app: string, intervalMs: number, source: CallSegment['source'] = 'mic', title?: string): void {
     const day = dayKey(now)
     const d = this.store.day(day)
     const last = [...d.calls].reverse().find((c: CallSegment) => c.app === app)
     let call = last
     if (last && now - last.end <= Math.max(CALL_GAP_MS, intervalMs * 2)) last.end = now
     else d.calls.push((call = { start: now - Math.min(intervalMs, 30_000), end: now, app, source }))
+    if (call && title && !call.title) call.title = title
     // a call becomes a block on the timeline (below if the main line is busy) and is linked to its meeting
     if (call) syncCallEntry(d, call, this.store.cfg.kinds, randomUUID)
     if (this.store.cfg.outlook.linkCalls) linkCallsToMeetings(d, this.store.cfg.kinds, randomUUID, now)
-    // the meeting takes the call's real time (a setting); then the call keeps extending the meeting
-    if (this.store.cfg.outlook.linkCalls && this.store.cfg.outlook.actualTime && call?.entryId) meetingsFollowCalls(d, call.entryId)
     this.store.markDirty(day)
   }
 }

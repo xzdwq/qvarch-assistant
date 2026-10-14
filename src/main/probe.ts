@@ -12,6 +12,8 @@ export interface ProbeSample {
   mic: string[]
   /** Present only when title capture is on. */
   title?: string
+  /** Visible windows of call apps, "process\ttitle" — only when title capture is on. */
+  cw?: string[]
 }
 
 function scriptPath(): string {
@@ -92,6 +94,7 @@ export class Probe {
         }
         const s = raw
         s.mic = Array.isArray(s.mic) ? s.mic : s.mic ? [String(s.mic)] : []
+        if (s.cw !== undefined) s.cw = Array.isArray(s.cw) ? s.cw.map(String) : s.cw ? [String(s.cw)] : []
         this.restartDelay = 2000
         this.onSample(s)
       } catch {

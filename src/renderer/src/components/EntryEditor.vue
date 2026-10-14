@@ -18,7 +18,8 @@ import PopChip from './PopChip.vue'
 import { beforeLabel, REMIND_BEFORE, REPEAT_RULES, type Remind, type RepeatRule } from '@shared/repeat'
 import { askSeries } from '../lib/seriesAsk'
 
-export type Draft = Omit<Entry, 'id'> & { id?: string; followsNow?: boolean }
+/** followsNow — the end is "now" (N minutes back); startsNow — the start is "now" (N minutes ahead). */
+export type Draft = Omit<Entry, 'id'> & { id?: string; followsNow?: boolean; startsNow?: boolean }
 /** How a new block without a picked range is placed: from now / the cursor, forward or back, N minutes. */
 export interface AddPrefs {
   from: 'now' | 'cursor'
@@ -54,6 +55,7 @@ const emit = defineEmits<{
 const start = ref(0)
 const end = ref(0)
 const followsNow = ref(false)
+const startsNow = ref(false)
 const label = ref('')
 const kind = ref<EntryKind>('task')
 /** The Jira task this time goes to. */
@@ -143,11 +145,12 @@ watch(
 )
 // times follow the entry/marker live (marker drags on the timeline)
 watch(
-  () => [props.entry.start, props.entry.end, props.entry.followsNow] as const,
-  ([s, e, f]) => {
+  () => [props.entry.start, props.entry.end, props.entry.followsNow, props.entry.startsNow] as const,
+  ([s, e, f, n]) => {
     start.value = s
     end.value = e
     followsNow.value = !!f
+    startsNow.value = !!n
   },
   { immediate: true },
 )
@@ -160,6 +163,7 @@ function pushRange(): void {
   emit('range', { start: start.value, end: effectiveEnd.value, followsNow: followsNow.value })
 }
 function setStart(t: Ms): void {
+  startsNow.value = false
   start.value = Math.min(t, effectiveEnd.value - MINUTE)
   pushRange()
 }
@@ -209,7 +213,7 @@ async function save(dict?: Dictation): Promise<void> {
         return
       }
     }
-    const { followsNow: _f, ...base } = props.entry
+    const { followsNow: _f, startsNow: _n, ...base } = props.entry
     // a new block linked to several tasks → one parallel block per task
     const targets: Array<TaskRef | undefined> = tasks.value.length ? tasks.value.map(plainTask) : [undefined]
     let saved: Entry | undefined
@@ -294,7 +298,7 @@ watch(
       <span class="dur">{{ formatDuration(effectiveEnd - start) }}</span>
     </div>
     <div v-else class="when">
-      <TimeField :model-value="start" :max="effectiveEnd - 60000" @update:model-value="setStart" />
+      <TimeField :model-value="start" :live="startsNow" :max="effectiveEnd - 60000" @update:model-value="setStart" />
       <span class="dash">–</span>
       <TimeField :model-value="effectiveEnd" :live="followsNow" :min="start + 60000" :max="dayEnd(day)" @update:model-value="setEnd" />
       <span class="dur">{{ formatDuration(effectiveEnd - start) }}</span>

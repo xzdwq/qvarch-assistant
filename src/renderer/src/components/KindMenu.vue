@@ -60,7 +60,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .kmenu {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   min-width: 190px;
   padding: 5px;
   display: flex;

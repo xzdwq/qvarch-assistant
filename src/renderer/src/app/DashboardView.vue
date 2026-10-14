@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, mergeIntervals, MINUTE, scheduleRanges, trackedMs } from '@shared/timeline'
 import { productiveMs } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
-import type { LinkEnd, PublicSettings } from '@shared/types'
+import type { LinkEnd, PublicSettings, Selection } from '@shared/types'
+import { useSelection } from '../lib/selection'
 import { addWidget, arrange, COLS, OLD_COLS_SCALE, resizeWidget, DEFAULT_DASHBOARD, WIDGETS, widgetInfo, type Widget, type WidgetType } from '@shared/dashboard'
 import Icon from '../components/Icon.vue'
 import Timeline from '../components/Timeline.vue'
@@ -229,10 +230,25 @@ const notes = computed(() => visibleNotes(data.value.notes))
 // creating a block: from now, ± minutes (as on the timeline page)
 const createAdd = ref<AddPrefs>({ from: 'now', back: false, min: 30 })
 const createKey = ref(0)
+// a period selected on the timeline (shared with the day page) — "+" / "Создать" take it
+const sel = useSelection()
+const marker = computed<Selection | null>(() => (sel.selection.value?.day === today.value ? sel.selection.value : null))
+function onSelection(s: Selection | null, commit: boolean): void {
+  if (commit) sel.commit(s)
+  else sel.preview(s)
+}
+function onEditorRange(r: { start: number; end: number; followsNow: boolean }): void {
+  if (marker.value) sel.commit({ day: today.value, start: r.start, end: r.followsNow ? undefined : r.end })
+}
+function onCreated(): void {
+  if (marker.value) sel.clear()
+}
 const createDraft = computed<Draft>(() => {
+  const m = marker.value
+  if (m) return { start: m.start, end: m.end ?? now.value, kind: 'task', label: '', source: 'manual', followsNow: !m.end }
   const b = Math.floor(now.value / MINUTE) * MINUTE
   const span = createAdd.value.min * MINUTE
-  return { start: createAdd.value.back ? b - span : b, end: createAdd.value.back ? b : b + span, kind: 'task', label: '', source: 'manual', followsNow: createAdd.value.back }
+  return { start: createAdd.value.back ? b - span : b, end: createAdd.value.back ? b : b + span, kind: 'task', label: '', source: 'manual', followsNow: createAdd.value.back, startsNow: !createAdd.value.back }
 })
 const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.idle ? 'Простой' : live.value.app ? `Работаю · ${live.value.app}` : 'Работаю'))
 
@@ -261,10 +277,11 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             :entries="data.entries"
             :notes="data.notes"
             :links="data.links ?? []"
-            :add="createAdd"
+            :add="marker ? undefined : createAdd"
             textarea
             @update:add="(a) => (createAdd = a)"
-            @saved="quick = undefined"
+            @range="onEditorRange"
+            @saved="onCreated(), (quick = undefined)"
           />
           <NoteEditor
             v-else
@@ -316,10 +333,11 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             :schedule="schedule"
             :bounds="bounds"
             :initial="initial"
-            :selection="null"
+            :selection="marker"
             :link-style="settings.ui.links.style"
             :follow="settings.ui.timeline"
             @select="(id) => emit('go', 'day', today, id)"
+            @selection="onSelection"
             @follow="(on) => void window_follow(on)"
             @move="onMove"
             @resize="onResize"
@@ -365,10 +383,11 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
               :entries="data.entries"
               :notes="data.notes"
               :links="data.links ?? []"
-              :add="createAdd"
+              :add="marker ? undefined : createAdd"
               textarea
               @update:add="(a) => (createAdd = a)"
-              @saved="createKey++"
+              @range="onEditorRange"
+              @saved="onCreated(), createKey++"
             />
           </div>
         </div>

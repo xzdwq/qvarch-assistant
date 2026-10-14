@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adoptTime, applyMeetings, linkCallsToMeetings, meetingsFollowCalls, pairKey, type OutlookEvent } from '../src/shared/outlook'
+import { adoptTime, applyMeetings, linkCallsToMeetings, pairKey, type OutlookEvent } from '../src/shared/outlook'
 import { DEFAULT_KINDS } from '../src/shared/kinds'
 import type { DayData, Entry } from '../src/shared/types'
 
@@ -113,14 +113,5 @@ describe('the real time of a meeting from its call', () => {
     expect(adoptTime(d, 'c', 'm')).toBe('m')
     expect(d.entries.find((e) => e.id === 'm')).toMatchObject({ start: T(10), end: T(11) })
     expect(d.entries.some((e) => e.id === 'c')).toBe(false)
-  })
-  it('automatic: only a call linked to exactly one meeting', () => {
-    const d = day()
-    expect(meetingsFollowCalls(d, 'c')).toBe(true)
-    expect(d.entries.find((e) => e.id === 'm')).toMatchObject({ start: T(10, 5) })
-    const two = day()
-    two.entries.push({ id: 'm2', start: T(10), end: T(11), kind: 'meeting', label: 'B', source: 'outlook', outlook: { id: 'ev2', sig: 'y' } })
-    two.links!.push({ id: 'l3', a: { type: 'entry', id: 'c' }, b: { type: 'entry', id: 'm2' }, at: 0 })
-    expect(meetingsFollowCalls(two, 'c')).toBe(false)
   })
 })

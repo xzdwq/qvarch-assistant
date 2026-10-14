@@ -1,10 +1,8 @@
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, session, shell, Tray } from 'electron'
-import { ReleaseSession } from './release/session'
-import { deleteProject, importVscodeProjects, readProjects, releaseState, saveProject, setReleaseDataDir } from './release/config'
-import { setReleaseSink } from './release/panel'
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
+import { deleteProject, importVscodeProjects, readProjects, saveProject, setReleaseDataDir } from './release/config'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { IPC, type AppCommand } from '../shared/api'
 import { clipEntries, dayEnd, dayKey, dayStart, shiftDay, firstFreeLane, mergeEntries, pinLanes, placeEntry, putEntry, scheduleRanges, unionMs } from '../shared/timeline'
@@ -500,19 +498,28 @@ function registerIpc(): void {
 
   // ---------- release builder (the former VS Code extension) ----------
   setReleaseDataDir(store.root)
-  setReleaseSink((msg) => {
-    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(IPC.releaseMsg, msg)
-  })
-  let release: ReleaseSession | undefined
+  // the git work runs in its own process below normal priority — the app (and the mouse) stay smooth
+  let releaseWorker: UtilityProcess | undefined
+  const worker = (): UtilityProcess => {
+    if (releaseWorker) return releaseWorker
+    const w = utilityProcess.fork(join(__dirname, 'releaseWorker.js'), [], { serviceName: 'Qvarch Release' })
+    w.on('message', (m: { type: string; msg?: unknown }) => {
+      if (m?.type === 'msg' && mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(IPC.releaseMsg, m.msg)
+    })
+    w.on('exit', () => {
+      if (releaseWorker === w) releaseWorker = undefined
+    })
+    w.postMessage({ type: 'init', dataDir: store.root })
+    releaseWorker = w
+    return w
+  }
+  app.on('before-quit', () => releaseWorker?.kill())
   ipcMain.handle(IPC.releaseOpen, (_e, id: string, resume?: boolean) => {
-    const project = readProjects().find((p) => p.id === id)
-    if (!project) throw new Error('Проект не найден')
-    const session = new ReleaseSession({ workspaceState: releaseState })
-    release = session
+    if (!readProjects().some((p) => p.id === id)) throw new Error('Проект не найден')
     // the section gets its data by messages as git answers — the call itself returns at once
-    void (resume ? session.resume(project, { projectId: project.id, projectName: project.name }) : session.start(project, { projectId: project.id, projectName: project.name }))
+    worker().postMessage({ type: 'open', id, resume })
   })
-  ipcMain.handle(IPC.releaseCmd, (_e, msg: { command: string } & Record<string, unknown>) => release?.dispatch(msg))
+  ipcMain.handle(IPC.releaseCmd, (_e, msg: { command: string } & Record<string, unknown>) => worker().postMessage({ type: 'cmd', msg }))
   ipcMain.handle(IPC.releaseProjects, () => readProjects())
   ipcMain.handle(IPC.releaseSaveProject, (_e, p: Record<string, unknown>) => saveProject(p))
   ipcMain.handle(IPC.releaseDeleteProject, (_e, id: string) => deleteProject(id))
@@ -525,6 +532,35 @@ function registerIpc(): void {
     // "code" is a .cmd on Windows — through the shell; the path is quoted
     const child = spawn('code', [`"${path.replace(/"/g, '')}"`], { shell: true, detached: true, stdio: 'ignore' })
     child.unref()
+  })
+
+  // ---------- PDF signing: the drawings live in data/signatures (PNG) ----------
+  const sigDir = join(store.root, 'signatures')
+  ipcMain.handle(IPC.sigList, () => {
+    if (!existsSync(sigDir)) return []
+    return readdirSync(sigDir)
+      .filter((f) => f.endsWith('.png'))
+      .map((f) => ({ id: f.slice(0, -4), url: `data:image/png;base64,${readFileSync(join(sigDir, f)).toString('base64')}`, at: statSync(join(sigDir, f)).mtimeMs }))
+      .sort((a, b) => b.at - a.at)
+      .map(({ id, url }) => ({ id, url }))
+  })
+  ipcMain.handle(IPC.sigSave, (_e, url: string) => {
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(url)
+    if (!m) throw new Error('Не PNG')
+    mkdirSync(sigDir, { recursive: true })
+    const id = randomUUID()
+    writeFileSync(join(sigDir, `${id}.png`), Buffer.from(m[1], 'base64'))
+    return id
+  })
+  ipcMain.handle(IPC.sigDelete, (_e, id: string) => {
+    if (/^[\w-]+$/.test(id)) rmSync(join(sigDir, `${id}.png`), { force: true })
+  })
+  ipcMain.handle(IPC.pdfSave, async (_e, bytes: Uint8Array, name: string) => {
+    const opts = { defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] }
+    const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return undefined
+    writeFileSync(r.filePath, Buffer.from(bytes))
+    return r.filePath
   })
 
   ipcMain.handle(IPC.rangeDays, (_e, from: string, to: string) => {

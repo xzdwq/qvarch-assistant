@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
 }
 .fd {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   width: 260px;
   padding: 6px;
   border-radius: 10px;

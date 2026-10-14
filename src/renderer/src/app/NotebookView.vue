@@ -1357,7 +1357,7 @@ mark {
 /* the right-click menu of the notebook's tree — teleported to <body> */
 .nctx {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   min-width: 210px;
   padding: 5px;
   border-radius: 10px;

@@ -53,7 +53,7 @@ export function placeFloat(root: HTMLElement, width: number, alignLeft = false, 
       right: 'auto',
       width: `${w}px`,
       ...(up ? { bottom: `${window.innerHeight - btn.top + 4}px`, top: 'auto' } : { top: `${btn.bottom + 4}px`, bottom: 'auto' }),
-      zIndex: '1000',
+      zIndex: '5000', // popovers are above every modal (1500–2000)
     },
   }
 }

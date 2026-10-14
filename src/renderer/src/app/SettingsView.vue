@@ -500,7 +500,6 @@ function toggleDay(id: number): void {
       <div class="olopts">
         <label class="switch"><input v-model="olForm.meetings" type="checkbox" @change="applyOutlook" /><span>Встречи из календаря на таймлайн</span></label>
         <label class="switch"><input v-model="olForm.linkCalls" type="checkbox" @change="applyOutlook" /><span>Связывать созвоны со встречами</span></label>
-        <label class="switch"><input v-model="olForm.actualTime" type="checkbox" :disabled="!olForm.linkCalls" @change="applyOutlook" /><span>Встреча берёт фактическое время созвона</span></label>
         <label v-if="olForm.source === 'graph'" class="switch" title="Статус «В звонке» в Teams"><input v-model="olForm.presence" type="checkbox" @change="applyOutlook" /><span>Статус Teams как признак созвона</span></label>
       </div>
       <div class="jrow">

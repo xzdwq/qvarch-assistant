@@ -211,7 +211,8 @@ const addBase = computed(() => {
   return Math.floor(base / MINUTE) * MINUTE
 })
 /** "Back from now" follows the time (the last N minutes, up to now). */
-const addFollowsNow = computed(() => add.value.back && isToday.value && !(add.value.from === 'cursor' && pinAt.value !== undefined))
+const addFromNow = computed(() => isToday.value && !(add.value.from === 'cursor' && pinAt.value !== undefined))
+const addFollowsNow = computed(() => add.value.back && addFromNow.value)
 
 const editing = computed<Draft | undefined>(() => {
   const e = data.value.entries.find((x) => x.id === selectedId.value)
@@ -224,6 +225,7 @@ const editing = computed<Draft | undefined>(() => {
       start: add.value.back ? Math.max(dayStart(day.value), b - span) : b,
       end: add.value.back ? b : Math.min(dayEnd(day.value), b + span),
       followsNow: addFollowsNow.value,
+      startsNow: !add.value.back && addFromNow.value,
       kind: 'task',
       label: '',
       source: 'manual',

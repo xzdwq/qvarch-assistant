@@ -352,7 +352,7 @@ async function done(): Promise<void> {
 }
 .ghost {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   pointer-events: none;
   padding: 4px 10px;
   border-radius: 7px;

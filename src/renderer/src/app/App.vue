@@ -15,11 +15,12 @@ import DashboardView from './DashboardView.vue'
 import ReportsView from './ReportsView.vue'
 import SheetView from './SheetView.vue'
 import ReleaseView from './ReleaseView.vue'
+import PdfSignView from './PdfSignView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import { titleActions } from '../lib/titlebar'
 import { onNewDay, todayKey } from '../lib/today'
 
-type View = 'dashboard' | 'day' | 'calendar' | 'sheet' | 'reports' | 'log' | 'tasks' | 'notebook' | 'release' | 'settings'
+type View = 'dashboard' | 'day' | 'calendar' | 'sheet' | 'reports' | 'log' | 'tasks' | 'notebook' | 'release' | 'pdf' | 'settings'
 const view = ref<View>('day')
 const day = ref(todayKey.value)
 onNewDay((prev, next) => {
@@ -78,6 +79,7 @@ const VIEWS: Array<{ id: View; icon: string; label: string }> = [
   { id: 'tasks', icon: 'checkSquare', label: 'Задачи' },
   { id: 'notebook', icon: 'notebook', label: 'Блокнот' },
   { id: 'release', icon: 'branch', label: 'Релиз' },
+  { id: 'pdf', icon: 'signature', label: 'Подпись PDF' },
 ]
 
 const title = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
@@ -221,6 +223,7 @@ applyZoom(appZoom.value)
         <ReportsView v-else-if="view === 'reports'" @go="go" />
         <SheetView v-else-if="view === 'sheet'" :settings="settings" @go="go" />
         <ReleaseView v-else-if="view === 'release'" />
+        <PdfSignView v-else-if="view === 'pdf'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
     </main>
@@ -403,7 +406,8 @@ main {
 main:has(> .nb),
 main:has(> .rep),
 main:has(> .sh),
-main:has(> .rel) {
+main:has(> .rel),
+main:has(> .ps) {
   overflow: hidden;
 }
 .azoom {

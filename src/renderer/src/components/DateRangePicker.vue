@@ -129,7 +129,7 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 <style scoped>
 .drp {
   position: fixed;
-  z-index: 3000;
+  z-index: 5000;
   width: 296px;
   padding: 12px 14px 14px;
   border-radius: 14px;

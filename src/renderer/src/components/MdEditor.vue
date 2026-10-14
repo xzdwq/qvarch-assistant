@@ -908,7 +908,7 @@ defineExpose({
 /* the right-click menu (teleported) */
 .mde-menu {
   position: fixed;
-  z-index: 2000;
+  z-index: 5000;
   min-width: 200px;
   padding: 5px;
   display: flex;

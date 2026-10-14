@@ -227,6 +227,23 @@ const rows = computed<Row[]>(() => {
 })
 const dayTotal = (d: string) => unionMs(entriesOf(dayOf(d)))
 const pcOn = (d: string) => dayOf(d)?.pcOnMs ?? 0
+/** Time per kind (tasks, meetings, calls…): per day and for the period — a kind's own overlaps counted once. */
+const kindRows = computed(() => {
+  const present = new Set(cols.value.flatMap((d) => entriesOf(dayOf(d)).map((e) => e.kind)))
+  return kinds.value
+    .filter((k) => present.has(k.id))
+    .map((k) => {
+      const per = new Map(cols.value.map((d) => [d, unionMs(entriesOf(dayOf(d)).filter((e) => e.kind === k.id))]))
+      return { kind: k.id, per, total: [...per.values()].reduce((a, b) => a + b, 0) }
+    })
+    .concat(
+      // a kind removed from the settings but still on old blocks
+      [...present].filter((id) => !kinds.value.some((k) => k.id === id)).map((id) => {
+        const per = new Map(cols.value.map((d) => [d, unionMs(entriesOf(dayOf(d)).filter((e) => e.kind === id))]))
+        return { kind: id, per, total: [...per.values()].reduce((a, b) => a + b, 0) }
+      }),
+    )
+})
 const grand = computed(() => cols.value.reduce((s, d) => s + dayTotal(d), 0))
 const isOff = (d: string) => !props.settings.schedule.workDays.includes(new Date(`${d}T12:00:00`).getDay())
 
@@ -484,6 +501,11 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
             <td class="rl">Итого</td>
             <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(dayTotal(d)) }}</td>
             <td v-if="cols.length > 1" class="tc">{{ formatHours(grand) }}</td>
+          </tr>
+          <tr v-for="(k, ki) in kindRows" :key="k.kind" class="kt" :class="{ first: ki === 0 }">
+            <td class="rl"><span class="kname"><i :style="{ background: kindColor(k.kind) }"></i>{{ kindLabel(k.kind) }}</span></td>
+            <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(k.per.get(d) ?? 0) }}</td>
+            <td v-if="cols.length > 1" class="tc">{{ formatHours(k.total) }}</td>
           </tr>
           <tr v-if="!widget" class="qa">
             <td class="rl">QA включено</td>
@@ -989,5 +1011,26 @@ th {
 .sh.widget button.pl {
   height: 24px;
   white-space: nowrap;
+}
+/* per kind, under the total */
+.kt td {
+  height: 26px;
+  color: #b7bdcc;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.kt.first td {
+  border-top: 1px dashed var(--border);
+}
+.kname {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.kname i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
 }
 </style>

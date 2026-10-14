@@ -16,7 +16,7 @@ const add = ref<AddPrefs>({ from: 'now', back: false, min: 30 })
 const draft = computed<Draft>(() => {
   const b = Math.floor(now.value / MINUTE) * MINUTE
   const span = add.value.min * MINUTE
-  return { start: add.value.back ? b - span : b, end: add.value.back ? b : b + span, kind: 'task', label: props.text, source: 'manual', followsNow: add.value.back }
+  return { start: add.value.back ? b - span : b, end: add.value.back ? b : b + span, kind: 'task', label: props.text, source: 'manual', followsNow: add.value.back, startsNow: !add.value.back }
 })
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close')

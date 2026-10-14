@@ -261,7 +261,11 @@ export class GitService {
     for (let i = 0; i < shas.length; i += PATCH_ID_CHUNK_SIZE) {
       chunks.push(shas.slice(i, i + PATCH_ID_CHUNK_SIZE));
     }
-    const chunkResults = await Promise.all(chunks.map((chunk) => this.computePatchIdsForCommitsChunk(chunk)));
+    // at most 3 chunks at a time (each is two git processes) — not dozens at once
+    const chunkResults: Array<Map<string, string>> = [];
+    for (let i = 0; i < chunks.length; i += 3) {
+      chunkResults.push(...(await Promise.all(chunks.slice(i, i + 3).map((chunk) => this.computePatchIdsForCommitsChunk(chunk)))));
+    }
     const bySha = new Map<string, string>();
     for (const chunkResult of chunkResults) {
       for (const [sha, patchId] of chunkResult) {

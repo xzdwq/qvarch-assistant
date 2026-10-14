@@ -46,6 +46,12 @@ export interface QaApi {
   releasePickFolder(): Promise<string | undefined>
   /** Opens the repository (or a file in it) in VS Code — conflicts are resolved there. */
   releaseOpenInCode(path: string): Promise<void>
+  /** PDF signing: the saved drawings (signatures, a handwritten date…) as PNG data URLs. */
+  sigList(): Promise<Array<{ id: string; url: string }>>
+  sigSave(url: string): Promise<string>
+  sigDelete(id: string): Promise<void>
+  /** Saves a signed PDF where the user picks (a save dialog); undefined when cancelled. */
+  pdfSave(bytes: Uint8Array, name: string): Promise<string | undefined>
   /** Reports / the week sheet: the blocks of every day with data in [from, to] and how long QA was on. */
   rangeDays(from: string, to: string): Promise<RangeDay[]>
   deleteEntry(day: string, id: string): Promise<void>
@@ -221,6 +227,10 @@ export const IPC = {
   mergeEntries: 'qa:mergeEntries',
   monthSummary: 'qa:monthSummary',
   rangeDays: 'qa:rangeDays',
+  sigList: 'qa:sigList',
+  sigSave: 'qa:sigSave',
+  sigDelete: 'qa:sigDelete',
+  pdfSave: 'qa:pdfSave',
   releaseOpen: 'qa:releaseOpen',
   releaseCmd: 'qa:releaseCmd',
   releaseMsg: 'qa:releaseMsg',

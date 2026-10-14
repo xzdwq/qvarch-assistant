@@ -19,6 +19,26 @@ public static class QaWin {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   public static string Title(IntPtr h) { var sb = new StringBuilder(512); GetWindowText(h, sb, 512); return sb.ToString(); }
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  static readonly System.Text.RegularExpressions.Regex CallApps = new System.Text.RegularExpressions.Regex("teams|zoom|telegram|slack|skype", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+  // visible windows of call apps as "process<TAB>title" — to tell who a call is with (only with -Titles 1)
+  public static string[] CallWindows() {
+    var list = new System.Collections.Generic.List<string>();
+    var names = new System.Collections.Generic.Dictionary<uint, string>();
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      var t = Title(h);
+      if (t.Length == 0) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      string n;
+      if (!names.TryGetValue(pid, out n)) { try { n = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { n = ""; } names[pid] = n; }
+      if (CallApps.IsMatch(n)) list.Add(n + "\t" + t);
+      return true;
+    }, IntPtr.Zero);
+    return list.ToArray();
+  }
 }
 "@
 
@@ -122,7 +142,7 @@ function Write-Sample {
     path  = $path
     mic   = Get-MicUsers
   }
-  if ($Titles -eq 1) { $obj.title = [QaWin]::Title($h) }
+  if ($Titles -eq 1) { $obj.title = [QaWin]::Title($h); $obj.cw = @([QaWin]::CallWindows()) }
   [Console]::Out.WriteLine(($obj | ConvertTo-Json -Compress -Depth 3))
   [Console]::Out.Flush()
 }

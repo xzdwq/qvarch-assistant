@@ -167,17 +167,3 @@ export function adoptTime(d: DayData, keepId: string, fromId: string): string | 
   return keep.id
 }
 
-/**
- * Automatic (a setting): a detected call of 2+ minutes linked to exactly one meeting makes the meeting take
- * the call's time — the call block goes, and the meeting then follows the call as it goes on.
- */
-export function meetingsFollowCalls(d: DayData, callEntryId: string): boolean {
-  const call = d.entries.find((e) => e.id === callEntryId)
-  if (!call || call.outlook || call.source !== 'detected' || call.end - call.start < 2 * 60_000) return false
-  const meetings = (d.links ?? [])
-    .map((l) => (l.a.type === 'entry' && l.a.id === call.id ? l.b : l.b.type === 'entry' && l.b.id === call.id ? l.a : undefined))
-    .map((end) => (end?.type === 'entry' && !end.day ? d.entries.find((e) => e.id === end.id && e.outlook) : undefined))
-    .filter((e): e is Entry => !!e)
-  if (meetings.length !== 1) return false
-  return !!adoptTime(d, meetings[0].id, call.id)
-}

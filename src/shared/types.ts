@@ -31,6 +31,8 @@ export interface CallSegment {
   source: 'mic' | 'teams'
   /** The timeline block created for this call (kept in sync while the call lasts; not re-created if deleted). */
   entryId?: string
+  /** The call window's title (who / which meeting) — only with title capture on. */
+  title?: string
 }
 
 /** Id of a kind of activity (built-in or user-defined in settings). */
@@ -260,7 +262,7 @@ export interface Settings {
    * Outlook / Teams over Microsoft Graph (the user's own app registration, public client — no secret).
    * syncMin — how often meetings are fetched; meetings → blocks; calls → linked to meetings; presence → a call signal.
    */
-  outlook: { source: 'local' | 'graph'; clientId?: string; tenantId?: string; syncMin: number; meetings: boolean; linkCalls: boolean; presence: boolean; actualTime?: boolean }
+  outlook: { source: 'local' | 'graph'; clientId?: string; tenantId?: string; syncMin: number; meetings: boolean; linkCalls: boolean; presence: boolean }
   /** AI analysis (OpenAI). The API key is stored encrypted, not here. */
   ai: { model: string; prompt: string; sendTitles: boolean }
   /** Voice notes: local speech-to-text (whisper) — on/off, right after recording, which model; micId — the microphone ('' — the system's default). */
