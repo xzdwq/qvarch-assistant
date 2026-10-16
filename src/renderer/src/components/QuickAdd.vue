@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { formatDuration, formatHM } from '@shared/timeline'
+import { dayStart, formatDuration, formatHM, MINUTE, shiftDay } from '@shared/timeline'
 import { parseQuick, type Quick } from '@shared/quickadd'
 import { pickableTasks, type TaskRef } from '@shared/jira'
 import type { Ms } from '@shared/types'
@@ -66,10 +66,92 @@ const summaryOf = (key: string) => allTasks.value.find((t) => t.key === key)?.su
 const q = computed(() => parseQuick(text.value, { day: props.day, weekStart: props.weekStart, kinds: kinds.value }))
 const task = computed<TaskRef | undefined>(() => attached.value ?? (q.value.task ? { key: q.value.task, summary: summaryOf(q.value.task) } : undefined))
 const kind = computed(() => q.value.kind ?? (task.value && !attached.value ? 'task' : kindSel.value))
-const range = computed(() => props.place(q.value))
+// ---------- the day and the time under the line: the wheel / the keys change them ----------
+/** Set by hand in the preview (they win over the text until the text names another time / day). */
+const dayOv = ref<string>()
+const startOv = ref<number>()
+const endOv = ref<number>()
+watch(
+  // a string: a new array every keystroke would reset the hand-set time while the title is typed
+  () => [q.value.day, q.value.start, q.value.end, q.value.dur].join('|'),
+  () => {
+    dayOv.value = undefined
+    startOv.value = undefined
+    endOv.value = undefined
+  },
+)
+const finalDay = computed(() => dayOv.value ?? q.value.day)
+const range = computed(() => {
+  const r = props.place(q.value)
+  const base = dayStart(finalDay.value)
+  const shift = base - dayStart(q.value.day)
+  let start = r.start + shift
+  let end = r.end + shift
+  if (startOv.value !== undefined) start = base + startOv.value * MINUTE
+  if (endOv.value !== undefined) end = base + endOv.value * MINUTE
+  if (end <= start) end = start + Math.max(5 * MINUTE, r.end - r.start)
+  return { start, end }
+})
+const handTime = computed(() => startOv.value !== undefined || endOv.value !== undefined)
+const minOf = (t: number) => Math.round((t - dayStart(finalDay.value)) / MINUTE)
+/** The wheel over a part: down — later, up — earlier (like the date fields). */
+const dirOf = (e: WheelEvent) => ((Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) > 0 ? 1 : -1)
+function wheelDay(e: WheelEvent): void {
+  e.preventDefault()
+  dayOv.value = shiftDay(finalDay.value, dirOf(e))
+}
+function keyDay(e: KeyboardEvent): void {
+  const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0
+  if (!d) return
+  e.preventDefault()
+  dayOv.value = shiftDay(finalDay.value, d)
+}
+/** One part (the start or the end) moves by `step` minutes; the other stays where it is. */
+function nudge(part: 'start' | 'end', step: number): void {
+  const s = minOf(range.value.start)
+  const en = minOf(range.value.end)
+  if (part === 'start') {
+    startOv.value = Math.max(0, Math.min(en - 5, s + step))
+    endOv.value = en
+  } else {
+    startOv.value = s
+    endOv.value = Math.max(s + 5, Math.min(24 * 60, en + step))
+  }
+}
+function wheelTime(part: 'start' | 'end', e: WheelEvent): void {
+  e.preventDefault()
+  nudge(part, dirOf(e) * (e.shiftKey ? 1 : 5))
+}
+function keyTime(part: 'start' | 'end', e: KeyboardEvent): void {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    nudge(part, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 5))
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    ;(e.target as HTMLInputElement).blur()
+  } else if (e.key === 'Escape') {
+    ;(e.target as HTMLInputElement).value = formatHM(part === 'start' ? range.value.start : range.value.end)
+    ;(e.target as HTMLInputElement).blur()
+  }
+}
+/** Typed: «9», «930», «9:30», «09.30». */
+function typedTime(part: 'start' | 'end', v: string): void {
+  const m = v.trim().match(/^(\d{1,2})(?:[:.]?(\d{2}))?$/)
+  if (!m || +m[1] > 24 || +(m[2] ?? 0) > 59) return
+  const t = +m[1] * 60 + +(m[2] ?? 0)
+  const s = minOf(range.value.start)
+  const en = minOf(range.value.end)
+  if (part === 'start') {
+    startOv.value = t
+    endOv.value = en > t ? en : t + Math.max(5, en - s)
+  } else {
+    startOv.value = s
+    endOv.value = t > s ? t : s + 5
+  }
+}
 const label = computed(() => q.value.label || (task.value ? `${task.value.key} ${task.value.summary}`.trim() : kindLabel(kind.value)))
 const ready = computed(() => !!(q.value.label || task.value || q.value.kind || q.value.parts.length))
-const otherDay = computed(() => q.value.day !== props.day)
+const otherDay = computed(() => finalDay.value !== props.day)
 const dayText = (d: string) => {
   const s = new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -78,7 +160,10 @@ const dayText = (d: string) => {
 function submit(): void {
   if (!ready.value) return
   const r = range.value
-  emit('add', { day: q.value.day, start: r.start, end: r.end, kind: kind.value, label: label.value, task: task.value })
+  emit('add', { day: finalDay.value, start: r.start, end: r.end, kind: kind.value, label: label.value, task: task.value })
+  dayOv.value = undefined
+  startOv.value = undefined
+  endOv.value = undefined
   text.value = ''
   attached.value = undefined
   sug.value = undefined
@@ -191,9 +276,28 @@ defineExpose({ focus })
     </div>
     <div class="qprev">
       <template v-if="ready">
-        <span class="pv day" :class="{ other: otherDay }"><Icon name="calendar" :size="11" />{{ dayText(q.day) }}</span>
-        <span class="pv time" :class="{ auto: q.start === undefined }" :title="q.start === undefined ? 'Время не указано — в свободное место' : ''">
-          {{ formatHM(range.start) }}–{{ formatHM(range.end) }} · {{ formatDuration(range.end - range.start) }}<i v-if="q.start === undefined"> авто</i>
+        <span class="pv day" :class="{ other: otherDay }" tabindex="0" title="Колесо или стрелки — другой день" @wheel="wheelDay" @keydown="keyDay"><Icon name="calendar" :size="11" />{{ dayText(finalDay) }}</span>
+        <span class="pv time" :class="{ auto: q.start === undefined && !handTime }" :title="q.start === undefined && !handTime ? 'Время не указано — в свободное место' : ''">
+          <input
+            class="tp"
+            :value="formatHM(range.start)"
+            title="Начало: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
+            spellcheck="false"
+            @wheel="wheelTime('start', $event)"
+            @keydown="keyTime('start', $event)"
+            @change="typedTime('start', ($event.target as HTMLInputElement).value)"
+            @focus="($event.target as HTMLInputElement).select()"
+          />–<input
+            class="tp"
+            :value="formatHM(range.end)"
+            title="Конец: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
+            spellcheck="false"
+            @wheel="wheelTime('end', $event)"
+            @keydown="keyTime('end', $event)"
+            @change="typedTime('end', ($event.target as HTMLInputElement).value)"
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+          · {{ formatDuration(range.end - range.start) }}<i v-if="q.start === undefined && !handTime"> авто</i>
         </span>
         <span class="pv kind" :style="{ '--c': kindColor(kind) }"><i></i>{{ kindLabel(kind) }}</span>
         <span v-if="task" class="pv task" :class="{ unknown: !task.summary }" :title="task.summary || 'Задача не найдена в списке'">
@@ -370,6 +474,31 @@ defineExpose({ focus })
 .pv.time i {
   color: var(--muted);
   font-style: normal;
+}
+/* the time parts look like plain text; the wheel / the keys / typing change them */
+.pv .tp {
+  width: 5ch;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: ns-resize;
+}
+.pv .tp:hover,
+.pv .tp:focus {
+  background: var(--hover);
+  outline: 1px solid var(--accent-line);
+}
+.pv.day {
+  cursor: ns-resize;
+}
+.pv.day:hover,
+.pv.day:focus {
+  outline: 1px solid var(--accent-line);
 }
 .pv.kind i {
   width: 8px;

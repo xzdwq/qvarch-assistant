@@ -833,6 +833,8 @@ function registerIpc(): void {
       })
   })
   ipcMain.handle(IPC.jiraTracked, () => keyTotals(store.listDays().map(spentDay)))
+  ipcMain.handle(IPC.jiraFind, (_e, q: string, offset: number, limit: number, mode?: string) => jira.find(String(q ?? ''), Number(offset) || 0, Number(limit) || 50, mode === 'pick' ? 'pick' : 'list'))
+  ipcMain.handle(IPC.jiraIssue, (_e, key: string) => jira.issue(String(key)))
 
   ipcMain.on(IPC.openExternal, (_e, url: string) => {
     // web pages only (Jira, links in notes) — never file:// or app protocols

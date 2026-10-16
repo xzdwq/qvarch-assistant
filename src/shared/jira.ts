@@ -73,9 +73,11 @@ export function labelWithoutKey(label: string, key?: string): string {
 
 /** Tasks offered when labelling time: mine (not done) + picked by hand. */
 export function pickableTasks(s: Pick<JiraState, 'issues' | 'starred' | 'myStatus'>): JiraIssue[] {
+  // every task that is not done; mine and starred first, then by due date and the latest change
+  const top = (i: JiraIssue) => (i.mine || s.starred.includes(i.key) ? 0 : 1)
   return s.issues
-    .filter((i) => (i.mine || s.starred.includes(i.key)) && i.category !== 'done' && s.myStatus[i.key] !== 'done')
-    .sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated)
+    .filter((i) => i.category !== 'done' && s.myStatus[i.key] !== 'done')
+    .sort((a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated)
 }
 
 /** Board URLs / keys → project keys ("…/projects/DOS/boards/98" → "DOS"). */

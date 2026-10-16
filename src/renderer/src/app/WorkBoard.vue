@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { dayEnd, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges, shiftDay } from '@shared/timeline'
-import { isOwnTask, placeSlot } from '@shared/work'
+import { placeSlot } from '@shared/work'
 import type { Quick } from '@shared/quickadd'
 import type { TaskRef } from '@shared/jira'
 import type { Entry, Ms, Note, PlanBlock, PublicSettings } from '@shared/types'
@@ -9,11 +9,9 @@ import Icon from '../components/Icon.vue'
 import DatePick from '../components/DatePick.vue'
 import QuickAdd, { type QuickDraft } from '../components/QuickAdd.vue'
 import TaskSearch from '../components/TaskSearch.vue'
-import JiraDetails from '../components/JiraDetails.vue'
-import EntryEditor from '../components/EntryEditor.vue'
+import EventStream from '../components/EventStream.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { entryIcon, kindColor, kindLabel } from '../lib/palette'
-import { useJira } from '../lib/jira'
 import { todayKey } from '../lib/today'
 import { useNow } from '../lib/useDay'
 import { mondayOf, useRange, type RangeDay } from '../lib/useRange'
@@ -83,7 +81,6 @@ const isLive = (e: Entry) => e.start <= now.value && e.end >= now.value - 90_000
 const isToday = computed(() => day.value === todayKey.value)
 const empty = (d: string): RangeDay => ({ day: d, entries: [], notes: [], plan: [], dayTasks: [] })
 const cur = computed(() => days.value.find((d) => d.day === day.value) ?? empty(day.value))
-const jira = useJira()
 const err = ref('')
 const fail = (e: unknown) => (err.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 
@@ -232,8 +229,9 @@ onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 // ---------- a block: open, give a task, delete ----------
-const sel = ref<Entry>()
-watch(day, () => (sel.value = undefined))
+/** The event edited in the stream on the right, and the one hovered in the list (the stream follows it). */
+const openId = ref<string>()
+const hoverId = ref<string>()
 const recent = computed(() => recentLabels(...days.value.map((d) => d.entries)))
 async function giveTask(e: Entry, t: TaskRef | null): Promise<void> {
   try {
@@ -247,7 +245,7 @@ async function giveTask(e: Entry, t: TaskRef | null): Promise<void> {
 async function removeEntry(e: Entry): Promise<void> {
   try {
     await window.qa.deleteEntry(day.value, e.id)
-    if (sel.value?.id === e.id) sel.value = undefined
+    if (openId.value === e.id) openId.value = undefined
     await reload()
   } catch (x) {
     fail(x)
@@ -261,89 +259,9 @@ async function planDrop(p: PlanBlock): Promise<void> {
   await window.qa.deletePlan(day.value, p.id)
   await reload()
 }
-async function onSaved(): Promise<void> {
-  sel.value = undefined
-  await reload()
-}
 
-// ---------- tasks of the day / the week ----------
-const SCOPE_KEY = 'qa.work.scope'
-const scope = ref<'day' | 'week'>(localStorage.getItem(SCOPE_KEY) === 'week' ? 'week' : 'day')
-watch(scope, (v) => {
-  try {
-    localStorage.setItem(SCOPE_KEY, v)
-  } catch {
-    // fine
-  }
-})
-interface TaskRow {
-  task: TaskRef
-  own: boolean
-  done: number
-  plan: number
-  perDay: number[]
-  slots: number
-  listed: boolean
-}
-const taskRows = computed<TaskRow[]>(() => {
-  const range = scope.value === 'day' ? [cur.value] : days.value
-  const map = new Map<string, TaskRow & { parts: Entry[][] }>()
-  const get = (t: TaskRef) => {
-    let r = map.get(t.key)
-    if (!r) map.set(t.key, (r = { task: { key: t.key, summary: t.summary }, own: isOwnTask(t.key), done: 0, plan: 0, perDay: Array(days.value.length).fill(0), slots: 0, listed: false, parts: days.value.map(() => []) }))
-    if (!r.task.summary && t.summary) r.task.summary = t.summary
-    return r
-  }
-  for (const d of range) for (const t of d.dayTasks) get(t).listed = get(t).listed || d.day === day.value
-  for (const d of range) {
-    const i = days.value.findIndex((x) => x.day === d.day)
-    for (const e of d.entries) if (e.task) get(e.task).parts[Math.max(0, i)].push(e)
-  }
-  const out = [...map.values()].map((r) => {
-    const all = r.parts.flat()
-    return {
-      task: r.task,
-      own: r.own,
-      done: union(all, -Infinity, now.value),
-      plan: union(all, now.value),
-      perDay: r.parts.map((p) => union(p)),
-      slots: (scope.value === 'day' ? all : r.parts[days.value.findIndex((x) => x.day === day.value)] ?? []).length,
-      listed: r.listed,
-    }
-  })
-  const order = cur.value.dayTasks.map((t) => t.key)
-  return out.sort((a, b) => {
-    const ia = order.indexOf(a.task.key)
-    const ib = order.indexOf(b.task.key)
-    if (ia >= 0 || ib >= 0) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib)
-    return b.done + b.plan - (a.done + a.plan)
-  })
-})
-const maxCell = computed(() => Math.max(3_600_000, ...taskRows.value.flatMap((r) => r.perDay)))
-const opened = ref<string>()
-const issueOf = (key: string) => jira.value.issues.find((i) => i.key === key)
-async function quickTime(r: TaskRow, minutes: number): Promise<void> {
-  const d = day.value
-  const range = placeSlot(cur.value.entries, minutes * MINUTE, { now: now.value, isToday: isToday.value, dayStart: dayStart(d), dayEnd: dayEnd(d), workStart: workStart(d) })
-  await onQuick({ day: d, ...range, kind: 'task', label: `${r.task.key} ${r.task.summary}`.trim(), task: r.task })
-}
-async function takeTask(t: TaskRef): Promise<void> {
-  await addTaskToDay(day.value, t)
-  await reload()
-}
-async function dropTask(r: TaskRow): Promise<void> {
-  await window.qa.setDayTasks(day.value, cur.value.dayTasks.filter((x) => x.key !== r.task.key))
-  await reload()
-}
-const openTask = (key: string) => !isOwnTask(key) && jira.value.siteUrl && window.qa.openExternal(`${jira.value.siteUrl}/browse/${key}`)
-const QUICK = [
-  { m: 15, label: '15м' },
-  { m: 30, label: '30м' },
-  { m: 60, label: '1ч' },
-]
 /** 1 запись, 2 записи, 5 записей. */
 const plural = (n: number, one: string, few: string, many: string) => (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many)
-const hm = (ms: number) => (ms ? formatDuration(ms) : '')
 </script>
 
 <template>
@@ -411,7 +329,7 @@ const hm = (ms: number) => (ms ? formatDuration(ms) : '')
               <button title="Убрать из плана" @click.stop="planDrop(r.p)"><Icon name="x" :size="13" /></button>
             </span>
           </div>
-          <div v-else class="row" :class="{ plan: r.plan && !isLive(r.e), on: sel?.id === r.e.id, flash: flash === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @click="sel = sel?.id === r.e.id ? undefined : r.e">
+          <div v-else class="row" :class="{ plan: r.plan && !isLive(r.e), on: openId === r.e.id, flash: flash === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @mouseenter="hoverId = r.e.id" @click="openId = openId === r.e.id ? undefined : r.e.id">
             <span class="tm num">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
             <span class="kic" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="13" /></span>
             <span class="tt">
@@ -441,44 +359,8 @@ const hm = (ms: number) => (ms ? formatDuration(ms) : '')
 
       <!-- the side: the open block, or the tasks -->
       <aside class="side">
-        <div v-if="sel" class="ed">
-          <div class="cap fh"><span>Запись</span><button class="lnk" title="Закрыть" @click="sel = undefined"><Icon name="x" :size="12" /></button></div>
-          <EntryEditor :key="sel.id" :day="day" :entry="sel" :recent="recent" :entries="cur.entries" :notes="cur.notes" textarea @saved="onSaved" @deleted="onSaved" @close="sel = undefined" />
-        </div>
-        <template v-else>
-          <div class="cap fh">
-            <span>Задачи</span>
-            <span class="seg">
-              <button :class="{ on: scope === 'day' }" @click="scope = 'day'">День</button>
-              <button :class="{ on: scope === 'week' }" @click="scope = 'week'">{{ per.mode === 'week' ? 'Неделя' : 'Период' }}</button>
-            </span>
-          </div>
-          <div v-for="r in taskRows" :key="r.task.key" class="trow" :class="{ open: opened === r.task.key }">
-            <div class="th">
-              <button class="chev" :disabled="r.own" :title="r.own ? '' : 'Подробности'" @click="opened = opened === r.task.key ? undefined : r.task.key"><Icon :name="r.own ? 'checkSquare' : 'jira'" :size="13" /></button>
-              <button class="key num" :class="{ own: r.own }" :title="r.own ? 'Своя задача' : 'Открыть в Jira'" @click="openTask(r.task.key)">{{ r.task.key }}</button>
-              <span class="sum" :title="r.task.summary">{{ r.task.summary }}</span>
-              <b class="tms num" :class="{ zero: !r.done }">{{ r.done ? formatDuration(r.done) : '—' }}</b>
-              <button v-if="scope === 'day' && r.listed && !r.slots" class="x" title="Убрать из дня" @click="dropTask(r)"><Icon name="x" :size="12" /></button>
-            </div>
-            <div class="tb">
-              <span v-if="r.plan" class="tplan num">план +{{ formatDuration(r.plan) }}</span>
-              <span v-if="scope === 'week'" class="cells">
-                <i v-for="(ms, i) in r.perDay" :key="i" :class="{ sel: days[i]?.day === day }" :style="{ '--a': ms ? 0.25 + (ms / maxCell) * 0.75 : 0 }" :title="`${week[i]?.wd} ${hm(ms) || '—'}`"></i>
-              </span>
-              <span class="grow"></span>
-              <span class="quick">
-                <button v-for="q in QUICK" :key="q.m" :title="`+${q.label} в свободное время дня`" @click="quickTime(r, q.m)">+{{ q.label }}</button>
-              </span>
-            </div>
-            <JiraDetails v-if="opened === r.task.key && issueOf(r.task.key)" :issue="issueOf(r.task.key)!" />
-            <p v-else-if="opened === r.task.key" class="none">Задачи нет в списке Jira — синхронизируйте или отметьте её звёздочкой.</p>
-          </div>
-          <p v-if="!taskRows.length" class="none">{{ scope === 'day' ? 'На этот день задач нет.' : 'За неделю задач нет.' }}</p>
-          <TaskSearch :marked="cur.dayTasks.map((t) => t.key)" @pick="takeTask">
-            <button class="take"><Icon name="plus" :size="12" />Взять задачу на день</button>
-          </TaskSearch>
-        </template>
+        <div class="cap fh"><span>Лента · {{ weekTitle }}</span><span class="cm">наведите на запись слева · клик — править</span></div>
+        <EventStream class="stream" :days="days" :schedule="settings.schedule" :recent="recent" :now="now" :focus-id="hoverId" :open-id="openId" @open="(id) => (openId = id)" @changed="reload" />
       </aside>
     </div>
   </div>
@@ -492,7 +374,7 @@ const hm = (ms: number) => (ms ? formatDuration(ms) : '')
   height: 100%;
   min-height: 0;
   padding: 10px 14px 12px;
-  overflow: auto;
+  overflow: hidden;
   container-type: inline-size;
 }
 .num {
@@ -691,13 +573,38 @@ const hm = (ms: number) => (ms ? formatDuration(ms) : '')
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+}
+/* each column scrolls on its own: the day on the left, the period's stream on the right */
+.feed {
+  overflow-y: auto;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.stream {
+  flex: 1;
+  min-height: 0;
+}
+.cm {
+  color: var(--dim);
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 @container (max-width: 900px) {
   .wgrid {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .cm {
+    display: none;
   }
 }
 .feed,

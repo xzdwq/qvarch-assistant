@@ -5,19 +5,24 @@ import { formatDuration } from '@shared/timeline'
 import Icon from '../components/Icon.vue'
 import { formatSec, useJira } from '../lib/jira'
 import JiraDetails from '../components/JiraDetails.vue'
+import { useJiraFind } from '../lib/jiraFind'
 
 /**
- * Jira tasks: grouped by project, by due date. "Мои" = assigned to me in Jira + picked by hand (★);
- * "Все открытые" lists the projects' open tasks to pick from. My own status (review / done) is set here.
- * The estimate is compared with the time tracked in the app on blocks linked to the task.
+ * Jira: every open task of the projects, by project and due date — page by page as the list is scrolled; the
+ * search goes to the main process. My own status (review / done) is set here. The estimate is compared with the
+ * time tracked in the app on blocks linked to the task.
  */
 const emit = defineEmits<{ settings: []; openDay: [day: string] }>()
 const jira = useJira()
-const mode = ref<'mine' | 'all'>('mine')
 const q = ref('')
-const showDone = ref(false)
-/** The task opened up (fields and description). */
+/** The task opened up (fields and description) — asked for in full when opened. */
 const opened = ref<string>()
+const openedIssue = ref<JiraIssue>()
+watch(opened, async (k) => {
+  openedIssue.value = undefined
+  if (k) openedIssue.value = (await window.qa.jiraIssue(k)) ?? undefined
+})
+const { items, total, loading, onScroll } = useJiraFind(q, { page: 60 })
 const tracked = ref<Record<string, number>>({})
 
 async function loadTracked(): Promise<void> {
@@ -27,27 +32,15 @@ onMounted(loadTracked)
 watch(() => jira.value.syncedAt, loadTracked)
 
 const isDone = (i: JiraIssue) => i.category === 'done' || jira.value.myStatus[i.key] === 'done'
-const CAT_ORDER = { indeterminate: 0, new: 1, done: 2 } as const
-
+/** The loaded page(s), by project (they come sorted by project). */
 const groups = computed(() => {
-  const s = q.value.trim().toLowerCase()
-  const list = jira.value.issues.filter(
-    (i) =>
-      (mode.value === 'all' || i.mine || jira.value.starred.includes(i.key)) &&
-      (showDone.value || !isDone(i)) &&
-      (!s || `${i.key} ${i.summary} ${(i.labels ?? []).join(' ')} ${(i.components ?? []).join(' ')}`.toLowerCase().includes(s)),
-  )
-  const byProject = new Map<string, { name: string; items: JiraIssue[] }>()
-  for (const i of list) {
-    const g = byProject.get(i.project.key) ?? { name: i.project.name || i.project.key, items: [] }
-    g.items.push(i)
-    byProject.set(i.project.key, g)
+  const out: Array<[string, { name: string; items: JiraIssue[] }]> = []
+  for (const i of items.value) {
+    const last = out[out.length - 1]
+    if (last && last[0] === i.project.key) last[1].items.push(i)
+    else out.push([i.project.key, { name: i.project.name || i.project.key, items: [i] }])
   }
-  for (const g of byProject.values())
-    g.items.sort(
-      (a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999') || CAT_ORDER[a.category] - CAT_ORDER[b.category] || b.updated - a.updated,
-    )
-  return [...byProject.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  return out
 })
 
 const today = new Date().toISOString().slice(0, 10)
@@ -64,10 +57,10 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 </script>
 
 <template>
-  <div class="tasks">
+  <div class="tasks" @scroll.passive="onScroll">
     <div class="topbar">
       <input v-model="q" class="search" placeholder="Поиск по задачам" spellcheck="false" />
-      <label class="check"><input v-model="showDone" type="checkbox" /> готовые</label>
+
     </div>
 
     <div v-if="!jira.connected" class="connect">
@@ -78,10 +71,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 
     <template v-else>
       <div class="bar">
-        <span class="seg">
-          <button :class="{ on: mode === 'mine' }" @click="mode = 'mine'">Мои и выбранные</button>
-          <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Все открытые</button>
-        </span>
+        <span class="muted small">Все незакрытые задачи · {{ total }}<template v-if="items.length < total"> · показано {{ items.length }}</template></span>
         <span class="spacer"></span>
         <span class="muted small" :title="jira.error">
           <template v-if="jira.syncing">синхронизация…</template>
@@ -92,7 +82,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
       </div>
 
       <section v-for="[key, g] in groups" :key="key" class="proj">
-        <h3>{{ g.name }} <span class="muted">{{ key }} · {{ g.items.length }}</span></h3>
+        <h3>{{ g.name }} <span class="muted">{{ key }}</span></h3>
         <template v-for="i in g.items" :key="i.key">
         <div class="row" :class="{ done: isDone(i), open: opened === i.key }">
           <button class="chev" :title="opened === i.key ? 'Свернуть' : 'Описание и поля'" @click="opened = opened === i.key ? undefined : i.key"><Icon name="chevronRight" :size="13" /></button>
@@ -117,10 +107,11 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
             <span v-if="i.estimateSec" class="ebar"><span :class="{ over: ratio(i) > 1 }" :style="{ width: `${Math.min(100, ratio(i) * 100)}%` }"></span></span>
           </span>
         </div>
-        <JiraDetails v-if="opened === i.key" class="det" :issue="i" />
+        <JiraDetails v-if="opened === i.key" class="det" :issue="openedIssue ?? i" />
         </template>
       </section>
-      <p v-if="!groups.length" class="muted">Задач нет{{ mode === 'mine' ? ' — отметьте нужные звёздочкой во «Все открытые»' : '' }}.</p>
+      <p v-if="loading" class="muted small">Загрузка…</p>
+      <p v-else-if="!groups.length" class="muted">Задач нет.</p>
     </template>
   </div>
 </template>

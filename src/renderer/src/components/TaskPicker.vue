@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { pickableTasks, tasksWord, type TaskRef } from '@shared/jira'
-import { useJira } from '../lib/jira'
+import { tasksWord, type TaskRef } from '@shared/jira'
+import { useJiraFind } from '../lib/jiraFind'
 import { placeFloat, useAnchor, type Float } from '../lib/floating'
 import { OWN_PREFIX } from '@shared/board'
 import Icon from './Icon.vue'
@@ -16,7 +16,6 @@ import Icon from './Icon.vue'
 const props = defineProps<{ single?: boolean; compact?: boolean }>()
 const tasks = defineModel<TaskRef[]>({ default: () => [] })
 
-const jira = useJira()
 const open = ref(false)
 const q = ref('')
 const root = ref<HTMLElement>()
@@ -26,13 +25,9 @@ const place = ref<{ up: boolean; maxH: number }>({ up: true, maxH: 240 })
 
 type Item = { key: string; summary: string; due?: string; own: boolean }
 /** Jira tasks only (own tasks are gone: a note becomes a "Задача" block, not a task of its own). */
-const list = computed<Item[]>(() => {
-  const s = q.value.trim().toLowerCase()
-  return pickableTasks(jira.value)
-    .map((i) => ({ key: i.key, summary: i.summary, due: i.due, own: false }))
-    .filter((i) => !s || i.key.toLowerCase().includes(s) || i.summary.toLowerCase().includes(s))
-    .slice(0, 80)
-})
+// asked page by page from the main process (the search goes there too)
+const { items: found, onScroll: onFindScroll } = useJiraFind(q, { page: 40, active: open, mode: 'pick' })
+const list = computed<Item[]>(() => found.value.map((i) => ({ key: i.key, summary: i.summary, due: i.due, own: false })))
 const isOwn = (key?: string) => !!key?.startsWith(OWN_PREFIX)
 const chosen = (key: string) => tasks.value.some((t) => t.key === key)
 const label = computed(() => (!tasks.value.length ? 'Jira' : tasks.value.length === 1 ? tasks.value[0].key : `${tasks.value[0].key} +${tasks.value.length - 1}`))
@@ -101,7 +96,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
         @keydown.esc.stop="open = false"
         @keydown.enter.prevent="list[0] && pick(list[0])"
       />
-      <div class="items" :style="{ maxHeight: `${place.maxH}px` }">
+      <div class="items" :style="{ maxHeight: `${place.maxH}px` }" @scroll.passive="onFindScroll">
         <button v-for="i in list" :key="i.key" class="it" :class="{ cur: chosen(i.key) }" @click="pick(i)">
           <span v-if="!single" class="cb" :class="{ on: chosen(i.key) }"><Icon v-if="chosen(i.key)" name="check" :size="11" :stroke="3" /></span>
           <Icon :name="i.own ? 'checkSquare' : 'jira'" :size="11" class="src" :class="{ own: i.own }" />

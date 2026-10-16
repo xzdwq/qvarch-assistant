@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { dayEnd, formatDuration, joinTitle, MINUTE, splitTitle } from '@shared/timeline'
 import type { Entry, EntryKind, Ms, Note } from '@shared/types'
 import { VOICE_PENDING } from '@shared/voice'
@@ -40,6 +40,8 @@ const props = defineProps<{
   hasCursor?: boolean
   /** A plain multi-line field (Enter — a new line, the height can be pulled) instead of the one-line input. */
   textarea?: boolean
+  /** Saved only by the button (a modal form) — no autosave. */
+  manual?: boolean
 }>()
 const emit = defineEmits<{
   saved: [e: Entry]
@@ -127,6 +129,13 @@ function setAdd(p: Partial<AddPrefs>): void {
   if (props.add) emit('update:add', { ...props.add, ...p })
 }
 
+// the autosave's state (declared before the watchers below use it)
+let savedKey = ''
+let autoTimer: ReturnType<typeof setTimeout> | undefined
+const saveState = ref<'idle' | 'pending' | 'saving' | 'saved'>('idle')
+/** A series asks once per editing: this one or all of them. */
+let seriesScope: 'one' | 'all' | undefined
+
 // identity of the thing being edited: re-init the text fields only when it changes
 const identity = computed(() => props.entry.id ?? 'draft')
 watch(
@@ -139,6 +148,9 @@ watch(
     copied.value = ''
     initRemind()
     repeatRule.value = ''
+    seriesScope = undefined
+    savedKey = formKey()
+    saveState.value = 'idle'
   },
   { immediate: true },
 )
@@ -150,9 +162,48 @@ watch(
     end.value = e
     followsNow.value = !!f
     startsNow.value = !!n
+    // came from outside (a reload, a call extended by the tracker) — nothing to save
+    savedKey = formKey()
   },
   { immediate: true },
 )
+
+// ---------- an existing event saves itself: after the first change, a moment after the last one ----------
+/** The form as it is — what an autosave compares with the last saved state. */
+function formKey(): string {
+  return JSON.stringify([start.value, end.value, followsNow.value, label.value, kind.value, tasks.value.map((t) => t.key), remindMode.value, remindTime.value])
+}
+watch(
+  () => formKey(),
+  (k) => {
+    if (!props.entry.id || props.manual || k === savedKey) return
+    saveState.value = 'pending'
+    clearTimeout(autoTimer)
+    autoTimer = setTimeout(() => void autoSave(), 700)
+  },
+)
+async function autoSave(): Promise<void> {
+  autoTimer = undefined
+  if (!props.entry.id) return
+  // one at a time: a change made during a save is saved right after it
+  if (busy.value) {
+    autoTimer = setTimeout(() => void autoSave(), 300)
+    return
+  }
+  const k = formKey()
+  if (k === savedKey) return void (saveState.value = 'saved')
+  saveState.value = 'saving'
+  const ok = await save(undefined, true)
+  if (ok) savedKey = k
+  saveState.value = ok ? 'saved' : 'idle'
+}
+// leaving with a change not saved yet — save it now
+onBeforeUnmount(() => {
+  if (autoTimer && props.entry.id && !props.manual) {
+    clearTimeout(autoTimer)
+    void save(undefined, true)
+  }
+})
 
 const effectiveEnd = computed(() => (followsNow.value && props.now ? props.now : end.value))
 
@@ -172,12 +223,13 @@ function setEnd(t: Ms): void {
 }
 
 type Dictation = { blob: Blob; durationSec: number; at: number; kind: 'voice' | 'call' }
-async function save(dict?: Dictation): Promise<void> {
+/** Saves the form; `auto` — an autosave of an existing event (a series asks only once). Returns whether it was saved. */
+async function save(dict?: Dictation, auto = false): Promise<boolean> {
   error.value = ''
   const endT = effectiveEnd.value
   if (!(endT > start.value)) {
     error.value = 'Конец должен быть позже начала'
-    return
+    return false
   }
   busy.value = true
   try {
@@ -185,12 +237,13 @@ async function save(dict?: Dictation): Promise<void> {
     if (readonly.value && props.entry.id) {
       await window.qa.setRemind(props.day, props.entry.id, remind.value ?? null)
       emit('saved', { ...(props.entry as Entry), remind: remind.value })
-      return
+      return true
     }
     // one of a series: this one, or all of them
     if (props.entry.id && props.entry.series) {
-      const scope = await askSeries('save')
-      if (!scope) return
+      const scope = auto && seriesScope ? seriesScope : await askSeries('save')
+      if (!scope) return false
+      seriesScope = scope
       if (scope === 'all') {
         const parts = splitTitle(label.value)
         const t = tasks.value[0] ? plainTask(tasks.value[0]) : undefined
@@ -206,7 +259,7 @@ async function save(dict?: Dictation): Promise<void> {
         }
         await window.qa.seriesSave(props.day, next)
         emit('saved', next)
-        return
+        return true
       }
     }
     const { followsNow: _f, startsNow: _n, ...base } = props.entry
@@ -239,7 +292,7 @@ async function save(dict?: Dictation): Promise<void> {
       if (qp.task && !taskList.some((x) => x.key === qp.task!.key)) taskList.push(qp.task)
       if (!(e0 > s0)) {
         error.value = 'Конец должен быть позже начала'
-        return
+        return false
       }
     }
     // a new block linked to several tasks → one parallel block per task
@@ -268,8 +321,10 @@ async function save(dict?: Dictation): Promise<void> {
     // a new block with a repeat: its copies every hour / day / week / year
     if (saved && !props.entry.id && repeatRule.value) await window.qa.repeatEntry(day, saved.id, repeatRule.value, repeatCount.value)
     if (saved) emit('saved', saved)
+    return !!saved
   } catch (e) {
     error.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
+    return false
   } finally {
     busy.value = false
   }
@@ -428,8 +483,18 @@ watch(
     <div v-if="copied" class="copied"><Icon name="link" :size="13" />Продолжение: {{ copied }}</div>
     <Transition name="fade"><div v-if="error" class="error">{{ error }}</div></Transition>
 
-    <div class="foot">
-      <button class="primary" :disabled="busy" @click="save()">{{ entry.id ? 'Сохранить' : repeatRule ? `Добавить ${repeatCount} раз` : 'Добавить' }}</button>
+    <!-- an existing event saves itself — only its state shows; a new one is added by the button -->
+    <div v-if="entry.id && manual" class="foot">
+      <button class="primary" :disabled="busy" @click="save()">Сохранить</button>
+      <button :disabled="busy" @click="emit('close')">Отмена</button>
+      <span class="muted small">Ctrl+Enter</span>
+    </div>
+    <div v-else-if="entry.id" class="foot autos" :class="saveState">
+      <Icon :name="saveState === 'saved' || saveState === 'idle' ? 'check' : 'clock'" :size="12" />
+      <span>{{ saveState === 'pending' ? 'Изменено…' : saveState === 'saving' ? 'Сохраняю…' : saveState === 'saved' ? 'Сохранено' : 'Изменения сохраняются сами' }}</span>
+    </div>
+    <div v-else class="foot">
+      <button class="primary" :disabled="busy" @click="save()">{{ repeatRule ? `Добавить ${repeatCount} раз` : 'Добавить' }}</button>
       <span class="muted small">Ctrl+Enter</span>
     </div>
   </div>
@@ -686,5 +751,17 @@ h3 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.foot.autos {
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.foot.autos.saved {
+  color: var(--up-fg);
+}
+.foot.autos.saving,
+.foot.autos.pending {
+  color: var(--warn-fg);
 }
 </style>

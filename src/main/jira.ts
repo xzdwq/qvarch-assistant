@@ -19,7 +19,8 @@ const REDIRECT = `http://localhost:${PORT}/callback`
 const SCOPES = 'read:jira-work read:jira-user offline_access'
 const FIELDS = ['summary', 'status', 'project', 'issuetype', 'priority', 'duedate', 'timeoriginalestimate', 'timespent', 'assignee', 'updated', 'description', 'components', 'labels', 'fixVersions', 'parent', 'reporter', 'created']
 const SYNC_MS = 10 * 60_000
-const ALL_LIMIT = 300
+/** Every task of the projects that is not done (a safety cap only). */
+const ALL_LIMIT = 5000
 /** The names of a list of Jira objects (components, versions), or nothing. */
 const names = (v: unknown): string[] | undefined => {
   const out = Array.isArray(v) ? v.map((x) => (x && typeof x === 'object' ? String((x as { name?: unknown }).name ?? '') : '')).filter(Boolean) : []
@@ -86,10 +87,48 @@ export class Jira {
       syncing: this.syncing,
       syncedAt: this.cache.syncedAt,
       error: this.error,
-      issues: this.cache.issues,
+      // the windows get the list without the descriptions (they are asked for one task at a time)
+      issues: this.lite(),
       starred: this.cache.starred,
       myStatus: this.cache.myStatus,
     }
+  }
+
+  private liteCache?: { from: JiraIssue[]; list: JiraIssue[] }
+  private lite(): JiraIssue[] {
+    if (this.liteCache?.from !== this.cache.issues) this.liteCache = { from: this.cache.issues, list: this.cache.issues.map(({ description: _d, ...i }) => i) }
+    return this.liteCache.list
+  }
+
+  /** One task in full (with its description). */
+  issue(key: string): JiraIssue | undefined {
+    return this.cache.issues.find((i) => i.key === key)
+  }
+
+  /**
+   * A page of the open tasks that match a search (key, title, labels, components, status, people, the
+   * description) — by project, then due date and state; without the descriptions.
+   */
+  find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list'): { items: JiraIssue[]; total: number } {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const ORDER = { indeterminate: 0, new: 1, done: 2 } as const
+    const my = this.cache.myStatus
+    // picking: mine and starred first
+    const top = (i: JiraIssue) => (i.mine || this.cache.starred.includes(i.key) ? 0 : 1)
+    const hit = (i: JiraIssue) => {
+      if (!words.length) return true
+      const hay = `${i.key} ${i.summary} ${(i.labels ?? []).join(' ')} ${(i.components ?? []).join(' ')} ${i.status} ${i.assignee ?? ''} ${i.parent?.key ?? ''} ${i.description ?? ''}`.toLowerCase()
+      return words.every((w) => hay.includes(w))
+    }
+    const list = this.cache.issues
+      .filter((i) => i.category !== 'done' && my[i.key] !== 'done' && hit(i))
+      .sort(
+        mode === 'pick'
+          ? (a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated
+          : (a, b) => a.project.key.localeCompare(b.project.key) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || ORDER[a.category] - ORDER[b.category] || b.updated - a.updated,
+      )
+    const page = list.slice(Math.max(0, offset), Math.max(0, offset) + Math.min(200, Math.max(1, limit)))
+    return { items: page.map(({ description: _d, ...i }) => i), total: list.length }
   }
 
   private changed(): void {
@@ -305,7 +344,7 @@ export class Jira {
     }
   }
 
-  /** Mine (open + recently closed), the open ones of the projects, and everything picked by hand. */
+  /** Every task of the projects that is not done (mine among them), and everything picked by hand. */
   async sync(): Promise<void> {
     if (this.syncing || !this.cache.cloudId) return
     const projects = this.config().projects.filter((p) => /^[A-Z][A-Z0-9_]+$/.test(p))
@@ -314,10 +353,9 @@ export class Jira {
     this.changed()
     try {
       const inProjects = `project in (${projects.join(',')})`
-      const mine = await this.search(`${inProjects} AND assignee = currentUser() AND (statusCategory != Done OR updated >= -14d) ORDER BY updated DESC`, 500)
       const open = await this.search(`${inProjects} AND statusCategory != Done ORDER BY updated DESC`, ALL_LIMIT)
       const byKey = new Map<string, JiraIssue>()
-      for (const i of [...open, ...mine]) byKey.set(i.key, i)
+      for (const i of open) byKey.set(i.key, i)
       const missing = this.cache.starred.filter((k) => !byKey.has(k))
       if (missing.length) for (const i of await this.search(`key in (${missing.join(',')})`, missing.length)) byKey.set(i.key, i)
       this.cache.issues = [...byKey.values()]

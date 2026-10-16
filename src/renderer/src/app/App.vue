@@ -31,9 +31,13 @@ const focusEntry = ref<string>()
 const settings = ref<PublicSettings>()
 const menuOpen = ref(false)
 
+/** Opened from somewhere (a reminder, the island) — that section, not the menu's first one. */
+let navigated = false
 void window.qa.getSettings().then((s) => {
   settings.value = s
   setKinds(s.kinds)
+  // the window opens on the first section of the user's menu
+  if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'day'
 })
 
 function onSettings(s: PublicSettings): void {
@@ -44,6 +48,7 @@ function onSettings(s: PublicSettings): void {
 const offSettings = window.qa.onSettings(onSettings)
 onBeforeUnmount(offSettings)
 const off = window.qa.onNavigate((nav) => {
+  navigated = true
   view.value = (nav.view as View | undefined) ?? 'day'
   if (nav.day) day.value = nav.day
   focusEntry.value = nav.entryId

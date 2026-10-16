@@ -53,7 +53,8 @@ const saved = (() => {
 })()
 const span = ref(Math.min(MAX_SPAN, Math.max(MIN_SPAN, saved.span ?? 7)))
 const leadOf = (s: number) => (s <= 1.5 ? 0 : s <= 8 ? Math.min(1, s * 0.15) : s * 0.2)
-const start = ref(todayNum.value - leadOf(span.value))
+// opens with today in the middle (the saved zoom kept)
+const start = ref(todayNum.value + 0.5 - span.value / 2)
 const onlyProductive = ref(saved.productive ?? false)
 /** The vertical scale (the time step): the wheel over the hours changes it. */
 const zy = ref(Math.min(ZY_MAX, Math.max(ZY_MIN, saved.zy ?? 1)))
@@ -79,8 +80,16 @@ onMounted(() => {
   })
   if (canvas.value) ro.observe(canvas.value)
   if (body.value) ro.observe(body.value)
-  // the working morning in view, like a calendar opens
-  requestAnimationFrame(() => body.value && (body.value.scrollTop = 7 * hourPx.value - 6))
+  // the current time in the middle of the view (once the sizes are known)
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const b = body.value
+      if (!b) return
+      const d = new Date()
+      const h = d.getHours() + d.getMinutes() / 60
+      b.scrollTop = Math.max(0, h * hourPx.value - b.clientHeight / 2)
+    }),
+  )
 })
 onBeforeUnmount(() => ro?.disconnect())
 /** The width of one day at this zoom; a day with parallel events is wider (see widthOf). */

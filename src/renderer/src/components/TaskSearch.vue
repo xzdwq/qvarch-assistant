@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { pickableTasks, type TaskRef } from '@shared/jira'
-import { useJira } from '../lib/jira'
+import type { TaskRef } from '@shared/jira'
+import { useJiraFind } from '../lib/jiraFind'
 import { useLocalTasks } from '../lib/tasks'
 import { placeFloat, useAnchor } from '../lib/floating'
 import Icon from './Icon.vue'
@@ -13,10 +13,10 @@ import Icon from './Icon.vue'
 const props = defineProps<{ marked?: string[]; placeholder?: string; width?: number }>()
 const emit = defineEmits<{ pick: [task: TaskRef] }>()
 
-const jira = useJira()
 const own = useLocalTasks()
 const open = ref(false)
 const q = ref('')
+const { items: found, onScroll: onFindScroll } = useJiraFind(q, { page: 40, active: open, mode: 'pick' })
 const root = ref<HTMLElement>()
 const input = ref<HTMLInputElement>()
 const style = ref<Record<string, string>>({})
@@ -36,8 +36,9 @@ const items = computed<Item[]>(() => {
     .filter((t) => t.key && t.status !== 'done')
     .sort((a, b) => b.created - a.created)
     .map((t) => ({ key: t.key!, summary: t.title, own: true, note: t.due ? `до ${t.due.slice(8, 10)}.${t.due.slice(5, 7)}` : undefined }))
-  const jiraItems = pickableTasks(jira.value).map((i) => ({ key: i.key, summary: i.summary, own: false, note: i.due ? `до ${i.due.slice(8, 10)}.${i.due.slice(5, 7)}` : undefined }))
-  return [...mine, ...jiraItems].filter(hit).slice(0, 100)
+  // Jira: asked page by page from the main process (the search goes there too)
+  const jiraItems = found.value.map((i) => ({ key: i.key, summary: i.summary, own: false, note: i.due ? `до ${i.due.slice(8, 10)}.${i.due.slice(5, 7)}` : undefined }))
+  return [...mine.filter(hit), ...jiraItems]
 })
 const marked = (key: string) => props.marked?.includes(key) ?? false
 
@@ -87,7 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
         <Icon name="search" :size="13" />
         <input ref="input" v-model="q" :placeholder="placeholder ?? 'Найти задачу Jira или свою · Enter — выбрать'" spellcheck="false" @keydown="onKey" />
       </div>
-      <div class="items" :style="{ maxHeight: `${maxH}px` }">
+      <div class="items" :style="{ maxHeight: `${maxH}px` }" @scroll.passive="onFindScroll">
         <button v-if="q.trim()" class="it create" @click="create"><Icon name="plus" :size="12" />Создать свою задачу «{{ q.trim() }}»</button>
         <button v-for="i in items" :key="i.key" class="it" :class="{ taken: marked(i.key) }" :disabled="marked(i.key)" @click="pick(i)">
           <Icon :name="i.own ? 'checkSquare' : 'jira'" :size="12" class="src" :class="{ own: i.own }" />

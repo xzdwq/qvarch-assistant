@@ -4,7 +4,7 @@ import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
-import type { JiraState, MyTaskStatus } from './jira'
+import type { JiraIssue, JiraState, MyTaskStatus } from './jira'
 import type { OutlookState } from './outlook'
 import type { VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
@@ -153,6 +153,10 @@ export interface QaApi {
   calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'notes' | 'plan' | 'dayTasks'>>>
   /** Time per task key (Jira or own) over every day. */
   jiraTracked(): Promise<Record<string, number>>
+  /** A page of the open Jira tasks matching a search (no descriptions). */
+  jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick'): Promise<{ items: JiraIssue[]; total: number }>
+  /** One Jira task in full (with its description). */
+  jiraIssue(key: string): Promise<JiraIssue | undefined>
   openExternal(url: string): void
   /** Live typing combo (sent on every batch of key presses). */
   onCombo(cb: (c: ComboState) => void): () => void
@@ -276,6 +280,8 @@ export const IPC = {
   jiraStar: 'qa:jiraStar',
   jiraSetMyStatus: 'qa:jiraSetMyStatus',
   jiraTracked: 'qa:jiraTracked',
+  jiraFind: 'qa:jiraFind',
+  jiraIssue: 'qa:jiraIssue',
   calendarRange: 'qa:calendarRange',
   openExternal: 'qa:openExternal',
   combo: 'qa:combo',

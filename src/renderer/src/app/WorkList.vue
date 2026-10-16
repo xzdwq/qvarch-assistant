@@ -4,6 +4,7 @@ import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
 import type { Entry, Note, PlanBlock } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
+import EntryModal from '../components/EntryModal.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { entryIcon, kindColor, kindLabel, kinds } from '../lib/palette'
 import { todayKey } from '../lib/today'
@@ -46,7 +47,9 @@ const range = computed<[string, string]>(() => {
 })
 const from = computed(() => range.value[0])
 const to = computed(() => range.value[1])
-const { days } = useRange(from, to)
+const { days, reload } = useRange(from, to)
+/** The event opened in the window. */
+const editing = ref<{ day: string; entry: Entry }>()
 const now = useNow(5_000)
 const isLive = (e: Entry) => e.start <= now.value && e.end >= now.value - 90_000 && (e.source === 'detected' || e.end > now.value)
 const PERIODS: Array<{ id: Period; label: string }> = [
@@ -201,7 +204,7 @@ function exportCsv(): void {
             <span class="badge pl">план</span>
             <span class="du num">{{ formatDuration(it.p.end - it.p.start) }}</span>
           </div>
-          <div v-else class="row" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" @click="emit('openDay', it.day, it.e.id)">
+          <div v-else class="row" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" title="Открыть событие" @click="editing = { day: it.day, entry: it.e }">
             <span class="tm num">{{ formatHM(it.e.start) }}–{{ formatHM(it.e.end) }}</span>
             <span class="kic" :title="kindLabel(it.e.kind)"><Icon :name="entryIcon(it.e)" :size="13" /></span>
             <span class="tt">
@@ -216,6 +219,7 @@ function exportCsv(): void {
           </div>
         </template>
       </section>
+      <EntryModal v-if="editing" :day="editing.day" :entry="editing.entry" @close="editing = undefined" @changed="reload" />
       <p v-if="!groups.length" class="none">Ничего не найдено{{ anyFilter ? ' — попробуйте сбросить фильтры' : '' }}.</p>
     </div>
   </div>
