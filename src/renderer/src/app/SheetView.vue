@@ -17,8 +17,12 @@ import { placeFloat, useAnchor } from '../lib/floating'
  * hours into a cell makes real blocks on the timeline (into free working time) or takes time away from
  * the row's blocks; Outlook meetings are never changed.
  */
-/** `widget` — on the dashboard: a day by default, tighter. */
-const props = defineProps<{ settings: PublicSettings; widget?: boolean }>()
+/**
+ * `widget` — on the dashboard (or a tab of the timeline): a day by default, tighter. `store` — its remembered
+ * view apart from the others; `day` — the day it follows (the timeline's).
+ */
+const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: string; day?: string }>()
+const SUFFIX = props.store ? `.${props.store}` : props.widget ? '.widget' : ''
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
 
 const today = () => new Date().toLocaleDateString('sv-SE')
@@ -27,7 +31,7 @@ const today = () => new Date().toLocaleDateString('sv-SE')
  * "today" is remembered as today, so the next day it shows the new day.
  */
 type Mode = 'week' | 'day' | 'range'
-const VIEW_KEY = props.widget ? 'qa.sheet.view.widget' : 'qa.sheet.view'
+const VIEW_KEY = `qa.sheet.view${SUFFIX}`
 const saved = (() => {
   try {
     return (JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null') as { mode?: Mode; anchor?: string; from?: string; to?: string } | null) ?? {}
@@ -49,6 +53,16 @@ watch([mode, anchor, rangeFrom, rangeTo], () => {
 onNewDay((prev, next) => {
   if (anchor.value === prev) anchor.value = next
 })
+// the timeline's day: the period moves to it (a day or the week holding it)
+watch(
+  () => props.day,
+  (d) => {
+    if (!d) return
+    if (mode.value === 'range') mode.value = 'day'
+    anchor.value = d
+  },
+  { immediate: true },
+)
 const cols = computed(() =>
   mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : mode.value === 'range' ? daysBetween(rangeFrom.value, rangeTo.value).slice(0, 62) : [anchor.value],
 )
@@ -84,6 +98,10 @@ const label = computed(() => {
   return cols.value.length === 1 ? fmt(a, { weekday: 'short', day: 'numeric', month: 'short' }) : `${fmt(a, { day: 'numeric', month: a.slice(5, 7) === b.slice(5, 7) ? undefined : 'short' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`
 })
 const isCurrent = computed(() => cols.value.includes(today()))
+/** The wheel over the period: up — later, down — earlier (as every date field). */
+function onWheel(e: WheelEvent): void {
+  if (e.deltaY) shift(e.deltaY < 0 ? 1 : -1)
+}
 function shift(dir: 1 | -1): void {
   if (mode.value === 'range') {
     const n = cols.value.length
@@ -93,7 +111,7 @@ function shift(dir: 1 | -1): void {
 }
 
 // ---------- the columns' widths (dragged by their edge; remembered, the dashboard's apart) ----------
-const COLS_KEY = props.widget ? 'qa.sheet.cols.widget' : 'qa.sheet.cols'
+const COLS_KEY = `qa.sheet.cols${SUFFIX}`
 type ColW = { rl: number; dc: number; tc: number }
 const colW = ref<ColW>(
   (() => {
@@ -146,7 +164,7 @@ const offDay = window.qa.onDayState((msg) => {
 onBeforeUnmount(offDay)
 
 // ---------- the kind filter (remembered; the dashboard's apart) ----------
-const KINDS_KEY = props.widget ? 'qa.sheet.kinds.widget' : 'qa.sheet.kinds'
+const KINDS_KEY = `qa.sheet.kinds${SUFFIX}`
 function readKinds(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(KINDS_KEY) ?? '[]') as unknown
@@ -410,9 +428,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
         <button :class="{ on: mode === 'week' }" @click="setMode('week')">Неделя</button>
         <button :class="{ on: mode === 'day' }" @click="setMode('day')">День</button>
       </div>
-      <div class="nav">
+      <div class="nav" title="Колесо мыши — день / неделя вперёд или назад" @wheel.prevent="onWheel">
         <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
-        <button ref="plEl" class="pl" :class="{ on: pickerOpen }" title="Выбрать период" @click="pickerOpen = !pickerOpen"><Icon name="calendar" :size="12" />{{ label }}</button>
+        <button ref="plEl" class="pl" :class="{ on: pickerOpen, now: isCurrent }" title="Выбрать период" @click="pickerOpen = !pickerOpen"><Icon name="calendar" :size="12" />{{ label }}</button>
         <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
         <button v-if="!isCurrent" class="ib" title="Сейчас" @click="goToday"><Icon name="clock" :size="13" /></button>
       </div>
@@ -947,6 +965,12 @@ button.pl {
 button.pl:hover,
 button.pl.on {
   background: rgba(255, 255, 255, 0.07);
+}
+button.pl.now {
+  color: var(--accent-fg);
+}
+button.pl.now :deep(svg) {
+  color: var(--accent);
 }
 button.pl :deep(svg) {
   color: var(--muted);

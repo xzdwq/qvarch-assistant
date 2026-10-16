@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
-import type { JiraIssue, JiraState, MyTaskStatus } from '../shared/jira'
+import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from '../shared/jira'
 import { adfToMarkdown } from '../shared/adf'
 
 /**
@@ -98,6 +98,50 @@ export class Jira {
   private lite(): JiraIssue[] {
     if (this.liteCache?.from !== this.cache.issues) this.liteCache = { from: this.cache.issues, list: this.cache.issues.map(({ description: _d, ...i }) => i) }
     return this.liteCache.list
+  }
+
+  // ---------- releases (fix versions) ----------
+  private versionsCache?: { at: number; list: JiraVersion[] }
+  /** The releases of every project in the settings (kept for 5 minutes). */
+  private async versions(): Promise<JiraVersion[]> {
+    if (this.versionsCache && Date.now() - this.versionsCache.at < 5 * 60_000) return this.versionsCache.list
+    const projects = this.config().projects.filter((p) => /^[A-Z][A-Z0-9_]+$/.test(p))
+    const list: JiraVersion[] = []
+    for (const p of projects) {
+      const vs = await this.api<Array<{ id: string; name: string; released?: boolean; archived?: boolean; releaseDate?: string; description?: string }>>(this.jiraUrl(`/rest/api/3/project/${p}/versions`))
+      for (const v of vs ?? []) list.push({ id: String(v.id), name: v.name, project: p, released: !!v.released, archived: !!v.archived, releaseDate: v.releaseDate, description: v.description })
+    }
+    this.versionsCache = { at: Date.now(), list }
+    return list
+  }
+  /**
+   * A page of the releases matching a search: the unreleased first (the nearest date first), then the released
+   * ones (the latest first). `unreleased` — how many of all the matches are not released (where the divider goes).
+   */
+  async findVersions(q: string, offset: number, limit: number): Promise<{ items: JiraVersion[]; total: number; unreleased: number }> {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const all = (await this.versions()).filter((v) => !v.archived && words.every((w) => `${v.project} ${v.name} ${v.description ?? ''}`.toLowerCase().includes(w)))
+    const open = all.filter((v) => !v.released).sort((a, b) => (a.releaseDate ?? '9999').localeCompare(b.releaseDate ?? '9999') || a.name.localeCompare(b.name, 'ru', { numeric: true }))
+    const done = all.filter((v) => v.released).sort((a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? '') || b.name.localeCompare(a.name, 'ru', { numeric: true }))
+    const list = [...open, ...done]
+    return { items: list.slice(Math.max(0, offset), Math.max(0, offset) + Math.min(200, Math.max(1, limit))), total: list.length, unreleased: open.length }
+  }
+  /** The keys of every task in a release (any status). */
+  async versionIssues(id: string): Promise<string[]> {
+    if (!/^\d+$/.test(id)) return []
+    const keys: string[] = []
+    let next: string | undefined
+    do {
+      const page = await this.api<{ issues: Array<{ key: string }>; nextPageToken?: string; isLast?: boolean }>(this.jiraUrl('/rest/api/3/search/jql'), {
+        jql: `fixVersion = ${id}`,
+        fields: ['summary'],
+        maxResults: 100,
+        ...(next ? { nextPageToken: next } : {}),
+      })
+      for (const it of page?.issues ?? []) keys.push(it.key)
+      next = page?.isLast === false ? page.nextPageToken : undefined
+    } while (next && keys.length < 5000)
+    return keys
   }
 
   /** One task in full (with its description). */

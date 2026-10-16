@@ -6,9 +6,12 @@ import { useDay } from '../lib/useDay'
 import { todayKey } from '../lib/today'
 import { useJira } from '../lib/jira'
 import { useOutlook } from '../lib/outlook'
+import { termLight, useTermSessions } from '../lib/terminal'
 
 /** The window's bottom line (a terminal's status bar): the call, the connections, today's time, the clock. */
 defineProps<{ section: string }>()
+const emit = defineEmits<{ terminal: [] }>()
+const terms = useTermSessions()
 const { data, live, now } = useDay(todayKey)
 const jira = useJira()
 const outlook = useOutlook()
@@ -31,6 +34,9 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
     <span class="sep"></span>
     <span class="it" :title="`Jira: ${TIP[jl]}${jira.error ? ` — ${jira.error}` : ''}`"><i class="led" :class="jl"></i>JIRA</span>
     <span class="it" :title="`Outlook: ${TIP[ol]}${outlook.error ? ` — ${outlook.error}` : ''}`"><i class="led" :class="ol"></i>OUTLOOK</span>
+    <button v-if="terms.length" class="it term" :class="termLight.kind" :title="termLight.title" @click="emit('terminal')">
+      <i class="led" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
+    </button>
     <span class="sep"></span>
     <span class="it n">СЕГОДНЯ <b>{{ formatDuration(today.all) }}</b></span>
     <span class="it n opt">ЗАДАЧИ <b>{{ formatDuration(today.tasks) }}</b></span>
@@ -74,6 +80,32 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
 .it b {
   color: var(--text);
   font-weight: 600;
+}
+.term {
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: default;
+}
+.term:hover {
+  color: var(--text);
+}
+.term.alert {
+  color: var(--text-hi);
+}
+.term.err {
+  color: var(--down-fg);
+}
+.led.run {
+  background: var(--up);
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.6);
+}
+.led.alert {
+  animation: blink-fast 0.36s steps(2) infinite;
 }
 .sep {
   flex: none;
@@ -119,6 +151,11 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
 }
 .clk {
   color: var(--text);
+}
+@keyframes blink-fast {
+  50% {
+    opacity: 0.15;
+  }
 }
 @keyframes blink {
   50% {

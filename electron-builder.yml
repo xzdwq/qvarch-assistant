@@ -27,3 +27,6 @@ nsis:
 portable:
   artifactName: ${productName} ${version} portable.${ext}
 asar: true
+# the terminal's native PTY must live outside the asar
+asarUnpack:
+  - "**/node_modules/@lydell/**"

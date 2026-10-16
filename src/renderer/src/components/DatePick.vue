@@ -58,7 +58,8 @@ function pick(d: string): void {
 function onWheel(e: WheelEvent): void {
   if (props.noWheel) return
   e.preventDefault()
-  const dir = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) > 0 ? 1 : -1
+  // up — the next day, down — the previous one (like the times)
+  const dir = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1
   set(shiftDay(props.modelValue || todayKey.value, dir))
 }
 

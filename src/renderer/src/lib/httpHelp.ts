@@ -1,0 +1,161 @@
+/** The HTTP section's guide (Markdown): variables, the scripts before a request and over the answer — with examples. */
+export const HTTP_HELP = `
+## Как это работает
+
+Запрос выполняется так:
+
+1. **Запросы «перед запросом»** — по порядку (у каждого работают его собственные скрипты: «перед» и «обработка»).
+2. **Скрипт «перед запросом»** этого запроса.
+3. **Сам запрос** — с подставленными переменными.
+4. **Скрипт «обработка ответа»** — то, что он вернёт через \`return\`, видно во вкладке «Результат».
+
+Скрипты — обычный JavaScript. Каждый скрипт — тело функции: можно писать \`const\`, \`if\`, циклы и в конце \`return\`.
+На скрипт даётся 5 секунд.
+
+## Переменные \`{{имя}}\`
+
+Подставляются в адрес, параметры, заголовки, тело и авторизацию. Задаются кнопкой **{x}** слева или из скрипта:
+
+\`\`\`js
+qa.set('token', 'abc')        // теперь {{token}} = abc
+qa.get('token')               // 'abc'
+qa.set('ids', [1, 2, 3])      // не строка → сохранится как JSON: [1,2,3]
+\`\`\`
+
+Переменные, заданные скриптом, сохраняются — их видно в списке **{x}**.
+
+## Что доступно в скриптах
+
+| Имя | Что это |
+| --- | --- |
+| \`qa.set(имя, значение)\` | записать переменную |
+| \`qa.get(имя)\` | прочитать переменную |
+| \`qa.log(...)\` | строка во вкладку «Журнал» (\`console.log\` — то же) |
+| \`req\` | этот запрос: \`req.method\`, \`req.url\`, \`req.params\`, \`req.headers\`, \`req.body\` (только чтение) |
+| \`res.status\` | код ответа, \`res.statusText\` — текст |
+| \`res.json()\` | тело как JSON |
+| \`res.body\` | тело как текст |
+| \`res.header('имя')\` | заголовок ответа (без учёта регистра), \`res.headers\` — все |
+| \`res.time\` | время ответа, мс |
+
+\`res\` есть только в обработке ответа.
+
+## Примеры: перед запросом
+
+Токен из другого запроса (в «Получить токен» → «Обработка ответа»):
+
+\`\`\`js
+qa.set('token', res.json().accessToken)
+\`\`\`
+
+…и в нужном запросе: вкладка «Авторизация» → Bearer → \`{{token}}\`, а «Получить токен» добавлен в «Сначала выполнить запросы».
+
+Метка времени и случайный id в переменные:
+
+\`\`\`js
+qa.set('ts', String(Date.now()))
+qa.set('requestId', Math.random().toString(36).slice(2))
+\`\`\`
+
+Дата «сегодня» и «неделю назад» для фильтра:
+
+\`\`\`js
+const d = new Date()
+qa.set('to', d.toISOString().slice(0, 10))
+d.setDate(d.getDate() - 7)
+qa.set('from', d.toISOString().slice(0, 10))
+\`\`\`
+
+Не выполнять дальше, если нет токена:
+
+\`\`\`js
+if (!qa.get('token')) throw new Error('Сначала получите токен')
+\`\`\`
+
+## Примеры: обработка ответа
+
+Только нужные поля:
+
+\`\`\`js
+return res.json().items.map((x) => ({ id: x.id, name: x.name }))
+\`\`\`
+
+Фильтр и подсчёт:
+
+\`\`\`js
+const items = res.json().products
+return items.filter((p) => p.price > 500).length
+\`\`\`
+
+Сортировка (по убыванию цены) и первые 5:
+
+\`\`\`js
+return res.json().products
+  .sort((a, b) => b.price - a.price)
+  .slice(0, 5)
+  .map((p) => \`\${p.title} — \${p.price}\`)
+\`\`\`
+
+Поиск одного элемента:
+
+\`\`\`js
+const u = res.json().users.find((u) => u.email.endsWith('@x.dummyjson.com'))
+return u ?? 'не найден'
+\`\`\`
+
+Группировка: сколько в каждой категории:
+
+\`\`\`js
+const by = {}
+for (const p of res.json().products) by[p.category] = (by[p.category] ?? 0) + 1
+return by
+\`\`\`
+
+Сумма и среднее:
+
+\`\`\`js
+const prices = res.json().products.map((p) => p.price)
+const sum = prices.reduce((a, b) => a + b, 0)
+return { sum: Math.round(sum), avg: +(sum / prices.length).toFixed(2), max: Math.max(...prices) }
+\`\`\`
+
+Проверки (как тесты):
+
+\`\`\`js
+if (res.status !== 200) throw new Error('ожидали 200, пришло ' + res.status)
+const data = res.json()
+qa.log('записей:', data.total)
+return data.total > 0 ? 'OK' : 'пусто'
+\`\`\`
+
+Взять из ответа значение для следующих запросов (пагинация):
+
+\`\`\`js
+const { skip, limit, total } = res.json()
+qa.set('skip', String(skip + limit))
+return \`показано \${skip + limit} из \${total}\`
+\`\`\`
+
+Заголовок ответа:
+
+\`\`\`js
+return { type: res.header('content-type'), time: res.time + ' мс' }
+\`\`\`
+
+Ответ — не JSON (текст, XML):
+
+\`\`\`js
+const m = res.body.match(/<title>(.*?)<\\/title>/)
+return m ? m[1] : res.body.slice(0, 200)
+\`\`\`
+
+## Настройки для всех запросов
+
+Кнопка **⚙** слева: User-Agent, общие заголовки (например \`Accept-Language\`, \`X-Client\`) и сколько ждать ответа.
+Заголовок, заданный в самом запросе, важнее общего.
+
+## Горячие клавиши
+
+**Ctrl+Enter** — отправить. Двойной клик по названию слева — переименовать. Запросы и папки перетаскиваются мышью.
+**Копировать → Весь запрос**, затем **Вставить** (значок буфера слева) — перенести запрос.
+`

@@ -4,7 +4,9 @@ import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
-import type { JiraIssue, JiraState, MyTaskStatus } from './jira'
+import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from './jira'
+import type { HttpDoc, HttpRequest, HttpRunResult } from './http'
+import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
 import type { VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
@@ -155,6 +157,38 @@ export interface QaApi {
   jiraTracked(): Promise<Record<string, number>>
   /** A page of the open Jira tasks matching a search (no descriptions). */
   jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick'): Promise<{ items: JiraIssue[]; total: number }>
+  /** Терминал: shells that live until the app quits. */
+  termCreate(cwd?: string): Promise<TermSession>
+  termWrite(id: string, data: string): void
+  termResize(id: string, cols: number, rows: number): void
+  termKill(id: string): Promise<void>
+  termRename(id: string, title: string): Promise<void>
+  /** A shell's output so far (a pane drawing it again). */
+  termReplay(id: string): Promise<{ buf: string; upto: number }>
+  /** Every variable's value for a shell (or its error). */
+  termValues(id?: string): Promise<Record<string, { value?: string; error?: string }>>
+  /** The reactions' notices (and why they are paused, if they are). */
+  termAlerts(): Promise<{ list: TermAlert[]; watchError: string }>
+  /** Closes a notice (none given — every one). */
+  termDismiss(id?: string): Promise<void>
+  termList(): Promise<TermSession[]>
+  termDirs(path: string): Promise<string[]>
+  termConfig(): Promise<TermConfig>
+  termSetConfig(c: Partial<TermConfig>): Promise<TermConfig>
+  /** A preset's command worked out for a shell (its folder, branch…), ask(…) → the answers. */
+  termRender(id: string, cmd: string, answers: Record<string, string>): Promise<{ text: string; empty: string[] }>
+  /** A shell's output; `end` — how much it has sent so far, this included. */
+  onTermData(cb: (id: string, data: string, end: number) => void): () => void
+  onTermState(cb: (list: TermSession[]) => void): () => void
+  onTermAlerts(cb: (p: { list: TermAlert[]; watchError: string }) => void): () => void
+  /** HTTP: the collection (a test one on the first start), saving it, running a request. */
+  httpLoad(): Promise<HttpDoc>
+  httpSave(doc: HttpDoc): Promise<void>
+  httpRun(req: HttpRequest, doc: HttpDoc): Promise<HttpRunResult>
+  /** A page of the Jira releases of the projects (unreleased first). */
+  jiraVersions(q: string, offset: number, limit: number): Promise<{ items: JiraVersion[]; total: number; unreleased: number }>
+  /** The task keys of a Jira release. */
+  jiraVersionIssues(id: string): Promise<string[]>
   /** One Jira task in full (with its description). */
   jiraIssue(key: string): Promise<JiraIssue | undefined>
   openExternal(url: string): void
@@ -282,6 +316,28 @@ export const IPC = {
   jiraTracked: 'qa:jiraTracked',
   jiraFind: 'qa:jiraFind',
   jiraIssue: 'qa:jiraIssue',
+  jiraVersions: 'qa:jiraVersions',
+  httpLoad: 'qa:httpLoad',
+  termCreate: 'qa:termCreate',
+  termWrite: 'qa:termWrite',
+  termResize: 'qa:termResize',
+  termKill: 'qa:termKill',
+  termRename: 'qa:termRename',
+  termReplay: 'qa:termReplay',
+  termList: 'qa:termList',
+  termDirs: 'qa:termDirs',
+  termConfig: 'qa:termConfig',
+  termSetConfig: 'qa:termSetConfig',
+  termRender: 'qa:termRender',
+  termData: 'qa:termData',
+  termState: 'qa:termState',
+  termValues: 'qa:termValues',
+  termAlerts: 'qa:termAlerts',
+  termDismiss: 'qa:termDismiss',
+  termAlertsEv: 'qa:termAlertsEv',
+  httpSave: 'qa:httpSave',
+  httpRun: 'qa:httpRun',
+  jiraVersionIssues: 'qa:jiraVersionIssues',
   calendarRange: 'qa:calendarRange',
   openExternal: 'qa:openExternal',
   combo: 'qa:combo',

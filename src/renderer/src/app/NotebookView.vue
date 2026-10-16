@@ -5,7 +5,8 @@ import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
 import MdEditor from '../components/MdEditor.vue'
 import BoardView from '../components/BoardView.vue'
-import { isBoard, newBoard as emptyBoard, serializeBoard } from '@shared/whiteboard'
+import { isBoard, serializeBoard } from '@shared/whiteboard'
+import { freshBoard } from '../lib/boardPrefs'
 import EventModal from '../components/EventModal.vue'
 import { fmtSec, useRecorder } from '../lib/recorder'
 import {
@@ -121,7 +122,7 @@ async function newNote(dir = targetDir.value, pane?: number): Promise<void> {
 /** A new board (an endless sheet for schemes and notes) — a .qboard file in the folder. */
 async function newBoard(dir = targetDir.value, pane?: number): Promise<void> {
   try {
-    const path = await window.qa.vaultCreate(dir, 'board', undefined, serializeBoard(emptyBoard()))
+    const path = await window.qa.vaultCreate(dir, 'board', undefined, serializeBoard(freshBoard()))
     await loadTree()
     openFile(path, { pane })
   } catch (e) {

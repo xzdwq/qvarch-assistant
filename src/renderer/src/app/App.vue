@@ -15,6 +15,8 @@ import DashboardView from './DashboardView.vue'
 import ReportsView from './ReportsView.vue'
 import ReleaseView from './ReleaseView.vue'
 import PdfSignView from './PdfSignView.vue'
+import HttpView from './HttpView.vue'
+import TerminalView from './TerminalView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import DatePick from '../components/DatePick.vue'
 import StatusBar from '../components/StatusBar.vue'
@@ -75,6 +77,9 @@ function run(cmd: AppCommand): void {
 }
 
 /** Sections in the user's order (hidden ones are left out — the open one always shows). */
+/** Once opened, the terminal stays mounted (hidden in other sections). */
+const termOpened = ref(false)
+watch(view, (v) => v === 'terminal' && (termOpened.value = true), { immediate: true })
 const menu = computed(() => orderedViews(settings.value?.ui.menu).filter((v) => v.id === view.value || !settings.value?.ui.menu.hidden.includes(v.id)))
 
 const sectionName = computed(() => (view.value === 'settings' ? 'Настройки' : (VIEWS.find((v) => v.id === view.value)?.label ?? '')))
@@ -168,16 +173,19 @@ function setAppZoom(z: number): void {
       <Transition name="fade" mode="out-in">
         <DashboardView v-if="view === 'dashboard'" :settings="settings" @go="go" />
         <DayView v-else-if="view === 'day'" :day="day" :settings="settings" :focus-entry="focusEntry" @open-day="(d, id) => ((day = d), (focusEntry = id))" />
-        <TaskCalendar v-else-if="view === 'calendar'" :work-days="settings.schedule.workDays" @open-day="(d) => ((day = d), (view = 'day'))" />
+        <TaskCalendar v-else-if="view === 'calendar'" fill :work-days="settings.schedule.workDays" @open-day="(d) => ((day = d), (view = 'day'))" />
         <NotebookView v-else-if="view === 'notebook'" />
         <ReportsView v-else-if="view === 'reports'" @go="go" />
         <WorkView v-else-if="view === 'work'" :settings="settings" @go="go" @settings="view = 'settings'" @open-day="(d) => ((day = d), (view = 'day'))" />
         <ReleaseView v-else-if="view === 'release'" />
+        <HttpView v-else-if="view === 'http'" />
+        <div v-else-if="view === 'terminal'" class="termslot"></div>
         <PdfSignView v-else-if="view === 'pdf'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
+      <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep" />
     </main>
-    <StatusBar :section="sectionName" />
+    <StatusBar :section="sectionName" @terminal="view = 'terminal'" />
   </div>
 </template>
 
@@ -410,13 +418,22 @@ main {
   overflow: auto;
   min-height: 0;
 }
+main:has(> .tcal.fill),
 main:has(> .nb),
 main:has(> .rep),
 main:has(> .sh),
 main:has(> .rel),
 main:has(> .ps),
-main:has(> .tv) {
+main:has(> .tv),
+main:has(> .hv),
+main:has(> .termslot) {
   overflow: hidden;
+}
+.termslot {
+  display: none;
+}
+.termkeep {
+  height: 100%;
 }
 .azoom {
   display: inline-flex;

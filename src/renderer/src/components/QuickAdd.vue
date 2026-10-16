@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { dayStart, formatDuration, formatHM, MINUTE, shiftDay } from '@shared/timeline'
+import { dayStart, MINUTE, shiftDay } from '@shared/timeline'
 import { parseQuick, type Quick } from '@shared/quickadd'
 import { pickableTasks, type TaskRef } from '@shared/jira'
 import type { Ms } from '@shared/types'
@@ -10,6 +10,7 @@ import { useLocalTasks } from '../lib/tasks'
 import { placeFloat, useAnchor } from '../lib/floating'
 import Icon from './Icon.vue'
 import TaskSearch from './TaskSearch.vue'
+import TimeRange from './TimeRange.vue'
 
 /**
  * One line to add anything to the work: a past piece of time or a plan. The text is understood as it is typed
@@ -94,8 +95,8 @@ const range = computed(() => {
 })
 const handTime = computed(() => startOv.value !== undefined || endOv.value !== undefined)
 const minOf = (t: number) => Math.round((t - dayStart(finalDay.value)) / MINUTE)
-/** The wheel over a part: down — later, up — earlier (like the date fields). */
-const dirOf = (e: WheelEvent) => ((Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) > 0 ? 1 : -1)
+/** The wheel: up — later (the next day), down — earlier. */
+const dirOf = (e: WheelEvent) => ((Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1)
 function wheelDay(e: WheelEvent): void {
   e.preventDefault()
   dayOv.value = shiftDay(finalDay.value, dirOf(e))
@@ -106,48 +107,10 @@ function keyDay(e: KeyboardEvent): void {
   e.preventDefault()
   dayOv.value = shiftDay(finalDay.value, d)
 }
-/** One part (the start or the end) moves by `step` minutes; the other stays where it is. */
-function nudge(part: 'start' | 'end', step: number): void {
-  const s = minOf(range.value.start)
-  const en = minOf(range.value.end)
-  if (part === 'start') {
-    startOv.value = Math.max(0, Math.min(en - 5, s + step))
-    endOv.value = en
-  } else {
-    startOv.value = s
-    endOv.value = Math.max(s + 5, Math.min(24 * 60, en + step))
-  }
-}
-function wheelTime(part: 'start' | 'end', e: WheelEvent): void {
-  e.preventDefault()
-  nudge(part, dirOf(e) * (e.shiftKey ? 1 : 5))
-}
-function keyTime(part: 'start' | 'end', e: KeyboardEvent): void {
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    e.preventDefault()
-    nudge(part, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 5))
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    ;(e.target as HTMLInputElement).blur()
-  } else if (e.key === 'Escape') {
-    ;(e.target as HTMLInputElement).value = formatHM(part === 'start' ? range.value.start : range.value.end)
-    ;(e.target as HTMLInputElement).blur()
-  }
-}
-/** Typed: «9», «930», «9:30», «09.30». */
-function typedTime(part: 'start' | 'end', v: string): void {
-  const m = v.trim().match(/^(\d{1,2})(?:[:.]?(\d{2}))?$/)
-  if (!m || +m[1] > 24 || +(m[2] ?? 0) > 59) return
-  const t = +m[1] * 60 + +(m[2] ?? 0)
-  const s = minOf(range.value.start)
-  const en = minOf(range.value.end)
-  if (part === 'start') {
-    startOv.value = t
-    endOv.value = en > t ? en : t + Math.max(5, en - s)
-  } else {
-    startOv.value = s
-    endOv.value = t > s ? t : s + 5
-  }
+/** The time set by hand in the preview (TimeRange keeps the start before the end). */
+function setRange(r: { start: number; end: number }): void {
+  startOv.value = minOf(r.start)
+  endOv.value = minOf(r.end)
 }
 const label = computed(() => q.value.label || (task.value ? `${task.value.key} ${task.value.summary}`.trim() : kindLabel(kind.value)))
 const ready = computed(() => !!(q.value.label || task.value || q.value.kind || q.value.parts.length))
@@ -277,27 +240,8 @@ defineExpose({ focus })
     <div class="qprev">
       <template v-if="ready">
         <span class="pv day" :class="{ other: otherDay }" tabindex="0" title="Колесо или стрелки — другой день" @wheel="wheelDay" @keydown="keyDay"><Icon name="calendar" :size="11" />{{ dayText(finalDay) }}</span>
-        <span class="pv time" :class="{ auto: q.start === undefined && !handTime }" :title="q.start === undefined && !handTime ? 'Время не указано — в свободное место' : ''">
-          <input
-            class="tp"
-            :value="formatHM(range.start)"
-            title="Начало: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
-            spellcheck="false"
-            @wheel="wheelTime('start', $event)"
-            @keydown="keyTime('start', $event)"
-            @change="typedTime('start', ($event.target as HTMLInputElement).value)"
-            @focus="($event.target as HTMLInputElement).select()"
-          />–<input
-            class="tp"
-            :value="formatHM(range.end)"
-            title="Конец: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
-            spellcheck="false"
-            @wheel="wheelTime('end', $event)"
-            @keydown="keyTime('end', $event)"
-            @change="typedTime('end', ($event.target as HTMLInputElement).value)"
-            @focus="($event.target as HTMLInputElement).select()"
-          />
-          · {{ formatDuration(range.end - range.start) }}<i v-if="q.start === undefined && !handTime"> авто</i>
+        <span class="pv time" :class="{ auto: q.start === undefined && !handTime }" :title="q.start === undefined && !handTime ? 'Время не указано — сейчас + 30 мин' : ''">
+          <TimeRange :start="range.start" :end="range.end" @change="setRange"><i v-if="q.start === undefined && !handTime"> авто</i></TimeRange>
         </span>
         <span class="pv kind" :style="{ '--c': kindColor(kind) }"><i></i>{{ kindLabel(kind) }}</span>
         <span v-if="task" class="pv task" :class="{ unknown: !task.summary }" :title="task.summary || 'Задача не найдена в списке'">

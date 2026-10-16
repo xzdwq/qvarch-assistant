@@ -30,6 +30,18 @@ export interface JiraIssue {
   created?: number
 }
 
+/** A release (a fix version) of a Jira project. */
+export interface JiraVersion {
+  id: string
+  name: string
+  project: string
+  released: boolean
+  archived?: boolean
+  /** YYYY-MM-DD */
+  releaseDate?: string
+  description?: string
+}
+
 /** My own mark for a task (set in the app, not in Jira). */
 export type MyTaskStatus = 'review' | 'done'
 

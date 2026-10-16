@@ -1,5 +1,6 @@
 import { reactive, ref, shallowRef } from 'vue'
 import type { BranchCommitInfo, BranchDiffStat, BranchRef, ConflictSource, MainStatus, ProjectProfile, ReleasePlan, StaleBranchHint } from '@shared/release'
+import type { JiraVersion } from '@shared/jira'
 import { makeColors } from './releaseRail'
 import { onNewDay } from './today'
 
@@ -35,6 +36,9 @@ export const rs = reactive({
   filter: '',
   hideInMain: false,
   showService: false,
+  /** The Jira release whose tasks' branches were ticked (kept while the section is switched). */
+  jiraRelease: undefined as JiraVersion | undefined,
+  jiraReleaseInfo: '',
   current: '',
   dirty: { hasStaged: false, hasUnstaged: false },
   dateCheck: { branchName: null as string | null, exists: false },

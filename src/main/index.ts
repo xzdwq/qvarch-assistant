@@ -25,7 +25,11 @@ import { Store } from './store'
 import { Tracker } from './tracker'
 import { createMainWindow, Island, TITLEBAR_HEIGHT } from './windows'
 import { themeBg, themeSymbol } from '../shared/theme'
+import type { HttpDoc, HttpRequest } from '../shared/http'
 import { runSnap } from './snap'
+import { HttpClient } from './http'
+import { Terminals } from './terminal'
+import type { TermConfig } from '../shared/terminal'
 
 const ISLAND_HOTKEY = 'Control+Alt+Space'
 
@@ -41,6 +45,7 @@ let probe: Probe
 let mainWin: BrowserWindow | undefined
 let tablet: TabletService | undefined
 let island: Island | undefined
+let terminals: Terminals | undefined
 let selection: Selection | null = null
 let tray: Tray | undefined
 let jira: Jira
@@ -835,6 +840,35 @@ function registerIpc(): void {
   ipcMain.handle(IPC.jiraTracked, () => keyTotals(store.listDays().map(spentDay)))
   ipcMain.handle(IPC.jiraFind, (_e, q: string, offset: number, limit: number, mode?: string) => jira.find(String(q ?? ''), Number(offset) || 0, Number(limit) || 50, mode === 'pick' ? 'pick' : 'list'))
   ipcMain.handle(IPC.jiraIssue, (_e, key: string) => jira.issue(String(key)))
+  ipcMain.handle(IPC.jiraVersions, (_e, q: string, offset: number, limit: number) => jira.findVersions(String(q ?? ''), Number(offset) || 0, Number(limit) || 40))
+  ipcMain.handle(IPC.jiraVersionIssues, (_e, id: string) => jira.versionIssues(String(id)))
+  // ---------- the terminal ----------
+  const toMain = (ch: string, ...args: unknown[]) => mainWin && !mainWin.isDestroyed() && mainWin.webContents.send(ch, ...args)
+  terminals = new Terminals(store.root, (id, data, end) => toMain(IPC.termData, id, data, end), (list) => {
+    toMain(IPC.termState, list)
+    if (island && !island.win.isDestroyed()) island.win.webContents.send(IPC.termState, list)
+  }, (list, watchError) => toMain(IPC.termAlertsEv, { list, watchError }))
+  const term = terminals
+  ipcMain.handle(IPC.termCreate, (_e, cwd?: string) => term.create(typeof cwd === 'string' ? cwd : undefined))
+  ipcMain.on(IPC.termWrite, (_e, id: string, data: string) => term.write(String(id), String(data)))
+  ipcMain.on(IPC.termResize, (_e, id: string, cols: number, rows: number) => term.resize(String(id), Number(cols), Number(rows)))
+  ipcMain.handle(IPC.termKill, (_e, id: string) => term.kill(String(id)))
+  ipcMain.handle(IPC.termRename, (_e, id: string, title: string) => term.rename(String(id), String(title)))
+  ipcMain.handle(IPC.termReplay, (_e, id: string) => term.replay(String(id)))
+  ipcMain.handle(IPC.termValues, (_e, id?: string) => term.values(typeof id === 'string' ? id : undefined))
+  ipcMain.handle(IPC.termAlerts, () => term.alerts())
+  ipcMain.handle(IPC.termDismiss, (_e, id?: string) => term.dismiss(typeof id === 'string' ? id : undefined))
+  ipcMain.handle(IPC.termList, () => term.list())
+  ipcMain.handle(IPC.termDirs, (_e, p: string) => term.dirs(String(p)))
+  ipcMain.handle(IPC.termConfig, () => term.cfg)
+  ipcMain.handle(IPC.termSetConfig, (_e, c: Partial<TermConfig>) => term.setConfig(JSON.parse(JSON.stringify(c)) as Partial<TermConfig>))
+  ipcMain.handle(IPC.termRender, (_e, id: string, cmd: string, answers: Record<string, string>) => term.render(String(id), String(cmd), answers ?? {}))
+
+  // ---------- HTTP ----------
+  const http = new HttpClient(store.root)
+  ipcMain.handle(IPC.httpLoad, () => http.load())
+  ipcMain.handle(IPC.httpSave, (_e, doc: HttpDoc) => http.save(doc))
+  ipcMain.handle(IPC.httpRun, (_e, req: HttpRequest, doc: HttpDoc) => http.run(req, doc))
 
   ipcMain.on(IPC.openExternal, (_e, url: string) => {
     // web pages only (Jira, links in notes) — never file:// or app protocols
@@ -1000,5 +1034,6 @@ app.on('before-quit', () => {
   outlook?.stop()
   voice?.stop()
   vault?.stop()
+  terminals?.killAll()
   store?.close()
 })

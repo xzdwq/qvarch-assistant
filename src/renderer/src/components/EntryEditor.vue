@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { dayEnd, formatDuration, joinTitle, MINUTE, splitTitle } from '@shared/timeline'
+import { formatDuration, joinTitle, MINUTE, splitTitle } from '@shared/timeline'
 import type { Entry, EntryKind, Ms, Note } from '@shared/types'
 import { VOICE_PENDING } from '@shared/voice'
 import { kindLabel, kinds } from '../lib/palette'
@@ -10,6 +10,7 @@ import TaskPicker from './TaskPicker.vue'
 import DictateButton from './DictateButton.vue'
 import { plainTask, type TaskRef } from '@shared/jira'
 import Icon from './Icon.vue'
+import TimeRange from './TimeRange.vue'
 import TimeField from './TimeField.vue'
 import OffsetField from './OffsetField.vue'
 import PopChip from './PopChip.vue'
@@ -211,14 +212,12 @@ function pushRange(): void {
   if (props.entry.id) return
   emit('range', { start: start.value, end: effectiveEnd.value, followsNow: followsNow.value })
 }
-function setStart(t: Ms): void {
-  startsNow.value = false
-  start.value = Math.min(t, effectiveEnd.value - MINUTE)
-  pushRange()
-}
-function setEnd(t: Ms): void {
-  followsNow.value = false
-  end.value = Math.max(t, start.value + MINUTE)
+/** From the time range: a changed side stops following "now"; the range itself keeps the start before the end. */
+function setRange(r: { start: Ms; end: Ms }): void {
+  if (r.start !== start.value) startsNow.value = false
+  if (r.end !== effectiveEnd.value) followsNow.value = false
+  start.value = r.start
+  end.value = Math.max(r.end, r.start + MINUTE)
   pushRange()
 }
 
@@ -379,10 +378,7 @@ watch(
       <span class="dur">{{ formatDuration(effectiveEnd - start) }}</span>
     </div>
     <div v-else class="when">
-      <TimeField :model-value="start" :live="startsNow" :max="effectiveEnd - 60000" @update:model-value="setStart" />
-      <span class="dash">–</span>
-      <TimeField :model-value="effectiveEnd" :live="followsNow" :min="start + 60000" :max="dayEnd(day)" @update:model-value="setEnd" />
-      <span class="dur">{{ formatDuration(effectiveEnd - start) }}</span>
+      <TimeRange boxed :start="start" :end="effectiveEnd" :live-start="startsNow" :live-end="followsNow" @change="setRange" />
     </div>
     <div v-if="add && !readonly" class="presets">
       <button

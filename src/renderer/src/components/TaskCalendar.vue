@@ -24,7 +24,8 @@ import { askSeries } from '../lib/seriesAsk'
  * side panel (the same editor as the main window), notes with voice / call audio.
  * Wheel — hours; Shift + wheel, a wheel over the dates or a sideways drag — days; Ctrl + wheel — zoom.
  */
-const props = defineProps<{ workDays?: number[] }>()
+/** `fill` — the calendar section: it takes the whole window height (the dashboard widget sizes it itself). */
+const props = defineProps<{ workDays?: number[]; fill?: boolean }>()
 const emit = defineEmits<{ openDay: [day: string] }>()
 const jira = useJira()
 const own = useLocalTasks()
@@ -751,7 +752,7 @@ const isToday = (d: string) => d === today.value
 </script>
 
 <template>
-  <div class="tcal">
+  <div class="tcal" :class="{ fill }">
     <div class="bar">
       <button class="btoday" @click="goToday">Сегодня</button>
       <span class="ttl">{{ rangeText }}</span>
@@ -1126,6 +1127,15 @@ const isToday = (d: string) => d === today.value
   gap: 0;
   height: calc(100vh - 200px);
   min-height: 440px;
+}
+.tcal.fill {
+  box-sizing: border-box;
+  height: 100%;
+}
+.tcal.fill .wrap {
+  flex: 1;
+  height: auto;
+  min-height: 300px;
 }
 .strip {
   flex: 1;

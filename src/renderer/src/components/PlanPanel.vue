@@ -5,8 +5,8 @@ import { plannedWithin } from '@shared/plan'
 import { formatDuration, formatHM } from '@shared/timeline'
 import type { Ms, PlanBlock } from '@shared/types'
 import Icon from './Icon.vue'
+import TimeRange from './TimeRange.vue'
 import OffsetField from './OffsetField.vue'
-import TimeField from './TimeField.vue'
 import { useJira } from '../lib/jira'
 import { entryIcon, kindColor, kindLabel, kinds } from '../lib/palette'
 
@@ -139,10 +139,7 @@ async function done(): Promise<void> {
         <input v-model="editLabel" class="lbl" spellcheck="false" @change="update({ label: editLabel })" @keydown.enter="update({ label: editLabel })" />
       </div>
       <div class="srow">
-        <TimeField compact :model-value="sel.start" :max="sel.end - 300000" @update:model-value="(t) => update({ start: t })" />
-        <span class="muted">—</span>
-        <TimeField compact :model-value="sel.end" :min="sel.start + 300000" @update:model-value="(t) => update({ end: t })" />
-        <b>{{ formatDuration(sel.end - sel.start) }}</b>
+        <TimeRange boxed :start="sel.start" :end="sel.end" @change="(r) => update({ start: r.start, end: r.end })" />
       </div>
       <div v-if="sel.task" class="muted small tline"><Icon name="jira" :size="12" />{{ sel.task.key }} · {{ labelWithoutKey(sel.task.summary, sel.task.key) }}</div>
       <div class="kinds">

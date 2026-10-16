@@ -4,6 +4,7 @@ import { ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW, DOCK_SIDE, DOCK_STRIP, 
 import { clipEntries, dayEnd, dayStart, flattenForDisplay, formatDuration, formatHM, HOUR, joinTitle, laneIsFree, MINUTE, parseQuickDuration, quickRange, scheduleRanges, shiftDay, splitTitle, unionMs } from '@shared/timeline'
 import type { Entry, EntryKind, Ms, Note, PlanBlock, PublicSettings, Selection } from '@shared/types'
 import Icon from '../components/Icon.vue'
+import TimeRange from '../components/TimeRange.vue'
 import { todayKey } from '../lib/today'
 import ThinkingOrb from '../components/ThinkingOrb.vue'
 import DictateButton from '../components/DictateButton.vue'
@@ -23,7 +24,6 @@ import QuickField, { type QuickParsed } from '../components/QuickField.vue'
 import OffsetField from '../components/OffsetField.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import { askSeries } from '../lib/seriesAsk'
-import TimeField from '../components/TimeField.vue'
 import { entryIcon, kindColor, kindIcon, kindLabel, kinds, setKinds } from '../lib/palette'
 import { clusterize, useFan } from '../lib/pinfan'
 import { productiveSplit, workDayMs } from '@shared/kinds'
@@ -1250,13 +1250,9 @@ const label = ref('')
 const saving = ref(false)
 const toast = ref<{ text: string; ok: boolean }>()
 
-function setStart(t: Ms): void {
-  const a = active.value
-  if (a) sel.commit({ ...a, start: Math.min(t, activeEnd.value - MINUTE) })
-}
-function setEnd(t: Ms): void {
-  const a = active.value
-  if (a) sel.commit(makeSel(a.start, Math.max(t, a.start + MINUTE)))
+/** The period from the time range (an end at "now" keeps following it). */
+function setPeriod(r: { start: Ms; end: Ms }): void {
+  if (active.value) sel.commit(makeSel(r.start, Math.max(r.end, r.start + MINUTE)))
 }
 /** Nothing uncut: an explicit period from now (e.g. to plan a block ahead) — adjust its times as needed. */
 function planPeriod(): void {
@@ -1772,10 +1768,7 @@ function onKey(e: KeyboardEvent): void {
               </template>
               <div v-else class="editbox" @keydown.enter.exact.prevent="saveEdit">
                 <div class="times">
-                  <TimeField compact :model-value="edit.start" :max="edit.end - 60000" @update:model-value="(t) => (edit!.start = t)" />
-                  <span class="muted">—</span>
-                  <TimeField compact :model-value="edit.end" :min="edit.start + 60000" :max="dayEnd(today)" @update:model-value="(t) => (edit!.end = t)" />
-                  <b class="dur">{{ formatDuration(edit.end - edit.start) }}</b>
+                  <TimeRange boxed :start="edit.start" :end="edit.end" @change="(r) => ((edit!.start = r.start), (edit!.end = r.end))" />
                 </div>
                 <div class="editrow">
                   <LabelInput v-model="edit.label" drop-up no-recent multiline :recent="recent" placeholder="Shift+Enter — новая строка" @submit="saveEdit" />
@@ -1806,19 +1799,13 @@ function onKey(e: KeyboardEvent): void {
               <div class="times">
                 <template v-if="marker">
                   <span class="muted">Период</span>
-                  <TimeField compact :model-value="marker.start" :max="activeEnd - 60000" @update:model-value="setStart" />
-                  <span class="muted">—</span>
-                  <TimeField compact :model-value="activeEnd" :live="!marker.end" :min="marker.start + 60000" :max="dayEnd(today)" @update:model-value="setEnd" />
-                  <b class="dur">{{ formatDuration(activeEnd - marker.start) }}</b>
+                  <TimeRange boxed :start="marker.start" :end="activeEnd" :live-end="!marker.end" @change="setPeriod" />
                   <button class="icon" title="Сбросить выделение (Esc)" @click="resetSelection"><Icon name="x" :size="15" /></button>
                 </template>
                 <template v-else-if="implicit">
                   <!-- free work time by default (or an hour forward); changing a time turns it into an explicit period -->
                   <span class="muted">Период</span>
-                  <TimeField compact :model-value="implicit.start" :min="dayStart(today)" :max="activeEnd - 60000" @update:model-value="setStart" />
-                  <span class="muted">—</span>
-                  <TimeField compact :model-value="activeEnd" :live="!implicit.end" :min="implicit.start + 60000" :max="dayEnd(today)" @update:model-value="setEnd" />
-                  <b class="dur">{{ formatDuration(activeEnd - implicit.start) }}</b>
+                  <TimeRange boxed :start="implicit.start" :end="activeEnd" :live-end="!implicit.end" @change="setPeriod" />
                   <span class="muted small">{{ implicit.end ? 'вперёд' : 'свободно' }}</span>
                 </template>
                 <template v-else>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { dayEnd, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges, shiftDay } from '@shared/timeline'
-import { placeSlot } from '@shared/work'
 import type { Quick } from '@shared/quickadd'
 import type { TaskRef } from '@shared/jira'
 import type { Entry, Ms, Note, PlanBlock, PublicSettings } from '@shared/types'
@@ -190,12 +189,13 @@ const flash = ref<string>()
 
 // ---------- quick add ----------
 const quick = ref<InstanceType<typeof QuickAdd>>()
-const workStart = (d: string) => scheduleRanges(d, props.settings.schedule).work?.[0]
+/** Without a time in the text: from now, 30 min (or the named length) — on another day at the same clock time. */
 function placeQ(q: Quick): { start: Ms; end: Ms } {
   const dur = q.dur ?? 30 * MINUTE
   if (q.start !== undefined) return { start: q.start, end: q.end ?? q.start + dur }
-  const list = days.value.find((d) => d.day === q.day)?.entries ?? []
-  return placeSlot(list, dur, { now: now.value, isToday: q.day === todayKey.value, dayStart: dayStart(q.day), dayEnd: dayEnd(q.day), workStart: workStart(q.day) })
+  const n = Math.floor(now.value / MINUTE) * MINUTE
+  const start = Math.min(dayEnd(q.day) - dur, dayStart(q.day) + (n - dayStart(todayKey.value)))
+  return { start, end: start + dur }
 }
 async function addTaskToDay(d: string, t: TaskRef): Promise<void> {
   const list = d === day.value ? cur.value.dayTasks : ((await window.qa.getDay(d)).dayTasks ?? [])

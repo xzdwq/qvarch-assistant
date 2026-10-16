@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { BranchRef, CommitInfo, ConflictCause, ConflictSource, MainStatus, PlanItem, ProjectProfile } from '@shared/release'
 import Icon from '../components/Icon.vue'
+import JiraReleasePicker from '../components/JiraReleasePicker.vue'
+import type { JiraVersion } from '@shared/jira'
 import { computeRail, drawRail, railWidth, type Row } from '../lib/releaseRail'
 import { colors, listen, loadProjects, openProject, planTick, requestDateCheck, rs, send, showError, today } from '../lib/releaseStore'
 
@@ -88,6 +90,58 @@ function applyFilters(): void {
   searching.value = true
   send({ command: 'setBranchListLimit', limit: rs.limit, hideAlreadyInMain: rs.hideInMain })
 }
+// ---------- a Jira release: its tasks' branches get ticked ----------
+const relBusy = ref(false)
+/** The keys to tick once the full list of branches comes (it was limited when the release was picked). */
+let pendingKeys: string[] | undefined
+/** A branch is a task's when its name holds the key as a whole word: feature/DOS-12, DOS-12-fix — not DOS-123. */
+const keyRe = (k: string) => new RegExp(`(^|[^A-Za-z0-9])${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'i')
+function tickKeys(keys: string[]): void {
+  const res = keys.map(keyRe)
+  const s = new Set(rs.selected)
+  const found = new Set<string>()
+  for (const b of rs.branches)
+    keys.forEach((k, i) => {
+      if (res[i].test(b.name)) {
+        s.add(b.ref)
+        found.add(k)
+      }
+    })
+  rs.selected = s
+  const missing = keys.length - found.size
+  rs.jiraReleaseInfo = `задач ${keys.length} · веток отмечено ${found.size}${missing ? ` · без ветки ${missing}` : ''}`
+}
+async function onRelease(v: JiraVersion | undefined): Promise<void> {
+  rs.jiraRelease = v
+  rs.jiraReleaseInfo = ''
+  pendingKeys = undefined
+  // cleared: only the release goes, the ticked branches stay
+  if (!v) return
+  relBusy.value = true
+  try {
+    const keys = await window.qa.jiraVersionIssues(v.id)
+    if (rs.jiraRelease?.id !== v.id) return
+    tickKeys(keys)
+    // a limited list may hide some of the branches: show them all, tick again when they come
+    if (rs.limit < LIMITS[LIMITS.length - 1]) {
+      pendingKeys = keys
+      rs.limit = LIMITS[LIMITS.length - 1]
+      applyFilters()
+    }
+  } catch (e) {
+    rs.jiraReleaseInfo = `Jira: ${e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)}`
+  } finally {
+    relBusy.value = false
+  }
+}
+watch(
+  () => rs.branches,
+  () => {
+    if (!pendingKeys) return
+    tickKeys(pendingKeys)
+    pendingKeys = undefined
+  },
+)
 function setService(show: boolean): void {
   rs.showService = show
   searching.value = true
@@ -483,6 +537,7 @@ const subjectOf = (r: Row) => (r.kind === 'item' ? r.item.subject : r.commit.sub
           <div class="arow">
             <label class="ck"><input type="checkbox" :checked="allSelected" @change="selectAll(($event.target as HTMLInputElement).checked)" />Выбрать все</label>
             <button class="b sec sm" @click="expandAll">{{ allExpanded ? `▾ Скрыть коммиты в ${rs.devBranch} (для всех)` : `▸ Показать коммиты в ${rs.devBranch} (для всех)` }}</button>
+            <JiraReleasePicker :model-value="rs.jiraRelease" :busy="relBusy" :info="rs.jiraReleaseInfo" @update:model-value="onRelease" />
           </div>
           <div v-if="rs.branches.length" class="bgrid bhead">
             <span></span><span>Ветка и последний коммит</span><span class="r">Изменения</span>

@@ -8,6 +8,8 @@ import NoteList from '../components/NoteList.vue'
 import NoteEditor from '../components/NoteEditor.vue'
 import PlanPanel from '../components/PlanPanel.vue'
 import EntryRecords from '../components/EntryRecords.vue'
+import DayStrip from '../components/DayStrip.vue'
+import SheetView from './SheetView.vue'
 import { visibleNotes } from '@shared/notes'
 import Timeline from '../components/Timeline.vue'
 import { productiveMs } from '@shared/kinds'
@@ -75,7 +77,7 @@ const status = computed(() => {
 // ---------- selection / editor ----------
 
 const selectedId = ref<string>()
-const tab = ref<'entries' | 'notes'>('entries')
+const tab = ref<'entries' | 'notes' | 'sheet'>('entries')
 const notes = computed(() => visibleNotes(data.value.notes))
 /** The note being written / edited in the notes tab. */
 const noteDraft = ref<{ id: string; at: number; text: string; isNew?: boolean; taskId?: string }>()
@@ -393,6 +395,8 @@ function closeEditor(): void {
       :view-key="`day:${day}`"
       @follow="(on) => void window_follow(on)"
     />
+    <!-- the day as a chain of events (as under the dashboard's timeline) -->
+    <DayStrip class="dstrip" :entries="data.entries" :now="now" :countdown="settings.ui.timeline.countdown" />
 
     <div class="bottom">
       <section class="left">
@@ -435,12 +439,17 @@ function closeEditor(): void {
         <nav class="tabs">
           <button :class="{ on: tab === 'entries' }" @click="tab = 'entries'">Записи ({{ data.entries.length }})</button>
           <button :class="{ on: tab === 'notes' }" @click="tab = 'notes'">Заметки ({{ notes.length }})</button>
+          <button :class="{ on: tab === 'sheet' }" @click="tab = 'sheet'">Заполнение</button>
         </nav>
 
         <Transition name="fade" mode="out-in">
           <div :key="tab">
             <div v-if="tab === 'entries'" class="list">
               <EntryRecords :data="data" :selected-id="selectedId" @select="select" @changed="reload" />
+            </div>
+
+            <div v-else-if="tab === 'sheet'" class="sheet-tab">
+              <SheetView :settings="settings" widget store="day" :day="day" @go="(_v, d, id) => d && emit('openDay', d, id)" />
             </div>
 
             <div v-else-if="tab === 'notes'" class="notes-tab">
@@ -586,6 +595,15 @@ function closeEditor(): void {
 }
 .ai-tab .small {
   font-size: 11px;
+}
+.sheet-tab {
+  height: 480px;
+  margin: 0 -16px -14px;
+}
+.dstrip {
+  margin-top: -6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
 }
 .notes-tab {
   display: flex;

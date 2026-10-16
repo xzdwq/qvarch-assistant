@@ -35,6 +35,7 @@ import Icon from './Icon.vue'
 import ZoomChip from './ZoomChip.vue'
 import { drawGradientStroke, drawNibGradient, nibPath, strokePath, type InkStyle } from '../lib/ink'
 import { paperTiles } from '../lib/paper'
+import { rememberBg } from '../lib/boardPrefs'
 import { penNow, useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { placeFloat, useAnchor } from '../lib/floating'
 import { historyOf } from '../lib/boardHistory'
@@ -1330,6 +1331,8 @@ function onDocDown(e: PointerEvent): void {
 }
 onMounted(() => document.addEventListener('pointerdown', onDocDown, true))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocDown, true))
+// the board shown is the "last one": a new board takes its background
+watch(() => board.value.bg, (bg) => rememberBg(bg), { deep: true, immediate: true })
 function setBg(p: Partial<BoardBg>): void {
   commit({ ...board.value, bg: { ...board.value.bg, ...p } })
 }
