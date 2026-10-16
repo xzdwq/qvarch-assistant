@@ -1,33 +1,37 @@
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
 import { deleteProject, importVscodeProjects, readProjects, saveProject, setReleaseDataDir } from './release/config'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { IPC, type AppCommand } from '../shared/api'
-import { clipEntries, dayEnd, dayKey, dayStart, shiftDay, firstFreeLane, mergeEntries, pinLanes, placeEntry, putEntry, scheduleRanges, unionMs } from '../shared/timeline'
-import type { DayStateMessage, DaySummary, Entry, LinkEnd, LocalTask, Note, PlanBlock, Selection, SettingsPatch } from '../shared/types'
+import { clipEntries, dayEnd, dayKey, dayStart, shiftDay, firstFreeLane, mergeEntries, pinLanes, placeEntry, putEntry, scheduleRanges } from '../shared/timeline'
+import type { DayStateMessage, Entry, LocalTask, Note, PlanBlock, Selection, SettingsPatch } from '../shared/types'
 import { emptyCombo, pushKeys, type ComboState } from '../shared/combo'
 import { addToRows, type PulsePoint } from '../shared/pulse'
 import { makeIcon } from './icon'
 import { Probe } from './probe'
+import { TabletService } from './tablet'
 import { Jira } from './jira'
 import { Outlook } from './outlook'
-import { adoptTime, applyMeetings, linkCallsToMeetings, pairKey } from '../shared/outlook'
-import { Ai } from './ai'
+import { applyMeetings } from '../shared/outlook'
 import { Voice } from './voice'
 import { Vault } from './vault'
 import { remindAt, shiftBy, type Remind, type RepeatRule } from '../shared/repeat'
 import { isWhisperModel, titleFromTranscript, VOICE_PENDING } from '../shared/voice'
-import { addLink, endDay, isCrossDay, pruneLinks, remapLinks, setLinksOf } from '../shared/links'
 import { keyTotals } from '../shared/board'
 import type { MyTaskStatus } from '../shared/jira'
 import { Store } from './store'
 import { Tracker } from './tracker'
-import { createMainWindow, Island } from './windows'
+import { createMainWindow, Island, TITLEBAR_HEIGHT } from './windows'
+import { themeBg, themeSymbol } from '../shared/theme'
+import { runSnap } from './snap'
 
 const ISLAND_HOTKEY = 'Control+Alt+Space'
 
+// development pictures of the windows (see snap.ts): on a copy of the data, nothing shown, nothing tracked
+const SNAP = process.env.QA_SNAP && process.env.QA_SNAP_HOME ? process.env.QA_SNAP : undefined
+if (SNAP) app.setPath('userData', process.env.QA_SNAP_HOME!)
 if (!app.requestSingleInstanceLock()) app.quit()
 app.setAppUserModelId('com.qvarch.assistant')
 
@@ -35,12 +39,12 @@ let store: Store
 let tracker: Tracker
 let probe: Probe
 let mainWin: BrowserWindow | undefined
+let tablet: TabletService | undefined
 let island: Island | undefined
 let selection: Selection | null = null
 let tray: Tray | undefined
 let jira: Jira
 let outlook: Outlook
-let ai: Ai
 let voice: Voice
 let vault: Vault
 let quitting = false
@@ -137,7 +141,9 @@ function countSwitch(proc: string): void {
 const LUNCH_LEAD_MS = 10 * 60_000
 
 function autoLunch(): void {
-  if (!tracker.live.idle) return
+  // no input for a while (the system's idle time — nothing about apps is looked at or kept)
+  const idleSec = powerMonitor.getSystemIdleTime()
+  if (idleSec < store.cfg.idleThresholdSec) return
   const now = Date.now()
   const day = dayKey(now)
   const { lunch } = scheduleRanges(day, store.cfg.schedule)
@@ -152,9 +158,7 @@ function autoLunch(): void {
     return
   }
   // from when the input stopped (but not earlier than 10 min before lunch)
-  const idle = [...d.activity].reverse().find((a) => a.kind === 'idle' || a.kind === 'locked')
-  const idleFrom = idle && now - idle.end < 2 * 60_000 ? idle.start : now
-  const start = Math.max(idleFrom, lunch[0] - LUNCH_LEAD_MS)
+  const start = Math.max(now - idleSec * 1000, lunch[0] - LUNCH_LEAD_MS)
   const entry: Entry = {
     id: randomUUID(),
     start,
@@ -178,11 +182,14 @@ function tasksChanged(): void {
 
 // ---------- windows ----------
 
-type Nav = { day?: string; entryId?: string; view?: 'day' | 'log' | 'settings' }
+type Nav = { day?: string; entryId?: string; view?: 'day' | 'settings' }
 
 function showMain(nav?: Nav): void {
   if (!mainWin || mainWin.isDestroyed()) {
     mainWin = createMainWindow()
+    applyWindowTheme()
+    // "only the Qvarch window" follows this window
+    tablet?.refresh()
     mainWin.on('close', (e) => {
       if (quitting) return
       e.preventDefault()
@@ -198,6 +205,14 @@ function showMain(nav?: Nav): void {
   mainWin.show()
   mainWin.focus()
   if (nav) mainWin.webContents.send(IPC.navigate, nav)
+}
+
+/** The window's own colours (the canvas, the native min/max/close) follow the theme's contrast. */
+function applyWindowTheme(): void {
+  if (!mainWin || mainWin.isDestroyed()) return
+  const t = store.cfg.ui.theme
+  mainWin.setBackgroundColor(themeBg(t))
+  mainWin.setTitleBarOverlay({ color: themeBg(t), symbolColor: themeSymbol(t), height: TITLEBAR_HEIGHT })
 }
 
 function createIslandWindow(): void {
@@ -232,7 +247,6 @@ function createTray(): void {
   tray.setToolTip('Qvarch Assistant')
   const menu = Menu.buildFromTemplate([
     { label: 'Открыть', click: () => showMain() },
-    { label: 'Журнал дня', click: () => showMain({ view: 'log' }) },
     { label: 'Показать / скрыть island', click: toggleIsland },
     { label: 'Вернуть island наверх по центру', click: resetIsland },
     { type: 'separator' },
@@ -249,24 +263,12 @@ function applyAutoStart(): void {
 
 // ---------- IPC ----------
 
-/** Removes a link (by id) from the lists of other days. */
-function dropLinkElsewhere(linkId: string, days: string[]): void {
-  for (const dk of days) {
-    const d = store.day(dk)
-    if (!d.links?.some((l) => l.id === linkId)) continue
-    d.links = d.links.filter((l) => l.id !== linkId)
-    store.markDirty(dk)
-  }
-}
-/** A thing of `day` goes away: its links to other days go from those days too. */
 const OUTLOOK_RO = 'Встреча из Outlook — её меняет только Outlook'
 
-/** Deletes a block (its links go too). */
+/** Deletes a block. */
 function removeEntry(day: string, id: string): void {
   const d = store.day(day)
-  dropCrossLinksOf(day, id)
   d.entries = d.entries.filter((e) => e.id !== id)
-  if (d.links) d.links = pruneLinks(d)
   store.markDirty(day)
 }
 
@@ -401,16 +403,7 @@ function checkReminders(): void {
   }
 }
 
-function dropCrossLinksOf(day: string, id: string): void {
-  for (const l of store.day(day).links ?? [])
-    if ((l.a.id === id || l.b.id === id) && isCrossDay(l, day)) dropLinkElsewhere(l.id, [endDay(l.a, day), endDay(l.b, day)].filter((x) => x !== day))
-}
-
-/**
- * A block moved to another day (the task calendar): it leaves `from`, lands on `to` at [start, end];
- * its links follow — with a block that stayed behind they become links across days, with one on `to`
- * they become ordinary again. An Outlook meeting moved away is not brought back on its old day.
- */
+/** A block moved to another day (the task calendar): it leaves `from`, lands on `to` at [start, end]. */
 function moveEntry(from: string, to: string, id: string, start: number, end: number): void {
   if (!(end > start)) throw new Error('Конец должен быть позже начала')
   const a = store.day(from)
@@ -425,26 +418,6 @@ function moveEntry(from: string, to: string, id: string, start: number, end: num
     a.entries = a.entries.filter((x) => x.id !== id)
     const moved = { ...e, start, end, lane: undefined }
     b.entries = pinLanes(putEntry(b.entries, { ...moved, lane: firstFreeLane(b.entries, start, end, id) }), id)
-    const mine = (a.links ?? []).filter((l) => l.a.id === id || l.b.id === id)
-    a.links = (a.links ?? []).filter((l) => !mine.includes(l))
-    for (const l of mine) {
-      // where each end lives now
-      const place = (x: LinkEnd): LinkEnd => {
-        const dk = x.id === id ? to : endDay(x, from)
-        return { type: x.type, id: x.id, ...(x.hint ? { hint: x.hint } : {}), day: dk }
-      }
-      const la = place(l.a)
-      const lb = place(l.b)
-      const days = [...new Set([la.day!, lb.day!])]
-      // drop the old copies elsewhere, then store the link where its ends are now
-      dropLinkElsewhere(l.id, [endDay(l.a, from), endDay(l.b, from)].filter((x) => x !== from))
-      for (const dk of days) {
-        const d = store.day(dk)
-        const strip = (x: LinkEnd): LinkEnd => (days.length === 1 ? { type: x.type, id: x.id } : x)
-        d.links = [...(d.links ?? []).filter((x) => x.id !== l.id), { ...l, a: strip(la), b: strip(lb) }]
-        store.markDirty(dk)
-      }
-    }
     store.markDirty(from)
     store.markDirty(to)
   }
@@ -489,7 +462,6 @@ function registerIpc(): void {
         r.merged,
       ),
     )
-    if (d.links) d.links = remapLinks(d.links, r.removed, r.merged.id)
     store.markDirty(day)
     store.flush()
     broadcast()
@@ -534,6 +506,21 @@ function registerIpc(): void {
     child.unref()
   })
 
+  // ---------- the pen tablet (Qvarch reads it and drives the mouse) ----------
+  tablet = new TabletService(
+    store.root,
+    () => (mainWin && !mainWin.isDestroyed() ? mainWin.getNativeWindowHandle().readBigUInt64LE(0) : undefined),
+    (msg) => {
+      if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(IPC.tabletMsg, msg)
+    },
+  )
+  ipcMain.handle(IPC.tabletState, () => tablet!.state())
+  ipcMain.handle(IPC.tabletSet, (_e, patch: Record<string, unknown>) => tablet!.set(patch))
+  ipcMain.handle(IPC.tabletLive, (_e, on: boolean) => tablet!.live(!!on))
+  ipcMain.handle(IPC.tabletCanvas, (_e, rect: { x: number; y: number; w: number; h: number } | null) =>
+    tablet!.canvas(rect && rect.w > 0 && rect.h > 0 ? { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), h: Math.round(rect.h) } : undefined),
+  )
+
   // ---------- PDF signing: the drawings live in data/signatures (PNG) ----------
   const sigDir = join(store.root, 'signatures')
   ipcMain.handle(IPC.sigList, () => {
@@ -555,6 +542,14 @@ function registerIpc(): void {
   ipcMain.handle(IPC.sigDelete, (_e, id: string) => {
     if (/^[\w-]+$/.test(id)) rmSync(join(sigDir, `${id}.png`), { force: true })
   })
+  ipcMain.handle(IPC.imageSave, async (_e, bytes: Uint8Array, name: string, ext: 'png' | 'svg') => {
+    const e = ext === 'svg' ? 'svg' : 'png'
+    const opts = { defaultPath: name, filters: [{ name: e.toUpperCase(), extensions: [e] }] }
+    const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return undefined
+    writeFileSync(r.filePath, Buffer.from(bytes))
+    return r.filePath
+  })
   ipcMain.handle(IPC.pdfSave, async (_e, bytes: Uint8Array, name: string) => {
     const opts = { defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] }
     const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
@@ -564,86 +559,15 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.rangeDays, (_e, from: string, to: string) => {
-    const now = Date.now()
     return store
       .listDays()
       .filter((d) => d >= from && d <= to)
       .map((day) => {
         const d = store.peek(day)
         if (!d) return undefined
-        const spans = d.spans.map((s) => ({ start: s.start, end: s.open ? Math.max(s.end, Math.min(now, dayEnd(day))) : s.end }))
-        return { day, entries: d.entries, pcOnMs: unionMs(spans) }
+        return { day, entries: d.entries }
       })
       .filter((x) => !!x)
-  })
-
-  ipcMain.handle(IPC.monthSummary, (_e, month: string) => {
-    const out: DaySummary[] = []
-    const now = Date.now()
-    for (const day of store.listDays().filter((x) => x.startsWith(month))) {
-      const d = store.day(day)
-      const spans = d.spans.map((s) => ({ start: s.start, end: s.open ? Math.max(s.end, Math.min(now, dayEnd(day))) : s.end }))
-      const main = d.entries
-      const byKind: Record<string, number> = {}
-      for (const e of main) byKind[e.kind] = (byKind[e.kind] ?? 0) + (e.end - e.start)
-      out.push({
-        day,
-        pcOnMs: unionMs(spans),
-        labelledMs: unionMs(main),
-        firstStart: spans.length ? Math.min(...spans.map((s) => s.start)) : undefined,
-        lastEnd: spans.length ? Math.max(...spans.map((s) => s.end)) : undefined,
-        entries: d.entries.length,
-        byKind,
-      })
-    }
-    return out
-  })
-
-  // ---------- links ----------
-  const validEnd = (e: LinkEnd) => !!e && (e.type === 'entry' || e.type === 'note') && typeof e.id === 'string'
-  ipcMain.handle(IPC.link, (_e, day: string, a: LinkEnd, b: LinkEnd) => {
-    if (!validEnd(a) || !validEnd(b)) throw new Error('Неверная связь')
-    const da = a.day ?? day
-    const db = b.day ?? day
-    if (da === db) {
-      const d = store.day(da)
-      d.links = pruneLinks({ ...d, links: addLink(d.links ?? [], { type: a.type, id: a.id }, { type: b.type, id: b.id }, randomUUID(), Date.now()) })
-      store.markDirty(da)
-    } else {
-      // across days: the same link (same id) in both days, each end with its day and title
-      const titleOf = (e: LinkEnd, d: string) =>
-        e.type === 'entry' ? store.day(d).entries.find((x) => x.id === e.id)?.label : store.day(d).notes.find((x) => x.id === e.id)?.text.slice(0, 80)
-      const ea: LinkEnd = { type: a.type, id: a.id, day: da, hint: titleOf(a, da) }
-      const eb: LinkEnd = { type: b.type, id: b.id, day: db, hint: titleOf(b, db) }
-      const id = randomUUID()
-      for (const dk of [da, db]) {
-        const d = store.day(dk)
-        d.links = addLink(d.links ?? [], ea, eb, id, Date.now())
-        store.markDirty(dk)
-      }
-    }
-    store.flush()
-    broadcast()
-  })
-  ipcMain.handle(IPC.unlink, (_e, day: string, id: string) => {
-    const d = store.day(day)
-    // a link the app made (call ↔ meeting) that the user removes is not made again
-    const l = d.links?.find((x) => x.id === id)
-    if (l?.auto) d.linkDismissed = [...new Set([...(d.linkDismissed ?? []), pairKey(l.a.id, l.b.id)])]
-    d.links = (d.links ?? []).filter((l) => l.id !== id)
-    // a link across days goes from the other day too
-    if (l && isCrossDay(l, day)) dropLinkElsewhere(l.id, [endDay(l.a, day), endDay(l.b, day)].filter((x) => x !== day))
-    store.markDirty(day)
-    store.flush()
-    broadcast()
-  })
-  ipcMain.handle(IPC.setLinks, (_e, day: string, end: LinkEnd, others: LinkEnd[]) => {
-    if (!validEnd(end) || !Array.isArray(others) || !others.every(validEnd)) throw new Error('Неверная связь')
-    const d = store.day(day)
-    d.links = pruneLinks({ ...d, links: setLinksOf(d.links ?? [], end, others, randomUUID, Date.now()) })
-    store.markDirty(day)
-    store.flush()
-    broadcast()
   })
 
   ipcMain.handle(IPC.moveEntry, (_e, from: string, to: string, id: string, start: number, end: number) => moveEntry(from, to, id, start, end))
@@ -712,9 +636,6 @@ function registerIpc(): void {
       ...(input.entryId ? { entryId: input.entryId } : {}),
     }
     d.notes = [...d.notes.filter((n) => n.id !== note.id), note]
-    // dictated for a block → linked to it
-    if (input.entryId && d.entries.some((e) => e.id === input.entryId))
-      d.links = addLink(d.links ?? [], { type: 'note', id: note.id }, { type: 'entry', id: input.entryId }, randomUUID(), Date.now())
     store.markDirty(day)
     store.flush()
     broadcast()
@@ -788,29 +709,40 @@ function registerIpc(): void {
     }
     entry.lane = firstFreeLane(d.entries, entry.start, entry.end, entry.id)
     d.entries = pinLanes(putEntry(d.entries, entry), entry.id)
-    // what the note was linked with is now linked with the block
-    dropCrossLinksOf(day, noteId)
-    const swap = (e: LinkEnd): LinkEnd => (e.type === 'note' && e.id === noteId ? { type: 'entry', id: entry.id } : e)
-    d.links = (d.links ?? []).map((l) => ({ ...l, a: swap(l.a), b: swap(l.b) })).filter((l) => !(l.a.type === l.b.type && l.a.id === l.b.id))
     voice.cancel(noteId)
     if (n.audio) voice.removeAudio(n.audio.file)
     d.notes = d.notes.filter((x) => x.id !== noteId)
-    if (d.links) d.links = pruneLinks(d)
     store.markDirty(day)
     store.flush()
     broadcast()
     return entry
   })
 
-  ipcMain.handle(IPC.adoptTime, (_e, day: string, keepId: string, fromId: string) => {
+  // ---------- «Моя работа» ----------
+  const taskRef = (t: unknown): { key: string; summary: string } | undefined => {
+    const x = t as { key?: unknown; summary?: unknown } | null
+    return x && typeof x.key === 'string' && x.key.trim() ? { key: x.key.trim(), summary: typeof x.summary === 'string' ? x.summary : '' } : undefined
+  }
+  ipcMain.handle(IPC.setDayTasks, (_e, day: string, tasks: unknown[]) => {
     const d = store.day(day)
-    const kept = adoptTime(d, keepId, fromId)
-    if (!kept) return undefined
-    d.entries = pinLanes(d.entries, kept)
+    const list = (Array.isArray(tasks) ? tasks : []).map(taskRef).filter((x): x is { key: string; summary: string } => !!x)
+    // each task once
+    d.dayTasks = list.filter((t, i) => list.findIndex((x) => x.key === t.key) === i)
     store.markDirty(day)
     store.flush()
     broadcast()
-    return kept
+  })
+  ipcMain.handle(IPC.setEntryTask, (_e, day: string, id: string, task: unknown) => {
+    const d = store.day(day)
+    const e = d.entries.find((x) => x.id === id)
+    if (!e) throw new Error('Запись не найдена')
+    // an Outlook meeting too: only its task changes (time and title stay Outlook's)
+    const t = task === null ? undefined : taskRef(task)
+    if (t) e.task = t
+    else delete e.task
+    store.markDirty(day)
+    store.flush()
+    broadcast()
   })
 
   ipcMain.handle(IPC.planDone, (_e, day: string, id: string) => {
@@ -862,9 +794,7 @@ function registerIpc(): void {
     // a transcription still running / queued for this note is stopped first (process killed, temp files removed)
     voice.cancel(id)
     if (audio) voice.removeAudio(audio.file)
-    dropCrossLinksOf(day, id)
     d.notes = d.notes.filter((n) => n.id !== id)
-    if (d.links) d.links = pruneLinks(d)
     store.markDirty(day)
     store.flush()
     broadcast()
@@ -892,34 +822,21 @@ function registerIpc(): void {
     const d = store.day(day)
     return day === dayKey(Date.now()) ? { ...d, entries: clipEntries(d.entries, Date.now()) } : d
   }
-  /** The task calendar: blocks, links and notes of the stored days in [from, to] — nothing heavier. */
+  /** The task calendar: blocks and notes of the stored days in [from, to] — nothing heavier. */
   ipcMain.handle(IPC.calendarRange, (_e, from: string, to: string) => {
     return store
       .listDays()
       .filter((d) => d >= from && d <= to)
       .map((day) => {
         const d = store.day(day)
-        return { day, entries: d.entries, links: d.links ?? [], notes: d.notes, spans: d.spans, plan: d.plan ?? [] }
+        return { day, entries: d.entries, notes: d.notes, plan: d.plan ?? [], dayTasks: d.dayTasks ?? [] }
       })
   })
   ipcMain.handle(IPC.jiraTracked, () => keyTotals(store.listDays().map(spentDay)))
 
   ipcMain.on(IPC.openExternal, (_e, url: string) => {
-    // web pages only (Jira, links in AI answers and notes) — never file:// or app protocols
+    // web pages only (Jira, links in notes) — never file:// or app protocols
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
-  })
-
-  // ---------- AI ----------
-  ipcMain.handle(IPC.aiHasKey, () => ai.hasKey)
-  ipcMain.handle(IPC.aiSetKey, (_e, key: string) => ai.setKey(String(key ?? '')))
-  ipcMain.handle(IPC.aiPreview, (_e, day: string) => ai.model(store.day(day), store.cfg))
-  ipcMain.handle(IPC.aiAnalyze, async (_e, day: string) => {
-    const result = await ai.analyze(store.day(day), store.cfg)
-    store.day(day).ai = result
-    store.markDirty(day)
-    store.flush()
-    broadcast()
-    return result
   })
 
   ipcMain.handle(IPC.getSettings, () => publicSettings())
@@ -927,6 +844,7 @@ function registerIpc(): void {
     const outlookBefore = JSON.stringify(store.cfg.outlook)
     const jiraEvery = store.cfg.jira.syncMin
     store.update(patch)
+    if (patch.ui?.theme) applyWindowTheme()
     if (JSON.stringify(store.cfg.outlook) !== outlookBefore) outlook.start()
     if (store.cfg.jira.syncMin !== jiraEvery) jira.schedule()
     if (patch.autoStart !== undefined) applyAutoStart()
@@ -944,8 +862,8 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultTree, () => vault.tree())
   ipcMain.handle(IPC.vaultRead, (_e, p: string) => vault.read(str(p)))
   ipcMain.handle(IPC.vaultWrite, (_e, p: string, text: string) => vault.write(str(p), str(text)))
-  ipcMain.handle(IPC.vaultCreate, (_e, dir: string, kind: 'note' | 'folder', name?: string, text?: string) =>
-    vault.create(str(dir), kind === 'folder' ? 'folder' : 'note', name ? str(name) : undefined, text ? str(text) : ''),
+  ipcMain.handle(IPC.vaultCreate, (_e, dir: string, kind: 'note' | 'folder' | 'board', name?: string, text?: string) =>
+    vault.create(str(dir), kind === 'folder' ? 'folder' : kind === 'board' ? 'board' : 'note', name ? str(name) : undefined, text ? str(text) : ''),
   )
   ipcMain.handle(IPC.vaultMove, (_e, from: string, toDir: string, name?: string) => vault.move(str(from), str(toDir), name === undefined ? undefined : str(name)))
   ipcMain.handle(IPC.vaultDelete, (_e, p: string) => vault.remove(str(p)))
@@ -957,6 +875,7 @@ function registerIpc(): void {
     return voice.transcribe(`vault-${randomUUID()}`, wav)
   })
   ipcMain.on(IPC.vaultReveal, (_e, p: string) => vault.reveal(str(p)))
+  ipcMain.handle(IPC.vaultPair, (_e, a: string, b?: string) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
   ipcMain.handle(IPC.vaultSetColor, (_e, p: string, color?: string) => vault.setColor(str(p), typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined))
   ipcMain.handle(IPC.vaultDeleteAudio, (_e, p: string) => vault.deleteAudio(str(p)))
   ipcMain.handle(IPC.vaultRestoreAudio, (_e, p: string, audio: Uint8Array) => vault.restoreAudio(str(p), audio))
@@ -982,13 +901,17 @@ app.on('second-instance', () => showMain())
 
 
 app.whenReady().then(() => {
+  // no application menu: Electron's default one (hidden behind our title bar) still owns Ctrl+Z / Ctrl+Y (its
+  // "Edit → Undo" — the page never sees the key, a board can't undo) and Ctrl+= / Ctrl+- (Chromium's page zoom,
+  // shared with the island). Text fields keep their own undo, copy and paste.
+  Menu.setApplicationMenu(null)
   store = new Store()
   tracker = new Tracker(store, broadcast)
   probe = new Probe(
     store.cfg.sampleIntervalMs,
     (s) => {
       const settings = store.cfg
-      tracker.onSample(s, settings.sampleIntervalMs, settings.idleThresholdSec, settings.captureTitles)
+      tracker.onSample(s, settings.sampleIntervalMs, settings.captureTitles)
       if (settings.countKeys && s.pid !== process.pid) countSwitch(s.proc)
       autoLunch()
     },
@@ -1005,19 +928,16 @@ app.whenReady().then(() => {
       for (const w of [mainWin, island?.win]) if (w && !w.isDestroyed()) w.webContents.send(IPC.outlook, s)
     },
     (events, from, to) => {
-      // every day of the synced window follows Outlook; calls of those days get linked to their meetings
+      // every day of the synced window follows Outlook
       for (let day = dayKey(from); dayStart(day) < to; day = shiftDay(day, 1)) {
         const d = store.day(day)
-        let changed = applyMeetings(d, events, store.cfg.kinds, randomUUID)
-        if (store.cfg.outlook.linkCalls) changed = linkCallsToMeetings(d, store.cfg.kinds, randomUUID, Date.now()) || changed
-        if (changed) store.markDirty(day)
+        if (applyMeetings(d, events, store.cfg.kinds, randomUUID)) store.markDirty(day)
       }
       store.flush()
       broadcast()
     },
     (inCall) => tracker.setPresenceCall(inCall),
   )
-  ai = new Ai(store.root)
   vault = new Vault(store.root, (paths) => {
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(IPC.vault, paths)
   })
@@ -1033,12 +953,21 @@ app.whenReady().then(() => {
     { useSystemPicker: false },
   )
   registerIpc()
+  if (SNAP) {
+    Island.hidden = true
+    mainWin = createMainWindow()
+    applyWindowTheme()
+    createIslandWindow()
+    void runSnap(SNAP, mainWin, island?.win)
+    return
+  }
   tracker.start()
   jira.start()
   outlook.start()
   probe.setTitles(store.cfg.captureTitles)
   probe.setKeys(store.cfg.countKeys)
   probe.start()
+  tablet?.start()
   createTray()
   createIslandWindow()
   if (!process.argv.includes('--hidden')) showMain()
@@ -1063,6 +992,7 @@ app.on('before-quit', () => {
   quitting = true
   globalShortcut.unregisterAll()
   probe?.stop()
+  tablet?.stop()
   tracker?.stop()
   jira?.stop()
   outlook?.stop()

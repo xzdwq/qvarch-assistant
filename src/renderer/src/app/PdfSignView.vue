@@ -4,6 +4,7 @@ import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { degrees, PDFDocument } from 'pdf-lib'
 import Icon from '../components/Icon.vue'
+import ZoomChip from '../components/ZoomChip.vue'
 import SignaturePad from '../components/SignaturePad.vue'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -435,11 +436,7 @@ const CORNERS = [
         <span class="sp"></span>
         <span v-if="busy" class="busy">{{ busy }}</span>
         <template v-if="hasDoc">
-          <span class="zoom">
-            <button title="Мельче" @click="setZoom(zoom - 0.1)"><Icon name="zoomOut" :size="13" /></button>
-            <span>{{ Math.round(zoom * 100) }}%</span>
-            <button title="Крупнее" @click="setZoom(zoom + 0.1)"><Icon name="zoomIn" :size="13" /></button>
-          </span>
+          <ZoomChip :model-value="zoom * 100" :min="25" :max="400" @update:model-value="(v) => setZoom(v / 100)" />
           <button class="btn pri" :disabled="!items.length" @click="save"><Icon name="download" :size="13" />Сохранить PDF</button>
         </template>
       </div>
@@ -543,13 +540,13 @@ const CORNERS = [
   justify-content: center;
   height: 80px;
   padding: 6px;
-  border-radius: 10px;
-  background: #fff;
+  border-radius: 4px;
+  background: var(--text-hi);
   cursor: grab;
   border: 2px solid transparent;
 }
 .sig:hover {
-  border-color: #8b7cff;
+  border-color: var(--accent);
 }
 .sig img {
   max-width: 100%;
@@ -563,9 +560,9 @@ const CORNERS = [
   display: none;
   padding: 3px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--text-hi);
 }
 .sig:hover .sx {
   display: inline-flex;
@@ -577,14 +574,14 @@ const CORNERS = [
   gap: 6px;
   padding: 18px 8px;
   border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font-size: 12.5px;
 }
 .sadd:hover {
   color: var(--text);
-  border-color: #8b7cff;
+  border-color: var(--accent);
 }
 .main {
   flex: 1;
@@ -609,11 +606,11 @@ const CORNERS = [
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12.5px;
 }
 .busy {
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 12px;
 }
 .btn {
@@ -623,9 +620,9 @@ const CORNERS = [
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12px;
 }
 .btn:hover:not(:disabled) {
@@ -633,8 +630,8 @@ const CORNERS = [
 }
 .btn.pri {
   border-color: transparent;
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .btn:disabled {
   opacity: 0.45;
@@ -647,7 +644,7 @@ const CORNERS = [
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -660,14 +657,15 @@ const CORNERS = [
   align-items: center;
   gap: 2px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 11.5px;
-  color: #c7d2fe;
+  color: var(--accent-fg);
 }
 .zoom span {
   min-width: 40px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .zoom button {
   display: inline-flex;
@@ -688,7 +686,7 @@ const CORNERS = [
   align-items: center;
   gap: 16px;
   padding: 58px 18px 18px;
-  background: #0b0d13;
+  background: var(--bg);
 }
 .empty {
   margin: auto;
@@ -702,7 +700,7 @@ const CORNERS = [
 .pg {
   position: relative;
   flex: none;
-  background: #fff;
+  background: var(--text-hi);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 .pg canvas {
@@ -712,7 +710,7 @@ const CORNERS = [
   position: absolute;
   right: 8px;
   bottom: -18px;
-  color: #5d6580;
+  color: var(--dim);
   font-size: 11px;
 }
 /* a drawing on the page */
@@ -723,11 +721,11 @@ const CORNERS = [
   transform-origin: 50% 50%;
 }
 .it:hover {
-  outline-color: rgba(139, 124, 255, 0.6);
+  outline-color: rgb(var(--accent-rgb) / 0.6);
 }
 .it.on {
   z-index: 2;
-  outline: 1px solid #6d8cf0;
+  outline: 1px solid var(--accent);
 }
 .it img {
   display: block;
@@ -741,8 +739,8 @@ const CORNERS = [
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #6d8cf0;
-  box-shadow: 0 0 0 2px #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--text-hi);
 }
 .hd.l {
   left: -5px;
@@ -775,10 +773,10 @@ const CORNERS = [
   height: 26px;
   margin-top: -13px;
   padding: 0;
-  border: 1.5px solid #6d8cf0;
+  border: 1.5px solid var(--accent);
   border-radius: 50%;
-  background: #fff;
-  color: #4f6fd8;
+  background: var(--text-hi);
+  color: var(--accent);
   cursor: grab;
 }
 /* the toolbar over the selected drawing */
@@ -791,11 +789,11 @@ const CORNERS = [
   height: 36px;
   padding: 0 8px;
   transform: translateX(-50%);
-  border: 1px solid rgba(109, 140, 240, 0.55);
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid rgb(var(--accent-rgb) / 0.55);
+  border-radius: 4px;
+  background: var(--text-hi);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-  color: #1f2937;
+  color: var(--panel-3);
   white-space: nowrap;
 }
 .tcols {
@@ -813,14 +811,14 @@ const CORNERS = [
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 .tc.on {
-  border-color: #6d8cf0;
+  border-color: var(--accent);
 }
 .tc.orig {
-  background: linear-gradient(135deg, #fff 45%, #ef4444 45%, #ef4444 55%, #fff 55%);
+  background: linear-gradient(135deg, var(--text-hi) 45%, var(--down) 45%, var(--down) 55%, var(--text-hi) 55%);
 }
 .tc.pick {
   overflow: hidden;
-  background: conic-gradient(#ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+  background: conic-gradient(var(--down), var(--warn), var(--warn), var(--up), #06b6d4, var(--info), var(--accent), #ec4899, var(--down));
   cursor: pointer;
 }
 .tc.pick input {
@@ -832,22 +830,22 @@ const CORNERS = [
 .sep {
   width: 1px;
   height: 20px;
-  background: #e5e7eb;
+  background: var(--text);
 }
 .op {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #4b5563;
+  color: var(--border-3);
 }
 .op input {
   width: 52px;
   height: 24px;
   padding: 0 4px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  color: #111827;
+  border: 1px solid var(--text-2);
+  border-radius: var(--r2);
+  background: var(--text-hi);
+  color: var(--panel);
   font-size: 12.5px;
   text-align: center;
 }
@@ -855,12 +853,12 @@ const CORNERS = [
   display: inline-flex;
   padding: 5px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #4b5563;
+  color: var(--border-3);
 }
 .tbb:hover {
-  background: #eef0f4;
-  color: #111827;
+  background: var(--text-hi);
+  color: var(--panel);
 }
 </style>

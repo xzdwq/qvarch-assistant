@@ -1,6 +1,7 @@
 import { reactive, ref, shallowRef, watch } from 'vue'
 import { audiosOf, filesOf, remapPath, type VaultNode } from '@shared/vault'
 import { toWav16k } from './recorder'
+import { remapHistory } from './boardHistory'
 
 /**
  * The notebook's state, shared by everything that shows it (and kept while another section is open, so coming
@@ -252,8 +253,9 @@ export function toggleSplit(): void {
   layout.cur = 1
 }
 
-/** Renamed / moved: open documents and tabs follow. */
+/** Renamed / moved: open documents and tabs (and a board's undo history) follow. */
 export function remap(from: string, to: string): void {
+  remapHistory(from, to)
   for (const [k, d] of [...docs]) {
     const n = remapPath(k, from, to)
     if (n !== k) {
@@ -310,6 +312,30 @@ export function audioUrl(rel: string): Promise<string> {
   return u
 }
 
+/** The active tab of a pane shows its linked file instead (a note ↔ its board), in the same place. */
+export function swapTab(pi: number, to: string): void {
+  const p = layout.panes[pi]
+  if (!p?.active) return
+  const from = p.active
+  const i = p.tabs.findIndex((t) => t.path === from)
+  if (p.tabs.some((t) => t.path === to)) p.tabs.splice(i, 1)
+  else p.tabs[i] = { path: to, mode: 'edit' }
+  p.active = to
+  doc(to)
+}
+/** A tab dropped at the edge: the panes split, the tab goes to the new side. */
+export function splitWith(fromPane: number, path: string, side: 'left' | 'right'): void {
+  if (layout.panes.length > 1) return
+  const pane = { id: `p${Date.now()}`, tabs: [] as Tab[], active: undefined as string | undefined }
+  if (side === 'right') {
+    layout.panes.push(pane)
+    moveTab(fromPane, path, 1, 0)
+  } else {
+    layout.panes.unshift(pane)
+    moveTab(fromPane + 1, path, 0, 0)
+  }
+}
+
 /** A tab dragged onto another place (in its pane or the other one). */
 export function moveTab(fromPane: number, path: string, toPane: number, index: number): void {
   const a = layout.panes[fromPane]
@@ -335,5 +361,5 @@ export function moveTab(fromPane: number, path: string, toPane: number, index: n
 
 export { fixDuration } from './recorder'
 
-export const noteName = (path: string) => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
+export const noteName = (path: string) => (path.split('/').pop() ?? path).replace(/\.(md|qboard)$/i, '')
 export const dirOf = (path: string) => path.split('/').slice(0, -1).join('/')

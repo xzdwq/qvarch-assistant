@@ -92,9 +92,9 @@ function onKey(e: KeyboardEvent): void {
   justify-content: center;
   box-sizing: border-box;
   padding: 0 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(124, 108, 246, 0.45);
-  background: rgba(124, 108, 246, 0.12);
+  border-radius: var(--r2);
+  border: 1px solid rgb(var(--accent-rgb) / 0.45);
+  background: rgb(var(--accent-rgb) / 0.12);
   color: var(--text);
   font-size: 12px;
   cursor: ns-resize;
@@ -104,14 +104,14 @@ function onKey(e: KeyboardEvent): void {
     background 0.15s;
 }
 .off:hover {
-  border-color: rgba(124, 108, 246, 0.85);
+  border-color: rgb(var(--accent-rgb) / 0.85);
 }
 .off.back {
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(68, 138, 255, 0.45);
+  background: rgba(68, 138, 255, 0.1);
 }
 .off.back:hover {
-  border-color: rgba(56, 189, 248, 0.85);
+  border-color: rgba(68, 138, 255, 0.85);
 }
 .off.compact {
   height: 30px;
@@ -123,6 +123,7 @@ function onKey(e: KeyboardEvent): void {
 .v {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .cap {
   color: var(--muted);
@@ -137,9 +138,10 @@ function onKey(e: KeyboardEvent): void {
   font: inherit;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   outline: none;
 }
 .in.bad {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 </style>

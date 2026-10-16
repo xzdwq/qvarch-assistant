@@ -4,6 +4,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import type { JiraIssue, JiraState, MyTaskStatus } from '../shared/jira'
+import { adfToMarkdown } from '../shared/adf'
 
 /**
  * Jira Cloud over OAuth 2.0 (3LO) with the user's own Atlassian app: sign-in in the browser, a one-off
@@ -16,9 +17,14 @@ const PORT = 47321
 const REDIRECT = `http://localhost:${PORT}/callback`
 // offline_access → a refresh token (otherwise the sign-in would last an hour)
 const SCOPES = 'read:jira-work read:jira-user offline_access'
-const FIELDS = ['summary', 'status', 'project', 'issuetype', 'priority', 'duedate', 'timeoriginalestimate', 'timespent', 'assignee', 'updated']
+const FIELDS = ['summary', 'status', 'project', 'issuetype', 'priority', 'duedate', 'timeoriginalestimate', 'timespent', 'assignee', 'updated', 'description', 'components', 'labels', 'fixVersions', 'parent', 'reporter', 'created']
 const SYNC_MS = 10 * 60_000
 const ALL_LIMIT = 300
+/** The names of a list of Jira objects (components, versions), or nothing. */
+const names = (v: unknown): string[] | undefined => {
+  const out = Array.isArray(v) ? v.map((x) => (x && typeof x === 'object' ? String((x as { name?: unknown }).name ?? '') : '')).filter(Boolean) : []
+  return out.length ? out : undefined
+}
 
 interface Secrets {
   clientSecret?: string
@@ -289,6 +295,13 @@ export class Jira {
       assignee: f.assignee?.displayName,
       mine: !!f.assignee?.accountId && f.assignee.accountId === this.cache.account?.accountId,
       updated: f.updated ? Date.parse(f.updated) : 0,
+      description: adfToMarkdown(f.description) || undefined,
+      components: names(f.components),
+      labels: Array.isArray(f.labels) && f.labels.length ? f.labels.map(String) : undefined,
+      versions: names(f.fixVersions),
+      parent: f.parent?.key ? { key: f.parent.key, summary: f.parent.fields?.summary ?? '' } : undefined,
+      reporter: f.reporter?.displayName,
+      created: f.created ? Date.parse(f.created) : undefined,
     }
   }
 

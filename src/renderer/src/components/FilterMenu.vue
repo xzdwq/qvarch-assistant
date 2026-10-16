@@ -90,9 +90,9 @@ onBeforeUnmount(() => {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -101,16 +101,16 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.05);
 }
 .fb.on {
-  border-color: rgba(124, 108, 246, 0.6);
-  background: rgba(124, 108, 246, 0.12);
-  color: #fff;
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.12);
+  color: var(--text-hi);
 }
 .cnt {
   min-width: 16px;
   padding: 0 4px;
-  border-radius: 8px;
-  background: #7c6cf6;
-  color: #fff;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 10.5px;
   text-align: center;
 }
@@ -122,9 +122,9 @@ onBeforeUnmount(() => {
   z-index: 5000;
   width: 260px;
   padding: 6px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .fs {
@@ -132,9 +132,9 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   margin-bottom: 4px;
   padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
-  background: #141824;
+  background: var(--panel);
   color: var(--text);
   font-size: 12px;
 }
@@ -147,22 +147,22 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
   padding: 5px 6px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 12.5px;
   cursor: pointer;
 }
 .opt:hover {
-  background: rgba(139, 92, 246, 0.14);
+  background: rgb(var(--accent-rgb) / 0.14);
 }
 .opt input {
   margin: 0;
-  accent-color: #7c6cf6;
+  accent-color: var(--accent);
 }
 .opt i {
   flex: none;
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .ol {
   flex: none;
@@ -188,7 +188,7 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   padding: 4px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 11.5px;

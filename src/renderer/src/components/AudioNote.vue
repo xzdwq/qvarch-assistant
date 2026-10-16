@@ -55,12 +55,12 @@ async function transcribe(): Promise<void> {
       <Icon :name="note.audio.kind === 'call' ? 'phone' : 'mic'" :size="13" class="ai" :title="note.audio.kind === 'call' ? 'Запись звонка' : 'Голосовая заметка'" />
       <audio v-if="url" :ref="player" :src="url" controls preload="metadata"></audio>
       <!-- not transcribed yet: the button sits by the player; while it runs — the orb -->
-      <span v-if="busy && !note.transcript" class="orb" title="Расшифровка…"><ThinkingOrb state="weaving" :size="20" :px="22" tint="#a5b4fc" /></span>
+      <span v-if="busy && !note.transcript" class="orb" title="Расшифровка…"><ThinkingOrb state="weaving" :size="20" :px="22" tint="#ffa25c" /></span>
       <button v-else-if="enabled && voice.modelReady && !note.transcript" class="ib" title="Расшифровать (локально)" @click="transcribe"><Icon name="captions" :size="15" /></button>
     </div>
     <div v-if="note.transcript" class="trline">
       <div class="tr">{{ note.transcript }}</div>
-      <span v-if="busy" class="orb" title="Расшифровка…"><ThinkingOrb state="weaving" :size="20" :px="22" tint="#a5b4fc" /></span>
+      <span v-if="busy" class="orb" title="Расшифровка…"><ThinkingOrb state="weaving" :size="20" :px="22" tint="#ffa25c" /></span>
       <button v-else-if="enabled && voice.modelReady" class="ib" title="Расшифровать заново" @click="transcribe"><Icon name="refresh" :size="13" /></button>
     </div>
     <span v-if="enabled && !voice.modelReady && !note.transcript" class="muted small">Для расшифровки скачайте модель: Настройки → «Распознавание речи»</span>
@@ -93,13 +93,13 @@ async function transcribe(): Promise<void> {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   cursor: pointer;
 }
 .ib:hover {
-  background: rgba(124, 108, 246, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .orb {
   flex: none;
@@ -116,7 +116,7 @@ async function transcribe(): Promise<void> {
   flex-wrap: wrap;
 }
 .ai {
-  color: #fcd34d;
+  color: var(--warn);
 }
 audio {
   height: 30px;
@@ -128,7 +128,7 @@ audio {
 }
 .tr {
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.04);
   font-size: 12px;
   line-height: 1.45;
@@ -146,12 +146,12 @@ audio {
   padding: 2px 6px;
   border: 0;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 11px;
   cursor: pointer;
 }
 .err {
-  color: #f87171;
+  color: var(--down-fg);
   font-size: 11px;
 }
 .spin {
@@ -159,8 +159,8 @@ audio {
   width: 9px;
   height: 9px;
   margin-right: 5px;
-  border: 2px solid rgba(165, 180, 252, 0.3);
-  border-top-color: #a5b4fc;
+  border: 2px solid rgb(var(--accent-rgb) / 0.3);
+  border-top-color: var(--accent-fg);
   border-radius: 50%;
   animation: sp 0.8s linear infinite;
 }

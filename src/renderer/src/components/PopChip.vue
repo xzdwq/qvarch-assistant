@@ -57,7 +57,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   min-width: 32px;
   box-sizing: border-box;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--muted);
@@ -71,9 +71,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   color: var(--text);
 }
 .pchip.on {
-  border-color: rgba(167, 139, 250, 0.7);
-  background: rgba(139, 92, 246, 0.16);
-  color: #ddd6fe;
+  border-color: rgb(var(--accent-rgb) / 0.7);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
 }
 .pl {
   font-weight: 600;
@@ -88,12 +88,12 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   gap: 1px;
   padding: 5px;
   overflow-y: auto;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   font-size: 12.5px;
-  color: #e5e7eb;
+  color: var(--text);
 }
 .pcdd .pci {
   display: flex;
@@ -101,7 +101,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   gap: 8px;
   padding: 6px 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -109,11 +109,11 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   cursor: pointer;
 }
 .pcdd .pci:hover {
-  background: rgba(139, 92, 246, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .pcdd .pci.cur {
-  background: rgba(139, 92, 246, 0.24);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.24);
+  color: var(--text-hi);
 }
 .pcdd .pcsep {
   height: 1px;
@@ -125,12 +125,12 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   align-items: center;
   gap: 8px;
   padding: 4px 9px 6px;
-  color: #9ca3af;
+  color: var(--muted);
 }
 .pcdd .pcrow input {
   width: 64px;
   padding: 4px 6px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   font-size: 12.5px;
 }
 </style>

@@ -82,9 +82,9 @@ const level = computed(() => {
   <svg class="wave" :class="mode" :viewBox="`0 0 100 ${H}`" preserveAspectRatio="none" :style="{ '--lv': level }">
     <defs>
       <linearGradient :id="`wg-${mode}`" gradientUnits="userSpaceOnUse" x1="0" x2="100" y1="0" y2="0">
-        <stop offset="0" stop-color="#6366f1" stop-opacity="0.35" />
-        <stop offset="0.6" stop-color="#8b5cf6" />
-        <stop offset="1" stop-color="#a78bfa" />
+        <stop offset="0" style="stop-color: var(--accent); stop-opacity: 0.3" />
+        <stop offset="0.6" style="stop-color: var(--accent-hi)" />
+        <stop offset="1" style="stop-color: var(--accent-fg)" />
       </linearGradient>
     </defs>
     <path class="line" :style="{ d: `path('${path}')` }" :stroke="`url(#wg-${mode})`" vector-effect="non-scaling-stroke" />
@@ -100,10 +100,10 @@ const level = computed(() => {
   height: 100%;
   overflow: visible;
   /* the glow grows with the current activity */
-  filter: drop-shadow(0 0 calc(2px + var(--lv) * 4px) rgba(139, 92, 246, calc(0.45 + var(--lv) * 0.4)));
+  filter: drop-shadow(0 0 calc(2px + var(--lv) * 4px) rgb(var(--accent-rgb) / calc(0.45 + var(--lv) * 0.4)));
 }
 .wave.day {
-  filter: drop-shadow(0 0 3px rgba(139, 92, 246, 0.55));
+  filter: drop-shadow(0 0 3px rgb(var(--accent-rgb) / 0.55));
 }
 .line {
   fill: none;

@@ -1,4 +1,4 @@
-import type { Entry, Ms, Span, WorkSchedule } from './types'
+import type { Entry, Ms, WorkSchedule } from './types'
 
 export const MINUTE = 60_000
 export const HOUR = 60 * MINUTE
@@ -53,12 +53,6 @@ export function overlap(a0: Ms, a1: Ms, b0: Ms, b1: Ms): number {
   return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0))
 }
 
-/** Time inside [start, end] while the PC was actually on. */
-export function trackedMs(start: Ms, end: Ms, spans: Span[]): number {
-  let sum = 0
-  for (const s of spans) sum += overlap(start, end, s.start, s.end)
-  return sum
-}
 
 export function sortByStart<T extends { start: Ms }>(list: T[]): T[] {
   return [...list].sort((a, b) => a.start - b.start)
@@ -118,18 +112,12 @@ export function splitTitle(text: string): { label: string; description?: string 
 /** Title + description back into the field's text. */
 export const joinTitle = (label: string, description?: string): string => (description ? `${label}\n${description}` : label)
 
-export function cutCursor(entries: Entry[], spans: Span[], now: Ms): Ms {
-  const sorted = sortByStart(spans)
-  let cursor = sorted.length ? sorted[0].start : now
-  // a planned block (starts in the future) does not count as "labelled up to here"
+/** Where the next quick block starts: the end of the last block begun by now (no blocks — now). */
+export function cutCursor(entries: Entry[], now: Ms): Ms {
+  let cursor = -Infinity
+  // a planned block (starts in the future) does not count
   for (const e of entries) if (e.start <= now && e.end > cursor) cursor = e.end
-  // "не размечено" always goes on right from the last block (no gap between them, wherever the block is
-  // dropped)
-  return Math.min(cursor, now)
-}
-/** "Не размечено": the time from the last block (the cursor) to now — all of it. */
-export function uncutMs(cursor: Ms, now: Ms): number {
-  return Math.max(0, now - cursor)
+  return Number.isFinite(cursor) ? Math.min(cursor, now) : now
 }
 
 /** Blocks that run at the same time: each pair with its common stretch (the later one is `b`). */
@@ -332,26 +320,3 @@ export function pinLanes(entries: Entry[], yieldId?: string): Entry[] {
   return entries.map((e) => ({ ...e, lane: layout.get(e.id)?.lane ?? 0 }))
 }
 
-/**
- * Spans widened to cover the recorded activity (the app was running then); gaps under a minute between
- * activity are bridged. Undefined when nothing changes.
- */
-export function fillFromActivity(spans: Span[], activity: Array<{ start: Ms; end: Ms }>): Span[] | undefined {
-  const runs: Span[] = []
-  for (const a of [...activity].sort((x, y) => x.start - y.start)) {
-    const last = runs[runs.length - 1]
-    if (last && a.start - last.end <= 60_000) last.end = Math.max(last.end, a.end)
-    else runs.push({ start: a.start, end: a.end })
-  }
-  const all = [...spans.map((s) => ({ ...s })), ...runs].sort((x, y) => x.start - y.start)
-  const out: Span[] = []
-  for (const s of all) {
-    const last = out[out.length - 1]
-    if (last && s.start <= last.end) {
-      last.end = Math.max(last.end, s.end)
-      if (s.open) last.open = true
-    } else out.push({ ...s })
-  }
-  const same = out.length === spans.length && out.every((s, i) => s.start === spans[i].start && s.end === spans[i].end)
-  return same ? undefined : out
-}

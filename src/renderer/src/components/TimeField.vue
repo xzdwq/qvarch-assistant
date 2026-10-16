@@ -68,7 +68,7 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   background: var(--field-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   transition: border-color 0.15s;
 }
@@ -97,10 +97,11 @@ input,
   padding: 4px 0;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-weight: 600;
 }
 .live {
-  color: #86efac;
+  color: var(--up-fg);
   cursor: text;
   font-weight: 500;
   font-size: 12px;

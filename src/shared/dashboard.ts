@@ -7,7 +7,7 @@ export const COLS = 60
 /** Layouts saved on the old 12-column grid are scaled by this. */
 export const OLD_COLS_SCALE = 5
 
-export type WidgetType = 'stats' | 'timeline' | 'entries' | 'notes' | 'calendar' | 'week' | 'tasks' | 'orb' | 'notebook' | 'create' | 'sheet'
+export type WidgetType = 'stats' | 'timeline' | 'entries' | 'notes' | 'week' | 'tasks' | 'orb' | 'notebook' | 'create' | 'sheet'
 export interface Widget {
   i: string
   type: WidgetType
@@ -22,7 +22,6 @@ export const WIDGETS: Array<{ type: WidgetType; label: string; icon: string; w: 
   { type: 'timeline', label: 'Таймлайн', icon: 'timeline', w: 60, h: 7, minW: 20, minH: 5 },
   { type: 'entries', label: 'Записи дня', icon: 'list', w: 30, h: 7, minW: 15, minH: 3 },
   { type: 'notes', label: 'Заметки дня', icon: 'note', w: 30, h: 7, minW: 15, minH: 3 },
-  { type: 'calendar', label: 'Календарь месяца', icon: 'calendar', w: 30, h: 9, minW: 20, minH: 6 },
   { type: 'week', label: 'Календарь задач', icon: 'checkSquare', w: 60, h: 10, minW: 30, minH: 7 },
   { type: 'tasks', label: 'Задачи Jira', icon: 'jira', w: 30, h: 9, minW: 20, minH: 4 },
   { type: 'orb', label: 'Состояние', icon: 'sparkles', w: 15, h: 4, minW: 10, minH: 3 },

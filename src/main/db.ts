@@ -5,7 +5,7 @@ import type { DayData, LocalTask, Ms, SearchHit } from '../shared/types'
  * SQLite storage (node:sqlite, built into Electron's Node — no native modules):
  *  days   — one row per day, the day as JSON (the app keeps working with whole days);
  *  search — a full-text index (FTS5) over everything worth finding later: blocks, descriptions,
- *           Jira tasks, notes and their transcripts, AI summaries, plans, window titles, own tasks;
+ *           Jira tasks, notes and their transcripts, plans, own tasks;
  *  tasks  — own tasks ("Задачи"), e.g. made from a note.
  */
 export class Db {
@@ -151,16 +151,7 @@ export function indexRows(d: DayData): Array<{ kind: SearchHit['kind']; ref: str
     const text = [n.text, n.transcript].filter(Boolean).join('\n')
     if (text.trim()) rows.push({ kind: 'note', ref: n.id, at: n.at, text })
   }
+  for (const t of d.dayTasks ?? []) rows.push({ kind: 'task', ref: t.key, at: 0, text: `${t.key} ${t.summary}` })
   for (const p of d.plan ?? []) rows.push({ kind: 'plan', ref: p.id, at: p.start, text: [p.label, p.task ? `${p.task.key} ${p.task.summary}` : ''].join('\n') })
-  if (d.ai?.text) rows.push({ kind: 'ai', ref: 'ai', at: d.ai.at, text: d.ai.text })
-  // window titles: each distinct title once (where the user enabled capturing them)
-  const seen = new Set<string>()
-  for (const a of d.activity) {
-    if (!a.title) continue
-    const key = `${a.app}\u0000${a.title}`
-    if (seen.has(key) || seen.size >= 400) continue
-    seen.add(key)
-    rows.push({ kind: 'window', ref: a.app, at: a.start, text: `${a.app}: ${a.title}` })
-  }
   return rows
 }

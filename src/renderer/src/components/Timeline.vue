@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
-import { gapAround, infoAt } from '@shared/breakdown'
 import { noteEntry, visibleNotes } from '@shared/notes'
 import { labelWithoutKey } from '@shared/jira'
 import { PLAN_STEP, planRows, snapPlan } from '@shared/plan'
-import { formatDuration, formatHM, HOUR, laneIsFree, layoutLanes, MINUTE, sortByStart, uncutMs } from '@shared/timeline'
-import type { DayData, Entry, LinkEnd, Ms, Note, PlanBlock, Selection } from '@shared/types'
-import LinkLayer from './LinkLayer.vue'
+import { formatDuration, formatHM, HOUR, laneIsFree, layoutLanes, MINUTE, sortByStart } from '@shared/timeline'
+import type { DayData, Entry, Ms, Note, PlanBlock, Selection } from '@shared/types'
 import { clusterize, useFan } from '../lib/pinfan'
-import type { LinkStyle } from '@shared/linkpath'
 import type { UiPrefs } from '@shared/types'
-import { APP_COLORS, entryIcon, kindColor, kindLabel } from '../lib/palette'
+import { entryIcon, kindColor, kindLabel } from '../lib/palette'
 import Icon from './Icon.vue'
 import ActivityWave from './ActivityWave.vue'
 import KindMenu from './KindMenu.vue'
@@ -33,12 +30,11 @@ const props = defineProps<{
   selectedPlanId?: string
   /** a palette item is being dragged (the plan lane lights up) */
   planDragging?: boolean
-  linkStyle?: LinkStyle
   /** Following the time (the main window): see UiPrefs.timeline. */
   follow?: UiPrefs['timeline']
   /** No legend / toggles under it (the dashboard). */
   bare?: boolean
-  /** Lower lanes, no "Приложения" / "Созвоны" (the dashboard). */
+  /** Lower lanes, no "Созвоны" (the dashboard). */
   compact?: boolean
   /** The window (position, scale) is remembered under this key — switching sections keeps it. */
   viewKey?: string
@@ -69,63 +65,7 @@ const emit = defineEmits<{
   planSelect: [id: string | undefined]
   /** a plan block moved / resized */
   planChange: [change: { id: string; start: Ms; end: Ms }]
-  /** a link drawn between two blocks / notes, or one removed */
-  link: [a: LinkEnd, b: LinkEnd]
-  unlink: [id: string]
-  /** a link to a block of another day was clicked */
-  openDay: [day: string, entryId?: string]
 }>()
-/** Link lines on / off (remembered); when off, blocks with links carry a link mark instead. */
-const showLinks = ref(readFlag('qa.tlLinks', true))
-watch(showLinks, (v) => writeFlag('qa.tlLinks', v))
-function readFlag(key: string, def: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key)
-    return v === null ? def : v === '1'
-  } catch {
-    return def
-  }
-}
-function writeFlag(key: string, v: boolean): void {
-  try {
-    localStorage.setItem(key, v ? '1' : '0')
-  } catch {
-    // not remembered — fine
-  }
-}
-/** Same-day links per block (for the mark when the lines are off). */
-const sameDayLinks = computed(() => {
-  const m = new Map<string, number>()
-  for (const l of props.data.links ?? []) {
-    if ((l.a.day && l.a.day !== props.data.day) || (l.b.day && l.b.day !== props.data.day)) continue
-    for (const e of [l.a, l.b]) if (e.type === 'entry') m.set(e.id, (m.get(e.id) ?? 0) + 1)
-  }
-  return m
-})
-/**
- * Linked blocks / notes scrolled or zoomed out of view still anchor their lines: an invisible end at the
- * edge of the timeline on their side — a line never just disappears.
- */
-const ghostEnds = computed(() => {
-  if (!showLinks.value) return { entries: [], notes: [] }
-  const inView = new Set(main.value.map((e) => e.id))
-  const notesInView = new Set(notePins.value.map((n) => n.id))
-  const entries: Array<{ id: string; style: Record<string, string> }> = []
-  const notes: Array<{ id: string; style: Record<string, string> }> = []
-  for (const l of props.data.links ?? [])
-    for (const end of [l.a, l.b]) {
-      if (end.day && end.day !== props.data.day) continue
-      if (end.type === 'entry' && !inView.has(end.id) && !entries.some((x) => x.id === end.id)) {
-        const e = props.data.entries.find((x) => x.id === end.id)
-        if (e) entries.push({ id: e.id, style: { ...(e.end <= from.value ? { left: '0' } : { right: '0' }), ...laneStyle(e) } })
-      } else if (end.type === 'note' && !notesInView.has(end.id) && !notes.some((x) => x.id === end.id)) {
-        const n = props.data.notes.find((x) => x.id === end.id)
-        if (n) notes.push({ id: n.id, style: n.at < from.value ? { left: '0' } : { right: '0' } })
-      }
-    }
-  return { entries, notes }
-})
-const linksShown = computed(() => (showLinks.value ? (props.data.links ?? []) : []))
 /** Notes at (almost) the same moment spread apart on hover. */
 const fan = useFan()
 const pinPlaces = computed(() => clusterize(notePins.value, (n) => (pct(n.at) / 100) * width.value, 15))
@@ -135,26 +75,6 @@ const fanZone = computed(() => {
   const p = k && notePins.value.find((x) => x.id === k)
   return p && n > 1 ? { pct: pct(p.at), width: (n - 1) * 19 + 26 } : undefined
 })
-
-/** Links of each block to things of other days (drawn there; here — a small mark on the block). */
-const crossLinks = computed(() => {
-  const m = new Map<string, Array<{ day: string; id: string; hint?: string }>>()
-  for (const l of props.data.links ?? []) {
-    for (const [mine, other] of [
-      [l.a, l.b],
-      [l.b, l.a],
-    ]) {
-      if (mine.type !== 'entry' || !other.day || other.day === props.data.day) continue
-      if (mine.day && mine.day !== props.data.day) continue
-      m.set(mine.id, [...(m.get(mine.id) ?? []), { day: other.day, id: other.id, hint: other.hint }])
-    }
-  }
-  return m
-})
-const fmtDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-const crossTitle = (list: Array<{ day: string; hint?: string }>) =>
-  `Связь с другим днём:\n${list.map((x) => `${fmtDay(x.day)}${x.hint ? ` — ${x.hint}` : ''}`).join('\n')}\nКлик — открыть`
-const layer = ref<InstanceType<typeof LinkLayer>>()
 
 /** Ctrl+click multi-selection. */
 const multi = ref<Set<string>>(new Set())
@@ -179,25 +99,6 @@ async function planMenu(action: 'done' | 'delete'): Promise<void> {
   emit('planChanged')
 }
 
-/** Blocks linked to a block (same day) — "Фактическое время из …". */
-function linkedBlocks(id: string) {
-  const ids = new Set<string>()
-  for (const l of props.data.links ?? []) {
-    if (l.a.type === 'entry' && l.a.id === id && l.b.type === 'entry' && !l.b.day) ids.add(l.b.id)
-    if (l.b.type === 'entry' && l.b.id === id && l.a.type === 'entry' && !l.a.day) ids.add(l.a.id)
-  }
-  const self = props.data.entries.find((e) => e.id === id)
-  // two meetings are not merged
-  return props.data.entries.filter((e) => ids.has(e.id) && !(self?.outlook && e.outlook))
-}
-async function adoptFrom(fromId: string): Promise<void> {
-  const id = menu.value?.entryId
-  menu.value = undefined
-  if (!id) return
-  await window.qa.adoptTime(props.data.day, id, fromId)
-  emit('planChanged')
-}
-
 function onContext(e: MouseEvent): void {
   const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
   const id = under?.closest<HTMLElement>('[data-entry]')?.dataset.entry
@@ -217,11 +118,24 @@ function onContext(e: MouseEvent): void {
   const t = timeAt(e.clientX, false)
   const s = props.selection
   if (!s || t < s.start || t > selEnd.value) {
-    const g = gapAround(props.data, t, limit.value)
+    const g = gapAround(t)
     if (g.end - g.start < MINUTE) return
     emit('selection', makeSel(g.start, g.end), true)
   }
   menu.value = { x: e.clientX, y: e.clientY, title: 'Отметить как' }
+}
+
+/** The free stretch around a moment: from the block before it to the block after it (or the day's edges / now). */
+function gapAround(t: Ms): { start: Ms; end: Ms } {
+  let start = props.bounds[0]
+  let end = limit.value
+  for (const e of props.data.entries) {
+    if (e.end <= t && e.end > start) start = e.end
+    if (e.start >= t && e.start < end) end = e.start
+    // inside a block: no gap
+    if (e.start < t && e.end > t) return { start: t, end: t }
+  }
+  return { start, end: Math.max(start, end) }
 }
 
 function onMenuDelete(): void {
@@ -336,7 +250,7 @@ const canvas = ref<HTMLElement>()
 const width = ref(1000)
 const box = (a: Ms, b: Ms, gap = 1) => segBox(a, b, from.value, to.value, gap)
 const pct = (t: Ms) => pctOf(t, from.value, to.value)
-const limit = computed(() => props.now ?? Math.max(props.bounds[0], ...props.data.spans.map((s) => s.end)))
+const limit = computed(() => props.now ?? Math.max(props.bounds[0], ...props.data.entries.map((e) => e.end)))
 
 /** Ticks + official schedule marks; "Сейчас" and schedule labels win over ticks they would overlap. */
 const axis = computed(() => {
@@ -406,37 +320,9 @@ function laneStyle(e: Entry): Record<string, string> {
   const l = lanes.value.get(e.id)
   return { top: `${5 + (l?.lane ?? 0) * (laneH.value + LANE_GAP)}px`, bottom: 'auto', height: `${laneH.value}px` }
 }
-const activity = computed(() => visible(props.data.activity, from.value, to.value))
 const calls = computed(() => visible(props.data.calls, from.value, to.value))
-const uncut = computed(() => (props.now && props.now - props.cursor >= MINUTE ? { start: props.cursor, end: props.now } : undefined))
 
-/** PC off / asleep inside the view. */
-const off = computed(() => {
-  const out: Array<{ start: Ms; end: Ms }> = []
-  let prev = from.value
-  for (const s of sortByStart(props.data.spans)) {
-    if (s.start > prev) out.push({ start: prev, end: s.start })
-    prev = Math.max(prev, s.end)
-  }
-  const tail = props.now ?? limit.value
-  if (prev < tail - MINUTE) out.push({ start: prev, end: tail })
-  return visible(out, from.value, to.value)
-})
-
-const legend = computed(() => {
-  const kinds = [...new Set(main.value.map((e) => e.kind))]
-  const apps = new Map<string, { kind: Entry['kind'] | string; color: string; ms: number }>()
-  for (const a of activity.value) {
-    if (a.kind === 'idle' || a.kind === 'locked') continue
-    const x = apps.get(a.app) ?? { kind: a.kind, color: APP_COLORS[a.kind], ms: 0 }
-    x.ms += Math.min(a.end, to.value) - Math.max(a.start, from.value)
-    apps.set(a.app, x)
-  }
-  return {
-    kinds,
-    apps: [...apps.entries()].sort((a, b) => b[1].ms - a[1].ms).slice(0, 6),
-  }
-})
+const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind))] }))
 
 // ---------- selection band ----------
 
@@ -455,8 +341,6 @@ type Drag =
 const drag = ref<Drag>()
 const hoverT = ref<Ms>()
 const hoverX = ref(0)
-/** The hover card shows only over the apps lane (over blocks it would cover them): its top, px. */
-const hoverAppsY = ref<number>()
 
 function rawTimeAt(clientX: number): Ms {
   const r = canvas.value!.getBoundingClientRect()
@@ -467,7 +351,6 @@ function rawTimeAt(clientX: number): Ms {
 const snapPoints = computed(() => {
   const pts: Ms[] = []
   for (const e of props.data.entries) pts.push(e.start, e.end)
-  for (const s of props.data.spans) pts.push(s.start, s.end)
   for (const c of props.data.calls) pts.push(c.start, c.end)
   if (props.now) pts.push(props.now)
   if (props.schedule.work) pts.push(...props.schedule.work)
@@ -605,8 +488,6 @@ function onMove(e: PointerEvent): void {
     if ((e.target as HTMLElement | null)?.closest?.('.fanzone, [data-note]')) return (hoverT.value = undefined)
     hoverT.value = rawTimeAt(e.clientX)
     hoverX.value = e.clientX - r.left
-    const apps = (e.target as HTMLElement | null)?.closest?.('.appsl')
-    hoverAppsY.value = apps ? apps.getBoundingClientRect().bottom - r.top + 6 : undefined
     return
   }
   hoverT.value = undefined
@@ -754,9 +635,6 @@ function preview(e: Entry): { start: Ms; end: Ms; lane?: number } | Entry {
 /** Resize handles only where there is room — otherwise the whole block is a click target. */
 const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - from.value)) * width.value >= 26
 
-const hover = computed(() => (hoverT.value !== undefined ? infoAt(props.data, hoverT.value) : undefined))
-const appHover = computed(() => (hoverAppsY.value !== undefined && hover.value?.activity ? hover.value : undefined))
-const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 </script>
 
 <template>
@@ -764,10 +642,9 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   <div class="tl" tabindex="0" @keydown="onKey">
     <div class="labels">
       <div class="l-axis"></div>
-      <div class="l-sched">QA / график</div>
+      <div class="l-sched">График</div>
       <div v-if="showPlan" class="l-plan" :style="{ height: `${planH}px` }">План</div>
       <div class="l-main" :style="{ height: `${mainH}px` }">Работа</div>
-      <div v-if="!compact" class="l-apps">Приложения</div>
       <div class="l-pulse" title="Клавиши">Активность</div>
       <div v-if="!compact" class="l-calls">Созвоны</div>
     </div>
@@ -801,14 +678,11 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
           <div v-if="schedule.work[1] < to" class="sch-off" :style="box(schedule.work[1], to, 0)"></div>
         </template>
         <div v-if="schedule.lunch" class="sch-lunch" :style="box(schedule.lunch[0], schedule.lunch[1], 0)"></div>
-        <div v-for="(o, i) in off" :key="`o${i}`" class="off" :style="box(o.start, o.end, 0)"></div>
 
-        <!-- schedule + PC -->
+        <!-- the schedule; note pins -->
         <div class="lane sched">
           <div v-if="schedule.work" class="work" :style="box(schedule.work[0], schedule.work[1], 0)"></div>
           <div v-if="schedule.lunch" class="lunch" :style="box(schedule.lunch[0], schedule.lunch[1], 0)"></div>
-          <div v-for="(s, i) in data.spans" :key="i" class="pc" :style="box(s.start, Math.min(s.end, limit), 0)"></div>
-          <span v-for="g in ghostEnds.notes" :key="`gn${g.id}`" class="ghost-end" :data-note="g.id" :style="g.style"></span>
           <div
             v-if="fanZone"
             class="fanzone"
@@ -827,8 +701,8 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
             :style="{ left: `${pct(n.at)}%`, transform: fan.shift(pinPlaces.get(n.id)), zIndex: 8 + (pinPlaces.get(n.id)?.n ?? 1) - (pinPlaces.get(n.id)?.i ?? 0) }"
             @pointerenter="pinPlaces.get(n.id) && fan.enter(pinPlaces.get(n.id)!.key)"
             @pointerleave="fan.leave()"
-            :title="`${noteTitle(n)}\n\nПотяните к блоку — связать`"
-            @pointerdown.stop="layer?.startDrag($event, { type: 'note', id: n.id })"
+            :title="noteTitle(n)"
+            @pointerdown.stop
             :class="{ on: n.id === activeNoteId }"
             @click.stop="emit('note', n)"
           ><Icon :name="n.audio ? (n.audio.kind === 'call' ? 'phone' : 'mic') : 'note'" :size="11" :stroke="2.2" /></span>
@@ -862,12 +736,8 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 
         <!-- main line -->
         <div ref="mainLane" class="lane mainl" :style="{ height: `${mainH}px` }" @pointerdown="onLaneDown($event)">
-          <span v-for="g in ghostEnds.entries" :key="`ge${g.id}`" class="ghost-end" :data-entry="g.id" :style="g.style"></span>
           <div class="lane-spacer" :style="{ height: `${mainInnerH}px` }"></div>
           <div v-for="l in shownLanes" :key="`lane${l}`" class="lane-bg" :style="{ top: `${5 + (l - 1) * (laneH + LANE_GAP)}px`, height: `${laneH}px` }"></div>
-          <div v-if="uncut" class="uncut" :style="{ ...box(uncut.start, uncut.end), bottom: 'auto', height: `${laneH}px` }">
-            <span class="ut"><span class="ul">не размечено</span><span class="us"> · </span><span class="ud">{{ formatDuration(uncutMs(uncut.start, uncut.end)) }}</span></span>
-          </div>
           <div
             v-for="e in main"
             :key="e.id"
@@ -884,34 +754,8 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
               <template v-else-if="e.task"><b>{{ e.task.key }}</b> {{ labelWithoutKey(e.label, e.task.key) }}</template>
               <template v-else>{{ e.label }}</template>
             </span>
-            <span
-              v-if="crossLinks.get(e.id)"
-              class="xlink"
-              :title="crossTitle(crossLinks.get(e.id)!)"
-              @pointerdown.stop
-              @click.stop="emit('openDay', crossLinks.get(e.id)![0].day, crossLinks.get(e.id)![0].id)"
-            ><Icon name="link" :size="9" :stroke="2.6" />{{ fmtDay(crossLinks.get(e.id)![0].day) }}</span>
-            <span
-              v-else-if="!showLinks && sameDayLinks.get(e.id)"
-              class="xlink"
-              :title="`Связей: ${sameDayLinks.get(e.id)} — клик: открыть блок (связи в его карточке)`"
-              @pointerdown.stop
-              @click.stop="emit('select', e.id)"
-            ><Icon name="link" :size="9" :stroke="2.6" />{{ sameDayLinks.get(e.id) }}</span>
             <span v-if="wide(e)" class="rh r" @pointerdown="onResizeDown($event, e, 'end')"></span>
           </div>
-        </div>
-
-        <!-- apps -->
-        <div v-if="!compact" class="lane appsl" @pointerdown="onLaneDown($event)">
-          <div
-            v-for="(a, i) in activity"
-            :key="i"
-            class="app"
-            :class="a.kind"
-            :data-range="`${a.start}:${a.end}`"
-            :style="{ ...box(a.start, a.end, 0), background: a.kind === 'idle' || a.kind === 'locked' ? undefined : APP_COLORS[a.kind] }"
-          ></div>
         </div>
 
         <!-- activity wave (per minute) -->
@@ -944,37 +788,15 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
         <div v-if="pinT !== undefined && pinT >= from && pinT <= to" class="pinline" :style="{ left: `${pct(pinT)}%` }">
           <span title="Тяните влево или вправо" @pointerdown="onPinDown">{{ formatHM(pinT) }}</span>
         </div>
-        <div v-if="appHover" class="hoverline" :style="{ left: `${hoverX}px` }"></div>
-        <LinkLayer
-          ref="layer"
-          :links="linksShown"
-          :entries="data.entries"
-          :link-style="linkStyle"
-          :tick="[from, to, viewEntries, mainH, planH, showPlan]"
-          @link="(a, b) => emit('link', a, b)"
-          @unlink="(id) => emit('unlink', id)"
-        />
       </div>
 
-      <!-- hover card -->
-      <div v-if="appHover?.activity && !drag" class="card" :class="{ flip: cardLeft }" :style="{ left: `${hoverX}px`, top: `${hoverAppsY}px` }">
-        <div class="c-row">
-          <i :style="{ background: APP_COLORS[appHover.activity.kind] }"></i><b>{{ appHover.activity.app }}</b>
-          <span class="muted">{{ formatHM(appHover.activity.start) }}–{{ formatHM(appHover.activity.end) }} · {{ formatDuration(appHover.activity.end - appHover.activity.start) }}</span>
-        </div>
-        <div v-if="appHover.activity.title" class="c-title">{{ appHover.activity.title }}</div>
-        <div v-if="appHover.call" class="c-row"><i style="background: #14b8a6"></i>Созвон: {{ appHover.call.app }}</div>
-      </div>
     </div>
   </div>
 
   <div v-if="!bare" class="legend">
     <span v-for="k in legend.kinds" :key="k"><i :style="{ background: kindColor(k) }"></i>{{ kindLabel(k) }}</span>
-    <span v-if="uncut"><i class="striped"></i>Не размечено</span>
     <span v-if="schedule.work"><i class="sq work"></i>Рабочее время</span>
     <span v-if="schedule.lunch"><i class="sq lunch"></i>Обед</span>
-    <span class="sep" v-if="legend.apps.length"></span>
-    <span v-for="[app, a] in legend.apps" :key="app" class="app-l"><i :style="{ background: a.color }"></i>{{ app }}</span>
     <span class="spacer"></span>
     <button
       v-if="follow && now !== undefined"
@@ -983,7 +805,6 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
       title="Автопрокрутка"
       @click="toggleFollow"
     ><Icon name="follow" :size="13" /></button>
-    <button class="ltog" :class="{ on: showLinks }" title="Линии связей" @click="showLinks = !showLinks"><Icon name="link" :size="12" />Связи</button>
   </div>
   <KindMenu v-if="menu" :x="menu.x" :y="menu.y" :title="menu.title" :current="menu.current" :no-kinds="menu.outlook || !!menu.planId" @pick="onMenuPick" @close="menu = undefined">
     <template v-if="menu.planId">
@@ -991,17 +812,10 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
       <button class="mdel" @click="planMenu('delete')"><Icon name="trash" :size="14" />Удалить из плана</button>
     </template>
     <template v-else-if="menu.outlook">
-      <p class="mnote">Время, название и вид меняет только Outlook. Напоминание и связи — в карточке события.</p>
+      <p class="mnote">Время, название и вид меняет только Outlook. Напоминание — в карточке события.</p>
       <button class="mact" @click="(emit('select', menu.entryId!), (menu = undefined))"><Icon name="pencil" :size="14" />Открыть карточку</button>
     </template>
-    <template v-if="menu.entryId && !menu.multi && linkedBlocks(menu.entryId).length">
-      <div class="msep"></div>
-      <p class="mhead">Фактическое время из</p>
-      <button v-for="b in linkedBlocks(menu.entryId)" :key="b.id" class="mact" :title="b.label" @click="adoptFrom(b.id)">
-        <Icon :name="entryIcon(b)" :size="14" /><span class="mlab">{{ b.label }}</span><small class="mtime">{{ formatHM(b.start) }}–{{ formatHM(b.end) }}</small>
-      </button>
-    </template>
-    <template v-else-if="menu.multi">
+    <template v-if="menu.multi">
       <div class="msep"></div>
       <button class="mact" @click="onMenuMerge"><Icon name="layers" :size="14" />Объединить</button>
       <button class="mdel" @click="onMenuDelete"><Icon name="trash" :size="14" />Удалить выбранные</button>
@@ -1017,7 +831,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 <style scoped>
 .pdone {
   flex: none;
-  color: #4ade80;
+  color: var(--up);
 }
 .mhead {
   margin: 2px 8px 4px;
@@ -1036,6 +850,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .mnote {
   max-width: 230px;
@@ -1048,13 +863,13 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   display: flex;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--r3);
   user-select: none;
   outline: none;
   overflow: hidden;
 }
 .tl:focus-visible {
-  border-color: #3b3f6b;
+  border-color: var(--accent-soft);
 }
 .labels {
   flex: none;
@@ -1080,17 +895,17 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   transition: background 0.15s;
 }
 .planl.active {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgb(var(--accent-rgb) / 0.05);
 }
 .planl.dropping {
-  background: rgba(139, 92, 246, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.6);
 }
 .phint {
   left: 12px;
   top: 8px;
   font-size: 11px;
-  color: #a78bfa;
+  color: var(--accent-fg);
   pointer-events: none;
 }
 /* planned — dashed, see-through: a plan, not what happened */
@@ -1101,10 +916,10 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   gap: 4px;
   padding: 0 6px;
   box-sizing: border-box;
-  border-radius: 6px;
+  border-radius: var(--r2);
   border: 1.5px dashed var(--c);
   background: color-mix(in srgb, var(--c) 22%, transparent);
-  color: #e2e8f0;
+  color: var(--text);
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
@@ -1127,7 +942,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   right: 0;
 }
 .pseg.sel {
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--text-hi);
 }
 .pseg.moving {
   opacity: 0.85;
@@ -1143,7 +958,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 .c-desc {
   margin: 2px 0 4px 14px;
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--text-2);
   white-space: pre-wrap;
   max-width: 320px;
 }
@@ -1156,9 +971,9 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   width: 16px;
   height: 16px;
   margin-left: -8px;
-  border-radius: 5px;
-  background: #fbbf24;
-  color: #1c1917;
+  border-radius: var(--r2);
+  background: var(--warn);
+  color: var(--bg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
@@ -1166,13 +981,13 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .notepin:hover {
-  background: #fcd34d;
+  background: var(--warn);
 }
 /* under a fanned-out group of notes: the pointer may cross it without the group folding back */
 .fanzone {
   position: absolute;
-  border-radius: 8px;
-  background: rgba(251, 191, 36, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.08);
   cursor: default;
 }
 /* an invisible end for a linked block / note out of view */
@@ -1185,15 +1000,15 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   align-items: center;
   gap: 4px;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font-size: 11px;
 }
 .ltog.on {
-  border-color: rgba(124, 108, 246, 0.6);
-  background: rgba(124, 108, 246, 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
   color: var(--text);
 }
 .l-main,
@@ -1211,7 +1026,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 .lane-bg {
   left: 0;
   right: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.025);
   pointer-events: none;
 }
@@ -1243,7 +1058,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   pointer-events: none;
 }
 .notepin.on {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--text-hi);
 }
 .canvas {
   position: relative;
@@ -1277,18 +1092,19 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   top: 26px;
   z-index: 8;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 0;
-  background: rgba(99, 102, 241, 0.9);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.9);
+  color: var(--text-hi);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 .hid:hover {
-  background: #575bf0;
+  background: var(--accent);
 }
 .hid.l {
   left: 4px;
@@ -1303,17 +1119,18 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 .tick.mark {
   font-weight: 600;
   padding: 1px 6px;
   top: 7px;
-  border-radius: 999px;
+  border-radius: var(--r2);
 }
 .tick.sch {
-  color: #c7d2fe;
-  background: rgba(99, 102, 241, 0.18);
+  color: var(--accent-fg);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .tick.lunch {
   color: #fed7aa;
@@ -1327,9 +1144,9 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   pointer-events: none;
 }
 .sch-work {
-  background: rgba(99, 102, 241, 0.09);
-  border-left: 2px solid rgba(165, 180, 252, 0.7);
-  border-right: 2px solid rgba(165, 180, 252, 0.7);
+  background: rgb(var(--accent-rgb) / 0.09);
+  border-left: 2px solid rgb(var(--accent-rgb) / 0.7);
+  border-right: 2px solid rgb(var(--accent-rgb) / 0.7);
 }
 /* outside the official hours — dimmed, so the work day stands out */
 .sch-off {
@@ -1349,9 +1166,9 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   top: 5px;
   transform: translateX(-50%);
   padding: 2px 8px;
-  border-radius: 999px;
-  background: #ef4444;
-  color: #fff;
+  border-radius: var(--r2);
+  background: var(--down);
+  color: var(--text-hi);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -1389,26 +1206,26 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 .work {
   top: 6px;
   height: 6px;
-  border-radius: 3px;
-  background: rgba(99, 102, 241, 0.25);
+  border-radius: var(--r2);
+  background: rgb(var(--accent-rgb) / 0.25);
 }
 .lunch {
   top: 6px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(249, 115, 22, 0.55);
 }
 .pc {
   top: 13px;
   height: 3px;
   border-radius: 2px;
-  background: #22c55e;
+  background: var(--up);
 }
 .seg,
 .uncut {
   top: 5px;
   bottom: 5px;
-  border-radius: 8px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -1442,7 +1259,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 }
 .seg {
   background: var(--c);
-  color: #fff;
+  color: var(--text-hi);
   font-size: 12px;
   cursor: pointer;
   transition: filter 0.15s, box-shadow 0.15s;
@@ -1460,8 +1277,8 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 }
 .seg.multi {
   box-shadow:
-    0 0 0 2px #fbbf24,
-    0 0 10px rgba(251, 191, 36, 0.35);
+    0 0 0 2px var(--warn),
+    0 0 10px rgba(255, 183, 77, 0.35);
 }
 .pinline {
   position: absolute;
@@ -1469,7 +1286,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   bottom: 0;
   width: 2px;
   margin-left: -1px;
-  background: #fff;
+  background: var(--text-hi);
   pointer-events: none;
   z-index: 6;
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
@@ -1482,12 +1299,13 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 7px;
-  border-radius: 7px;
-  background: #fff;
-  color: #111827;
+  border-radius: var(--r2);
+  background: var(--text-hi);
+  color: var(--panel);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 .mact {
@@ -1498,14 +1316,14 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   background: transparent;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 13px;
 }
 .mact:hover {
   background: var(--hover);
 }
 .seg.selected {
-  box-shadow: 0 0 0 2px #fff, 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 2px var(--text-hi), 0 4px 14px rgba(0, 0, 0, 0.45);
   z-index: 3;
 }
 .seg.ai {
@@ -1514,7 +1332,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 .seg.small {
   top: 4px;
   bottom: 4px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 11px;
 }
 .txt {
@@ -1552,11 +1370,11 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 }
 .rh.l {
   left: 0;
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--r2) 0 0 var(--r2);
 }
 .rh.r {
   right: 0;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--r2) var(--r2) 0;
 }
 .xlink {
   position: absolute;
@@ -1567,16 +1385,16 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   align-items: center;
   gap: 2px;
   padding: 0 4px;
-  border-radius: 6px;
-  background: rgba(17, 19, 26, 0.55);
-  color: #ddd6fe;
+  border-radius: var(--r2);
+  background: rgba(13, 17, 23, 0.55);
+  color: var(--accent-fg);
   font-size: 9.5px;
   line-height: 13px;
   cursor: pointer;
 }
 .xlink:hover {
-  background: rgba(124, 108, 246, 0.85);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.85);
+  color: var(--text-hi);
 }
 .seg:hover .rh,
 .seg.selected .rh {
@@ -1595,10 +1413,10 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   padding-left: 4px !important;
 }
 .uncut {
-  background: repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.3) 0 6px, rgba(148, 163, 184, 0.1) 6px 12px);
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.3) 0 6px, rgba(127, 139, 157, 0.1) 6px 12px);
   background-size: 17px 17px;
   animation: flow 1.4s linear infinite;
-  color: #cbd5e1;
+  color: var(--text-2);
   font-size: 11px;
   justify-content: center;
   white-space: nowrap;
@@ -1620,24 +1438,24 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 }
 .app.idle,
 .app.locked {
-  background: repeating-linear-gradient(90deg, #3f3f46 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(90deg, var(--border-3) 0 2px, transparent 2px 4px);
 }
 .call {
   top: 8px;
   bottom: 8px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: #14b8a6;
 }
 .call.presence {
-  background: #a78bfa;
+  background: var(--accent-fg);
 }
 .band {
   position: absolute;
   top: -30px;
   bottom: 0;
-  background: rgba(99, 102, 241, 0.13);
-  border-left: 2px solid #a5b4fc;
-  border-right: 2px solid #a5b4fc;
+  background: rgb(var(--accent-rgb) / 0.13);
+  border-left: 2px solid var(--accent-fg);
+  border-right: 2px solid var(--accent-fg);
   pointer-events: none;
   z-index: 4;
   transition: background 0.2s;
@@ -1646,12 +1464,13 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   position: absolute;
   top: 4px;
   padding: 2px 6px;
-  border-radius: 6px;
-  background: #a5b4fc;
-  color: #111827;
+  border-radius: var(--r2);
+  background: var(--accent-fg);
+  color: var(--panel);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   cursor: ew-resize;
   pointer-events: auto;
   white-space: nowrap;
@@ -1674,7 +1493,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   left: 50%;
   transform: translateX(-50%);
   font-size: 10px;
-  color: #c7d2fe;
+  color: var(--accent-fg);
   white-space: nowrap;
 }
 .nowline {
@@ -1683,7 +1502,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   bottom: 0;
   width: 2px;
   margin-left: -1px;
-  background: #ef4444;
+  background: var(--down);
   pointer-events: none;
   z-index: 5;
 }
@@ -1702,9 +1521,9 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   margin-left: 12px;
   width: 300px;
   padding: 8px 10px;
-  background: rgba(22, 25, 34, 0.97);
+  background: rgba(13, 17, 23, 0.97);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
   font-size: 12px;
   pointer-events: none;
@@ -1767,12 +1586,12 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   background: transparent;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 13px;
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .mdel:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(255, 61, 61, 0.15);
 }
 .legend {
   display: flex;
@@ -1794,8 +1613,8 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
   border-radius: 2px;
 }
 .legend i.sq.work {
-  background: rgba(99, 102, 241, 0.35);
-  box-shadow: inset 0 0 0 1px #a5b4fc;
+  background: rgb(var(--accent-rgb) / 0.35);
+  box-shadow: inset 0 0 0 1px var(--accent-fg);
 }
 .legend i.sq.lunch {
   background: rgba(249, 115, 22, 0.4);
@@ -1803,7 +1622,7 @@ const cardLeft = computed(() => hoverX.value > width.value * 0.62)
 }
 .legend .striped {
   border-radius: 2px;
-  background: repeating-linear-gradient(135deg, #94a3b8 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px);
 }
 .sep {
   width: 1px;

@@ -40,7 +40,7 @@ function onClick(e: MouseEvent): void {
 .md :deep(h4) {
   margin: 14px 0 6px;
   font-size: 14px;
-  color: #c7d2fe;
+  color: var(--accent-fg);
 }
 .md.compact :deep(h1),
 .md.compact :deep(h2),
@@ -82,13 +82,13 @@ function onClick(e: MouseEvent): void {
 }
 .md :deep(code) {
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.07);
   font-size: 12px;
 }
 .md :deep(pre) {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(0, 0, 0, 0.3);
   overflow: auto;
 }
@@ -99,11 +99,11 @@ function onClick(e: MouseEvent): void {
 .md :deep(blockquote) {
   margin: 6px 0;
   padding-left: 10px;
-  border-left: 3px solid rgba(139, 92, 246, 0.5);
-  color: #cbd5e1;
+  border-left: 3px solid rgb(var(--accent-rgb) / 0.5);
+  color: var(--text-2);
 }
 .md :deep(a) {
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .md :deep(input[type='checkbox']) {
   margin: 0 4px 0 0;

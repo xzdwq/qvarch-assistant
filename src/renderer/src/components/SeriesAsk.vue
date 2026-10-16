@@ -36,17 +36,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 7, 12, 0.45);
+  background: rgba(13, 17, 23, 0.45);
 }
 .sa {
   width: 380px;
   max-width: calc(100vw - 32px);
   padding: 14px 16px;
-  border-radius: 12px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1b1e29;
+  background: var(--panel-2);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
-  color: #e5e7eb;
+  color: var(--text);
   font-size: 13px;
 }
 .sa-h {
@@ -54,11 +54,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  color: #c7d2fe;
+  color: var(--accent-fg);
 }
 .sa p {
   margin: 10px 0 14px;
-  color: #b8bfd0;
+  color: var(--text-2);
   line-height: 1.45;
 }
 .sa-b {
@@ -71,15 +71,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 }
 .sa-b button {
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 12.5px;
 }
 .sa-b button.danger {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .sa-b button.ghost {
   background: transparent;
   border-color: transparent;
-  color: #8b93a7;
+  color: var(--muted);
 }
 </style>

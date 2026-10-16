@@ -131,7 +131,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   height: 36px;
   box-sizing: border-box;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--muted);
@@ -146,9 +146,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   color: var(--text);
 }
 .chip.on {
-  border-color: rgba(38, 132, 255, 0.7);
-  background: rgba(38, 132, 255, 0.14);
-  color: #bfdbfe;
+  border-color: rgba(68, 138, 255, 0.7);
+  background: rgba(68, 138, 255, 0.14);
+  color: var(--info-fg);
 }
 .lbl {
   overflow: hidden;
@@ -170,8 +170,8 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   right: 0;
   width: 440px;
   padding: 6px;
-  border-radius: 10px;
-  background: #1c2030;
+  border-radius: 4px;
+  background: var(--panel-2);
   border: 1px solid var(--border);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
@@ -184,7 +184,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   box-sizing: border-box;
   margin-bottom: 4px;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.25);
   color: var(--text);
@@ -202,7 +202,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   width: 100%;
   padding: 5px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -211,7 +211,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 }
 .it:hover,
 .it.cur {
-  background: rgba(38, 132, 255, 0.16);
+  background: rgba(68, 138, 255, 0.16);
 }
 .cb {
   flex: none;
@@ -220,26 +220,26 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 4px;
+  border-radius: var(--r2);
   border: 1px solid rgba(255, 255, 255, 0.35);
-  color: #fff;
+  color: var(--text-hi);
 }
 .cb.on {
-  background: #2684ff;
-  border-color: #2684ff;
+  background: var(--info);
+  border-color: var(--info);
 }
 .it b {
   flex: none;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .it b.own,
 .src.own,
 .it.create {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .src {
   flex: none;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .sum {
   flex: 1;
@@ -261,6 +261,6 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 .foot {
   margin: 4px 6px 0;
   font-size: 11px;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 </style>

@@ -3,7 +3,7 @@ import { Db, ftsQuery } from '../src/main/db'
 import { atTime } from '../src/shared/timeline'
 import type { DayData } from '../src/shared/types'
 
-const day = (d: string, extra: Partial<DayData> = {}): DayData => ({ day: d, spans: [], activity: [], calls: [], entries: [], notes: [], ...extra })
+const day = (d: string, extra: Partial<DayData> = {}): DayData => ({ day: d, calls: [], entries: [], notes: [], ...extra })
 
 describe('SQLite store', () => {
   it('keeps days and finds anything in the history (prefixes, any case, Cyrillic)', () => {

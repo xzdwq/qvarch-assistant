@@ -2,9 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { noteEntry } from '@shared/notes'
 import { dayEnd, dayStart } from '@shared/timeline'
-import type { Entry, Link, LinkEnd, Ms, Note } from '@shared/types'
-import { linkedTo } from '@shared/links'
-import LinkPicker from './LinkPicker.vue'
+import type { Entry, Ms, Note } from '@shared/types'
 import { kindColor, kindLabel } from '../lib/palette'
 import Icon from './Icon.vue'
 import TimeField from './TimeField.vue'
@@ -23,9 +21,7 @@ const props = defineProps<{
   entries: Entry[]
   compact?: boolean
   full?: Note
-  /** With the day's notes and links the note can be linked to blocks / other notes. */
   notes?: Note[]
-  links?: Link[]
 }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 /** The host puts the date in (the calendar): then the time stands after it and the header is short. */
@@ -89,14 +85,6 @@ async function remove(): Promise<void> {
   await window.qa.deleteNote(props.day, props.note.id)
   emit('close')
 }
-/** What this note is linked with — applied at once (the note is saved first, so the link has both ends). */
-const linked = ref<LinkEnd[]>(props.links ? linkedTo(props.links, { type: 'note', id: props.note.id }).map((x) => x.other) : [])
-async function setLinked(v: LinkEnd[]): Promise<void> {
-  linked.value = v
-  clearTimeout(timer)
-  await window.qa.saveNote(props.day, { id: props.note.id, at: at.value, text: text.value })
-  await window.qa.setLinks(props.day, { type: 'note', id: props.note.id }, v.map((l) => ({ type: l.type, id: l.id })))
-}
 
 /** The note becomes a task: its block appears on the timeline now and the note itself goes. */
 async function toTask(): Promise<void> {
@@ -156,9 +144,6 @@ watch(
           </div>
         </PopChip>
       </span>
-      <span v-if="notes && links" class="lpw" @click.stop>
-        <LinkPicker :model-value="linked" :entries="entries" :notes="notes" :self="{ type: 'note', id: note.id }" compact @update:model-value="setLinked" />
-      </span>
       <button v-if="!dated || full?.audio || hasAudio" class="ib task"  :title="'Сделать задачей'" @click="toTask">
         <Icon name="checkSquare" :size="14" /><span>В задачу</span>
       </button>
@@ -201,9 +186,9 @@ watch(
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(251, 191, 36, 0.06);
-  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.06);
+  border: 1px solid rgba(255, 183, 77, 0.28);
 }
 .nh {
   cursor: pointer;
@@ -211,10 +196,10 @@ watch(
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #fde68a;
+  color: var(--warn-fg);
 }
 .ni {
-  color: #fbbf24;
+  color: var(--warn);
 }
 .ent {
   display: inline-flex;
@@ -247,22 +232,22 @@ watch(
   display: inline-flex;
   padding: 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 .ib.danger:hover {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.12);
+  color: var(--down-fg);
+  background: rgba(255, 61, 61, 0.12);
 }
 .ib.task {
   gap: 4px;
   font-size: 11px;
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .ib.task.linked {
-  color: #86efac;
+  color: var(--up-fg);
 }
 .nrem {
   display: flex;
@@ -273,7 +258,7 @@ watch(
 }
 .nrem select {
   padding: 3px 6px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   font-size: 12px;
 }
 .lpw :deep(.pchip) {
@@ -307,7 +292,7 @@ watch(
   display: inline-flex;
   align-self: flex-start;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--r2);
   overflow: hidden;
 }
 .modes button {
@@ -322,8 +307,8 @@ watch(
   font-size: 12px;
 }
 .modes button.on {
-  background: rgba(253, 230, 138, 0.16);
-  color: #fde68a;
+  background: rgba(255, 183, 77, 0.16);
+  color: var(--warn-fg);
 }
 .recrow {
   display: flex;
@@ -339,45 +324,46 @@ watch(
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  background: rgba(248, 113, 113, 0.12);
-  color: #fca5a5;
+  border: 1px solid rgba(255, 61, 61, 0.5);
+  background: rgba(255, 61, 61, 0.12);
+  color: var(--down-fg);
 }
 .recbtn.on {
-  background: #ef4444;
-  color: #fff;
+  background: var(--down);
+  color: var(--text-hi);
 }
 .meter {
   flex: 1;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 .meter span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #22c55e, #facc15, #ef4444);
+  background: linear-gradient(90deg, var(--up), var(--warn), var(--down));
 }
 .rt {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .err {
-  color: #f87171;
+  color: var(--down-fg);
   font-size: 11px;
 }
 .ib.ok {
-  color: #4ade80;
+  color: var(--up);
 }
 .ib.ok:hover {
-  background: rgba(74, 222, 128, 0.12);
+  background: rgba(0, 230, 118, 0.12);
 }
 textarea {
   min-height: 72px;
   resize: vertical;
   padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(253, 230, 138, 0.25);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 183, 77, 0.25);
   background: rgba(0, 0, 0, 0.2);
   color: var(--text);
   font: inherit;
@@ -391,6 +377,6 @@ textarea {
   font-size: 12px;
 }
 textarea:focus {
-  border-color: rgba(253, 230, 138, 0.55);
+  border-color: rgba(255, 183, 77, 0.55);
 }
 </style>

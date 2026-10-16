@@ -1,26 +1,27 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { shiftDay } from '@shared/timeline'
 import type { AppCommand } from '@shared/api'
 import type { PublicSettings } from '@shared/types'
 import Icon from '../components/Icon.vue'
+import ZoomChip from '../components/ZoomChip.vue'
 import { setKinds } from '../lib/palette'
-import CalendarView from './CalendarView.vue'
 import DayView from './DayView.vue'
-import LogView from './LogView.vue'
 import SettingsView from './SettingsView.vue'
-import TasksView from './TasksView.vue'
+import TaskCalendar from '../components/TaskCalendar.vue'
+import WorkView from './WorkView.vue'
 import NotebookView from './NotebookView.vue'
 import DashboardView from './DashboardView.vue'
 import ReportsView from './ReportsView.vue'
-import SheetView from './SheetView.vue'
 import ReleaseView from './ReleaseView.vue'
 import PdfSignView from './PdfSignView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
+import DatePick from '../components/DatePick.vue'
+import StatusBar from '../components/StatusBar.vue'
 import { titleActions } from '../lib/titlebar'
 import { onNewDay, todayKey } from '../lib/today'
 
-type View = 'dashboard' | 'day' | 'calendar' | 'sheet' | 'reports' | 'log' | 'tasks' | 'notebook' | 'release' | 'pdf' | 'settings'
+import { orderedViews, VIEWS, type View } from '../lib/views'
 const view = ref<View>('day')
 const day = ref(todayKey.value)
 onNewDay((prev, next) => {
@@ -43,7 +44,7 @@ function onSettings(s: PublicSettings): void {
 const offSettings = window.qa.onSettings(onSettings)
 onBeforeUnmount(offSettings)
 const off = window.qa.onNavigate((nav) => {
-  view.value = nav.view ?? 'day'
+  view.value = (nav.view as View | undefined) ?? 'day'
   if (nav.day) day.value = nav.day
   focusEntry.value = nav.entryId
 })
@@ -68,65 +69,18 @@ function run(cmd: AppCommand): void {
   window.qa.command(cmd)
 }
 
-/** Sections: icon-only in the title bar, the name is in the tooltip (and read by screen readers). */
-const VIEWS: Array<{ id: View; icon: string; label: string }> = [
-  { id: 'dashboard', icon: 'dashboard', label: 'Дашборд' },
-  { id: 'day', icon: 'timeline', label: 'Таймлайн' },
-  { id: 'calendar', icon: 'calendar', label: 'Календарь' },
-  { id: 'sheet', icon: 'table', label: 'Заполнение' },
-  { id: 'reports', icon: 'chart', label: 'Отчёты' },
-  { id: 'log', icon: 'list', label: 'Журнал' },
-  { id: 'tasks', icon: 'checkSquare', label: 'Задачи' },
-  { id: 'notebook', icon: 'notebook', label: 'Блокнот' },
-  { id: 'release', icon: 'branch', label: 'Релиз' },
-  { id: 'pdf', icon: 'signature', label: 'Подпись PDF' },
-]
+/** Sections in the user's order (hidden ones are left out — the open one always shows). */
+const menu = computed(() => orderedViews(settings.value?.ui.menu).filter((v) => v.id === view.value || !settings.value?.ui.menu.hidden.includes(v.id)))
 
-const title = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
-const today = () => todayKey.value
-// "Удалить" in the date picker empties the value — back to today then
+const sectionName = computed(() => (view.value === 'settings' ? 'Настройки' : (VIEWS.find((v) => v.id === view.value)?.label ?? '')))
+// an emptied date — back to today
 watch(day, (v) => {
-  if (!v) day.value = today()
+  if (!v) day.value = todayKey.value
 })
-/** The date in the title bar opens the browser's calendar — any day, past or future (meetings, planning). */
-const picker = ref<HTMLInputElement>()
-/**
- * The picker is open from showPicker() until a date is picked, Esc, or the next press anywhere (the browser
- * closes it on that press). A press on the date button while it was open just closes it.
- */
-let pickerOpen = false
-let pressClosedPicker = false
-function onAnyDown(): void {
-  pressClosedPicker = pickerOpen
-  pickerOpen = false
-}
-function onAnyKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape') pickerOpen = false
-}
-onMounted(() => {
-  document.addEventListener('pointerdown', onAnyDown, true)
-  document.addEventListener('keydown', onAnyKey, true)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onAnyDown, true)
-  document.removeEventListener('keydown', onAnyKey, true)
-})
-function openPicker(): void {
-  if (pressClosedPicker) {
-    pressClosedPicker = false
-    return
-  }
-  try {
-    picker.value?.showPicker()
-    pickerOpen = true
-  } catch {
-    picker.value?.focus()
-  }
-}
 
 // ---------- the whole window's scale (remembered) ----------
-// CSS zoom of this page — Chromium's page zoom would be shared with the island (the same file:// origin)
-const applyZoom = (z: number) => (document.documentElement.style.zoom = String(z / 100))
+// CSS zoom of the content only — Chromium's page zoom would be shared with the island (the same file:// origin), and a
+// zoomed title bar gets its drag areas computed wrong (the buttons at its right stop taking clicks)
 const ZOOM_KEY = 'qa.zoom'
 const appZoom = ref(readZoom())
 function readZoom(): number {
@@ -138,40 +92,36 @@ function readZoom(): number {
   }
 }
 function setAppZoom(z: number): void {
-  appZoom.value = Math.min(200, Math.max(50, Math.round(z / 10) * 10))
-  applyZoom(appZoom.value)
+  appZoom.value = Math.min(200, Math.max(50, Math.round(z / 5) * 5))
   try {
     localStorage.setItem(ZOOM_KEY, String(appZoom.value))
   } catch {
     // not remembered — fine
   }
 }
-applyZoom(appZoom.value)
 </script>
 
 <template>
   <div class="shell">
-    <header class="titlebar" :style="{ zoom: 100 / appZoom }">
+    <header class="titlebar">
       <div class="tside">
       <div class="brand">
-        <Icon name="qlogo" :size="19" :stroke="3.6" style="color: #7c6cf6" />
+        <Icon name="qlogo" :size="17" :stroke="3.8" />
+        <b>QVARCH</b>
       </div>
 
       <nav class="seg nodrag" aria-label="Разделы">
-        <button v-for="v in VIEWS" :key="v.id" :class="{ on: view === v.id }" :title="v.label" :aria-label="v.label" @click="view = v.id">
-          <Icon :name="v.icon" :size="16" />
+        <button v-for="v in menu" :key="v.id" :class="{ on: view === v.id }" :title="v.label" :aria-label="v.label" @click="view = v.id">
+          <Icon :name="v.icon" :size="15" /><span v-if="view === v.id" class="vl">{{ v.label }}</span>
         </button>
       </nav>
 
-      <div v-if="view === 'day' || view === 'log'" class="daynav nodrag">
+      <div v-if="view === 'day'" class="daynav nodrag">
         <button class="ico" title="Предыдущий день" @click="day = shiftDay(day, -1)"><Icon name="chevronLeft" :size="15" /></button>
-        <button class="date" title="Выбрать день" @click="openPicker">
-          <Icon name="calendar" :size="14" /><span>{{ title(day) }}</span>
-        </button>
-        <input ref="picker" v-model="day" class="picker" type="date" tabindex="-1" aria-hidden="true" @change="pickerOpen = false" />
+        <DatePick v-model="day" class="tdate" />
         <button class="ico" title="Следующий день" @click="day = shiftDay(day, 1)"><Icon name="chevronRight" :size="15" /></button>
-        <button v-if="day !== today()" class="today" @click="day = today()">Сегодня</button>
       </div>
+      <span class="dragfill"></span>
       </div>
 
       <!-- the open section's own actions (icons only) -->
@@ -186,11 +136,8 @@ applyZoom(appZoom.value)
       </div>
 
       <div class="tside r">
-      <span class="azoom nodrag" title="Масштаб">
-        <button title="Мельче" @click="setAppZoom(appZoom - 10)"><Icon name="chevronLeft" :size="12" /></button>
-        <button class="zv" title="Сбросить" @click="setAppZoom(100)">{{ appZoom }}%</button>
-        <button title="Крупнее" @click="setAppZoom(appZoom + 10)"><Icon name="chevronRight" :size="12" /></button>
-      </span>
+      <span class="dragfill"></span>
+      <ZoomChip class="azoom" :model-value="appZoom" :min="50" :max="200" title="Масштаб окна · колесо — изменить, клик — 100%" @update:model-value="setAppZoom" />
       <button class="ico nodrag" :class="{ on: view === 'settings' }" title="Настройки" aria-label="Настройки" @click="view = 'settings'">
         <Icon name="settings" :size="16" />
       </button>
@@ -212,21 +159,20 @@ applyZoom(appZoom.value)
     </header>
 
     <SeriesAsk />
-    <main v-if="settings">
+    <main v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
         <DashboardView v-if="view === 'dashboard'" :settings="settings" @go="go" />
         <DayView v-else-if="view === 'day'" :day="day" :settings="settings" :focus-entry="focusEntry" @open-day="(d, id) => ((day = d), (focusEntry = id))" />
-        <CalendarView v-else-if="view === 'calendar'" :day="day" :work-days="settings.schedule.workDays" @open="(d) => ((day = d), (view = 'day'))" />
-        <LogView v-else-if="view === 'log'" :day="day" @show="view = 'day'" />
-        <TasksView v-else-if="view === 'tasks'" :link-style="settings.ui.links.style" :work-days="settings.schedule.workDays" @settings="view = 'settings'" @open-day="(d) => ((day = d), (view = 'day'))" />
+        <TaskCalendar v-else-if="view === 'calendar'" :work-days="settings.schedule.workDays" @open-day="(d) => ((day = d), (view = 'day'))" />
         <NotebookView v-else-if="view === 'notebook'" />
         <ReportsView v-else-if="view === 'reports'" @go="go" />
-        <SheetView v-else-if="view === 'sheet'" :settings="settings" @go="go" />
+        <WorkView v-else-if="view === 'work'" :settings="settings" @go="go" @settings="view = 'settings'" @open-day="(d) => ((day = d), (view = 'day'))" />
         <ReleaseView v-else-if="view === 'release'" />
         <PdfSignView v-else-if="view === 'pdf'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
     </main>
+    <StatusBar :section="sectionName" />
   </div>
 </template>
 
@@ -242,13 +188,24 @@ applyZoom(appZoom.value)
   flex: none;
   height: 38px;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
-  padding: 0 140px 0 10px; /* room for the native window controls */
-  background: #12151d;
+  padding: 0 140px 0 0; /* room for the native window controls */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
   user-select: none;
+  container-type: inline-size;
+}
+/* the window moves by the logo and the empty stretches only — buttons never sit inside a drag area
+   (Electron cuts holes for them, and on Windows some of those holes go missing: clicks were lost) */
+.brand,
+.dragfill {
+  -webkit-app-region: drag;
+}
+.dragfill {
+  flex: 1;
+  align-self: stretch;
+  min-width: 12px;
 }
 .nodrag,
 .titlebar button,
@@ -258,7 +215,17 @@ applyZoom(appZoom.value)
 .brand {
   display: flex;
   align-items: center;
-  padding-right: 4px;
+  gap: 7px;
+  padding: 0 14px 0 12px;
+  border-right: 1px solid var(--border);
+  color: var(--accent);
+}
+.brand b {
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-hi);
 }
 .titlebar button {
   cursor: default;
@@ -267,12 +234,15 @@ applyZoom(appZoom.value)
   gap: 6px;
   background: transparent;
   border: 1px solid transparent;
+  border-radius: var(--r2);
   padding: 3px 9px;
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 .titlebar button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--text);
 }
 .titlebar button.ico {
   padding: 0;
@@ -281,15 +251,17 @@ applyZoom(appZoom.value)
   justify-content: center;
 }
 .titlebar button.on {
-  background: rgba(255, 255, 255, 0.09);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent-fg);
 }
 .menu {
   position: relative;
 }
 /* the section's actions: in the middle of the bar */
 .tside {
-  flex: 1 1 0;
+  /* never narrower than its content: an overflowing left side slid under the right one, whose empty drag
+     stretch then took the clicks of the date's buttons */
+  flex: 1 0 auto;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -300,11 +272,13 @@ applyZoom(appZoom.value)
 }
 .tacts {
   flex: none;
+  align-self: center;
   display: flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: var(--panel);
 }
 .tact {
   position: relative;
@@ -321,44 +295,66 @@ applyZoom(appZoom.value)
   right: 0;
   z-index: 100;
   min-width: 280px;
-  padding: 6px;
-  background: #1a1e2a;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  background: var(--pop);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
 }
 .dropdown button {
   text-align: left;
-  color: #cbd5e1;
+  color: var(--text-2);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--r2);
 }
 .dropdown .sep {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
 }
-/* a compact segmented control: icons only */
+/* the sections: terminal tabs — the open one is lit and named */
 .seg {
   display: flex;
-  gap: 1px;
-  padding: 2px;
-  margin-left: 6px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
+  align-items: stretch;
+  gap: 0;
 }
 .seg button {
-  width: 34px;
-  height: 26px;
-  padding: 0;
+  position: relative;
+  height: 100%;
+  min-width: 38px;
+  padding: 0 11px;
   justify-content: center;
-  border-radius: 7px;
+  border: 0;
+  border-radius: 0;
+  border-right: 1px solid var(--border);
 }
 .titlebar .seg button.on {
-  background: rgba(124, 108, 246, 0.22);
-  color: #c7c2ff;
+  background: var(--panel);
+  color: var(--accent-fg);
+}
+.titlebar .seg button.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.vl {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+@container (max-width: 980px) {
+  .vl,
+  .brand b {
+    display: none;
+  }
 }
 .daynav {
   display: flex;
@@ -372,14 +368,17 @@ applyZoom(appZoom.value)
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--r2);
+  font-size: 12.5px;
   cursor: pointer;
   text-transform: capitalize;
+  white-space: nowrap;
   -webkit-app-region: no-drag;
 }
-.date:hover {
-  background: rgba(255, 255, 255, 0.07);
+.titlebar .date {
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: 12px;
 }
 /* the native date picker opens under the date button */
 .picker {
@@ -392,8 +391,11 @@ applyZoom(appZoom.value)
   pointer-events: none;
   align-self: flex-end;
 }
-.today {
-  color: #a5b4fc !important;
+.titlebar .today {
+  color: var(--accent-fg);
+  border-color: var(--accent-line);
+  height: 24px;
+  font-size: 12px;
 }
 .grow {
   flex: 1;
@@ -407,14 +409,15 @@ main:has(> .nb),
 main:has(> .rep),
 main:has(> .sh),
 main:has(> .rel),
-main:has(> .ps) {
+main:has(> .ps),
+main:has(> .tv) {
   overflow: hidden;
 }
 .azoom {
   display: inline-flex;
   align-items: center;
   margin-right: 6px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -433,12 +436,15 @@ main:has(> .ps) {
   cursor: default;
 }
 .azoom button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text);
 }
-.azoom .zv {
-  min-width: 40px;
+.titlebar .azoom .zv {
+  min-width: 42px;
+  padding: 0 4px;
+  font-family: var(--font-data);
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  color: #c7d2fe;
+  color: var(--text-2);
 }
 </style>

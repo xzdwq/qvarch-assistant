@@ -867,13 +867,13 @@ const subjectOf = (r: Row) => (r.kind === 'item' ? r.item.subject : r.commit.sub
 
 <style scoped>
 .rel {
-  --c-green: #4ade80;
-  --c-red: #ef4444;
-  --c-yellow: #e2c08d;
+  --c-green: var(--up);
+  --c-red: var(--down);
+  --c-yellow: var(--warn-fg);
   --c-orange: #fb923c;
-  --c-blue: #3b82f6;
-  --c-purple: #b37feb;
-  --link: #8ab4f8;
+  --c-blue: var(--info);
+  --c-purple: var(--accent);
+  --link: var(--info-fg);
   --rad: 8px;
   --rad-sm: 5px;
   display: flex;
@@ -926,8 +926,8 @@ a {
   padding: 0 12px;
   border: 0;
   border-radius: var(--rad-sm);
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 12.5px;
   white-space: nowrap;
   cursor: pointer;
@@ -941,7 +941,7 @@ a {
 }
 .b.sec {
   background: rgba(255, 255, 255, 0.08);
-  color: #d5d9e4;
+  color: var(--text);
 }
 .b.sm {
   height: 22px;
@@ -949,13 +949,13 @@ a {
   font-size: 11px;
 }
 .b.blue {
-  background: #2246a8;
+  background: var(--accent);
 }
 .b.green {
-  background: #276839;
+  background: var(--up);
 }
 .b.red {
-  background: #95292d;
+  background: var(--down);
 }
 .ib {
   display: inline-flex;
@@ -993,9 +993,9 @@ a {
   margin-bottom: 14px;
   padding: 8px 10px;
   border-radius: var(--rad-sm);
-  border: 1px solid rgba(248, 113, 113, 0.55);
-  background: #2a1619;
-  color: #fecaca;
+  border: 1px solid rgba(255, 61, 61, 0.55);
+  background: var(--panel);
+  color: var(--down-fg);
 }
 .err .et {
   flex: 1;
@@ -1034,7 +1034,7 @@ a {
   gap: 8px;
 }
 .fi label {
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1051,7 +1051,7 @@ input[type='number'] {
   font-size: 12.5px;
 }
 select option {
-  background: #1c2030;
+  background: var(--panel-2);
 }
 .fi select {
   min-width: 200px;
@@ -1072,7 +1072,7 @@ select option {
   gap: 4px;
   padding: 2px 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 13px;
@@ -1092,9 +1092,9 @@ select option {
   padding: 5px;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .pi {
@@ -1103,7 +1103,7 @@ select option {
   gap: 8px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -1111,10 +1111,10 @@ select option {
   cursor: pointer;
 }
 .pi:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .pi.on {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .pi:disabled {
   opacity: 0.4;
@@ -1151,8 +1151,8 @@ select option {
   height: 22px;
   margin-top: 1px;
   border-radius: 50%;
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1162,8 +1162,12 @@ select option {
 }
 .cht h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 11px;
+  font-family: var(--font-data);
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 .cd {
   margin: 2px 0 0;
@@ -1188,7 +1192,7 @@ select option {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 4px;
   font-size: 11px;
   white-space: nowrap;
 }
@@ -1198,7 +1202,7 @@ select option {
 }
 .cst.bad {
   background: var(--c-red);
-  color: #fff;
+  color: var(--text-hi);
 }
 .cst.cond {
   background: var(--c-yellow);
@@ -1248,7 +1252,7 @@ select option {
   flex: none;
   width: 30px;
   height: 16px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   transition:
@@ -1269,15 +1273,15 @@ select option {
     background-color 0.15s ease;
 }
 .sw input:checked + .tr {
-  border-color: #6d5df0;
-  background: #6d5df0;
+  border-color: var(--accent);
+  background: var(--accent);
 }
 .sw input:checked + .tr::after {
   transform: translateX(14px);
-  background: #fff;
+  background: var(--text-hi);
 }
 .sw input:focus-visible + .tr {
-  outline: 1px solid #8b7cff;
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 .lim {
@@ -1302,7 +1306,7 @@ select option {
 }
 input[type='checkbox'] {
   margin: 0;
-  accent-color: #7c6cf6;
+  accent-color: var(--accent);
 }
 .bgrid {
   display: grid;
@@ -1366,7 +1370,10 @@ input[type='checkbox'] {
   min-width: 0;
 }
 .bname {
+  font-family: var(--font-data);
+  font-size: 11.5px;
   font-weight: 500;
+  word-break: break-all;
 }
 .brow.remote .bname::after {
   content: ' (remote)';
@@ -1374,7 +1381,7 @@ input[type='checkbox'] {
   font-size: 10px;
 }
 .sha {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-data);
   font-size: 11px;
   opacity: 0.85;
 }
@@ -1417,7 +1424,7 @@ input[type='checkbox'] {
   align-items: flex-end;
   gap: 1px;
   padding: 3px 8px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-data);
   font-size: 11px;
 }
 .bdiff .fc {
@@ -1433,7 +1440,7 @@ input[type='checkbox'] {
 .ds {
   display: inline-flex;
   gap: 4px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-data);
   font-size: 11px;
 }
 .ds i {
@@ -1470,7 +1477,7 @@ input[type='checkbox'] {
   border: 0;
   border-radius: 50%;
   background: var(--c-red);
-  color: #fff;
+  color: var(--text-hi);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -1642,7 +1649,7 @@ button.add:disabled {
   flex: 1 1 auto;
   min-width: 0;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   color: #000;
   font-size: 11px;
   text-align: center;
@@ -1662,7 +1669,7 @@ button.add:disabled {
   display: inline-block;
   margin: 2px 4px 0 0;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   font-size: 11px;
 }
 .badge.ok {
@@ -1671,7 +1678,7 @@ button.add:disabled {
 }
 .badge.conflict {
   background: var(--c-red);
-  color: #fff;
+  color: var(--text-hi);
 }
 .badge.cond {
   background: var(--c-yellow);
@@ -1679,7 +1686,7 @@ button.add:disabled {
 }
 .badge.applied {
   background: var(--c-blue);
-  color: #fff;
+  color: var(--text-hi);
 }
 .badge.inmain {
   background: var(--c-purple);
@@ -1746,9 +1753,9 @@ button.add:disabled {
   margin: 2px 0 0;
   overflow-y: auto;
   padding: 4px 0;
-  border-radius: 3px;
-  background: #0d1017;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  border-radius: var(--r2);
+  background: var(--bg);
+  font-family: var(--font-data);
   font-size: 11px;
 }
 .line {
@@ -1762,7 +1769,7 @@ button.add:disabled {
   position: absolute;
   left: 6px;
   width: 24px;
-  color: #4b5263;
+  color: var(--border-3);
   text-align: right;
   user-select: none;
 }
@@ -1798,7 +1805,7 @@ button.add:disabled {
   font-size: 11px;
 }
 .cdate {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-data);
   font-size: 11px;
   opacity: 0.8;
   white-space: nowrap;
@@ -1853,7 +1860,7 @@ button.add:disabled {
   font-size: 11px;
 }
 .cmdb {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-data);
   font-size: 12px;
   line-height: 2;
   word-break: break-word;
@@ -1926,7 +1933,7 @@ button.add:disabled {
   align-items: flex-start;
   justify-content: center;
   padding-top: 60px;
-  background: rgba(5, 7, 12, 0.5);
+  background: rgba(13, 17, 23, 0.5);
 }
 .rm {
   width: 620px;
@@ -1934,9 +1941,9 @@ button.add:disabled {
   max-height: calc(100vh - 90px);
   overflow: auto;
   padding: 10px 14px 14px;
-  border-radius: 14px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171a24;
+  background: var(--panel);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   color: var(--text);
 }
@@ -1957,7 +1964,7 @@ button.add:disabled {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -1972,34 +1979,34 @@ button.add:disabled {
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12px;
   cursor: pointer;
 }
 .rbtn.pri {
   border-color: transparent;
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .rbtn.red {
   border-color: transparent;
-  background: #95292d;
-  color: #fff;
+  background: var(--down);
+  color: var(--text-hi);
 }
 .prow {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 .prow:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 .prow.on .pinfo b {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .pinfo {
   flex: 1;
@@ -2038,8 +2045,8 @@ button.add:disabled {
   height: 30px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #11141c;
+  border-radius: 4px;
+  background: var(--bg);
   color: var(--text);
   font-size: 12.5px;
 }
@@ -2062,7 +2069,7 @@ button.add:disabled {
 }
 .ferr {
   margin: 4px 0;
-  color: #fca5a5;
+  color: var(--down-fg);
   font-size: 12px;
 }
 .rmut {

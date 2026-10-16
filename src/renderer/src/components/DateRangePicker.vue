@@ -96,7 +96,7 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
 <template>
   <Teleport to="body">
-    <div ref="el" class="drp" :style="{ left: `${pos.left}px`, top: `${pos.top}px` }" @mouseleave="hover = undefined">
+    <div ref="el" class="drp" :style="{ left: `${pos.left}px`, top: `${pos.top}px` }" @mouseleave="hover = undefined" @wheel.prevent="shiftMonth($event.deltaY > 0 ? 1 : -1)">
       <div class="mh">
         <button class="nb" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="16" /></button>
         <b>{{ title }}</b>
@@ -132,9 +132,9 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   z-index: 5000;
   width: 296px;
   padding: 12px 14px 14px;
-  border-radius: 14px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1a1e2b;
+  background: var(--panel-2);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
   color: var(--text);
   user-select: none;
@@ -150,9 +150,9 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   display: inline-flex;
   padding: 4px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
 }
 .nb:hover {
   background: rgba(255, 255, 255, 0.07);
@@ -165,7 +165,7 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 }
 .wd {
   padding: 4px 0 6px;
-  color: #7d8599;
+  color: var(--dim);
   font-size: 11px;
   text-align: center;
 }
@@ -176,7 +176,7 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #d6dae6;
+  color: var(--text);
   font-size: 13px;
 }
 .dd span {
@@ -185,40 +185,40 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: 4px;
 }
 .dd:hover span {
   background: rgba(255, 255, 255, 0.08);
 }
 .dd.out {
-  color: #5a6175;
+  color: var(--dim);
 }
 .dd.today {
-  color: #c4b5fd;
+  color: var(--accent-fg);
   font-weight: 600;
 }
 /* the period: a band across the days, the ends filled */
 .dd.in {
-  background: rgba(139, 124, 255, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .dd.in:nth-child(7n + 1) {
-  border-radius: 10px 0 0 10px;
+  border-radius: 4px 0 0 4px;
 }
 .dd.in:nth-child(7n) {
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 4px 4px 0;
 }
 .dd.edge span {
-  background: #8b7cff;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 .ft {
   margin: 10px 2px 10px;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12.5px;
 }
 .ft .warn {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .acts {
   display: flex;
@@ -228,17 +228,17 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   flex: 1;
   height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
-  color: #d6dae6;
+  color: var(--text);
   font-size: 13px;
 }
 .bt:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
 }
 .bt.pri {
-  background: #8b7cff;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 .bt.pri:hover:not(:disabled) {

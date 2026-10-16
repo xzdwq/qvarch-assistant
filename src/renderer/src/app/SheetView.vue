@@ -140,8 +140,7 @@ const offDay = window.qa.onDayState((msg) => {
   if (!cols.value.includes(d.day)) return
   const cur = dayOf(d.day)
   if (cur && cur.entries === d.entries) return
-  const pcOnMs = unionMs(d.spans.map((s) => ({ start: s.start, end: s.open ? Math.max(s.end, Date.now()) : s.end })))
-  const next = { day: d.day, entries: d.entries, pcOnMs }
+  const next = { day: d.day, entries: d.entries }
   days.value = cur ? days.value.map((x) => (x.day === d.day ? next : x)) : [...days.value, next]
 })
 onBeforeUnmount(offDay)
@@ -226,7 +225,6 @@ const rows = computed<Row[]>(() => {
   return [...m.values()].sort((a, b) => Number(!a.task) - Number(!b.task) || kindOrder(a.kind) - kindOrder(b.kind) || (a.task?.key ?? a.label).localeCompare(b.task?.key ?? b.label))
 })
 const dayTotal = (d: string) => unionMs(entriesOf(dayOf(d)))
-const pcOn = (d: string) => dayOf(d)?.pcOnMs ?? 0
 /** Time per kind (tasks, meetings, calls…): per day and for the period — a kind's own overlaps counted once. */
 const kindRows = computed(() => {
   const present = new Set(cols.value.flatMap((d) => entriesOf(dayOf(d)).map((e) => e.kind)))
@@ -507,11 +505,6 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
             <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(k.per.get(d) ?? 0) }}</td>
             <td v-if="cols.length > 1" class="tc">{{ formatHours(k.total) }}</td>
           </tr>
-          <tr v-if="!widget" class="qa">
-            <td class="rl">QA включено</td>
-            <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d) }">{{ formatHours(pcOn(d)) }}</td>
-            <td v-if="cols.length > 1" class="tc">{{ formatHours(cols.reduce((s, d) => s + pcOn(d), 0)) }}</td>
-          </tr>
         </tfoot>
       </table>
     </div>
@@ -540,7 +533,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 .seg {
   display: inline-flex;
   padding: 2px;
-  border-radius: 9px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
 }
@@ -548,14 +541,14 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   height: 24px;
   padding: 0 9px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
 .seg button.on {
-  background: rgba(124, 108, 246, 0.25);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.25);
+  color: var(--text-hi);
 }
 .nav {
   display: inline-flex;
@@ -577,7 +570,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
 }
@@ -593,9 +586,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12px;
 }
 .btn:hover,
@@ -605,12 +598,12 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 .btn.pri {
   justify-content: center;
   border-color: transparent;
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .busy {
   display: inline-flex;
-  color: #a78bfa;
+  color: var(--accent-fg);
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
@@ -627,9 +620,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   right: 0;
   z-index: 40;
   padding: 6px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .pd.menu {
@@ -643,14 +636,14 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   gap: 8px;
   padding: 6px 9px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
   text-align: left;
 }
 .pd.menu button:hover {
-  background: rgba(139, 92, 246, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .pd.add {
   width: 320px;
@@ -672,14 +665,14 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   height: 28px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--c) 14%, transparent);
   color: var(--c);
 }
 .kinds button.on {
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 30%, transparent);
-  color: #fff;
+  color: var(--text-hi);
 }
 .arow {
   display: flex;
@@ -691,9 +684,9 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   min-width: 0;
   height: 30px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
-  background: #141824;
+  background: var(--panel);
   color: var(--text);
   font-size: 12.5px;
 }
@@ -723,7 +716,7 @@ thead th {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: var(--bg, #0f1218);
+  background: var(--bg, var(--bg));
   padding: 5px 0;
   white-space: nowrap;
   color: var(--muted);
@@ -734,7 +727,7 @@ thead th {
   position: sticky;
   left: 0;
   z-index: 2;
-  background: var(--bg, #0f1218);
+  background: var(--bg, var(--bg));
   width: 34%;
   min-width: 220px;
   max-width: 380px;
@@ -762,7 +755,7 @@ thead .rl {
   overflow: hidden;
   padding: 2px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: inherit;
   line-height: 1.15;
@@ -778,15 +771,16 @@ thead .rl {
 }
 .dh b {
   font-size: 13px;
-  color: #c7cbd6;
+  color: var(--text-2);
 }
 .dc.today .dh b,
 .dc.today .dh {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .tc {
   padding-right: 10px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-weight: 600;
 }
 .rlab {
@@ -803,12 +797,12 @@ thead .rl {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .key {
   flex: none;
-  color: #93c5fd;
+  color: var(--info-fg);
   font-size: 12px;
 }
 .rt {
@@ -819,7 +813,7 @@ thead .rl {
 }
 .lk {
   flex: none;
-  color: #38bdf8;
+  color: var(--info);
 }
 .rx {
   flex: none;
@@ -827,29 +821,30 @@ thead .rl {
   margin-left: auto;
   padding: 3px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
 .rx:hover {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .cell {
   height: 34px;
   padding: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   cursor: text;
 }
 .cell.off {
   background: rgba(255, 255, 255, 0.015);
 }
 .cell.today {
-  background: rgba(124, 108, 246, 0.06);
+  background: rgb(var(--accent-rgb) / 0.06);
 }
 tbody .cell:hover {
   background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px rgba(124, 108, 246, 0.35);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.35);
 }
 tr.locked .cell {
   cursor: default;
@@ -863,23 +858,23 @@ tr.locked .cell:hover {
 }
 .cv.zero::before {
   content: '·';
-  color: #3a4052;
+  color: var(--border-3);
 }
 .cin {
   width: 100%;
   height: 32px;
   box-sizing: border-box;
   padding: 0 9px;
-  border: 1px solid #7c6cf6;
-  border-radius: 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r2);
   outline: none;
-  background: #151927;
-  color: #fff;
+  background: var(--panel);
+  color: var(--text-hi);
   font: inherit;
   text-align: right;
 }
 .cell.bad .cin {
-  border-color: #ef4444;
+  border-color: var(--down);
   animation: shake 0.3s;
 }
 @keyframes shake {
@@ -893,6 +888,7 @@ tr.locked .cell:hover {
 tfoot td {
   height: 30px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 tfoot .cell {
   padding-right: 10px;
@@ -944,7 +940,7 @@ button.pl {
   height: 26px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
 }
@@ -972,10 +968,10 @@ th {
   z-index: 5;
   width: 6px;
   cursor: col-resize;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .crz:hover {
-  background: rgba(139, 124, 255, 0.55);
+  background: rgb(var(--accent-rgb) / 0.55);
 }
 .rt {
   min-width: 0;
@@ -1015,9 +1011,10 @@ th {
 /* per kind, under the total */
 .kt td {
   height: 26px;
-  color: #b7bdcc;
+  color: var(--text-2);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .kt.first td {
   border-top: 1px dashed var(--border);
@@ -1031,6 +1028,6 @@ th {
 .kname i {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 </style>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { classifyApp, isCallApp, pushSample } from '../src/shared/apps'
-import { atTime, cutCursor, fillFromActivity, formatDuration, overlapPairs, placeEntry, splitByDay, subtractRanges, trackedMs, uncutMs } from '../src/shared/timeline'
-import type { ActivitySegment, Entry } from '../src/shared/types'
+import { isCallApp } from '../src/shared/apps'
+import { atTime, cutCursor, formatDuration, overlapPairs, placeEntry, splitByDay, subtractRanges } from '../src/shared/timeline'
+import type { Entry } from '../src/shared/types'
 
 const DAY = '2026-10-12' // Monday
 const t = (hm: string) => atTime(DAY, hm)
@@ -19,32 +19,16 @@ const entry = (start: string, end: string, extra: Partial<Entry> = {}): Entry =>
 })
 
 describe('cutCursor', () => {
-  const spans = [
-    { start: t('08:50'), end: t('12:00') },
-    { start: t('13:10'), end: t('18:00') },
-  ]
-
-  it('starts at the first span when nothing is labelled', () => {
-    expect(cutCursor([], spans, t('10:00'))).toBe(t('08:50'))
+  it('now when nothing is labelled', () => {
+    expect(cutCursor([], t('10:00'))).toBe(t('10:00'))
   })
-
   it('continues after the latest entry, parallel ones included', () => {
     const entries = [entry('08:50', '10:00'), entry('10:30', '11:00', { lane: 1 })]
-    expect(cutCursor(entries, spans, t('11:30'))).toBe(t('11:00'))
+    expect(cutCursor(entries, t('11:30'))).toBe(t('11:00'))
   })
-
-  it('stays at the block over an off-period; "не размечено" is all the time since it', () => {
-    expect(cutCursor([entry('08:50', '11:00')], spans, t('14:00'))).toBe(t('11:00'))
-    expect(uncutMs(t('11:00'), t('14:00'))).toBe(180 * 60_000)
-  })
-
-  it('stays right after the block when QA paused only briefly (a restart)', () => {
-    const short = [
-      { start: t('08:50'), end: t('10:02') },
-      { start: t('10:06'), end: t('18:00') },
-    ]
-    // the block ends inside the 4-minute pause: no gap between it and "не размечено"
-    expect(cutCursor([entry('09:00', '10:04')], short, t('12:00'))).toBe(t('10:04'))
+  it('a planned block (later today) does not count; a block running now — up to now', () => {
+    expect(cutCursor([entry('08:50', '11:00'), entry('15:00', '16:00')], t('14:00'))).toBe(t('11:00'))
+    expect(cutCursor([entry('13:00', '15:00')], t('14:00'))).toBe(t('14:00'))
   })
 })
 
@@ -94,10 +78,6 @@ describe('placeEntry', () => {
 })
 
 describe('time helpers', () => {
-  it('counts only time the PC was on', () => {
-    expect(trackedMs(t('11:00'), t('14:00'), [{ start: t('09:00'), end: t('12:00') }, { start: t('13:00'), end: t('18:00') }])).toBe(2 * 3600_000)
-  })
-
   it('splits at local midnight', () => {
     const parts = splitByDay(atTime(DAY, '23:30'), atTime('2026-10-13', '00:20'))
     expect(parts.map((p) => p[0])).toEqual([DAY, '2026-10-13'])
@@ -117,39 +97,13 @@ describe('time helpers', () => {
   })
 })
 
-describe('apps', () => {
-  it('classifies common processes', () => {
-    expect(classifyApp('Code')).toEqual({ name: 'VS Code', kind: 'ide' })
-    expect(classifyApp('ms-teams')).toEqual({ name: 'Teams', kind: 'teams' })
-    expect(classifyApp('OUTLOOK.EXE')).toEqual({ name: 'Outlook', kind: 'mail' })
-    expect(classifyApp('olk')).toEqual({ name: 'Outlook', kind: 'mail' })
-  })
-
+describe('call apps', () => {
   it('recognises call apps holding the microphone', () => {
     expect(isCallApp('MSTeams_8wekyb3d8bbwe')).toBe('Teams')
     expect(isCallApp('Zoom.exe')).toBe('Zoom')
     expect(isCallApp('SoundRecorder.exe')).toBeUndefined()
   })
-
-  it('merges consecutive samples of the same app and opens a new segment on switch', () => {
-    const list: ActivitySegment[] = []
-    pushSample(list, { t: 0, app: 'VS Code', kind: 'ide' }, 10_000)
-    pushSample(list, { t: 2000, app: 'VS Code', kind: 'ide' }, 10_000)
-    pushSample(list, { t: 4000, app: 'Chrome', kind: 'browser' }, 10_000)
-    pushSample(list, { t: 60_000, app: 'Chrome', kind: 'browser' }, 10_000)
-    expect(list.map((s) => [s.app, s.start, s.end])).toEqual([
-      ['VS Code', 0, 2000],
-      ['Chrome', 2000, 4000],
-      ['Chrome', 60_000, 60_000],
-    ])
-    // without title capture only apps are stored
-    expect(list.some((s) => 'title' in s)).toBe(false)
-    // with it, a new title starts a new segment
-    pushSample(list, { t: 62_000, app: 'Chrome', kind: 'browser', title: 'Docs' }, 10_000)
-    expect(list[list.length - 1]).toMatchObject({ app: 'Chrome', title: 'Docs', start: 60_000 })
-  })
 })
-
 
 describe('flattenForDisplay / parseQuickDuration', () => {
   it('puts overlapping blocks on parallel lanes', async () => {
@@ -265,14 +219,5 @@ describe('productive split', () => {
     expect(r.over).toBe(r.total - r.within)
     expect(productiveSplit(list, DEFAULT_KINDS).over).toBe(r.total) // day off
     expect(unlabelledMs([entry('09:00', '10:00')], [{ start: t('09:00'), end: t('11:00') }])).toBe(60 * 60_000)
-  })
-})
-
-describe('fillFromActivity', () => {
-  it('gives back the time the app ran but the span did not grow', () => {
-    const spans = [{ start: t('09:00'), end: t('10:00') }, { start: t('11:47'), end: t('11:47') }]
-    const activity = [{ start: t('11:47'), end: t('12:00') }, { start: t('12:00'), end: t('12:14') }]
-    expect(fillFromActivity(spans, activity)).toEqual([{ start: t('09:00'), end: t('10:00') }, { start: t('11:47'), end: t('12:14') }])
-    expect(fillFromActivity([{ start: t('09:00'), end: t('12:14') }], activity)).toBeUndefined()
   })
 })

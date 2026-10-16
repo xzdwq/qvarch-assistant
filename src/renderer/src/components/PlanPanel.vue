@@ -266,9 +266,9 @@ async function done(): Promise<void> {
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  border-radius: 10px;
-  border: 1.5px dashed rgba(167, 139, 250, 0.6);
-  background: rgba(139, 92, 246, 0.07);
+  border-radius: 4px;
+  border: 1.5px dashed rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.07);
 }
 .kic {
   display: inline-flex;
@@ -276,13 +276,13 @@ async function done(): Promise<void> {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .lbl {
   flex: 1;
   padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -293,7 +293,7 @@ async function done(): Promise<void> {
 .durs {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   align-self: flex-start;
 }
@@ -307,17 +307,17 @@ async function done(): Promise<void> {
   color: var(--muted);
 }
 .kinds button.on {
-  color: #fff;
+  color: var(--text-hi);
 }
 .durs button.on {
-  background: rgba(139, 92, 246, 0.3);
+  background: rgb(var(--accent-rgb) / 0.3);
   color: var(--text);
 }
 .ok {
-  color: #4ade80;
+  color: var(--up);
 }
 .danger {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .dim {
   color: var(--muted);
@@ -340,9 +340,9 @@ async function done(): Promise<void> {
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 8px;
-  border: 1.5px dashed var(--c, rgba(96, 165, 250, 0.7));
-  background: color-mix(in srgb, var(--c, #3b82f6) 16%, transparent);
+  border-radius: 4px;
+  border: 1.5px dashed var(--c, rgba(68, 138, 255, 0.7));
+  background: color-mix(in srgb, var(--c, var(--info)) 16%, transparent);
   font-size: 12px;
   cursor: grab;
   user-select: none;
@@ -355,10 +355,10 @@ async function done(): Promise<void> {
   z-index: 5000;
   pointer-events: none;
   padding: 4px 10px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1.5px dashed var(--c);
-  background: color-mix(in srgb, var(--c) 30%, #11131a);
-  color: #fff;
+  background: color-mix(in srgb, var(--c) 30%, var(--bg));
+  color: var(--text-hi);
   font-size: 12px;
   white-space: nowrap;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
@@ -376,13 +376,13 @@ async function done(): Promise<void> {
 }
 .th {
   font-size: 12px;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .th .search {
   margin-left: auto;
   width: 160px;
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -397,12 +397,12 @@ async function done(): Promise<void> {
   overflow: auto;
 }
 .item.task {
-  --c: #2684ff;
+  --c: var(--info);
   display: flex;
 }
 .item.task b {
   flex: none;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .sum {
   flex: 1;

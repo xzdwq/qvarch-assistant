@@ -10,8 +10,6 @@ export interface ProbeSample {
   proc: string
   path: string
   mic: string[]
-  /** Present only when title capture is on. */
-  title?: string
   /** Visible windows of call apps, "process\ttitle" — only when title capture is on. */
   cw?: string[]
 }

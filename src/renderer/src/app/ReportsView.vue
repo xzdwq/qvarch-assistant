@@ -7,6 +7,12 @@ import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { onNewDay } from '../lib/today'
+import { dailyByKind, eventsOf, heatOf, type EventStat } from '@shared/analytics'
+import Spark from '../components/charts/Spark.vue'
+import Treemap, { type TreeItem } from '../components/charts/Treemap.vue'
+import Heatmap from '../components/charts/Heatmap.vue'
+import Donut from '../components/charts/Donut.vue'
+import AreaStack from '../components/charts/AreaStack.vue'
 
 /**
  * Отчёты — where the time went over a period: totals, a chart by day / week / month and a breakdown by
@@ -154,6 +160,18 @@ const all = computed<ReportItem[]>(() => {
 })
 const items = computed(() => all.value.filter((i) => matches(i.e, st.value.filter)))
 
+/** The same length of time right before — to compare with. */
+const prevRange = computed<[string, string]>(() => {
+  const n = daysBetween(range.value[0], range.value[1]).length
+  return [shiftDay(range.value[0], -n), shiftDay(range.value[0], -1)]
+})
+const prevDays = ref<RangeDay[]>([])
+watch(prevRange, async (r) => {
+  const got = await window.qa.rangeDays(r[0], r[1])
+  if (r === prevRange.value) prevDays.value = got
+}, { immediate: true })
+const prevItems = computed<ReportItem[]>(() => prevDays.value.flatMap((d) => d.entries.map((e) => ({ day: d.day, e }))).filter((i) => matches(i.e, st.value.filter)))
+
 // ---------- filters ----------
 const kindOpts = computed(() => kinds.value.map((k) => ({ id: k.id, label: k.label, color: k.color })))
 const taskOpts = computed(() => {
@@ -207,17 +225,68 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 // ---------- totals ----------
 const total = computed(() => unionOf(items.value))
 const activeDays = computed(() => new Set(items.value.map((i) => i.day)).size)
-const pcOn = computed(() => days.value.reduce((s, d) => s + d.pcOnMs, 0))
 const kpi = computed(() => {
-  const of = (pred: (i: ReportItem) => boolean) => unionOf(items.value.filter(pred))
+  const byDay = new Map<string, ReportItem[]>()
+  for (const i of items.value) byDay.set(i.day, [...(byDay.get(i.day) ?? []), i])
+  const make = (label: string, pred: (i: ReportItem) => boolean, color?: string, main = false) => {
+    const ms = unionOf(items.value.filter(pred))
+    const prev = unionOf(prevItems.value.filter(pred))
+    return { label, ms, prev, color, main, spark: allDays.value.map((d) => unionOf((byDay.get(d) ?? []).filter(pred))) }
+  }
+  const prevActive = new Set(prevItems.value.map((i) => i.day)).size
+  const avg = { label: 'В среднем за день', ms: activeDays.value ? total.value / activeDays.value : 0, prev: prevActive ? unionOf(prevItems.value) / prevActive : 0, color: undefined as string | undefined, main: false, spark: [] as number[] }
   return [
-    { label: 'Всего', ms: total.value, main: true },
-    { label: 'В среднем за день', ms: activeDays.value ? total.value / activeDays.value : 0 },
-    { label: 'Jira', ms: of((i) => taskType(i.e) === 'jira'), color: '#3b82f6' },
-    { label: 'Созвоны', ms: of((i) => i.e.kind === 'call'), color: kindColor('call') },
-    { label: 'Встречи', ms: of((i) => i.e.kind === 'meeting'), color: kindColor('meeting') },
-    { label: 'QA включено', ms: pcOn.value, sub: pcOn.value ? `размечено ${Math.round((unionOf(all.value) / pcOn.value) * 100)}%` : '' },
+    make('Всего', () => true, undefined, true),
+    avg,
+    make('Jira', (i) => taskType(i.e) === 'jira', '#448aff'),
+    make('Созвоны', (i) => i.e.kind === 'call', kindColor('call')),
+    make('Встречи', (i) => i.e.kind === 'meeting' || !!i.e.outlook, kindColor('meeting')),
   ]
+})
+/** The change against the previous period, % (none when there was nothing before). */
+const delta = (k: { ms: number; prev: number }) => (k.prev > 0 ? Math.round(((k.ms - k.prev) / k.prev) * 100) : undefined)
+
+// ---------- analytics ----------
+const events = computed(() => eventsOf(items.value, allDays.value))
+const evLabel = (ev: EventStat) => (ev.task ? `${ev.task.key} ${ev.task.summary}`.trim() : ev.label || kindLabel(ev.kind))
+const treeItems = computed<TreeItem[]>(() =>
+  events.value.slice(0, 30).map((ev) => ({ label: ev.task ? ev.task.key : ev.label || kindLabel(ev.kind), sub: ev.task ? ev.task.summary : kindLabel(ev.kind), value: ev.ms, text: formatDuration(ev.ms), color: kindColor(ev.kind), title: `${evLabel(ev)} — ${formatDuration(ev.ms)} · ${ev.count} раз` })),
+)
+/** A tile → the report narrows to that event. */
+function pickEvent(i: number): void {
+  const ev = events.value[i]
+  if (!ev) return
+  if (ev.task) st.value.filter = { ...st.value.filter, tasks: [ev.task.key] }
+  else st.value.filter = { ...st.value.filter, text: ev.label }
+}
+const donut = computed(() => groupItems(items.value, 'kind').map((g) => ({ key: g.key, label: kindLabel(g.key), value: g.ms, color: kindColor(g.key) })))
+const daily = computed(() => dailyByKind(items.value, allDays.value))
+const areaSeries = computed(() => daily.value.kinds.map((k) => ({ key: k, label: kindLabel(k), color: kindColor(k) })))
+const areaLabels = computed(() => allDays.value.map((d) => fmt(d, { day: 'numeric', month: 'short' }).replace('.', '')))
+const heat = computed(() => heatOf(items.value))
+const evSort = ref<'ms' | 'count' | 'avg'>('ms')
+const evShown = computed(() => [...events.value].sort((a, b) => b[evSort.value] - a[evSort.value]).slice(0, evAll.value ? 200 : 15))
+const evAll = ref(false)
+const evMax = computed(() => Math.max(1, ...events.value.map((e) => e.ms)))
+/** A few plain sentences about the period. */
+const insights = computed(() => {
+  const out: Array<{ k: string; v: string; tone?: 'up' | 'down' | 'warn' }> = []
+  const tot = total.value
+  if (!tot) return out
+  const top = events.value[0]
+  if (top) out.push({ k: 'Больше всего', v: `${evLabel(top)} — ${formatDuration(top.ms)} (${Math.round((top.ms / tot) * 100)}%)` })
+  const meet = kpi.value[4].ms + kpi.value[3].ms
+  if (meet) out.push({ k: 'Встречи и созвоны', v: `${Math.round((meet / tot) * 100)}% времени`, tone: meet / tot > 0.5 ? 'warn' : undefined })
+  const bus = allDays.value.map((d, i) => ({ d, ms: kpi.value[0].spark[i] ?? 0 })).sort((a, b) => b.ms - a.ms)[0]
+  if (bus?.ms && allDays.value.length > 1) out.push({ k: 'Самый загруженный', v: `${fmt(bus.d, { weekday: 'short', day: 'numeric', month: 'short' })} — ${formatDuration(bus.ms)}` })
+  const hours = heat.value.reduce((acc, row) => row.map((v, h) => v + (acc[h] ?? 0)), [] as number[])
+  const ph = hours.indexOf(Math.max(...hours))
+  if (hours[ph]) out.push({ k: 'Пик по часам', v: `${ph}:00–${ph + 1}:00` })
+  const noTask = unionOf(items.value.filter((i) => !i.e.task && i.e.kind === 'task'))
+  if (noTask) out.push({ k: 'Задачи без ключа', v: formatDuration(noTask), tone: 'warn' })
+  const d = delta(kpi.value[0])
+  if (d !== undefined) out.push({ k: 'К прошлому периоду', v: `${d > 0 ? '+' : ''}${d}%`, tone: d >= 0 ? 'up' : 'down' })
+  return out
 })
 
 // ---------- the chart ----------
@@ -292,8 +361,8 @@ const summaryOf = (key: string) => all.value.find((i) => i.e.task?.key === key)?
 function groupName(key: string, by: GroupBy): { name: string; sub?: string; color: string; icon?: string } {
   if (by === 'kind') return { name: kindLabel(key), color: kindColor(key) }
   if (by === 'task') return key ? { name: key, sub: summaryOf(key), color: key.startsWith('Q-') ? '#a78bfa' : '#3b82f6' } : { name: 'Без задачи', color: '#64748b' }
-  if (by === 'day') return { name: fmt(key, { weekday: 'short', day: 'numeric', month: 'short' }), color: '#7c6cf6' }
-  return { name: `${fmt(key, { day: 'numeric', month: 'short' })} – ${fmt(shiftDay(key, 6), { day: 'numeric', month: 'short' })}`, color: '#7c6cf6' }
+  if (by === 'day') return { name: fmt(key, { weekday: 'short', day: 'numeric', month: 'short' }), color: 'var(--accent)' }
+  return { name: `${fmt(key, { day: 'numeric', month: 'short' })} – ${fmt(shiftDay(key, 6), { day: 'numeric', month: 'short' })}`, color: 'var(--accent)' }
 }
 /** Shares of the groups' sum (groups may overlap in time — the shares still add up to 100%). */
 const groupSum = computed(() => groups.value.reduce((s, g) => s + g.ms, 0))
@@ -369,9 +438,66 @@ function exportCsv(): void {
       <div class="kpis">
         <div v-for="k in kpi" :key="k.label" class="kpi" :class="{ main: k.main }">
           <span class="kl"><i v-if="k.color" :style="{ background: k.color }"></i>{{ k.label }}</span>
-          <b>{{ formatDuration(k.ms) }}</b>
-          <small v-if="k.sub">{{ k.sub }}</small>
+          <span class="kv">
+            <b>{{ formatDuration(k.ms) }}</b>
+            <span v-if="delta(k) !== undefined" class="kd" :class="delta(k)! >= 0 ? 'up' : 'down'" :title="`Прошлый период: ${formatDuration(k.prev)}`">{{ delta(k)! >= 0 ? '▲' : '▼' }} {{ Math.abs(delta(k)!) }}%</span>
+          </span>
+          <Spark v-if="k.spark.length > 1" :values="k.spark" :color="k.color ?? 'var(--accent)'" :w="150" :h="20" class="ksp" />
         </div>
+      </div>
+
+      <!-- plain words -->
+      <div v-if="insights.length" class="ins">
+        <span v-for="x in insights" :key="x.k" class="in" :class="x.tone"><em>{{ x.k }}</em>{{ x.v }}</span>
+      </div>
+
+      <div class="ana">
+        <section class="card s2">
+          <div class="ch"><span class="ct">Куда ушло время</span><span class="sp"></span><span class="cm">{{ events.length }} событий · клик — отфильтровать</span></div>
+          <Treemap :items="treeItems" :height="270" @pick="pickEvent" />
+        </section>
+        <section class="card">
+          <div class="ch"><span class="ct">По видам</span></div>
+          <Donut :parts="donut" @pick="(k) => (fKinds = [k])" />
+        </section>
+        <section v-if="allDays.length > 1" class="card s2">
+          <div class="ch"><span class="ct">Динамика по видам</span></div>
+          <AreaStack :labels="areaLabels" :series="areaSeries" :rows="daily.rows" :height="210" />
+        </section>
+        <section class="card" :class="{ s3: allDays.length <= 1 }">
+          <div class="ch"><span class="ct">Когда я работаю</span></div>
+          <Heatmap :matrix="heat" />
+        </section>
+        <section class="card s3">
+          <div class="ch">
+            <span class="ct">Топ событий</span>
+            <span class="sp"></span>
+            <div class="seg sm">
+              <button :class="{ on: evSort === 'ms' }" @click="evSort = 'ms'">Время</button>
+              <button :class="{ on: evSort === 'count' }" @click="evSort = 'count'">Раз</button>
+              <button :class="{ on: evSort === 'avg' }" @click="evSort = 'avg'">Среднее</button>
+            </div>
+          </div>
+          <div class="evt">
+            <div class="evh"><span>Событие</span><span>Вид</span><span class="r">Раз</span><span class="r">Дней</span><span class="r">Среднее</span><span>Доля</span><span class="r">Всего</span><span>По дням</span></div>
+            <button v-for="ev in evShown" :key="ev.key" class="evr" :title="evLabel(ev)" @click="ev.task ? (st.filter = { ...st.filter, tasks: [ev.task.key] }) : (st.filter = { ...st.filter, text: ev.label })">
+              <span class="evn">
+                <i :style="{ background: kindColor(ev.kind) }"></i>
+                <b v-if="ev.task" class="evk">{{ ev.task.key }}</b>
+                <span>{{ ev.task ? ev.task.summary : ev.label || kindLabel(ev.kind) }}</span>
+              </span>
+              <span class="evkind">{{ kindLabel(ev.kind) }}</span>
+              <span class="r num">{{ ev.count }}</span>
+              <span class="r num">{{ ev.days }}</span>
+              <span class="r num">{{ formatDuration(ev.avg) }}</span>
+              <span class="evb"><i :style="{ width: `${(ev.ms / evMax) * 100}%`, background: kindColor(ev.kind) }"></i><small>{{ total ? Math.round((ev.ms / total) * 100) : 0 }}%</small></span>
+              <b class="r num">{{ formatDuration(ev.ms) }}</b>
+              <Spark :values="ev.perDay" :color="kindColor(ev.kind)" :w="96" :h="18" />
+            </button>
+            <button v-if="events.length > 15" class="more" @click="evAll = !evAll">{{ evAll ? 'Свернуть' : `Показать все ${events.length}` }}</button>
+            <p v-if="!events.length" class="none">{{ loading ? 'Загрузка…' : 'Нет записей за период' }}</p>
+          </div>
+        </section>
       </div>
 
       <!-- the chart -->
@@ -480,7 +606,7 @@ function exportCsv(): void {
 .seg {
   display: inline-flex;
   padding: 2px;
-  border-radius: 9px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
 }
@@ -488,7 +614,7 @@ function exportCsv(): void {
   height: 24px;
   padding: 0 9px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -498,8 +624,8 @@ function exportCsv(): void {
   color: var(--text);
 }
 .seg button.on {
-  background: rgba(124, 108, 246, 0.25);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.25);
+  color: var(--text-hi);
 }
 .seg.sm button {
   height: 22px;
@@ -527,7 +653,7 @@ function exportCsv(): void {
 .dt {
   height: 26px;
   padding: 0 6px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
@@ -542,7 +668,7 @@ function exportCsv(): void {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
 }
@@ -569,11 +695,11 @@ function exportCsv(): void {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--muted);
 }
 .srch.on {
-  border-color: rgba(124, 108, 246, 0.6);
+  border-color: rgb(var(--accent-rgb) / 0.6);
 }
 .srch input {
   width: 90px;
@@ -593,9 +719,9 @@ function exportCsv(): void {
   z-index: 40;
   width: 230px;
   padding: 6px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .svi {
@@ -605,14 +731,14 @@ function exportCsv(): void {
   width: 100%;
   padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
   text-align: left;
 }
 .svi:hover {
-  background: rgba(139, 92, 246, 0.14);
+  background: rgb(var(--accent-rgb) / 0.14);
 }
 .svi span:nth-child(2) {
   flex: 1;
@@ -623,11 +749,11 @@ function exportCsv(): void {
 .svi .x {
   display: inline-flex;
   padding: 2px;
-  border-radius: 4px;
+  border-radius: var(--r2);
   color: var(--muted);
 }
 .svi .x:hover {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .svn {
   display: flex;
@@ -640,9 +766,9 @@ function exportCsv(): void {
   flex: 1;
   min-width: 0;
   padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
-  background: #141824;
+  background: var(--panel);
   color: var(--text);
   font-size: 12px;
 }
@@ -651,9 +777,9 @@ function exportCsv(): void {
   align-items: center;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
-  background: rgba(124, 108, 246, 0.3);
-  color: #fff;
+  border-radius: var(--r2);
+  background: rgb(var(--accent-rgb) / 0.3);
+  color: var(--text-hi);
 }
 .svn button:disabled {
   opacity: 0.4;
@@ -667,6 +793,7 @@ function exportCsv(): void {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  container-type: inline-size;
   padding: 10px 12px 20px;
   display: flex;
   flex-direction: column;
@@ -675,7 +802,7 @@ function exportCsv(): void {
 /* totals */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 8px;
 }
 .kpi {
@@ -683,13 +810,13 @@ function exportCsv(): void {
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--panel);
 }
 .kpi.main {
-  border-color: rgba(124, 108, 246, 0.45);
-  background: color-mix(in srgb, #7c6cf6 10%, var(--panel));
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
 }
 .kl {
   display: inline-flex;
@@ -707,6 +834,7 @@ function exportCsv(): void {
 .kpi b {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .kpi small {
   color: var(--muted);
@@ -714,7 +842,7 @@ function exportCsv(): void {
 }
 .card {
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--r3);
   border: 1px solid var(--border);
   background: var(--panel);
 }
@@ -725,9 +853,12 @@ function exportCsv(): void {
   margin-bottom: 8px;
 }
 .ct {
-  font-size: 12.5px;
+  font-size: 11px;
+  font-family: var(--font-data);
   font-weight: 600;
-  color: #c3c8d6;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 /* the chart */
 .chart {
@@ -747,6 +878,7 @@ function exportCsv(): void {
   color: var(--muted);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .plot {
   position: relative;
@@ -774,7 +906,7 @@ function exportCsv(): void {
   flex-direction: column;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   cursor: pointer;
 }
@@ -782,10 +914,10 @@ function exportCsv(): void {
   background: rgba(255, 255, 255, 0.04);
 }
 .col.off .xl {
-  color: #6b7387;
+  color: var(--dim);
 }
 .col.today .xl {
-  color: #c4b5fd;
+  color: var(--accent-fg);
   font-weight: 600;
 }
 .stack {
@@ -799,7 +931,7 @@ function exportCsv(): void {
   min-height: 0;
 }
 .stack i:first-child {
-  border-radius: 0 0 3px 3px;
+  border-radius: 0 0 var(--r2) var(--r2);
 }
 .stack i:last-child {
   border-top-left-radius: 4px;
@@ -812,10 +944,11 @@ function exportCsv(): void {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9aa3b8;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -828,7 +961,7 @@ function exportCsv(): void {
   flex-wrap: wrap;
   gap: 4px 14px;
   margin-top: 6px;
-  color: #9aa3b8;
+  color: var(--muted);
   font-size: 11.5px;
 }
 .legend span {
@@ -839,7 +972,7 @@ function exportCsv(): void {
 .legend i {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 /* the breakdown */
 .share {
@@ -847,7 +980,7 @@ function exportCsv(): void {
   gap: 2px;
   height: 8px;
   margin-bottom: 8px;
-  border-radius: 4px;
+  border-radius: var(--r2);
   overflow: hidden;
 }
 .share i {
@@ -863,7 +996,7 @@ function exportCsv(): void {
   gap: 8px;
   padding: 6px 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -888,7 +1021,7 @@ function exportCsv(): void {
   flex: none;
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .gn {
   flex: 1 1 200px;
@@ -918,24 +1051,26 @@ function exportCsv(): void {
   font-size: 11px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .gb {
   flex: 0 1 180px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 .gb i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .gh {
   flex: none;
   width: 64px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .gp {
   flex: none;
@@ -944,6 +1079,7 @@ function exportCsv(): void {
   font-size: 11px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .er {
   display: flex;
@@ -951,9 +1087,9 @@ function exportCsv(): void {
   gap: 8px;
   padding: 4px 6px 4px 50px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #c7cbd6;
+  color: var(--text-2);
   font-size: 11.5px;
   text-align: left;
 }
@@ -967,8 +1103,8 @@ function exportCsv(): void {
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .ed,
 .et,
@@ -976,6 +1112,7 @@ function exportCsv(): void {
   flex: none;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .ed {
   width: 48px;
@@ -1003,7 +1140,7 @@ function exportCsv(): void {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -1015,5 +1152,185 @@ function exportCsv(): void {
 }
 .rng :deep(svg) {
   color: var(--muted);
+}
+
+/* ---------- analytics ---------- */
+.kv {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kd {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+}
+.kd.up {
+  color: var(--up-fg);
+}
+.kd.down {
+  color: var(--down-fg);
+}
+.ksp {
+  margin-top: 4px;
+  width: 100%;
+}
+.ins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.in {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r2);
+  background: var(--panel);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.in em {
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.in.up {
+  border-left-color: var(--up);
+}
+.in.down {
+  border-left-color: var(--down);
+}
+.in.warn {
+  border-left-color: var(--warn);
+}
+.ana {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.ana > .card {
+  margin: 0;
+  min-width: 0;
+}
+.ana .s2 {
+  grid-column: span 2;
+}
+.ana .s3 {
+  grid-column: 1 / -1;
+}
+@container (max-width: 980px) {
+  .ana {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana .s2 {
+    grid-column: auto;
+  }
+}
+.cm {
+  color: var(--dim);
+  font-size: 11px;
+}
+.evt {
+  display: flex;
+  flex-direction: column;
+}
+.evh,
+.evr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px 44px 44px 70px 150px 70px 100px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+}
+.evh {
+  height: 26px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.evr {
+  height: 32px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: default;
+}
+.evr:hover {
+  background: var(--hover);
+}
+.r {
+  text-align: right;
+}
+.num {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.evn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.evn > i {
+  flex: none;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+}
+.evn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.evk {
+  flex: none;
+  color: var(--info-fg);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+}
+.evkind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.evb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.evb i {
+  height: 6px;
+  min-width: 2px;
+  border-radius: 1px;
+}
+.evb small {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 10.5px;
+}
+.evr b {
+  color: var(--text-hi);
+}
+.more {
+  align-self: flex-start;
+  margin: 8px 6px 0;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 </style>

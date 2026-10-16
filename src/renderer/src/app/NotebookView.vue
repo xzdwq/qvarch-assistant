@@ -2,7 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { audioEmbed, MARK_COLORS, resolveWiki, type VaultHit, type VaultNode } from '@shared/vault'
 import Icon from '../components/Icon.vue'
+import ZoomChip from '../components/ZoomChip.vue'
 import MdEditor from '../components/MdEditor.vue'
+import BoardView from '../components/BoardView.vue'
+import { isBoard, newBoard as emptyBoard, serializeBoard } from '@shared/whiteboard'
 import EventModal from '../components/EventModal.vue'
 import { fmtSec, useRecorder } from '../lib/recorder'
 import {
@@ -26,6 +29,8 @@ import {
   remap,
   saveAll,
   setText,
+  splitWith,
+  swapTab,
   toggleSplit,
   transcribe,
   transcribeError,
@@ -66,9 +71,17 @@ onBeforeUnmount(() => {
 const folder = ref<string>()
 const targetDir = computed(() => folder.value ?? dirOf(curPane()?.active ?? ''))
 const rows = computed(() => {
-  const out: Array<{ node: VaultNode; depth: number }> = []
+  const out: Array<{ node: VaultNode; depth: number; grp?: 'top' | 'bot' }> = []
   const walk = (ns: VaultNode[], depth: number) => {
+    const here = new Map(ns.map((n) => [n.path, n]))
     for (const n of ns) {
+      const other = !n.dir && n.pair ? here.get(n.pair) : undefined
+      if (other) {
+        // the pair sorts by its note: the board waits for it, then goes right under it
+        if (n.board) continue
+        out.push({ node: n, depth, grp: 'top' }, { node: other, depth, grp: 'bot' })
+        continue
+      }
       out.push({ node: n, depth })
       if (n.dir && layout.open.includes(n.path)) walk(sortNodes(n.children ?? [], layout.sort), depth + 1)
     }
@@ -105,6 +118,18 @@ async function newNote(dir = targetDir.value, pane?: number): Promise<void> {
     say(errText(e))
   }
 }
+/** A new board (an endless sheet for schemes and notes) — a .qboard file in the folder. */
+async function newBoard(dir = targetDir.value, pane?: number): Promise<void> {
+  try {
+    const path = await window.qa.vaultCreate(dir, 'board', undefined, serializeBoard(emptyBoard()))
+    await loadTree()
+    openFile(path, { pane })
+  } catch (e) {
+    say(errText(e))
+  }
+}
+/** What a board says about itself (shown in the status line). */
+const boardInfo = ref<Record<string, string>>({})
 async function newFolder(dir = targetDir.value): Promise<void> {
   try {
     const path = await window.qa.vaultCreate(dir, 'folder')
@@ -181,9 +206,30 @@ async function finishRename(apply: boolean): Promise<void> {
   if (apply && p) await rename(p, renameText.value)
 }
 
-// drag & drop in the tree: onto a folder (or the empty space — the top level)
+// drag & drop in the tree: onto a folder (or the empty space — the top level); a note onto a board (or back) — links them
 const dragPath = ref<string>()
 const dropDir = ref<string>()
+const pairTarget = ref<string>()
+/** The note / board a file is linked with. */
+const pairOf = (path: string) => findNode(path)?.pair
+async function pair(a: string, b?: string): Promise<void> {
+  try {
+    await window.qa.vaultPair(a, b)
+    await loadTree()
+    if (b) say(`Связано: «${noteName(a)}» и «${noteName(b)}»`)
+  } catch (e) {
+    say(errText(e))
+  }
+}
+/** The other view of a linked file, in this pane (or in the other one: `aside`). */
+function showPair(pi: number, aside = false): void {
+  const p = layout.panes[pi]
+  const other = p?.active ? pairOf(p.active) : undefined
+  if (!other) return
+  if (!aside) return swapTab(pi, other)
+  if (layout.panes.length > 1) openFile(other, { pane: pi === 0 ? 1 : 0 })
+  else openFile(other, { newPane: true })
+}
 function onDragStart(n: VaultNode, e: DragEvent): void {
   dragPath.value = n.path
   e.dataTransfer?.setData('text/plain', n.path)
@@ -191,13 +237,24 @@ function onDragStart(n: VaultNode, e: DragEvent): void {
 }
 function onDragOver(n: VaultNode | undefined): void {
   if (!dragPath.value) return
+  const from = findNode(dragPath.value)
+  // a note over a board (or a board over a note): link them
+  if (n && from && !n.dir && !from.dir && n.path !== from.path && !!n.board !== !!from.board) {
+    pairTarget.value = n.path
+    dropDir.value = undefined
+    return
+  }
+  pairTarget.value = undefined
   dropDir.value = n ? (n.dir ? n.path : dirOf(n.path)) : ''
 }
 async function onDrop(): Promise<void> {
   const from = dragPath.value
   const to = dropDir.value
+  const link = pairTarget.value
   dragPath.value = undefined
   dropDir.value = undefined
+  pairTarget.value = undefined
+  if (from && link) return void (await pair(from, link))
   if (from !== undefined && to !== undefined) await moveTo(from, to)
 }
 
@@ -318,16 +375,26 @@ function stats(path: string): string {
 }
 async function onTitleKey(e: KeyboardEvent, p: Pane): Promise<void> {
   const el = e.target as HTMLInputElement
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' || e.key === 'ArrowDown') {
     e.preventDefault()
     // renamed first (the editor comes back under the new name), then the cursor goes into the text
-    if (p.active) await rename(p.active, el.value)
+    if (p.active && el.value !== noteName(p.active)) await rename(p.active, el.value)
     await nextTick()
-    editorOf(p)?.focus()
+    const ed = editorOf(p)
+    if (e.key === 'ArrowDown' && ed && 'focusStart' in ed) (ed as { focusStart: () => void }).focusStart()
+    else ed?.focus()
   } else if (e.key === 'Escape') {
     el.value = noteName(p.active ?? '')
     el.blur()
   }
+}
+
+/** ↑ from the first line of the text — the cursor goes to the end of the title. */
+function titleUp(p: Pane): void {
+  const el = titleEls.get(p.id)
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(el.value.length, el.value.length)
 }
 
 // pane / side widths
@@ -418,6 +485,12 @@ function onPaneWheel(e: WheelEvent): void {
 const BASE_PX = 14.5
 
 // ---------- created / colour ----------
+/** "15 окт 2026, 21:12" — under a file's name in the tree. */
+const shortDate = (ms: number) => {
+  if (!ms) return ''
+  const d = new Date(ms)
+  return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).replace(' г.', '')}, ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+}
 const created = (path: string) => {
   const c = findNode(path)?.ctime
   return c ? new Date(c).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
@@ -435,23 +508,54 @@ function onTabDragStart(pi: number, path: string, e: DragEvent): void {
   tabDrag.value = { pane: pi, path }
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', path)
+    // not text/plain — an editor under the pointer must not take it as text
+    e.dataTransfer.setData('application/x-qa-tab', path)
   }
 }
+/**
+ * The tab follows the pointer right away (the others make room, animated): over a tab's left half — before it,
+ * over its right half — after it; over a tab of the other pane — into that pane.
+ */
 function onTabDragOver(pi: number, index: number, e: DragEvent): void {
-  if (!tabDrag.value) return
+  const d = tabDrag.value
+  if (!d) return
   e.preventDefault()
-  const el = e.currentTarget as HTMLElement
-  // before or after this tab — by the pointer's half
-  const r = el.getBoundingClientRect()
-  tabDrop.value = { pane: pi, index: e.clientX > r.left + r.width / 2 ? index + 1 : index }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const to = e.clientX > r.left + r.width / 2 ? index + 1 : index
+  if (d.pane === pi) {
+    const cur = layout.panes[pi].tabs.findIndex((t) => t.path === d.path)
+    if (cur < 0 || to === cur || to === cur + 1) return
+    moveTab(pi, d.path, pi, to)
+    return
+  }
+  const before = layout.panes.length
+  moveTab(d.pane, d.path, pi, to)
+  // the source pane may have closed (its last tab left): the panes shift
+  tabDrag.value = { pane: layout.panes.length < before && d.pane < pi ? pi - 1 : pi, path: d.path }
+}
+/** At the end of a pane's tab row. */
+function onTabRowEnd(pi: number, e: DragEvent): void {
+  const d = tabDrag.value
+  if (!d) return
+  e.preventDefault()
+  const n = layout.panes[pi].tabs.length
+  if (d.pane === pi && layout.panes[pi].tabs[n - 1]?.path === d.path) return
+  onTabDragOver(pi, n - 1, { ...e, preventDefault: () => undefined, currentTarget: { getBoundingClientRect: () => ({ left: -1e6, width: 0 }) } } as unknown as DragEvent)
 }
 function onTabDrop(): void {
-  const d = tabDrag.value
-  const to = tabDrop.value
   tabDrag.value = undefined
   tabDrop.value = undefined
-  if (d && to) moveTab(d.pane, d.path, to.pane, to.index)
+  zone.value = undefined
+}
+/** Dropping a tab at a pane's edge splits the window (like VS Code); onto the other pane — moves it there. */
+const zone = ref<{ pane: number; side: 'left' | 'right' | 'here' }>()
+function onZoneDrop(): void {
+  const d = tabDrag.value
+  const z = zone.value
+  onTabDrop()
+  if (!d || !z) return
+  if (z.side === 'here') moveTab(d.pane, d.path, z.pane, layout.panes[z.pane].tabs.length)
+  else splitWith(d.pane, d.path, z.side)
 }
 
 // sort menu
@@ -496,6 +600,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="ntools">
         <button title="Скрыть панель" @click="sideHidden = true"><Icon name="sidebar" :size="15" /></button>
         <button title="Новая заметка (Ctrl+N)" @click="newNote()"><Icon name="filePlus" :size="15" /></button>
+        <button title="Новая доска — полотно для схем и записей" @click="newBoard()"><Icon name="presentation" :size="15" /></button>
         <button title="Новый раздел (папка)" @click="newFolder()"><Icon name="folderPlus" :size="15" /></button>
         <button title="Голосовая заметка" @click="newVoiceNote"><Icon name="mic" :size="15" /></button>
         <span class="grow"></span>
@@ -525,7 +630,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           v-for="r in rows"
           :key="r.node.path"
           class="nrow"
-          :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: r.node.dir && folder === r.node.path, drop: r.node.dir && dropDir === r.node.path }"
+          :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: r.node.dir && folder === r.node.path, drop: r.node.dir && dropDir === r.node.path, pairdrop: pairTarget === r.node.path, [`grp-${r.grp}`]: !!r.grp }"
           :style="{ paddingLeft: `${6 + r.depth * 14}px` }"
           :title="r.node.path"
           draggable="true"
@@ -540,7 +645,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev" />
           <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic" :style="r.node.color ? { color: r.node.color } : {}" />
           <span v-else-if="r.node.color" class="fmark" :style="{ background: r.node.color }"></span>
-          <Icon v-else name="note" :size="13" class="fic note" />
+          <Icon v-else :name="r.node.board ? 'presentation' : 'note'" :size="13" class="fic note" />
           <input
             v-if="renaming === r.node.path"
             ref="renameEl"
@@ -552,7 +657,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             @keydown.esc.prevent="finishRename(false)"
             @blur="finishRename(true)"
           />
-          <span v-else class="nname">{{ r.node.name }}</span>
+          <span v-else-if="r.node.dir" class="nname">{{ r.node.name }}</span>
+          <span v-else class="ncol"><span class="nname">{{ r.node.name }}</span><small class="ndate">{{ shortDate(r.node.ctime) }}</small></span>
+          <span v-if="r.node.pair" class="npair" :title="'Связано с: ' + noteName(r.node.pair)"><Icon name="link" :size="11" /></span>
           <span v-if="!r.node.dir && dirty(r.node.path)" class="ndot" title="Сохраняется…"></span>
         </div>
         <div v-if="!rows.length" class="nempty">
@@ -571,7 +678,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <p v-if="q.trim() && !hits.length && !searching" class="nempty">Ничего не найдено</p>
           <div v-for="h in hits" :key="h.path" class="hit">
             <button class="hname" :title="h.path" @click="openHit(h)">
-              <Icon name="note" :size="12" /><span>{{ h.name }}</span><em v-if="h.count">{{ h.count }}</em>
+              <Icon :name="isBoard(h.path) ? 'presentation' : 'note'" :size="12" /><span>{{ h.name }}</span><em v-if="h.count">{{ h.count }}</em>
             </button>
             <button v-for="l in h.lines" :key="l.line" class="hline" @click="openHit(h, l)">
               <span>{{ parts(l.text, l.at, l.len).a }}</span><mark>{{ parts(l.text, l.at, l.len).m }}</mark><span>{{ parts(l.text, l.at, l.len).b }}</span>
@@ -596,11 +703,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <div class="tabs">
             <button v-if="sideHidden && pi === 0" class="tb" title="Показать панель" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
             <div class="tscroll">
+              <TransitionGroup tag="div" name="tabmv" class="tlist">
               <div
                 v-for="(t, ti) in p.tabs"
                 :key="t.path"
                 class="tab"
-                :class="{ on: p.active === t.path, dragging: tabDrag?.path === t.path && tabDrag?.pane === pi, dropl: tabDrop?.pane === pi && tabDrop.index === ti, dropr: tabDrop?.pane === pi && tabDrop.index === ti + 1 && ti === p.tabs.length - 1 }"
+                :class="{ on: p.active === t.path, dragging: tabDrag?.path === t.path && tabDrag?.pane === pi }"
                 :title="t.path"
                 draggable="true"
                 @click="p.active = t.path"
@@ -608,23 +716,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 @dragstart="onTabDragStart(pi, t.path, $event)"
                 @dragover="onTabDragOver(pi, ti, $event)"
                 @drop.prevent="onTabDrop"
-                @dragend="(tabDrag = undefined), (tabDrop = undefined)"
+                @dragend="onTabDrop"
               >
                 <span v-if="colorOf(t.path)" class="fmark sm" :style="{ background: colorOf(t.path) }"></span>
-                <Icon v-else name="note" :size="12" class="tic" />
+                <Icon v-else :name="isBoard(t.path) ? 'presentation' : 'note'" :size="12" class="tic" />
                 <span class="tname">{{ noteName(t.path) }}</span>
                 <span v-if="dirty(t.path)" class="ndot"></span>
+                <span v-if="pairOf(t.path)" class="tpair" :title="'Связано с: ' + noteName(pairOf(t.path)!)"><Icon name="link" :size="10" /></span>
                 <button class="tx" title="Закрыть (Ctrl+W)" @click.stop="closeTab(pi, t.path)"><Icon name="x" :size="11" /></button>
               </div>
+              </TransitionGroup>
               <button
                 class="tnew"
                 title="Новая заметка (Ctrl+N)"
                 @click="newNote(undefined, pi)"
-                @dragover.prevent="tabDrag && (tabDrop = { pane: pi, index: p.tabs.length })"
+                @dragover="onTabRowEnd(pi, $event)"
                 @drop.prevent="onTabDrop"
               ><Icon name="plus" :size="13" /></button>
             </div>
-            <template v-if="tabOf(p)">
+            <template v-if="tabOf(p) && !isBoard(p.active ?? '')">
               <button
                 class="tb"
                 :class="{ rec: recInto?.pane === p.id }"
@@ -640,7 +750,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </button>
           </div>
 
-          <div v-if="tabOf(p) && p.active" class="pbody">
+          <div v-if="tabOf(p) && p.active" class="pbody" :class="{ paired: !!pairOf(p.active) }">
+            <div v-if="pairOf(p.active)" class="pairsw">
+              <button class="pswap" :title="`Показать ${isBoard(p.active) ? 'заметку' : 'доску'} «${noteName(pairOf(p.active)!)}» здесь`" @click="showPair(pi)">
+                <Icon :name="isBoard(p.active) ? 'note' : 'presentation'" :size="13" /><span>{{ isBoard(p.active) ? 'Текст' : 'Доска' }}</span>
+              </button>
+              <button title="Открыть рядом (в другой колонке)" @click="showPair(pi, true)"><Icon name="columns" :size="12" /></button>
+            </div>
             <div v-if="recInto?.pane === p.id" class="recbar">
               <span class="rdot"></span>
               <span class="meter"><span :style="{ width: `${recorder.level.value * 100}%` }"></span></span>
@@ -648,7 +764,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <span class="muted">запись в заметку…</span>
               <button class="stop" @click="stopRec"><Icon name="stop" :size="11" />Остановить</button>
             </div>
-            <div class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
+            <div v-if="isBoard(p.active)" class="pboard">
+              <BoardView
+                v-if="docs.get(p.active)?.loaded"
+                :key="`${p.id}:${p.active}`"
+                :path="p.active"
+                :text="docs.get(p.active)!.text"
+                @change="(t) => setText(p.active!, t)"
+                @info="(t) => (boardInfo = { ...boardInfo, [p.active!]: t })"
+              />
+            </div>
+            <div v-else class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
               <div class="crumbs">
                 <template v-for="(c, ci) in dirOf(p.active).split('/').filter(Boolean)" :key="ci"><span>{{ c }}</span><Icon name="chevronRight" :size="10" /></template>
                 <span class="leaf">{{ noteName(p.active) }}</span>
@@ -675,6 +801,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   @transcribe="(a) => transcribeInto(p.active!, a)"
                   @drop-audio="(a) => dropAudio(p.active!, a)"
                   @to-event="(t) => (eventText = t)"
+                  @exit-up="titleUp(p)"
                 />
               </template>
             </div>
@@ -682,12 +809,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <span v-if="docs.get(p.active)?.error" class="err">{{ docs.get(p.active)!.error }}</span>
               <span v-else>{{ dirty(p.active) ? 'Сохраняется…' : 'Сохранено' }}</span>
               <span class="grow"></span>
-              <span>{{ stats(p.active) }}</span>
-              <span class="zoom" title="Масштаб текста">
-                <button title="Мельче (−10%)" @click="setZoom((layout.zoom || 100) - 10)"><Icon name="chevronLeft" :size="12" /></button>
-                <button class="zv" title="Сбросить на 100%" @click="setZoom(100)">{{ layout.zoom || 100 }}%</button>
-                <button title="Крупнее (+10%)" @click="setZoom((layout.zoom || 100) + 10)"><Icon name="chevronRight" :size="12" /></button>
-              </span>
+              <span>{{ isBoard(p.active) ? (boardInfo[p.active] ?? '') : stats(p.active) }}</span>
+              <ZoomChip v-if="!isBoard(p.active)" :model-value="layout.zoom || 100" title="Масштаб текста · колесо — изменить, клик — 100%" @update:model-value="setZoom" />
             </div>
           </div>
           <div v-else class="pempty">
@@ -695,10 +818,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <p>Нет открытой заметки</p>
             <div class="erow">
               <button class="primary" @click="newNote(undefined, pi)"><Icon name="filePlus" :size="14" />Новая заметка</button>
+              <button @click="newBoard(undefined, pi)"><Icon name="presentation" :size="14" />Новая доска</button>
               <button @click="toggleSearch(true)"><Icon name="search" :size="14" />Найти</button>
             </div>
             <p class="muted small">Ctrl+N — новая · Ctrl+Shift+F — поиск · Ctrl+\ — две колонки · Ctrl + колесо — масштаб</p>
           </div>
+          <template v-if="tabDrag">
+            <template v-if="layout.panes.length === 1">
+              <div class="dz l" :class="{ hot: zone?.side === 'left' }" @dragover.prevent="zone = { pane: pi, side: 'left' }" @dragleave="zone = undefined" @drop.prevent="onZoneDrop"><span>Разделить влево</span></div>
+              <div class="dz r" :class="{ hot: zone?.side === 'right' }" @dragover.prevent="zone = { pane: pi, side: 'right' }" @dragleave="zone = undefined" @drop.prevent="onZoneDrop"><span>Разделить вправо</span></div>
+            </template>
+            <div v-else-if="tabDrag.pane !== pi" class="dz all" :class="{ hot: zone?.pane === pi }" @dragover.prevent="zone = { pane: pi, side: 'here' }" @dragleave="zone = undefined" @drop.prevent="onZoneDrop"><span>Перенести сюда</span></div>
+          </template>
         </section>
       </template>
       <Transition name="fade"><div v-if="msg" class="toast">{{ msg }}</div></Transition>
@@ -709,11 +840,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div v-if="ctx" class="nctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop>
         <template v-if="!ctx.node || ctx.node.dir">
           <button @click="ctxRun((n) => newNote(n?.path ?? ''))"><Icon name="filePlus" :size="13" />Новая заметка</button>
+          <button @click="ctxRun((n) => newBoard(n?.path ?? ''))"><Icon name="presentation" :size="13" />Новая доска</button>
           <button @click="ctxRun((n) => newFolder(n?.path ?? ''))"><Icon name="folderPlus" :size="13" />Новый раздел</button>
         </template>
         <template v-if="ctx.node && !ctx.node.dir">
           <button @click="ctxRun((n) => openFile(n!.path))"><Icon name="note" :size="13" />Открыть</button>
           <button @click="ctxRun((n) => openFile(n!.path, { newPane: true }))"><Icon name="columns" :size="13" />Открыть справа</button>
+          <template v-if="ctx.node.pair">
+            <button @click="ctxRun((n) => openFile(n!.pair!))"><Icon :name="ctx.node.board ? 'note' : 'presentation'" :size="13" />Открыть связанную {{ ctx.node.board ? 'заметку' : 'доску' }}</button>
+            <button @click="ctxRun((n) => pair(n!.path))"><Icon name="link" :size="13" />Отвязать</button>
+          </template>
         </template>
         <template v-if="ctx.node">
           <div class="csep"></div>
@@ -737,7 +873,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   height: 100%;
   min-height: 0;
-  background: #0f1219;
+  background: var(--bg);
 }
 .grow {
   flex: 1;
@@ -748,7 +884,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #12151d;
+  background: var(--bg);
 }
 .ntools {
   flex: none;
@@ -766,7 +902,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -777,8 +913,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .ntools button.on,
 .tb.on {
-  background: rgba(124, 108, 246, 0.22);
-  color: #c7c2ff;
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--accent-fg);
 }
 .ntree {
   flex: 1;
@@ -787,7 +923,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   padding: 2px 6px 20px;
 }
 .ntree.drop {
-  box-shadow: inset 0 0 0 1px rgba(124, 108, 246, 0.5);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5);
 }
 .nrow {
   display: flex;
@@ -795,25 +931,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 5px;
   height: 27px;
   padding-right: 6px;
-  border-radius: 6px;
-  color: #c3c8d6;
+  border-radius: var(--r2);
+  color: var(--text-2);
   font-size: 13px;
   cursor: pointer;
   user-select: none;
+}
+.nrow:not(.dir) {
+  height: 38px;
 }
 .nrow:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 .nrow.cur {
-  background: rgba(124, 108, 246, 0.2);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.2);
+  color: var(--text-hi);
 }
 .nrow.sel {
   background: rgba(255, 255, 255, 0.06);
 }
 .nrow.drop {
-  background: rgba(124, 108, 246, 0.25);
-  box-shadow: inset 0 0 0 1px rgba(124, 108, 246, 0.7);
+  background: rgb(var(--accent-rgb) / 0.25);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.7);
 }
 .chev {
   flex: none;
@@ -821,14 +960,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .fic {
   flex: none;
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .fmark {
   flex: none;
   width: 10px;
   height: 10px;
   margin: 0 2px 0 19px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .fmark.sm {
   margin: 0;
@@ -837,7 +976,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .fic.note {
   margin-left: 17px;
-  color: #8b93a7;
+  color: var(--muted);
 }
 .nname {
   flex: 1;
@@ -850,9 +989,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex: 1;
   min-width: 0;
   padding: 2px 5px;
-  border-radius: 5px;
+  border-radius: var(--r2);
   border: 1px solid var(--accent);
-  background: #0b0d13;
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   font-size: 13px;
@@ -863,7 +1002,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fbbf24;
+  background: var(--warn);
 }
 .nempty {
   padding: 12px 10px;
@@ -877,7 +1016,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   padding: 0;
   border: 0;
   background: none;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 12px;
 }
 .nfoot {
@@ -904,7 +1043,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .nresize:hover,
 .psplit:hover {
-  background-color: rgba(124, 108, 246, 0.85);
+  background-color: rgb(var(--accent-rgb) / 0.85);
 }
 /* ---------- search ---------- */
 .nsearch {
@@ -919,9 +1058,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 6px;
   margin: 0 8px 6px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
-  background: #0b0d13;
+  background: var(--bg);
   color: var(--muted);
 }
 .sbox:focus-within {
@@ -961,9 +1100,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   width: 100%;
   padding: 4px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #e5e7eb;
+  color: var(--text);
   font-size: 13px;
   font-weight: 600;
   text-align: left;
@@ -986,9 +1125,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   width: 100%;
   padding: 3px 6px 3px 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #aab1c3;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
   text-align: left;
@@ -1001,8 +1140,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   background: rgba(255, 255, 255, 0.06);
 }
 mark {
-  background: rgba(250, 204, 21, 0.3);
-  color: #fff;
+  background: rgba(255, 183, 77, 0.3);
+  color: var(--text-hi);
   border-radius: 2px;
 }
 /* ---------- panes ---------- */
@@ -1025,7 +1164,7 @@ mark {
   left: 0;
   right: 0;
   height: 2px;
-  background: rgba(124, 108, 246, 0.8);
+  background: rgb(var(--accent-rgb) / 0.8);
 }
 .tabs {
   flex: none;
@@ -1034,7 +1173,7 @@ mark {
   gap: 2px;
   height: 38px;
   padding: 0 6px 0 4px;
-  background: #12151d;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 .tscroll {
@@ -1055,7 +1194,7 @@ mark {
   gap: 6px;
   height: 31px;
   padding: 0 6px 0 10px;
-  border-radius: 8px 8px 0 0;
+  border-radius: 4px 4px 0 0;
   color: var(--muted);
   font-size: 12.5px;
   cursor: pointer;
@@ -1066,8 +1205,8 @@ mark {
   color: var(--text);
 }
 .tab.on {
-  background: #0f1219;
-  color: #fff;
+  background: var(--bg);
+  color: var(--text-hi);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .tic {
@@ -1086,7 +1225,7 @@ mark {
   display: inline-flex;
   padding: 2px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r2);
   background: none;
   color: var(--muted);
   opacity: 0;
@@ -1106,7 +1245,7 @@ mark {
   display: inline-flex;
   padding: 5px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: none;
   color: var(--muted);
 }
@@ -1115,13 +1254,14 @@ mark {
   color: var(--text);
 }
 .tb.rec {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  background: rgba(255, 61, 61, 0.2);
+  color: var(--down-fg);
 }
 .tb:disabled {
   opacity: 0.35;
 }
 .pbody {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1138,7 +1278,7 @@ mark {
   font-size: 12px;
 }
 .crumbs .leaf {
-  color: #c3c8d6;
+  color: var(--text-2);
 }
 .pscroll {
   flex: 1;
@@ -1167,7 +1307,7 @@ mark {
 .zoom {
   display: inline-flex;
   align-items: center;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -1191,16 +1331,135 @@ mark {
 .zoom .zv {
   min-width: 42px;
   font-variant-numeric: tabular-nums;
-  color: #c7d2fe;
+  font-family: var(--font-data);
+  color: var(--accent-fg);
 }
 .tab.dragging {
   opacity: 0.45;
 }
-.tab.dropl {
-  box-shadow: inset 2px 0 0 #8b7cff;
+.tlist {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
 }
-.tab.dropr {
-  box-shadow: inset -2px 0 0 #8b7cff;
+/* the tabs make room for a dragged one */
+.tabmv-move {
+  transition: transform 0.16s ease;
+}
+.tpair {
+  display: inline-flex;
+  color: var(--accent-fg);
+}
+.dz {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed transparent;
+  border-radius: 4px;
+  color: transparent;
+  font-size: 13px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.dz.l {
+  left: 0;
+  width: 30%;
+}
+.dz.r {
+  right: 0;
+  width: 30%;
+}
+.dz.all {
+  left: 0;
+  right: 0;
+}
+.dz span {
+  pointer-events: none;
+}
+.dz.hot {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--accent-fg);
+}
+/* a linked file: the switch is a column of its own at the right (nothing under it — no cursor fights) */
+.pbody.paired > :not(.pairsw) {
+  margin-right: 26px;
+}
+.pairsw {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  border-left: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+}
+.pairsw button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 7px 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--accent-fg);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.pairsw button span {
+  writing-mode: vertical-rl;
+}
+.pairsw button:hover {
+  background: rgb(var(--accent-rgb) / 0.18);
+  color: var(--text-hi);
+}
+.npair {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent-fg);
+}
+/* a linked note + board: one plaque, a bar on the left */
+.nrow.grp-top,
+.nrow.grp-bot {
+  border-radius: 0;
+  background: rgb(var(--accent-rgb) / 0.07);
+  box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / 0.75);
+}
+.nrow.grp-top {
+  margin-top: 2px;
+  border-radius: 4px 4px 0 0;
+}
+.nrow.grp-bot {
+  margin-bottom: 2px;
+  border-radius: 0 0 4px 4px;
+}
+.nrow.grp-top:hover,
+.nrow.grp-bot:hover {
+  background: rgb(var(--accent-rgb) / 0.13);
+}
+.nrow.grp-top.cur,
+.nrow.grp-bot.cur {
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+.nrow.grp-top .npair,
+.nrow.grp-bot .npair {
+  display: none;
+}
+.nrow.pairdrop {
+  background: rgb(var(--accent-rgb) / 0.22);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .sortwrap {
   display: inline-flex;
@@ -1215,9 +1474,9 @@ mark {
   right: 8px;
   z-index: 20;
   padding: 5px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1b1e29;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
@@ -1228,13 +1487,13 @@ mark {
   width: auto;
   height: auto;
   padding: 6px 10px;
-  border-radius: 6px;
-  color: #dfe2ea;
+  border-radius: var(--r2);
+  color: var(--text);
   font-size: 12.5px;
   white-space: nowrap;
 }
 .ntools .sortmenu button.on {
-  background: rgba(124, 108, 246, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .sortmenu .sp {
   display: inline-block;
@@ -1248,7 +1507,7 @@ mark {
   padding: 0 24px 0 52px;
   border: 0;
   background: transparent;
-  color: #f1f2f8;
+  color: var(--text-hi);
   font: inherit;
   font-size: 1.8em;
   font-weight: 700;
@@ -1261,16 +1520,16 @@ mark {
   gap: 10px;
   margin: 8px auto 0;
   padding: 6px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 61, 61, 0.4);
+  background: rgba(255, 61, 61, 0.08);
   font-size: 12.5px;
 }
 .rdot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #ef4444;
+  background: var(--down);
   animation: blink 1s infinite;
 }
 @keyframes blink {
@@ -1281,24 +1540,25 @@ mark {
 .meter {
   width: 90px;
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 .meter span {
   display: block;
   height: 100%;
-  background: #f87171;
+  background: var(--down-fg);
 }
 .recbar b {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .stop {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   font-size: 12px;
 }
 .pstatus {
@@ -1312,7 +1572,7 @@ mark {
   font-size: 11.5px;
 }
 .err {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .pempty {
   flex: 1;
@@ -1344,8 +1604,8 @@ mark {
   bottom: 40px;
   transform: translateX(-50%);
   padding: 8px 14px;
-  border-radius: 10px;
-  background: #262b3b;
+  border-radius: 4px;
+  background: var(--border-2);
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 12.5px;
@@ -1360,9 +1620,9 @@ mark {
   z-index: 5000;
   min-width: 210px;
   padding: 5px;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1b1e29;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
@@ -1373,17 +1633,17 @@ mark {
   gap: 8px;
   padding: 6px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #dfe2ea;
+  color: var(--text);
   font-size: 12.5px;
   text-align: left;
 }
 .nctx button:hover {
-  background: rgba(124, 108, 246, 0.2);
+  background: rgb(var(--accent-rgb) / 0.2);
 }
 .nctx button.danger {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .nctx .ccolors {
   display: flex;
@@ -1395,22 +1655,46 @@ mark {
   width: 18px;
   height: 18px;
   padding: 0;
-  border-radius: 5px;
+  border-radius: var(--r2);
   justify-content: center;
 }
 .nctx .ccolors .cdot.on {
-  box-shadow: 0 0 0 2px #1b1e29, 0 0 0 3.5px #fff;
+  box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 3.5px var(--text-hi);
 }
 .nctx .ccolors .cnone {
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #8b93a7;
+  color: var(--muted);
 }
 .nctx .ccolors .cnone.on {
-  border-color: #fff;
+  border-color: var(--text-hi);
 }
 .nctx .csep {
   height: 1px;
   margin: 4px 6px;
   background: rgba(255, 255, 255, 0.08);
+}
+.pboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pboard > .bd {
+  flex: 1;
+  min-height: 0;
+}
+.ncol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.ndate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 10.5px;
 }
 </style>

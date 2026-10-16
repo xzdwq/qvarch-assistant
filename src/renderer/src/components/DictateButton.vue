@@ -46,20 +46,20 @@ async function toggle(): Promise<void> {
   height: 36px;
   box-sizing: border-box;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--muted);
   cursor: pointer;
 }
 .dict:hover {
-  color: #fca5a5;
-  border-color: rgba(248, 113, 113, 0.5);
+  color: var(--down-fg);
+  border-color: rgba(255, 61, 61, 0.5);
 }
 .dict.on {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: #fff;
+  background: var(--down);
+  border-color: var(--down);
+  color: var(--text-hi);
 }
 .dict.compact {
   height: 30px;
@@ -77,10 +77,11 @@ async function toggle(): Promise<void> {
 }
 .lv span {
   width: 100%;
-  background: #fff;
+  background: var(--text-hi);
 }
 b {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-size: 12px;
 }
 </style>

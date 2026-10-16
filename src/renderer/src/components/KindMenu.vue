@@ -65,9 +65,9 @@ onBeforeUnmount(() => {
   padding: 5px;
   display: flex;
   flex-direction: column;
-  background: #1c2030;
+  background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   animation: pop 0.12s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -90,14 +90,14 @@ button {
   background: transparent;
   text-align: left;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 13px;
 }
 button:hover {
   background: var(--hover);
 }
 button.cur {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .ic {
   display: inline-flex;
@@ -105,7 +105,7 @@ button.cur {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 </style>

@@ -31,23 +31,23 @@ import { audioUrl, fixDuration, transcribing } from '../lib/notebook'
  * A recording line is a player; [[a link]] opens that note.
  */
 const props = defineProps<{ text: string }>()
-const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string] }>()
+const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string]; exitUp: [] }>()
 
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
 
 // ---------- the look ----------
 const mdStyle = HighlightStyle.define([
-  { tag: t.heading1, fontSize: '1.75em', fontWeight: '700', color: '#eef0ff' },
-  { tag: t.heading2, fontSize: '1.45em', fontWeight: '700', color: '#e4e7ff' },
-  { tag: t.heading3, fontSize: '1.22em', fontWeight: '650', color: '#dfe3ff' },
-  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: '650', color: '#d8dcff' },
+  { tag: t.heading1, fontSize: '1.75em', fontWeight: '700', color: 'var(--text-hi)' },
+  { tag: t.heading2, fontSize: '1.45em', fontWeight: '700', color: 'var(--text-hi)' },
+  { tag: t.heading3, fontSize: '1.22em', fontWeight: '650', color: 'var(--text)' },
+  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: '650', color: 'var(--text)' },
   { tag: t.strong, fontWeight: '700', color: '#f4f4f8' },
   { tag: t.emphasis, fontStyle: 'italic' },
-  { tag: t.strikethrough, textDecoration: 'line-through', color: '#8b93a7' },
-  { tag: t.link, color: '#a5b4fc' },
-  { tag: t.url, color: '#818cf8' },
-  { tag: t.monospace, fontFamily: 'Consolas, "Cascadia Mono", monospace', fontSize: '0.9em' },
+  { tag: t.strikethrough, textDecoration: 'line-through', color: 'var(--muted)' },
+  { tag: t.link, color: 'var(--accent-fg)' },
+  { tag: t.url, color: 'var(--accent-hi)' },
+  { tag: t.monospace, fontFamily: 'var(--font-data)', fontSize: '0.9em' },
   { tag: t.quote, color: '#b8c0d6' },
   { tag: [t.processingInstruction, t.meta], color: '#6f7894' },
   { tag: t.contentSeparator, color: '#6f7894' },
@@ -68,22 +68,22 @@ const codeStyle = HighlightStyle.define([
 ])
 const theme = EditorView.theme(
   {
-    '&': { color: '#dfe2ea', backgroundColor: 'transparent', fontSize: '1em' },
+    '&': { color: 'var(--text)', backgroundColor: 'transparent', fontSize: '1em' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.65', padding: '4px 0 40vh', overflow: 'visible' },
-    '.cm-content': { caretColor: '#a5b4fc', padding: '0 24px 0 10px' },
-    '.cm-cursor': { borderLeftColor: '#a5b4fc', borderLeftWidth: '2px' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(124, 108, 246, 0.35) !important' },
+    '.cm-content': { caretColor: 'var(--accent-fg)', padding: '0 24px 0 10px' },
+    '.cm-cursor': { borderLeftColor: 'var(--accent-fg)', borderLeftWidth: '2px' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgb(var(--accent-rgb) / 0.3) !important' },
     '.cm-activeLine': { backgroundColor: 'transparent' },
-    '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: '#3f465a', fontSize: '0.78em', paddingTop: '0.35em' },
+    '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: 'var(--border-3)', fontSize: '0.78em', paddingTop: '0.35em' },
     '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 4px', minWidth: '28px' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#8b93a7' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--muted)' },
     '.cm-placeholder': { color: '#5b6275' },
     '.cm-searchMatch': { backgroundColor: 'rgba(250, 204, 21, 0.22)', outline: '1px solid rgba(250, 204, 21, 0.45)', borderRadius: '2px' },
     '.cm-searchMatch-selected': { backgroundColor: 'rgba(250, 204, 21, 0.45)' },
-    '.cm-selectionMatch': { backgroundColor: 'rgba(124, 108, 246, 0.18)' },
+    '.cm-selectionMatch': { backgroundColor: 'rgb(var(--accent-rgb) / 0.16)' },
     // the search panel: in the app's style
-    '.cm-panels': { backgroundColor: 'transparent', color: '#dfe2ea', border: 'none' },
+    '.cm-panels': { backgroundColor: 'transparent', color: 'var(--text)', border: 'none' },
     '.cm-panels.cm-panels-top': { borderBottom: 'none' },
     '.cm-search': {
       display: 'flex',
@@ -95,7 +95,7 @@ const theme = EditorView.theme(
       position: 'relative',
       borderRadius: '10px',
       border: '1px solid rgba(255,255,255,0.1)',
-      background: '#1b1e29',
+      background: 'var(--pop)',
       boxShadow: '0 10px 28px rgba(0,0,0,0.45)',
       fontSize: '12.5px',
     },
@@ -105,14 +105,14 @@ const theme = EditorView.theme(
       padding: '5px 9px',
       minWidth: '180px',
       borderRadius: '7px',
-      border: '1px solid #262b3a',
-      background: '#0b0d13',
-      color: '#dfe2ea',
+      border: '1px solid var(--border-2)',
+      background: 'var(--field-bg)',
+      color: 'var(--text)',
       font: 'inherit',
       fontSize: '12.5px',
       outline: 'none',
     },
-    '.cm-textfield:focus': { borderColor: '#6366f1' },
+    '.cm-textfield:focus': { borderColor: 'var(--accent)' },
     '.cm-button': {
       margin: '0',
       padding: '4px 10px',
@@ -120,14 +120,14 @@ const theme = EditorView.theme(
       border: '1px solid rgba(255,255,255,0.12)',
       backgroundImage: 'none',
       backgroundColor: 'transparent',
-      color: '#c7d2fe',
+      color: 'var(--accent-fg)',
       font: 'inherit',
       fontSize: '12px',
       cursor: 'pointer',
     },
-    '.cm-button:hover': { backgroundColor: 'rgba(124,108,246,0.18)' },
+    '.cm-button:hover': { backgroundColor: 'rgb(var(--accent-rgb) / 0.16)' },
     '.cm-search label': { display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#aab1c3', fontSize: '12px', cursor: 'pointer' },
-    '.cm-search input[type=checkbox]': { accentColor: '#7c6cf6', margin: '0' },
+    '.cm-search input[type=checkbox]': { accentColor: 'var(--accent)', margin: '0' },
     '.cm-search button[name=close]': {
       position: 'absolute',
       top: '6px',
@@ -136,42 +136,42 @@ const theme = EditorView.theme(
       border: 'none',
       borderRadius: '6px',
       background: 'transparent',
-      color: '#8b93a7',
+      color: 'var(--muted)',
       fontSize: '17px',
       lineHeight: '24px',
       cursor: 'pointer',
     },
-    '.cm-search button[name=close]:hover': { background: 'rgba(255,255,255,0.08)', color: '#fff' },
+    '.cm-search button[name=close]:hover': { background: 'rgba(255,255,255,0.08)', color: 'var(--text-hi)' },
     // live preview
-    '.cm-wiki': { color: '#a5b4fc', textDecoration: 'underline', textDecorationColor: 'rgba(165,180,252,0.4)', cursor: 'pointer' },
-    '.cm-lp-link': { color: '#a5b4fc', textDecoration: 'underline', textDecorationColor: 'rgba(165,180,252,0.4)', cursor: 'pointer' },
-    '.cm-lp-bullet': { display: 'inline-block', width: '1.1em', color: '#a78bfa', fontWeight: '700' },
-    '.cm-lp-check': { verticalAlign: '-0.12em', margin: '0 0.35em 0 0', width: '1em', height: '1em', accentColor: '#7c6cf6', cursor: 'pointer' },
+    '.cm-wiki': { color: 'var(--accent-fg)', textDecoration: 'underline', textDecorationColor: 'rgba(255,162,92,0.4)', cursor: 'pointer' },
+    '.cm-lp-link': { color: 'var(--accent-fg)', textDecoration: 'underline', textDecorationColor: 'rgba(255,162,92,0.4)', cursor: 'pointer' },
+    '.cm-lp-bullet': { display: 'inline-block', width: '1.1em', color: 'var(--accent-hi)', fontWeight: '700' },
+    '.cm-lp-check': { verticalAlign: '-0.12em', margin: '0 0.35em 0 0', width: '1em', height: '1em', accentColor: 'var(--accent)', cursor: 'pointer' },
     '.cm-lp-hr': { display: 'inline-block', width: '100%', height: '0', borderTop: '1px solid rgba(255,255,255,0.14)', verticalAlign: 'middle' },
-    '.cm-lp-quote': { borderLeft: '3px solid rgba(124,108,246,0.6)', paddingLeft: '12px !important', color: '#b8c0d6' },
-    '.cm-lp-code': { backgroundColor: 'rgba(255,255,255,0.045)', fontFamily: 'Consolas, "Cascadia Mono", monospace !important', fontSize: '0.88em', paddingLeft: '16px !important', paddingRight: '16px !important' },
+    '.cm-lp-quote': { borderLeft: '3px solid rgb(var(--accent-rgb) / 0.6)', paddingLeft: '12px !important', color: '#b8c0d6' },
+    '.cm-lp-code': { backgroundColor: 'rgba(255,255,255,0.045)', fontFamily: 'var(--font-data) !important', fontSize: '0.88em', paddingLeft: '16px !important', paddingRight: '16px !important' },
     // inside code nothing is Markdown: one colour, one weight
     '.cm-line.cm-lp-code': { color: '#d6dae6' },
     '.cm-lp-code *': { fontFamily: 'inherit !important', fontSize: 'inherit !important', fontWeight: '400 !important', textDecoration: 'none !important' },
     '.cm-lp-bar': { position: 'absolute', top: '4px', right: '6px', zIndex: '2', display: 'inline-flex', alignItems: 'center', gap: '2px' },
     '.cm-lp-bar .cm-lp-copy': { position: 'static' },
-    '.cm-lp-lang': { marginRight: '4px', color: '#5d6580', fontSize: '11px', fontFamily: 'Consolas, monospace', textTransform: 'lowercase', userSelect: 'none' },
+    '.cm-lp-lang': { marginRight: '4px', color: 'var(--dim)', fontSize: '11px', fontFamily: 'var(--font-data)', textTransform: 'lowercase', userSelect: 'none' },
     '.cm-lp-copy.err': { color: '#f87171' },
-    '.cm-tooltip.cm-tooltip-autocomplete': { border: '1px solid rgba(255,255,255,0.1)', borderRadius: '9px', background: '#1c2030', boxShadow: '0 12px 30px rgba(0,0,0,0.5)', overflow: 'hidden' },
+    '.cm-tooltip.cm-tooltip-autocomplete': { border: '1px solid rgba(255,255,255,0.1)', borderRadius: '9px', background: 'var(--pop)', boxShadow: '0 12px 30px rgba(0,0,0,0.5)', overflow: 'hidden' },
     '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'inherit', maxHeight: '240px', padding: '4px' },
     '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '4px 10px', borderRadius: '6px', color: '#d6dae6', fontSize: '12.5px' },
-    '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'rgba(124,108,246,0.3)', color: '#fff' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'rgb(var(--accent-rgb) / 0.28)', color: 'var(--text-hi)' },
     '.cm-completionDetail': { marginLeft: '10px', color: '#7d8599', fontStyle: 'normal' },
-    '.cm-completionMatchedText': { textDecoration: 'none', color: '#c4b5fd' },
-    '.cm-foldGutter .cm-gutterElement': { padding: '0 2px', color: '#5d6580', cursor: 'pointer' },
-    '.cm-foldGutter .cm-gutterElement:hover': { color: '#c7d2fe' },
-    '.cm-foldPlaceholder': { margin: '0 4px', padding: '0 6px', border: '1px solid rgba(124,108,246,0.4)', borderRadius: '6px', background: 'rgba(124,108,246,0.14)', color: '#c4b5fd', cursor: 'pointer' },
+    '.cm-completionMatchedText': { textDecoration: 'none', color: 'var(--accent-fg)' },
+    '.cm-foldGutter .cm-gutterElement': { padding: '0 2px', color: 'var(--dim)', cursor: 'pointer' },
+    '.cm-foldGutter .cm-gutterElement:hover': { color: 'var(--accent-fg)' },
+    '.cm-foldPlaceholder': { margin: '0 4px', padding: '0 6px', border: '1px solid rgb(var(--accent-rgb) / 0.4)', borderRadius: '6px', background: 'rgb(var(--accent-rgb) / 0.14)', color: 'var(--accent-fg)', cursor: 'pointer' },
     '.cm-lp-code-top': { borderTopLeftRadius: '8px', borderTopRightRadius: '8px', position: 'relative' },
     '.cm-lp-code-bot': { borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' },
     // a hidden fence is a thin edge of the block: the code starts right at its top
     // after a fence the parser may still think it is code (an indented closing fence): plain text there
     '.cm-lp-plain, .cm-lp-plain *': { fontFamily: 'inherit !important', color: 'inherit !important', fontSize: 'inherit !important' },
-    '.cm-lp-icode': { fontFamily: 'Consolas, "Cascadia Mono", monospace', fontSize: '0.9em', color: '#fbcfe8', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', padding: '0 3px' },
+    '.cm-lp-icode': { fontFamily: 'var(--font-data)', fontSize: '0.9em', color: '#fbcfe8', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', padding: '0 3px' },
     '.cm-lp-copy': {
       position: 'absolute',
       top: '4px',
@@ -182,11 +182,11 @@ const theme = EditorView.theme(
       border: 'none',
       borderRadius: '6px',
       background: 'transparent',
-      color: '#8b93a7',
+      color: 'var(--muted)',
       cursor: 'pointer',
     },
     '.cm-lp-copy:hover': { background: 'rgba(255,255,255,0.08)', color: '#e5e7eb' },
-    '.cm-lp-done': { textDecoration: 'line-through', color: '#8b93a7' },
+    '.cm-lp-done': { textDecoration: 'line-through', color: 'var(--muted)' },
   },
   { dark: true },
 )
@@ -263,7 +263,7 @@ class AudioWidget extends WidgetType {
       tr = document.createElement('span')
       tr.className = 'cm-audio-orb'
       tr.title = 'Расшифровка…'
-      const app = createApp(ThinkingOrb, { state: 'weaving', size: 20, px: 22, tint: '#a5b4fc' })
+      const app = createApp(ThinkingOrb, { state: 'weaving', size: 20, px: 22, tint: 'var(--accent-fg)' })
       app.mount(tr)
       ;(box as HTMLElement & { _orb?: App })._orb = app
     } else tr = btn(CAPTIONS, 'cm-audio-tr', this.state === 'error' ? 'Расшифровать ещё раз (прошлая попытка не удалась)' : 'Расшифровать (локально) — текст строкой ниже', () => emit('transcribe', this.rel))
@@ -829,6 +829,22 @@ onMounted(() => {
         clicks,
         contextMenu,
         placeholder('Пишите… # заголовок, **жирный**, - список, - [ ] задача, [[другая заметка]]'),
+        keymap.of([
+          // ↑ on the first line — up into the note's title
+          {
+            key: 'ArrowUp',
+            run: (v) => {
+              const sel = v.state.selection.main
+              if (!sel.empty || v.state.doc.lineAt(sel.head).number !== 1) return false
+              // a long first line wraps: only from its top row
+              const a = v.coordsAtPos(sel.head)
+              const b = v.coordsAtPos(0)
+              if (a && b && Math.abs(a.top - b.top) > 2) return false
+              emit('exitUp')
+              return true
+            },
+          },
+        ]),
         keymap.of([{ key: 'Mod-b', run: wrap('**') }, { key: 'Mod-i', run: wrap('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) emit('change', u.state.doc.toString())
@@ -861,6 +877,12 @@ watch(
 
 defineExpose({
   focus: () => view?.focus(),
+  /** The cursor at the very start of the text (coming down from the title). */
+  focusStart(): void {
+    if (!view) return
+    view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true })
+    view.focus()
+  },
   /** Inserts text as its own lines after the cursor's line. */
   insertBlock(text: string): void {
     if (!view) return
@@ -913,9 +935,9 @@ defineExpose({
   padding: 5px;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .mde-menu button {
@@ -924,30 +946,30 @@ defineExpose({
   gap: 9px;
   padding: 6px 9px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #e2e6f0;
+  color: var(--text);
   font-size: 12.5px;
   text-align: left;
   cursor: default;
 }
 .mde-menu button:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .mde-menu button:disabled {
   opacity: 0.4;
 }
 .mde-menu button svg {
   flex: none;
-  color: #9aa3b8;
+  color: var(--muted);
 }
 .mde-menu .ev svg {
-  color: #a78bfa;
+  color: var(--accent-fg);
 }
 .mde-menu kbd {
   margin-left: auto;
   padding-left: 18px;
-  color: #6b7387;
+  color: var(--dim);
   font: inherit;
   font-size: 11px;
 }
@@ -972,19 +994,19 @@ defineExpose({
   gap: 8px;
   padding: 4px 8px;
   margin: 2px 0;
-  border-radius: 10px;
-  border: 1px solid rgba(124, 108, 246, 0.35);
-  background: rgba(124, 108, 246, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.35);
+  background: rgb(var(--accent-rgb) / 0.08);
   vertical-align: middle;
   font-size: 12px;
 }
 .mde :deep(.cm-audio.missing) {
-  border-color: rgba(248, 113, 113, 0.5);
+  border-color: rgba(255, 61, 61, 0.5);
   opacity: 0.7;
 }
 .mde :deep(.cm-audio-ic) {
   display: inline-flex;
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .mde :deep(.cm-audio audio) {
   height: 30px;
@@ -999,9 +1021,9 @@ defineExpose({
   height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   cursor: pointer;
 }
 .mde :deep(.cm-audio-orb) {
@@ -1012,13 +1034,13 @@ defineExpose({
   height: 30px;
 }
 .mde :deep(.cm-audio button:hover:not(:disabled)) {
-  background: rgba(124, 108, 246, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .mde :deep(.cm-audio .cm-audio-del) {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .mde :deep(.cm-audio .cm-audio-del:hover) {
-  background: rgba(248, 113, 113, 0.15);
+  background: rgba(255, 61, 61, 0.15);
 }
 .mde :deep(.cm-audio button:disabled) {
   opacity: 0.6;

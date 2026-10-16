@@ -2,14 +2,16 @@
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import type { KindDef, PublicSettings, SettingsPatch, UiPrefs, VoiceState } from '@shared/types'
 import { DEFAULT_UI } from '@shared/ui'
-import { closestPair, cornerAnchors, LINK_STYLES, linkPath, type LinkStyle } from '@shared/linkpath'
 import { isProductive } from '@shared/kinds'
 import Icon, { KIND_ICONS } from '../components/Icon.vue'
 import { projectKeys } from '@shared/jira'
-import { DEFAULT_AI_PROMPT } from '@shared/aimodel'
 import { WHISPER_MODELS } from '@shared/voice'
 import { useJira } from '../lib/jira'
 import { useOutlook } from '../lib/outlook'
+import TabletView from './TabletView.vue'
+import { ACCENTS, DEFAULT_THEME } from '@shared/theme'
+import { orderedViews, VIEWS } from '../lib/views'
+import { startListDrag } from '../lib/listDrag'
 
 const props = defineProps<{ settings: PublicSettings }>()
 const emit = defineEmits<{ changed: [s: PublicSettings] }>()
@@ -34,10 +36,6 @@ const f = reactive({
   jiraClientId: props.settings.jira.clientId ?? '',
   jiraProjects: props.settings.jira.projects.join(', '),
   jiraSecret: '',
-  aiKey: '',
-  aiModel: props.settings.ai.model,
-  aiPrompt: props.settings.ai.prompt,
-  aiTitles: props.settings.ai.sendTitles,
   voiceEnabled: props.settings.voice.enabled,
   autoTranscribe: props.settings.voice.autoTranscribe,
   voiceModel: props.settings.voice.model,
@@ -49,15 +47,16 @@ const f = reactive({
 })
 
 /** Settings are split into sections (like System Settings): a sidebar, or tabs on top in a narrow window. */
-type Cat = 'general' | 'kinds' | 'ui' | 'voice' | 'outlook' | 'jira' | 'ai'
+type Cat = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira'
 const CATS: Array<{ id: Cat; icon: string; label: string }> = [
   { id: 'general', icon: 'clock', label: 'Основное' },
   { id: 'kinds', icon: 'tag', label: 'Виды занятости' },
+  { id: 'look', icon: 'palette', label: 'Оформление' },
   { id: 'ui', icon: 'layers', label: 'Интерфейс' },
   { id: 'voice', icon: 'mic', label: 'Голос' },
+  { id: 'tablet', icon: 'penTool', label: 'Планшет' },
   { id: 'outlook', icon: 'calendar', label: 'Outlook и Teams' },
   { id: 'jira', icon: 'jira', label: 'Jira' },
-  { id: 'ai', icon: 'sparkles', label: 'AI анализ' },
 ]
 const cat = ref<Cat>(readCat())
 function readCat(): Cat {
@@ -96,26 +95,13 @@ const UI_DOCK: Array<{ k: keyof UiPrefs['dock']; label: string }> = [
 const UI_ISLAND: Array<{ k: keyof UiPrefs['island']; label: string }> = [
   { k: 'date', label: 'Дата' },
   { k: 'wave', label: 'Волна активности' },
-  { k: 'apps', label: 'Дорожка приложений' },
   { k: 'totals', label: 'Итоги под шкалой' },
   { k: 'plan', label: 'Плашки из плана дня' },
 ]
 const UI_MAIN: Array<{ k: keyof UiPrefs['main']; label: string; hint?: string }> = [
-  { k: 'allStats', label: 'Все показатели дня сразу', hint: 'Иначе — продуктивно и не размечено' },
+  { k: 'allStats', label: 'Все показатели дня сразу', hint: 'Иначе — основные' },
   { k: 'plan', label: 'Кнопка «План дня»' },
-  { k: 'ai', label: 'Кнопка «AI анализ»' },
 ]
-/** Previews of the link styles: two little blocks and the line between them. */
-const PREVIEW = (() => {
-  const a = { left: 6, top: 6, right: 46, bottom: 22 }
-  const b = { left: 62, top: 30, right: 102, bottom: 46 }
-  const pair = closestPair(cornerAnchors(a, 6, 3), cornerAnchors(b, 6, 3))!
-  return { a, b, d: Object.fromEntries(LINK_STYLES.map((s) => [s.id, linkPath(pair[0], pair[1], s.id).d])) as Record<LinkStyle, string> }
-})()
-async function setLinkStyle(s: LinkStyle): Promise<void> {
-  ui.links.style = s
-  await applyUi()
-}
 async function applyUi(): Promise<void> {
   const s = await window.qa.updateSettings({ ui: JSON.parse(JSON.stringify(ui)) as UiPrefs })
   emit('changed', s)
@@ -124,26 +110,96 @@ async function applyUi(): Promise<void> {
 async function uiPreset(p: 'full' | 'minimal'): Promise<void> {
   const next: UiPrefs =
     p === 'full'
-      ? { ...DEFAULT_UI, main: { ...DEFAULT_UI.main, allStats: true }, links: { ...ui.links }, timeline: { ...ui.timeline } }
+      ? { ...DEFAULT_UI, main: { ...DEFAULT_UI.main, allStats: true }, timeline: { ...ui.timeline }, theme: ui.theme, menu: ui.menu }
       : {
           pill: { app: true, date: false, combo: false, wave: false, chips: true, stats: false, dayBar: true, plan: false },
           dock: { orb: true, time: true, next: true, wave: false },
-          island: { date: false, wave: false, apps: true, totals: true, plan: false },
-          main: { allStats: false, plan: true, ai: false },
-          links: { ...ui.links },
+          island: { date: false, wave: false, totals: true, plan: false },
+          main: { allStats: false, plan: true },
           timeline: { ...ui.timeline },
+          theme: ui.theme,
+          menu: ui.menu,
         }
   Object.assign(ui.pill, next.pill)
   if (next.dock) Object.assign(ui.dock, next.dock)
   Object.assign(ui.island, next.island)
   Object.assign(ui.main, next.main)
-  Object.assign(ui.links, next.links)
   await applyUi()
+}
+
+// ---------- the look ----------
+const CONTRASTS: Array<{ id: UiPrefs['theme']['contrast']; label: string }> = [
+  { id: 'soft', label: 'Мягкий' },
+  { id: 'normal', label: 'Обычный' },
+  { id: 'high', label: 'Высокий' },
+]
+function setTheme(p: Partial<UiPrefs['theme']>): void {
+  Object.assign(ui.theme, p)
+  void applyUi()
+}
+
+// ---------- the menu: order by dragging, hide with the eye ----------
+const menuViews = computed(() => orderedViews(ui.menu))
+const isHidden = (id: string) => ui.menu.hidden.includes(id)
+function toggleHidden(id: string): void {
+  const h = new Set(ui.menu.hidden)
+  if (h.has(id)) h.delete(id)
+  else if (VIEWS.length - h.size > 1) h.add(id) // at least one section stays
+  ui.menu.hidden = [...h]
+  void applyUi()
+}
+const mlist = ref<HTMLElement>()
+const dragId = ref<string>()
+function startDrag(e: PointerEvent, id: string): void {
+  const list = mlist.value?.firstElementChild as HTMLElement | null
+  if (!list) return
+  dragId.value = id
+  startListDrag(e, {
+    list,
+    index: menuViews.value.findIndex((v) => v.id === id),
+    move: (from, to) => {
+      const ids = menuViews.value.map((v) => v.id as string)
+      const [x] = ids.splice(from, 1)
+      ids.splice(to, 0, x)
+      ui.menu.order = ids
+    },
+    done: () => {
+      dragId.value = undefined
+      void applyUi()
+    },
+  })
+}
+
+// ---------- kinds: the same dragging ----------
+const klist = ref<HTMLElement>()
+const kDrag = ref<string>()
+function startKindDrag(e: PointerEvent, id: string): void {
+  if (!klist.value) return
+  kDrag.value = id
+  startListDrag(e, {
+    list: klist.value,
+    index: f.kinds.findIndex((k) => k.id === id),
+    move: (from, to) => {
+      const list = [...f.kinds]
+      const [x] = list.splice(from, 1)
+      list.splice(to, 0, x)
+      f.kinds = list
+    },
+    // the new order is kept at once (like the menu)
+    done: () => {
+      kDrag.value = undefined
+      void save()
+    },
+  })
+}
+function resetMenu(): void {
+  ui.menu.order = []
+  ui.menu.hidden = []
+  void applyUi()
 }
 
 const saved = ref(false)
 const jira = useJira()
-const aiHasKey = ref(false)
 const voice = shallowRef<VoiceState>({ modelReady: false, model: 'small', models: [], busy: [] })
 void window.qa.voiceState().then((s) => (voice.value = s))
 const offVoice = window.qa.onVoice((s) => (voice.value = s))
@@ -194,20 +250,6 @@ async function deleteModel(id: string, label: string): Promise<void> {
 }
 const isReady = (id: string) => voice.value.models.find((m) => m.id === id)?.ready ?? false
 const mb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} ГБ` : `${Math.round(b / 1e6)} МБ`)
-void window.qa.aiHasKey().then((v) => (aiHasKey.value = v))
-/** What exactly goes to OpenAI for today (shown on demand). */
-const aiPreview = ref('')
-async function showPreview(): Promise<void> {
-  if (aiPreview.value) {
-    aiPreview.value = ''
-    return
-  }
-  const json = await window.qa.aiPreview(new Date().toLocaleDateString('sv-SE'))
-  aiPreview.value = JSON.stringify(JSON.parse(json), null, 2)
-}
-function resetPrompt(): void {
-  f.aiPrompt = DEFAULT_AI_PROMPT
-}
 // ---------- Outlook / Teams ----------
 const ol = useOutlook()
 const olForm = reactive({ ...props.settings.outlook })
@@ -284,7 +326,6 @@ async function save(): Promise<void> {
     countKeys: f.countKeys,
     island: { opacity: f.pillOpacity / 100 },
     jira: { clientId: f.jiraClientId.trim() || undefined, projects: projectKeys(f.jiraProjects), syncMin: f.jiraSyncMin },
-    ai: { model: f.aiModel.trim() || 'gpt-4.1-mini', prompt: f.aiPrompt, sendTitles: f.aiTitles },
     voice: { enabled: f.voiceEnabled, autoTranscribe: f.autoTranscribe, model: f.voiceModel, micId: f.micId },
   }
   try {
@@ -294,11 +335,6 @@ async function save(): Promise<void> {
     if (f.jiraSecret.trim()) {
       await window.qa.jiraSetSecret(f.jiraSecret)
       f.jiraSecret = ''
-    }
-    if (f.aiKey.trim()) {
-      await window.qa.aiSetKey(f.aiKey)
-      f.aiKey = ''
-      aiHasKey.value = true
     }
     emit('changed', s)
     saveError.value = ''
@@ -321,14 +357,6 @@ function addKind(): void {
 function removeKind(id: string): void {
   if (f.kinds.length <= 1) return
   f.kinds = f.kinds.filter((k) => k.id !== id)
-}
-
-function moveKind(i: number, d: number): void {
-  const j = i + d
-  if (j < 0 || j >= f.kinds.length) return
-  const list = [...f.kinds]
-  ;[list[i], list[j]] = [list[j], list[i]]
-  f.kinds = list
 }
 
 function toggleDay(id: number): void {
@@ -365,12 +393,9 @@ function toggleDay(id: number): void {
     <section v-show="cat === 'kinds'">
       <h3>Виды занятости</h3>
       <p class="muted small">Показываются кнопками в island и в меню по правому клику на шкале. Пустая подпись при нарезке заменяется названием вида.</p>
-      <div class="kinds">
-        <div v-for="(k, i) in f.kinds" :key="k.id" class="krow">
-          <span class="order">
-            <button class="mini" :disabled="i === 0" title="Выше" @click="moveKind(i, -1)"><Icon name="chevronLeft" :size="12" style="transform: rotate(90deg)" /></button>
-            <button class="mini" :disabled="i === f.kinds.length - 1" title="Ниже" @click="moveKind(i, 1)"><Icon name="chevronRight" :size="12" style="transform: rotate(90deg)" /></button>
-          </span>
+      <div ref="klist" class="kinds">
+        <div v-for="k in f.kinds" :key="k.id" class="krow" :class="{ drag: kDrag === k.id }">
+          <span class="mgrip" title="Перетащить" @pointerdown="startKindDrag($event, k.id)"><Icon name="grip" :size="14" /></span>
           <span class="kpreview" :style="{ background: k.color }"><Icon :name="k.icon" :size="14" :stroke="2.2" /></span>
           <input v-model="k.label" class="klabel" placeholder="Название, например «Ревью кода»" />
           <input v-model="k.color" type="color" class="kcolor" title="Цвет" />
@@ -388,6 +413,56 @@ function toggleDay(id: number): void {
         </div>
       </div>
       <button class="add" @click="addKind"><Icon name="plus" :size="14" />Добавить вид</button>
+    </section>
+
+    <section v-show="cat === 'look'">
+      <h3>Оформление</h3>
+      <p class="muted small">Применяется сразу во всех окнах.</p>
+      <div class="look">
+        <div class="lrow">
+          <span class="ll">Контраст</span>
+          <span class="seg3"><button v-for="c in CONTRASTS" :key="c.id" :class="{ on: ui.theme.contrast === c.id }" @click="setTheme({ contrast: c.id })">{{ c.label }}</button></span>
+        </div>
+        <div class="lrow">
+          <span class="ll">Акцент</span>
+          <span class="sws">
+            <button v-for="a in ACCENTS" :key="a.id" class="sw" :class="{ on: ui.theme.accent === a.id }" :style="{ background: a.id }" :title="a.label" @click="setTheme({ accent: a.id })"></button>
+            <label class="sw own" :class="{ on: !ACCENTS.some((a) => a.id === ui.theme.accent) }" title="Свой цвет" :style="{ background: ui.theme.accent }"><input type="color" :value="ui.theme.accent" @change="setTheme({ accent: ($event.target as HTMLInputElement).value })" /><Icon name="pencil" :size="11" /></label>
+          </span>
+        </div>
+        <div class="lrow">
+          <span class="ll">Скругление панелей</span>
+          <span class="orow"><input v-model.number="ui.theme.radius" type="range" min="0" max="14" step="1" @change="applyUi" /><b>{{ ui.theme.radius }} px</b></span>
+        </div>
+        <div class="lrow">
+          <span class="ll">Цифры и время</span>
+          <label class="switch"><input v-model="ui.theme.mono" type="checkbox" @change="applyUi" /><span>Моноширинным шрифтом</span></label>
+        </div>
+        <div class="tprev">
+          <div class="tp-head"><span>ПРИМЕР ПАНЕЛИ</span><i class="tp-led"></i></div>
+          <div class="tp-body">
+            <span class="tp-num">7ч 42м</span>
+            <span class="tp-up">+12%</span>
+            <span class="tp-chip">DOS-2984</span>
+            <button class="primary">Действие</button>
+          </div>
+        </div>
+        <div><button @click="setTheme({ ...DEFAULT_THEME })">Сбросить оформление</button></div>
+      </div>
+
+      <h3 class="mt">Меню</h3>
+      <p class="muted small">Перетащите раздел за ручку, чтобы поменять порядок. Глаз — показать или скрыть.</p>
+      <div ref="mlist">
+        <TransitionGroup tag="div" class="mlist" name="mrow">
+          <div v-for="v in menuViews" :key="v.id" class="mrow" :data-mid="v.id" :class="{ drag: dragId === v.id, off: isHidden(v.id) }">
+            <span class="mgrip" title="Перетащить" @pointerdown="startDrag($event, v.id)"><Icon name="grip" :size="14" /></span>
+            <Icon :name="v.icon" :size="15" />
+            <span class="mlabel">{{ v.label }}</span>
+            <button class="mini" :title="isHidden(v.id) ? 'Показать в меню' : 'Скрыть из меню'" @click="toggleHidden(v.id)"><Icon :name="isHidden(v.id) ? 'eyeOff' : 'eye'" :size="14" /></button>
+          </div>
+        </TransitionGroup>
+      </div>
+      <div><button @click="resetMenu">Порядок по умолчанию</button></div>
     </section>
 
     <section v-show="cat === 'ui'">
@@ -416,19 +491,6 @@ function toggleDay(id: number): void {
         <div class="uigroup">
           <h4>Остров</h4>
           <label v-for="o in UI_ISLAND" :key="o.k" class="switch"><input v-model="ui.island[o.k]" type="checkbox" @change="applyUi" /><span>{{ o.label }}</span></label>
-        </div>
-        <div class="uigroup">
-          <h4>Линии связей</h4>
-          <div class="lstyles">
-            <button v-for="s in LINK_STYLES" :key="s.id" :class="{ on: ui.links.style === s.id }" @click="setLinkStyle(s.id)">
-              <svg viewBox="0 0 108 52" width="108" height="52">
-                <rect :x="PREVIEW.a.left" :y="PREVIEW.a.top" width="40" height="16" rx="4" fill="#14b8a6" />
-                <rect :x="PREVIEW.b.left" :y="PREVIEW.b.top" width="40" height="16" rx="4" fill="#6366f1" />
-                <path :d="PREVIEW.d[s.id]" fill="none" stroke="#e2e8f0" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
-              <span>{{ s.label }}</span>
-            </button>
-          </div>
         </div>
         <div class="uigroup">
           <h4>Основное окно</h4>
@@ -471,6 +533,7 @@ function toggleDay(id: number): void {
       <p class="muted small hint">Остров: Ctrl+Alt+Space — вызвать с клавиатуры; перемещается за иконку слева, позиция запоминается; булавка — не сворачивать; клик по шапке — сбросить выделение. Вернуть на место — меню «Ещё» или трей.</p>
     </section>
 
+    <TabletView v-if="cat === 'tablet'" embedded />
     <section v-show="cat === 'outlook'">
       <h3>Outlook и Teams</h3>
       <p class="muted small">
@@ -499,7 +562,6 @@ function toggleDay(id: number): void {
       </div>
       <div class="olopts">
         <label class="switch"><input v-model="olForm.meetings" type="checkbox" @change="applyOutlook" /><span>Встречи из календаря на таймлайн</span></label>
-        <label class="switch"><input v-model="olForm.linkCalls" type="checkbox" @change="applyOutlook" /><span>Связывать созвоны со встречами</span></label>
         <label v-if="olForm.source === 'graph'" class="switch" title="Статус «В звонке» в Teams"><input v-model="olForm.presence" type="checkbox" @change="applyOutlook" /><span>Статус Teams как признак созвона</span></label>
       </div>
       <div class="jrow">
@@ -582,32 +644,14 @@ function toggleDay(id: number): void {
       </div>
     </section>
 
-    <section v-show="cat === 'ai'">
-      <h3>AI анализ дня (OpenAI)</h3>
-      <p class="muted small">Кнопка «AI анализ» на таймлайне отправляет компактную модель дня: блоки, заметки, итоги по приложениям и получасам, активность по часам. Ключ хранится зашифрованным на этом компьютере.</p>
-      <div class="grid">
-        <label>API-ключ <input v-model="f.aiKey" type="password" spellcheck="false" :placeholder="aiHasKey ? 'сохранён — введите, чтобы заменить' : 'sk-…'" /></label>
-        <label>Модель <input v-model="f.aiModel" spellcheck="false" placeholder="gpt-4.1-mini" /></label>
-        <label class="check span2" title="Названия окон и вкладок могут содержать личное">
-          <input v-model="f.aiTitles" type="checkbox" /> Отправлять названия окон (топ-3 на приложение)
-        </label>
-      </div>
-      <label class="prompt">
-        <span class="phead">Промпт <button class="linkbtn" @click="resetPrompt">вернуть стандартный</button></span>
-        <textarea v-model="f.aiPrompt" rows="10" spellcheck="false"></textarea>
-      </label>
-      <button class="linkbtn" @click="showPreview">{{ aiPreview ? 'Скрыть' : 'Показать, что отправляется за сегодня' }}</button>
-      <pre v-if="aiPreview" class="preview">{{ aiPreview }}</pre>
-    </section>
-
     <section v-show="cat === 'general'">
-      <h3>Трекинг</h3>
+      <h3>Общее</h3>
       <div class="grid">
-        <label>Простой после, мин <input v-model.number="f.idleMin" type="number" min="1" max="60" /></label>
-        <label>Опрос активности, сек <input v-model.number="f.sampleSec" type="number" min="1" max="30" /></label>
+        <label title="Обед ставится сам, если в обеденное время нет ввода столько минут">Обед после простоя, мин <input v-model.number="f.idleMin" type="number" min="1" max="60" /></label>
+        <label title="Как часто проверяется, идёт ли созвон">Опрос созвонов, сек <input v-model.number="f.sampleSec" type="number" min="1" max="30" /></label>
         <label class="check"><input v-model="f.autoStart" type="checkbox" /> Запускать вместе с Windows</label>
-        <label class="check" title="Заголовки могут содержать личный текст">
-          <input v-model="f.captureTitles" type="checkbox" /> Записывать названия окон и вкладок
+        <label class="check" title="Берётся только заголовок окна программы созвона (Teams, Zoom…)">
+          <input v-model="f.captureTitles" type="checkbox" /> Подписывать созвоны заголовком окна (с кем)
         </label>
         <label class="check" title="Для счётчика комбо в мини-острове учитывается только сам факт нажатия">
           <input v-model="f.countKeys" type="checkbox" /> Считать комбо нажатий клавиш
@@ -643,12 +687,12 @@ function toggleDay(id: number): void {
   flex-wrap: wrap;
   gap: 4px 10px;
   padding: 5px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid transparent;
 }
 .model.cur {
-  border-color: rgba(124, 108, 246, 0.5);
-  background: rgba(124, 108, 246, 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 .model .pick {
   display: inline-flex;
@@ -663,23 +707,23 @@ function toggleDay(id: number): void {
   flex: 1;
 }
 .linkbtn.danger {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .ok.small {
-  color: #86efac;
+  color: var(--up-fg);
 }
 .prog {
   width: 160px;
   max-width: 100%;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 .prog span {
   display: block;
   height: 100%;
-  background: #7c6cf6;
+  background: var(--accent);
   transition: width 0.3s;
 }
 .prompt {
@@ -690,7 +734,7 @@ function toggleDay(id: number): void {
   box-sizing: border-box;
   resize: vertical;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -707,7 +751,7 @@ function toggleDay(id: number): void {
   border: 0;
   padding: 2px 0;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 12px;
   cursor: pointer;
 }
@@ -718,7 +762,7 @@ function toggleDay(id: number): void {
   max-height: 320px;
   overflow: auto;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(0, 0, 0, 0.3);
   font-size: 11px;
   white-space: pre-wrap;
@@ -731,7 +775,7 @@ function toggleDay(id: number): void {
   margin-top: 12px;
 }
 .jrow .ok {
-  color: #86efac;
+  color: var(--up-fg);
   font-size: 13px;
 }
 .span2 {
@@ -742,7 +786,7 @@ function toggleDay(id: number): void {
 }
 code {
   font-size: 12px;
-  color: #c7d2fe;
+  color: var(--accent-fg);
 }
 .opacity {
   display: flex;
@@ -756,14 +800,15 @@ code {
 }
 .orow input {
   flex: 1;
-  accent-color: #7c6cf6;
+  accent-color: var(--accent);
 }
 .orow b {
   min-width: 40px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .err {
-  color: #f87171;
+  color: var(--down-fg);
   font-size: 12px;
 }
 .settings {
@@ -788,7 +833,7 @@ code {
   gap: 10px;
   padding: 7px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font-size: 13px;
@@ -800,7 +845,7 @@ code {
   color: var(--text);
 }
 .side button.on {
-  background: rgba(124, 108, 246, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
   color: var(--text);
 }
 .content {
@@ -834,19 +879,19 @@ code {
   display: inline-flex;
   padding: 2px;
   margin-bottom: 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
 }
 .srcseg button {
   padding: 4px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
 .srcseg button.on {
-  background: rgba(124, 108, 246, 0.22);
+  background: rgb(var(--accent-rgb) / 0.22);
   color: var(--text);
 }
 .olopts {
@@ -874,16 +919,17 @@ code {
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--panel-2);
 }
 h4 {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 11px;
+  font-family: var(--font-data);
   font-weight: 600;
-  color: var(--muted);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--text-2);
 }
 /* iOS-like switch on top of a checkbox */
 label.switch {
@@ -906,7 +952,7 @@ label.switch span {
   width: 32px;
   height: 18px;
   margin: 0;
-  border-radius: 9px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.14);
   cursor: pointer;
   transition: background 0.2s;
@@ -919,11 +965,11 @@ label.switch span {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--text-hi);
   transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .switch input:checked {
-  background: #7c6cf6;
+  background: var(--accent);
 }
 .switch input:checked::after {
   transform: translateX(14px);
@@ -939,15 +985,15 @@ label.switch span {
   align-items: center;
   gap: 2px;
   padding: 6px 4px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
 .lstyles button.on {
-  border-color: #7c6cf6;
-  background: rgba(124, 108, 246, 0.14);
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.14);
   color: var(--text);
 }
 .uigroup .opacity {
@@ -959,12 +1005,17 @@ label.switch span {
 section {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 14px 18px;
 }
 h3 {
   margin: 0 0 8px;
-  font-size: 15px;
+  font-size: 11px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 p {
   margin: 0 0 12px;
@@ -1014,11 +1065,11 @@ label.check {
   margin-top: 12px;
 }
 .ok {
-  color: #86efac;
+  color: var(--up-fg);
   font-size: 13px;
 }
 .err {
-  color: #fca5a5;
+  color: var(--down-fg);
   font-size: 13px;
 }
 .kinds {
@@ -1047,8 +1098,8 @@ label.check {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
-  color: #fff;
+  border-radius: 4px;
+  color: var(--text-hi);
   flex: none;
 }
 .klabel {
@@ -1072,9 +1123,9 @@ label.check {
   grid-template-columns: repeat(6, 32px);
   gap: 4px;
   padding: 6px;
-  background: #1c2030;
+  background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
 }
 .mini {
@@ -1098,7 +1149,7 @@ label.check {
 code {
   background: var(--panel-2);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--r2);
 }
 .footer {
   display: flex;
@@ -1120,5 +1171,178 @@ code {
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* ---------- the look ---------- */
+.look {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+}
+.lrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 30px;
+}
+.ll {
+  flex: none;
+  width: 170px;
+  color: var(--text-2);
+}
+.seg3 {
+  display: inline-flex;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.seg3 button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 14px;
+}
+.seg3 button + button {
+  border-left: 1px solid var(--border-2);
+}
+.seg3 button.on {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+.sws {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.sw {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--r2);
+  outline: 1px solid var(--border-2);
+  cursor: pointer;
+}
+.sw.on {
+  border-color: var(--bg);
+  outline: 2px solid var(--text-hi);
+}
+.sw.own {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+}
+.sw.own input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.tprev {
+  border: 1px solid var(--border-2);
+  border-radius: var(--r3);
+  background: var(--panel);
+  overflow: hidden;
+}
+.tp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 2px 0 var(--accent);
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+.tp-led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+}
+.tp-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+}
+.tp-num {
+  font-family: var(--font-data);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-hi);
+}
+.tp-up {
+  font-family: var(--font-data);
+  color: var(--up-fg);
+}
+.tp-chip {
+  padding: 2px 8px;
+  border-radius: var(--r2);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+.tp-body .primary {
+  margin-left: auto;
+}
+h3.mt {
+  margin-top: 26px;
+}
+/* ---------- the menu ---------- */
+.mlist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 420px;
+  margin-bottom: 10px;
+}
+.mrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 6px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: var(--panel);
+  user-select: none;
+}
+.mrow.drag {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.mrow.off .mlabel,
+.mrow.off > svg {
+  opacity: 0.4;
+}
+.mgrip {
+  display: inline-flex;
+  padding: 6px 4px;
+  color: var(--dim);
+  cursor: grab;
+  touch-action: none;
+}
+.mrow.drag .mgrip {
+  cursor: grabbing;
+  color: var(--accent-fg);
+}
+.mlabel {
+  flex: 1;
+}
+.krow.drag {
+  outline: 1px solid var(--accent);
+  border-radius: var(--r2);
+  background: var(--panel-2);
+}
+.mrow-move {
+  transition: transform 0.15s ease;
 }
 </style>

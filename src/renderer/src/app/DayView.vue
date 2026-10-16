@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, toRef, watch } from 'vue'
-import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, mergeIntervals, MINUTE, scheduleRanges, shiftDay, trackedMs } from '@shared/timeline'
-import type { Entry, EntryKind, LinkEnd, PublicSettings, Selection } from '@shared/types'
-import Breakdown from '../components/Breakdown.vue'
+import { clipEntries, dayEnd, dayStart, formatDuration, HOUR, mergeIntervals, MINUTE, scheduleRanges, shiftDay } from '@shared/timeline'
+import type { Entry, EntryKind, PublicSettings, Selection } from '@shared/types'
 import EntryEditor, { type AddPrefs, type Draft } from '../components/EntryEditor.vue'
-import TimeField from '../components/TimeField.vue'
 import Icon from '../components/Icon.vue'
 import NoteList from '../components/NoteList.vue'
 import NoteEditor from '../components/NoteEditor.vue'
-import Markdown from '../components/Markdown.vue'
 import PlanPanel from '../components/PlanPanel.vue'
 import EntryRecords from '../components/EntryRecords.vue'
 import { visibleNotes } from '@shared/notes'
@@ -23,7 +20,7 @@ import { useDay } from '../lib/useDay'
 const props = defineProps<{ day: string; settings: PublicSettings; focusEntry?: string }>()
 const emit = defineEmits<{ openDay: [day: string, entryId?: string] }>()
 const day = toRef(props, 'day')
-const { data, live, now, isToday, end, cursor, reload } = useDay(day)
+const { data, live, now, isToday, cursor, reload } = useDay(day)
 const sel = useSelection()
 
 const prevEntries = shallowRef<Entry[]>([])
@@ -34,10 +31,10 @@ const schedule = computed(() => scheduleRanges(day.value, props.settings.schedul
 /** Not a work day by the schedule (Saturday/Sunday by default) — any work that day is weekend work. */
 const dayOff = computed(() => !props.settings.schedule.workDays.includes(new Date(dayStart(day.value)).getDay()))
 
-/** Default view: work day ∪ PC-on time, padded to whole hours. */
+/** Default view: the work day ∪ the day's blocks, padded to whole hours. */
 const initial = computed<[number, number]>(() => {
-  const starts = data.value.spans.map((s) => s.start)
-  const ends = [...data.value.spans.map((s) => s.end), ...(isToday.value ? [now.value] : [])]
+  const starts = data.value.entries.map((e) => e.start)
+  const ends = [...data.value.entries.map((e) => e.end), ...(isToday.value ? [now.value] : [])]
   if (schedule.value.work) {
     starts.push(schedule.value.work[0])
     ends.push(schedule.value.work[1])
@@ -53,16 +50,13 @@ const bounds = computed<[number, number]>(() => [dayStart(day.value), dayEnd(day
 const stats = computed(() => {
   // only what already happened counts: planned blocks later today or on a future day (meetings) do not
   const d = { ...data.value, entries: clipEntries(data.value.entries, isToday.value ? now.value : Date.now()) }
-  const clip = (t: number) => Math.min(t, end.value || t)
-  const pcOn = d.spans.reduce((s, x) => s + Math.max(0, clip(x.end) - x.start), 0)
-  const active = d.activity.filter((a) => a.kind !== 'idle' && a.kind !== 'locked').reduce((s, a) => s + (a.end - a.start), 0)
   // parallel blocks are counted once
-  const labelled = mergeIntervals(d.entries).reduce((s, e) => s + trackedMs(e.start, e.end, d.spans), 0)
+  const labelled = mergeIntervals(d.entries).reduce((s, e) => s + (e.end - e.start), 0)
   const calls = mergeIntervals(d.calls, MINUTE).reduce((s, c) => s + (c.end - c.start), 0)
   const byKind = new Map<EntryKind, number>()
   for (const e of d.entries) byKind.set(e.kind, (byKind.get(e.kind) ?? 0) + (e.end - e.start))
   const productive = productiveMs(d.entries, kinds.value)
-  return { pcOn, active, labelled, productive, unlabelled: Math.max(0, pcOn - labelled), calls, byKind: [...byKind.entries()] }
+  return { labelled, productive, calls, byKind: [...byKind.entries()] }
 })
 
 /** The day header: the main counters; the rest on demand (or always — Настройки → Интерфейс). */
@@ -75,31 +69,13 @@ function toggleStats(): void {
 const status = computed(() => {
   if (!isToday.value) return undefined
   const l = live.value
-  if (l.inCall) return { text: `Созвон${l.callApp ? ` · ${l.callApp}` : ''}`, cls: 'call' }
-  if (l.idle) return { text: 'Простой', cls: 'idle' }
-  return { text: `Работаю${l.app ? ` · ${l.app}` : ''}`, cls: 'work' }
+  return l.inCall ? { text: `Созвон${l.callApp ? ` · ${l.callApp}` : ''}`, cls: 'call' } : undefined
 })
 
 // ---------- selection / editor ----------
 
 const selectedId = ref<string>()
-const tab = ref<'details' | 'entries' | 'notes' | 'ai'>('details')
-/** AI analysis of the day: a compact model of the day goes to OpenAI, the answer is stored on the day. */
-const aiBusy = ref(false)
-const aiError = ref('')
-async function analyze(): Promise<void> {
-  aiError.value = ''
-  aiBusy.value = true
-  tab.value = 'ai'
-  try {
-    await window.qa.aiAnalyze(day.value)
-    await reload()
-  } catch (e) {
-    aiError.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
-  } finally {
-    aiBusy.value = false
-  }
-}
+const tab = ref<'entries' | 'notes'>('entries')
 const notes = computed(() => visibleNotes(data.value.notes))
 /** The note being written / edited in the notes tab. */
 const noteDraft = ref<{ id: string; at: number; text: string; isNew?: boolean; taskId?: string }>()
@@ -241,41 +217,7 @@ const editing = computed<Draft | undefined>(() => {
   }
 })
 
-/**
- * The details tab has its own range — the whole day by default (not the add form's range):
- * the day, the selected block, or a period of its own.
- */
-const detailMode = ref<'day' | 'entry' | 'range'>('day')
-const detailFrom = ref(0)
-const detailTo = ref(0)
-watch(day, () => {
-  detailMode.value = 'day'
-  pinAt.value = undefined
-})
-const dayRange = computed(() => {
-  const spans = data.value.spans
-  const ents = data.value.entries
-  const starts = [...spans.map((s) => s.start), ...ents.map((e) => e.start)]
-  const ends = [...spans.map((s) => Math.min(s.end, end.value || s.end)), ...ents.map((e) => e.end)]
-  return starts.length ? { start: Math.min(...starts), end: Math.max(...ends) } : undefined
-})
-const selectedEntry = computed(() => data.value.entries.find((x) => x.id === selectedId.value))
-const detailRange = computed(() => {
-  if (detailMode.value === 'entry' && selectedEntry.value) return { start: selectedEntry.value.start, end: selectedEntry.value.end }
-  if (detailMode.value === 'range' && detailTo.value > detailFrom.value) return { start: detailFrom.value, end: detailTo.value }
-  return dayRange.value
-})
-function setDetailMode(m: 'day' | 'entry' | 'range'): void {
-  if (m === 'range' && detailMode.value !== 'range') {
-    const r = detailRange.value ?? { start: dayStart(day.value) + 9 * HOUR, end: dayStart(day.value) + 18 * HOUR }
-    detailFrom.value = r.start
-    detailTo.value = r.end
-  }
-  detailMode.value = m
-}
-// the block mode follows the selection; without a block it falls back to the day
-watch(selectedId, (id) => !id && detailMode.value === 'entry' && (detailMode.value = 'day'))
-
+watch(day, () => (pinAt.value = undefined))
 watch(
   () => props.focusEntry,
   (id) => id && select(id),
@@ -357,18 +299,9 @@ function onSelection(s: Selection | null, commit: boolean): void {
   else sel.preview(s)
 }
 
+
 function onEditorRange(r: { start: number; end: number; followsNow: boolean }): void {
   sel.commit({ day: day.value, start: r.start, end: r.followsNow ? undefined : r.end })
-}
-
-/** A link drawn / removed on the timeline. */
-async function onLink(a: LinkEnd, b: LinkEnd): Promise<void> {
-  await window.qa.link(day.value, a, b)
-  await reload()
-}
-async function onUnlink(id: string): Promise<void> {
-  await window.qa.unlink(day.value, id)
-  await reload()
 }
 
 async function resize(c: { id: string; start: number; end: number }): Promise<void> {
@@ -401,8 +334,8 @@ function closeEditor(): void {
   <div class="day">
     <div class="top">
       <div class="total">
-        <span class="muted">QA включено</span>
-        <b>{{ formatDuration(stats.pcOn) }}</b>
+        <span class="muted">Размечено</span>
+        <b>{{ formatDuration(stats.labelled) }}</b>
       </div>
       <Transition name="fade" mode="out-in">
         <span v-if="status" :key="status.cls" class="status" :class="status.cls">{{ status.text }}</span>
@@ -412,24 +345,18 @@ function closeEditor(): void {
       </span>
       <div class="stats">
         <span title="Без непродуктивных видов"><i style="background: #a3e635"></i>Продуктивно <b>{{ formatDuration(stats.productive) }}</b></span>
-        <span class="warn"><i style="background: #fbbf24"></i>Не размечено <b>{{ formatDuration(stats.unlabelled) }}</b></span>
+        <span><i style="background: #14b8a6"></i>Созвоны <b>{{ formatDuration(stats.calls) }}</b></span>
         <template v-if="showAllStats">
-          <span><i style="background: #818cf8"></i>Активно <b>{{ formatDuration(stats.active) }}</b></span>
-          <span><i style="background: #22c55e"></i>Размечено <b>{{ formatDuration(stats.labelled) }}</b></span>
-          <span><i style="background: #14b8a6"></i>Созвоны <b>{{ formatDuration(stats.calls) }}</b></span>
           <span v-for="[k, ms] in stats.byKind" :key="k"><i :style="{ background: kindColor(k) }"></i>{{ kindLabel(k) }} <b>{{ formatDuration(ms) }}</b></span>
         </template>
         <button class="more" :title="showAllStats ? 'Свернуть' : 'Все показатели дня'" @click="toggleStats">
-          {{ showAllStats ? 'меньше' : `ещё ${3 + stats.byKind.length}` }}
+          {{ showAllStats ? 'меньше' : `ещё ${stats.byKind.length}` }}
         </button>
       </div>
       <span class="spacer"></span>
       <span class="actions">
         <button v-if="settings.ui.main.plan" class="act act-plan" :class="{ on: planMode }" title="План дня" aria-label="План дня" @click="planMode = !planMode">
           <Icon name="calendar" :size="16" />
-        </button>
-        <button v-if="settings.ui.main.ai" class="act act-ai" :class="{ busy: aiBusy }" :disabled="aiBusy" :title="aiBusy ? 'Анализ…' : 'AI анализ дня'" aria-label="AI анализ" @click="analyze">
-          <Icon name="sparkles" :size="16" />
         </button>
         <button class="act act-note" title="Новая заметка" aria-label="Новая заметка" @click="newNote"><Icon name="note" :size="16" /><span>Заметка</span></button>
       </span>
@@ -462,10 +389,6 @@ function closeEditor(): void {
       @plan-changed="reload"
       @note="toggleNote"
       @pin="(t) => (pinAt = t)"
-      @link="onLink"
-      @unlink="onUnlink"
-      @open-day="(d, id) => emit('openDay', d, id)"
-      :link-style="settings.ui.links.style"
       :follow="settings.ui.timeline"
       :view-key="`day:${day}`"
       @follow="(on) => void window_follow(on)"
@@ -492,12 +415,10 @@ function closeEditor(): void {
             :key="editing.id ?? 'draft'"
             :day="day"
             :entry="editing"
-            :spans="data.spans"
             :recent="recent"
             :now="isToday ? now : undefined"
             :entries="data.entries"
             :notes="data.notes"
-            :links="data.links ?? []"
             textarea
             :add="!editing.id && !marker ? add : undefined"
             :has-cursor="pinAt !== undefined"
@@ -512,48 +433,19 @@ function closeEditor(): void {
 
       <section class="right">
         <nav class="tabs">
-          <button :class="{ on: tab === 'details' }" @click="tab = 'details'">Детализация</button>
           <button :class="{ on: tab === 'entries' }" @click="tab = 'entries'">Записи ({{ data.entries.length }})</button>
           <button :class="{ on: tab === 'notes' }" @click="tab = 'notes'">Заметки ({{ notes.length }})</button>
-          <button v-if="data.ai || aiBusy || aiError" :class="{ on: tab === 'ai' }" @click="tab = 'ai'">AI анализ</button>
         </nav>
 
         <Transition name="fade" mode="out-in">
           <div :key="tab">
-            <template v-if="tab === 'details'">
-              <div class="dfilter">
-                <span class="dseg">
-                  <button :class="{ on: detailMode === 'day' }" @click="setDetailMode('day')">Весь день</button>
-                  <button :class="{ on: detailMode === 'entry' }" :disabled="!selectedEntry" :title="selectedEntry ? '' : 'Выберите блок на таймлайне'" @click="setDetailMode('entry')">Блок</button>
-                  <button :class="{ on: detailMode === 'range' }" @click="setDetailMode('range')">Период</button>
-                </span>
-                <template v-if="detailMode === 'range'">
-                  <TimeField compact :model-value="detailFrom" :min="dayStart(day)" :max="detailTo - 60000" @update:model-value="(t) => (detailFrom = t)" />
-                  <span class="muted">–</span>
-                  <TimeField compact :model-value="detailTo" :min="detailFrom + 60000" :max="dayEnd(day)" @update:model-value="(t) => (detailTo = t)" />
-                </template>
-                <span v-else-if="detailMode === 'entry' && selectedEntry" class="muted small ell">{{ selectedEntry.label }}</span>
-              </div>
-              <Breakdown v-if="detailRange" :data="data" :start="detailRange.start" :end="detailRange.end" />
-              <p v-else class="muted">За этот день данных нет.</p>
-            </template>
-
-            <div v-else-if="tab === 'entries'" class="list">
+            <div v-if="tab === 'entries'" class="list">
               <EntryRecords :data="data" :selected-id="selectedId" @select="select" @changed="reload" />
-            </div>
-
-            <div v-else-if="tab === 'ai'" class="ai-tab">
-              <p v-if="aiBusy" class="muted">Готовлю модель дня и жду ответ OpenAI…</p>
-              <p v-if="aiError" class="err">{{ aiError }}</p>
-              <template v-if="data.ai">
-                <div class="muted small">{{ formatHM(data.ai.at) }} · {{ data.ai.model }}</div>
-                <Markdown :text="data.ai.text" />
-              </template>
             </div>
 
             <div v-else-if="tab === 'notes'" class="notes-tab">
               <!-- a new note is written at the top; an existing one opens in place in the list -->
-              <NoteEditor v-if="noteDraft?.isNew" :key="noteDraft.id" :day="day" :note="noteDraft" :entries="data.entries" :notes="data.notes" :links="data.links ?? []" :full="data.notes.find((x) => x.id === noteDraft!.id)" @close="onNoteClosed" @saved="reload" />
+              <NoteEditor v-if="noteDraft?.isNew" :key="noteDraft.id" :day="day" :note="noteDraft" :entries="data.entries" :notes="data.notes" :full="data.notes.find((x) => x.id === noteDraft!.id)" @close="onNoteClosed" @saved="reload" />
               <button v-else class="note-add" @click="newNote"><Icon name="plus" :size="14" />Новая заметка</button>
               <NoteList
                 v-if="notes.length"
@@ -569,7 +461,7 @@ function closeEditor(): void {
                 @to-task="(n) => void noteToTask(n.id)"
               >
                 <template #editor>
-                  <NoteEditor v-if="noteDraft" :key="noteDraft.id" :day="day" :note="noteDraft" :entries="data.entries" :notes="data.notes" :links="data.links ?? []" :full="data.notes.find((x) => x.id === noteDraft!.id)" @close="onNoteClosed" @saved="reload" />
+                  <NoteEditor v-if="noteDraft" :key="noteDraft.id" :day="day" :note="noteDraft" :entries="data.entries" :notes="data.notes" :full="data.notes.find((x) => x.id === noteDraft!.id)" @close="onNoteClosed" @saved="reload" />
                 </template>
               </NoteList>
               <p v-else-if="!noteDraft" class="muted">Заметок нет. Их можно добавить здесь, в острове или кликом по сфере в мини-острове.</p>
@@ -599,7 +491,7 @@ function closeEditor(): void {
   min-width: 32px;
   height: 32px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -610,11 +502,11 @@ function closeEditor(): void {
   color: var(--text);
 }
 .act-plan.on {
-  background: rgba(139, 92, 246, 0.22);
-  color: #ddd6fe;
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--accent-fg);
 }
 .act-ai {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .act-ai.busy {
   animation: pulse 1.2s ease-in-out infinite;
@@ -626,17 +518,17 @@ function closeEditor(): void {
 }
 .act-note {
   padding: 0 12px;
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-  color: #fde68a;
+  border-color: rgba(255, 183, 77, 0.35);
+  background: rgba(255, 183, 77, 0.08);
+  color: var(--warn-fg);
 }
 .act-note:hover {
-  background: rgba(251, 191, 36, 0.16);
-  color: #fde68a;
+  background: rgba(255, 183, 77, 0.16);
+  color: var(--warn-fg);
 }
 .stats .more {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
@@ -652,13 +544,13 @@ function closeEditor(): void {
 .dseg {
   display: inline-flex;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
 }
 .dseg button {
   padding: 3px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -682,7 +574,7 @@ function closeEditor(): void {
   align-items: center;
   gap: 2px;
   font-size: 11px;
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .ai-tab {
   display: flex;
@@ -690,7 +582,7 @@ function closeEditor(): void {
   gap: 8px;
 }
 .ai-tab .err {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .ai-tab .small {
   font-size: 11px;
@@ -706,7 +598,7 @@ function closeEditor(): void {
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 13px;
 }
 .day {
@@ -731,25 +623,26 @@ function closeEditor(): void {
 .total b {
   font-size: 22px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   line-height: 1.1;
 }
 .status {
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   font-size: 12px;
   font-weight: 600;
 }
 .status.work {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--up);
 }
 .status.idle {
-  background: rgba(148, 163, 184, 0.15);
-  color: #cbd5e1;
+  background: rgba(127, 139, 157, 0.15);
+  color: var(--text-2);
 }
 .status.weekend {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  background: rgba(255, 183, 77, 0.15);
+  color: var(--warn);
 }
 .status.call {
   background: rgba(20, 184, 166, 0.18);
@@ -770,9 +663,10 @@ function closeEditor(): void {
 .stats b {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .stats .warn b {
-  color: #fcd34d;
+  color: var(--warn);
 }
 i {
   display: inline-block;
@@ -799,7 +693,7 @@ i {
 section {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--r3);
   padding: 14px 16px;
   min-height: 200px;
   min-width: 0;
@@ -811,7 +705,7 @@ section {
   line-height: 1.5;
 }
 .empty .big {
-  color: #818cf8;
+  color: var(--accent);
   opacity: 0.8;
 }
 .top button {
@@ -852,7 +746,7 @@ section {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   cursor: pointer;
   font-size: 13px;
   transition: background 0.15s;
@@ -867,6 +761,7 @@ section {
 .time,
 .dur {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 /* records: icon | when (time + duration) | what */
@@ -883,15 +778,16 @@ section {
 .esum b {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .esum .ov {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #fbbf24;
+  color: var(--warn);
 }
 .esum .ov b {
-  color: #fcd34d;
+  color: var(--warn);
 }
 .eic {
   flex: none;
@@ -900,8 +796,8 @@ section {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .when {
   flex: none;
@@ -915,7 +811,7 @@ section {
 }
 .when .time {
   font-size: 12.5px;
-  color: #c7cbd6;
+  color: var(--text-2);
 }
 .when .dur {
   font-size: 11px;
@@ -943,13 +839,13 @@ section {
   font-size: 11.5px;
 }
 .row.par .when {
-  border-right-color: rgba(251, 191, 36, 0.55);
+  border-right-color: rgba(255, 183, 77, 0.55);
 }
 .ol {
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: #0369a1;
+  border-radius: var(--r2);
+  background: var(--info);
 }
 .jl {
   flex: none;
@@ -960,12 +856,12 @@ section {
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .jl:hover {
-  background: rgba(147, 197, 253, 0.15);
+  background: rgba(68, 138, 255, 0.15);
 }
 .orow {
   display: flex;
@@ -973,10 +869,10 @@ section {
   gap: 6px;
   margin: -2px 0 4px 38px;
   padding: 4px 8px;
-  border-radius: 6px;
-  border-left: 2px solid rgba(251, 191, 36, 0.6);
-  background: rgba(251, 191, 36, 0.06);
-  color: #e8d9a8;
+  border-radius: var(--r2);
+  border-left: 2px solid rgba(255, 183, 77, 0.6);
+  background: rgba(255, 183, 77, 0.06);
+  color: var(--warn-fg);
   font-size: 11.5px;
 }
 .orow > span:nth-child(2) {
@@ -987,27 +883,29 @@ section {
 }
 .orow .otime {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   color: var(--muted);
   white-space: nowrap;
 }
 .orow .odur {
   font-variant-numeric: tabular-nums;
-  color: #fcd34d;
+  font-family: var(--font-data);
+  color: var(--warn);
   white-space: nowrap;
 }
 .grow {
   flex: 1;
 }
 .key {
-  color: #93c5fd;
+  color: var(--info-fg);
   font-weight: 600;
   font-size: 12px;
 }
 .ai {
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: #4338ca;
+  border-radius: var(--r2);
+  background: var(--accent);
 }
 .dur {
   color: var(--muted);

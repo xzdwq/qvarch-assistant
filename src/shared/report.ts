@@ -126,8 +126,6 @@ export interface ReportFilter {
 export interface RangeDay {
   day: string
   entries: Entry[]
-  /** QA was on (ms). */
-  pcOnMs: number
 }
 
 const OWN = 'Q-'

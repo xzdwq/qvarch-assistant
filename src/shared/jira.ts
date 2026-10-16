@@ -18,6 +18,16 @@ export interface JiraIssue {
   /** Assigned to the signed-in user. */
   mine: boolean
   updated: number
+  /** The description in Markdown (cut to a few thousand characters). */
+  description?: string
+  components?: string[]
+  labels?: string[]
+  /** Fix versions. */
+  versions?: string[]
+  /** The parent (an epic / a story). */
+  parent?: { key: string; summary: string }
+  reporter?: string
+  created?: number
 }
 
 /** My own mark for a task (set in the app, not in Jira). */

@@ -1,4 +1,4 @@
-import type { DayData, DayStateMessage, DaySummary, Entry, LinkEnd, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
+import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
 import type { Dock } from './island'
 import type { ProjectProfile } from './release'
@@ -8,6 +8,7 @@ import type { JiraState, MyTaskStatus } from './jira'
 import type { OutlookState } from './outlook'
 import type { VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
+import type { TabletMsg, TabletPrefs, TabletState } from './tablet'
 
 export interface IslandLayout {
   /** Island sits in the lower half of the screen → content grows upward. */
@@ -32,7 +33,6 @@ export interface QaApi {
   /** Merge entries into the earliest one (spanning all); entries in between go parallel. */
   mergeEntries(day: string, ids: string[]): Promise<Entry | undefined>
   /** History calendar: per-day summaries for a month (YYYY-MM). */
-  monthSummary(month: string): Promise<DaySummary[]>
   /** Release builder: open a project's section (resume — continue its saved build). */
   releaseOpen(projectId: string, resume?: boolean): Promise<void>
   /** A command of the release section (the same as the extension's webview sent). */
@@ -46,12 +46,21 @@ export interface QaApi {
   releasePickFolder(): Promise<string | undefined>
   /** Opens the repository (or a file in it) in VS Code — conflicts are resolved there. */
   releaseOpenInCode(path: string): Promise<void>
+  /** The pen tablet run by Qvarch: settings, the helper's status, the monitors; live — the pen's samples wanted. */
+  tabletState(): Promise<TabletState>
+  tabletSet(patch: Partial<TabletPrefs>): Promise<TabletState>
+  tabletLive(on: boolean): Promise<void>
+  /** The active board's visible area in physical px from the window's client corner (null — no board on screen). */
+  tabletCanvas(rect: { x: number; y: number; w: number; h: number } | null): Promise<void>
+  onTablet(cb: (msg: TabletMsg) => void): () => void
   /** PDF signing: the saved drawings (signatures, a handwritten date…) as PNG data URLs. */
   sigList(): Promise<Array<{ id: string; url: string }>>
   sigSave(url: string): Promise<string>
   sigDelete(id: string): Promise<void>
   /** Saves a signed PDF where the user picks (a save dialog); undefined when cancelled. */
   pdfSave(bytes: Uint8Array, name: string): Promise<string | undefined>
+  /** Saves an exported picture where the user picks (a save dialog); undefined when cancelled. */
+  imageSave(bytes: Uint8Array, name: string, ext: 'png' | 'svg'): Promise<string | undefined>
   /** Reports / the week sheet: the blocks of every day with data in [from, to] and how long QA was on. */
   rangeDays(from: string, to: string): Promise<RangeDay[]>
   deleteEntry(day: string, id: string): Promise<void>
@@ -60,10 +69,6 @@ export interface QaApi {
   /** Create or update a quick note (autosaved while typing). */
   saveNote(day: string, note: { id: string; at: number; text: string; remind?: Remind | null }): Promise<Note>
   deleteNote(day: string, id: string): Promise<void>
-  /** Link two things of a day (blocks / notes); unlink by link id; or set all links of one thing at once. */
-  link(day: string, a: LinkEnd, b: LinkEnd): Promise<void>
-  unlink(day: string, id: string): Promise<void>
-  setLinks(day: string, end: LinkEnd, others: LinkEnd[]): Promise<void>
   // ---------- voice ----------
   voiceState(): Promise<VoiceState>
   onVoice(cb: (s: VoiceState) => void): () => void
@@ -85,13 +90,15 @@ export interface QaApi {
   onTasks(cb: (tasks: LocalTask[]) => void): () => void
   /** A note becomes an own task (the note stays, linked to it). */
   noteToTask(day: string, noteId: string): Promise<Entry>
+  /** «Моя работа»: the tasks taken for the day (the whole list, in order). */
+  setDayTasks(day: string, tasks: Array<{ key: string; summary: string }>): Promise<void>
+  /** A block (an Outlook meeting / a call too) given to a task — or taken from it (null). */
+  setEntryTask(day: string, id: string, task: { key: string; summary: string } | null): Promise<void>
   /** Create or update a planned block. */
   savePlan(day: string, block: PlanBlock): Promise<PlanBlock>
   deletePlan(day: string, id: string): Promise<void>
   /** "Сделано по плану": a real block from the plan block — only once (the same block if it already exists). */
   planDone(day: string, id: string): Promise<Entry | undefined>
-  /** "Фактическое время из": `keepId` takes the time of the linked `fromId`, which goes (an Outlook meeting is kept). */
-  adoptTime(day: string, keepId: string, fromId: string): Promise<string | undefined>
 
   /** Cut marker shared by all windows. */
   getSelection(): Promise<Selection | null>
@@ -143,17 +150,10 @@ export interface QaApi {
   jiraSetMyStatus(key: string, status: MyTaskStatus | null): Promise<void>
   /** Time tracked in the app per task key (all days), ms. */
   /** Blocks, links and notes of the stored days in [from, to] (the task calendar). */
-  calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'links' | 'notes' | 'spans' | 'plan'>>>
+  calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'notes' | 'plan' | 'dayTasks'>>>
   /** Time per task key (Jira or own) over every day. */
   jiraTracked(): Promise<Record<string, number>>
   openExternal(url: string): void
-  // ---------- AI ----------
-  aiHasKey(): Promise<boolean>
-  aiSetKey(key: string): Promise<void>
-  /** Analyse the day with OpenAI; the result is stored on the day. */
-  aiAnalyze(day: string): Promise<{ at: number; model: string; text: string }>
-  /** The exact JSON that would be sent for the day. */
-  aiPreview(day: string): Promise<string>
   /** Live typing combo (sent on every batch of key presses). */
   onCombo(cb: (c: ComboState) => void): () => void
   getCombo(): Promise<ComboState>
@@ -166,7 +166,7 @@ export interface QaApi {
   vaultRead(path: string): Promise<string>
   vaultWrite(path: string, text: string): Promise<void>
   /** A new note / folder with a free name in `dir`; its path. */
-  vaultCreate(dir: string, kind: 'note' | 'folder', name?: string, text?: string): Promise<string>
+  vaultCreate(dir: string, kind: 'note' | 'folder' | 'board', name?: string, text?: string): Promise<string>
   /** Rename / move; the new path. */
   vaultMove(from: string, toDir: string, name?: string): Promise<string>
   /** To the recycle bin. */
@@ -180,6 +180,8 @@ export interface QaApi {
   vaultReveal(path: string): void
   /** A colour mark of a note / folder (undefined — none). */
   vaultSetColor(path: string, color?: string): Promise<void>
+  /** Links a note with a board (b undefined — unlinks). */
+  vaultPair(a: string, b?: string): Promise<void>
   /** Deletes a recording from the disk if no note embeds it any more; true if deleted. */
   vaultDeleteAudio(path: string): Promise<boolean>
   vaultRestoreAudio(path: string, audio: Uint8Array): Promise<void>
@@ -204,10 +206,9 @@ export const IPC = {
   moveEntry: 'qa:moveEntry',
   saveNote: 'qa:saveNote',
   deleteNote: 'qa:deleteNote',
-  link: 'qa:link',
-  unlink: 'qa:unlink',
-  setLinks: 'qa:setLinks',
   savePlan: 'qa:savePlan',
+  setDayTasks: 'qa:setDayTasks',
+  setEntryTask: 'qa:setEntryTask',
   search: 'qa:search',
   voiceState: 'qa:voiceState',
   voice: 'qa:voice',
@@ -223,14 +224,18 @@ export const IPC = {
   noteToTask: 'qa:noteToTask',
   deletePlan: 'qa:deletePlan',
   planDone: 'qa:planDone',
-  adoptTime: 'qa:adoptTime',
   mergeEntries: 'qa:mergeEntries',
-  monthSummary: 'qa:monthSummary',
   rangeDays: 'qa:rangeDays',
   sigList: 'qa:sigList',
   sigSave: 'qa:sigSave',
   sigDelete: 'qa:sigDelete',
   pdfSave: 'qa:pdfSave',
+  imageSave: 'qa:imageSave',
+  tabletState: 'qa:tabletState',
+  tabletSet: 'qa:tabletSet',
+  tabletLive: 'qa:tabletLive',
+  tabletCanvas: 'qa:tabletCanvas',
+  tabletMsg: 'qa:tabletMsg',
   releaseOpen: 'qa:releaseOpen',
   releaseCmd: 'qa:releaseCmd',
   releaseMsg: 'qa:releaseMsg',
@@ -273,10 +278,6 @@ export const IPC = {
   jiraTracked: 'qa:jiraTracked',
   calendarRange: 'qa:calendarRange',
   openExternal: 'qa:openExternal',
-  aiHasKey: 'qa:aiHasKey',
-  aiSetKey: 'qa:aiSetKey',
-  aiAnalyze: 'qa:aiAnalyze',
-  aiPreview: 'qa:aiPreview',
   combo: 'qa:combo',
   getCombo: 'qa:getCombo',
   pulse: 'qa:pulse',
@@ -293,6 +294,7 @@ export const IPC = {
   vaultTranscribe: 'qa:vaultTranscribe',
   vaultReveal: 'qa:vaultReveal',
   vaultSetColor: 'qa:vaultSetColor',
+  vaultPair: 'qa:vaultPair',
   vaultDeleteAudio: 'qa:vaultDeleteAudio',
   vaultRestoreAudio: 'qa:vaultRestoreAudio',
   repeatEntry: 'qa:repeatEntry',

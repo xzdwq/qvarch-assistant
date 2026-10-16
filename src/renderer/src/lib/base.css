@@ -1,19 +1,64 @@
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+
+/*
+ * The terminal theme (after OpenTerminalUI): a near-black canvas, flat panels with hairline borders, one hot
+ * accent (orange), data in a monospace face, small sharp corners. Every colour of the app comes from here.
+ */
 :root {
-  --bg: #0f1117;
-  --panel: #161922;
-  --panel-2: #1c2030;
-  --field-bg: #11141c;
-  --border: #262b3a;
-  --hover: #23293a;
-  --text: #e5e7eb;
-  --muted: #8b93a7;
-  --accent: #6366f1;
-  --danger: #ef4444;
-  --ok: #22c55e;
+  /* surfaces */
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1a212b;
+  --panel-3: #222b36;
+  --field-bg: #0f141b;
+  --hover: #1f2731;
+  --pop: #1a212b;
+  /* lines */
+  --border: #212a36;
+  --border-2: #2d3745;
+  --border-3: #3a4658;
+  /* text */
+  --text-hi: #f0f3f6;
+  --text: #d7dde7;
+  --text-2: #adb7c6;
+  --muted: #7f8b9d;
+  --dim: #566173;
+  /* the accent */
+  --accent: #ff6b00;
+  --accent-hi: #ff8b3d;
+  --accent-fg: #ffa25c;
+  --accent-rgb: 255 107 0;
+  --accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --accent-line: rgb(var(--accent-rgb) / 0.5);
+  --on-accent: #0d1117;
+  /* signals */
+  --cyan: #18ffff;
+  --info: #448aff;
+  --info-fg: #82b1ff;
+  --up: #00e676;
+  --up-fg: #69f0ae;
+  --down: #ff3d3d;
+  --down-fg: #ff7070;
+  --warn: #ffb74d;
+  --warn-fg: #ffcc80;
+  --danger: var(--down);
+  --ok: var(--up);
+  /* type */
+  --font-ui: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-data: 'JetBrains Mono Variable', 'Cascadia Mono', Consolas, monospace;
+  /* corners */
+  --r1: 2px;
+  --r2: 3px;
+  --r3: 6px;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+
   color-scheme: dark;
-  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-feature-settings: 'cv11', 'ss01';
   color: var(--text);
+  accent-color: var(--accent);
 }
 
 * {
@@ -35,37 +80,50 @@ body.island-body {
   overflow: hidden;
 }
 
+::selection {
+  background: rgb(var(--accent-rgb) / 0.35);
+  color: var(--text-hi);
+}
+
 button {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
   padding: 6px 12px;
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
   background: var(--hover);
+  border-color: var(--border-3);
+}
+
+button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
+  font-weight: 600;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #575bf0;
+  background: var(--accent-hi);
+  border-color: var(--accent-hi);
 }
 
 button.danger {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 
 input,
@@ -74,8 +132,8 @@ textarea {
   font: inherit;
   color: var(--text);
   background: var(--field-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
   padding: 6px 8px;
   outline: none;
 }
@@ -86,20 +144,25 @@ textarea:focus {
   border-color: var(--accent);
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--dim);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  padding: 3px 9px;
+  border-radius: var(--r2);
+  border: 1px solid var(--border-2);
   background: transparent;
   font-size: 12px;
   cursor: pointer;
 }
 
 .chip.on {
-  color: #fff;
+  color: var(--on-accent);
   border-color: transparent;
 }
 
@@ -107,40 +170,68 @@ textarea:focus {
   color: var(--muted);
 }
 
+/* data: numbers, times, keys */
+.mono,
+.num {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a panel's caption: small, upper case, spaced */
+.cap {
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2b3142;
-  border-radius: 6px;
+  background: var(--border-2);
+  border-radius: var(--r1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-3);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ---------- shared transitions ---------- */
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.14s ease;
 }
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translateY(3px);
 }
 
 .pop-enter-active,
 .pop-leave-active {
-  transition: opacity 0.14s ease, transform 0.14s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 0.12s ease, transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
   transform-origin: top left;
 }
 .pop-enter-from,
 .pop-leave-to {
   opacity: 0;
-  transform: scale(0.96) translateY(-4px);
+  transform: translateY(-3px);
 }
 
 button,
 .chip {
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }

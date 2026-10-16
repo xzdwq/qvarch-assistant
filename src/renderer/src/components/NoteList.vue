@@ -46,9 +46,9 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
 }
 .note {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--panel-2);
-  border-left: 3px solid #fbbf24;
+  border-left: 3px solid var(--warn);
 }
 .nh {
   display: flex;
@@ -57,10 +57,11 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
   font-size: 12px;
 }
 .ni {
-  color: #fbbf24;
+  color: var(--warn);
 }
 .time {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-weight: 600;
 }
 .ent {
@@ -69,7 +70,7 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
   gap: 5px;
   padding: 1px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.06);
   font-size: 12px;
   cursor: pointer;
@@ -96,13 +97,13 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
   font-size: 11px;
 }
 .tk {
-  color: #86efac;
+  color: var(--up-fg);
 }
 .mk {
   padding: 2px 6px;
   border: 0;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   cursor: pointer;
 }
 .del {
@@ -111,15 +112,15 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
   border: 0;
   background: transparent;
   color: var(--muted);
-  border-radius: 5px;
+  border-radius: var(--r2);
 }
 .del:hover {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.12);
+  color: var(--down-fg);
+  background: rgba(255, 61, 61, 0.12);
 }
 .txt.editable {
   cursor: text;
-  border-radius: 6px;
+  border-radius: var(--r2);
 }
 .txt.editable:hover {
   background: rgba(255, 255, 255, 0.04);

@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: resources/winprobe.ps1
     to: winprobe.ps1
+  - from: resources/tablet.ps1
+    to: tablet.ps1
   - from: resources/whisper
     to: whisper
 win:

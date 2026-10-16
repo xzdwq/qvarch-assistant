@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { LocalTask } from '@shared/types'
 import Icon from './Icon.vue'
+import DatePick from './DatePick.vue'
 
 /**
  * Own tasks (besides Jira): quick add, status, due date, project (from the ones used before), estimate,
@@ -70,7 +71,7 @@ const open = ref<string>()
         <span class="tkey" title="Номер задачи">{{ t.key }}</span>
         <input class="title" :value="t.title" spellcheck="false" @change="patch(t, { title: ($event.target as HTMLInputElement).value })" />
         <input class="projin" :value="t.project ?? ''" list="lt-projects" placeholder="проект" spellcheck="false" @change="patch(t, { project: ($event.target as HTMLInputElement).value.trim() || undefined })" />
-        <input class="due" :class="{ late: t.due && t.due < today && t.status !== 'done' }" type="date" :value="t.due ?? ''" title="Срок" @change="patch(t, { due: ($event.target as HTMLInputElement).value || undefined })" />
+        <DatePick class="due" :model-value="t.due ?? ''" clearable no-wheel format="short" placeholder="срок" title="Срок" :late="!!t.due && t.due < today && t.status !== 'done'" @update:model-value="(d) => patch(t, { due: d || undefined })" />
         <input class="est" type="number" min="0" step="15" :value="t.estimateMin ?? ''" placeholder="мин" title="Оценка, минут" @change="patch(t, { estimateMin: Number(($event.target as HTMLInputElement).value) || undefined })" />
         <button v-if="t.from" class="from" :title="`Создана из заметки — открыть ${fmtDay(t.from.day)}`" @click="emit('openDay', t.from.day)"><Icon name="note" :size="12" />{{ fmtDay(t.from.day) }}</button>
         <span v-else></span>
@@ -85,7 +86,7 @@ const open = ref<string>()
 
 <style scoped>
 .tkey {
-  color: #c4b5fd;
+  color: var(--accent-fg);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -93,7 +94,7 @@ const open = ref<string>()
 .lt {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 10px 14px;
   display: flex;
   flex-direction: column;
@@ -104,7 +105,12 @@ h3 {
   align-items: center;
   gap: 8px;
   margin: 2px 0 4px;
-  font-size: 14px;
+  font-size: 11px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 h3 .muted {
   font-weight: 400;
@@ -126,7 +132,7 @@ input,
 select,
 textarea {
   padding: 4px 8px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -152,17 +158,17 @@ textarea {
   font-size: 12px;
 }
 .row.progress .st {
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .row.review .st {
-  color: #d8b4fe;
+  color: var(--accent-fg);
 }
 .row.done .st {
-  color: #86efac;
+  color: var(--up-fg);
 }
 .due.late {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.5);
+  color: var(--down-fg);
+  border-color: rgba(255, 61, 61, 0.5);
 }
 .from,
 .more,
@@ -177,10 +183,10 @@ textarea {
   font-size: 11px;
 }
 .from {
-  color: #fcd34d;
+  color: var(--warn);
 }
 .del:hover {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .desc {
   grid-column: 2 / -1;

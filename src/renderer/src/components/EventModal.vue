@@ -37,12 +37,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <EntryEditor
           :day="today"
           :entry="draft"
-          :spans="data.spans"
           :recent="[]"
           :now="now"
           :entries="data.entries"
           :notes="data.notes"
-          :links="data.links ?? []"
           :add="add"
           textarea
           @update:add="(a) => (add = a)"
@@ -62,7 +60,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-items: flex-start;
   justify-content: center;
   padding-top: 70px;
-  background: rgba(5, 7, 12, 0.5);
+  background: rgba(13, 17, 23, 0.5);
 }
 .em {
   width: 520px;
@@ -70,9 +68,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   max-height: calc(100vh - 100px);
   overflow: auto;
   padding: 12px 16px 16px;
-  border-radius: 14px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171a24;
+  background: var(--panel);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 .em-head {
@@ -80,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-items: center;
   gap: 6px;
   margin-bottom: 10px;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12.5px;
   font-weight: 600;
 }
@@ -91,9 +89,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: inline-flex;
   padding: 5px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
 }
 .x:hover {
   background: rgba(255, 255, 255, 0.08);

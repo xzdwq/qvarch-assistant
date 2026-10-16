@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import type { LinkStyle } from '@shared/linkpath'
-import { linkedTo } from '@shared/links'
 import { isProductive } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
 import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, MINUTE, unionMs } from '@shared/timeline'
-import type { DayData, Entry, Link, LinkEnd } from '@shared/types'
+import type { DayData, Entry } from '@shared/types'
 import { OWN_PREFIX } from '@shared/board'
 import { entryIcon, kindColor, kindLabel, kinds } from '../lib/palette'
 import { useJira } from '../lib/jira'
 import { useLocalTasks } from '../lib/tasks'
 import Icon from './Icon.vue'
+import DatePick from './DatePick.vue'
 import { todayKey } from '../lib/today'
-import LinkLayer from './LinkLayer.vue'
 import EntryEditor, { type Draft } from './EntryEditor.vue'
 import NoteEditor from './NoteEditor.vue'
 import { clusterize, useFan } from '../lib/pinfan'
-import { placeFloat } from '../lib/floating'
 import KindMenu from './KindMenu.vue'
 import { askSeries } from '../lib/seriesAsk'
 
@@ -24,10 +21,10 @@ import { askSeries } from '../lib/seriesAsk'
  * The work as a calendar: an endless strip of days (past and future — Outlook meetings live there), hours
  * top to bottom at a readable height. Everything the timeline does is here too: drag down on a day to add
  * an event, drag an event to another time or day, pull its edge to resize, click to edit / delete in the
- * side panel (the same editor as the main window), notes with voice / call audio, links — also across days.
+ * side panel (the same editor as the main window), notes with voice / call audio.
  * Wheel — hours; Shift + wheel, a wheel over the dates or a sideways drag — days; Ctrl + wheel — zoom.
  */
-const props = defineProps<{ linkStyle: LinkStyle; workDays?: number[] }>()
+const props = defineProps<{ workDays?: number[] }>()
 const emit = defineEmits<{ openDay: [day: string] }>()
 const jira = useJira()
 const own = useLocalTasks()
@@ -49,7 +46,7 @@ const ZY_MIN = 0.15
 const ZY_MAX = 12
 const saved = (() => {
   try {
-    return JSON.parse(localStorage.getItem('qa.tcal2') ?? '{}') as { span?: number; productive?: boolean; links?: boolean; zy?: number }
+    return JSON.parse(localStorage.getItem('qa.tcal2') ?? '{}') as { span?: number; productive?: boolean; zy?: number }
   } catch {
     return {}
   }
@@ -58,13 +55,12 @@ const span = ref(Math.min(MAX_SPAN, Math.max(MIN_SPAN, saved.span ?? 7)))
 const leadOf = (s: number) => (s <= 1.5 ? 0 : s <= 8 ? Math.min(1, s * 0.15) : s * 0.2)
 const start = ref(todayNum.value - leadOf(span.value))
 const onlyProductive = ref(saved.productive ?? false)
-const showLinks = ref(saved.links ?? true)
 /** The vertical scale (the time step): the wheel over the hours changes it. */
 const zy = ref(Math.min(ZY_MAX, Math.max(ZY_MIN, saved.zy ?? 1)))
 const q = ref('')
-watch([span, onlyProductive, showLinks, zy], () => {
+watch([span, onlyProductive, zy], () => {
   try {
-    localStorage.setItem('qa.tcal2', JSON.stringify({ span: Math.round(span.value * 100) / 100, productive: onlyProductive.value, links: showLinks.value, zy: Math.round(zy.value * 1000) / 1000 }))
+    localStorage.setItem('qa.tcal2', JSON.stringify({ span: Math.round(span.value * 100) / 100, productive: onlyProductive.value, zy: Math.round(zy.value * 1000) / 1000 }))
   } catch {
     // not remembered — fine
   }
@@ -92,7 +88,7 @@ const colW = computed(() => W.value / span.value)
 const firstDay = computed(() => Math.floor(start.value))
 const lastDay = computed(() => Math.ceil(start.value + span.value))
 const visibleNums = computed(() => Array.from({ length: lastDay.value - firstDay.value + 1 }, (_, i) => firstDay.value + i))
-/** Day / week zoom: days are cards with gaps between them (the link lines run there). */
+/** Day / week zoom: days are cards with gaps between them. */
 const roomy = computed(() => colW.value >= 90)
 const GUT = computed(() => (roomy.value ? 8 : colW.value > 12 ? 1 : 0))
 /** The events of each visible day laid out in columns (computed once per change). */
@@ -190,7 +186,7 @@ onBeforeUnmount(() => {
 })
 
 // ---------- data: loaded in chunks around the view ----------
-type DayLite = Pick<DayData, 'day' | 'entries' | 'links' | 'notes' | 'spans' | 'plan'>
+type DayLite = Pick<DayData, 'day' | 'entries' | 'notes' | 'plan'>
 const days = shallowRef(new Map<string, DayLite>())
 const loaded = new Set<number>()
 const totals = ref<Record<string, number>>({})
@@ -447,20 +443,6 @@ const placed = computed(() => {
   }
   return out
 })
-const allEntries = computed(() => placed.value.map((p) => p.e))
-/** How many links each event has (same day and across days). */
-const linkCount = computed(() => {
-  const m = new Map<string, number>()
-  const seen = new Set<string>()
-  for (const d of days.value.values())
-    for (const l of d.links ?? []) {
-      if (seen.has(l.id)) continue
-      seen.add(l.id)
-      for (const e of [l.a, l.b]) if (e.type === 'entry') m.set(e.id, (m.get(e.id) ?? 0) + 1)
-    }
-  return m
-})
-const linesShown = computed(() => showLinks.value && colW.value >= 30)
 const notePins = computed(() =>
   colW.value < 24
     ? []
@@ -479,20 +461,6 @@ const fanZone = computed(() => {
   return p && n > 1 ? { left: p.x - (n - 1) * 18 - 5, top: p.y - 12, width: (n - 1) * 18 + 25, height: 25 } : undefined
 })
 const pinPlaces = computed(() => clusterize(notePins.value.map((p) => ({ ...p, id: p.note.id })), (p) => p.y, 16, (p) => p.day))
-
-/** Links of the days in view; one across days is listed in both — drawn once. */
-const allLinks = computed<Link[]>(() => {
-  if (!showLinks.value || colW.value < 30) return []
-  const seen = new Set<string>()
-  const out: Link[] = []
-  for (const n of visibleNums.value)
-    for (const l of days.value.get(toKey(n))?.links ?? []) {
-      if (seen.has(l.id)) continue
-      seen.add(l.id)
-      out.push(l)
-    }
-  return out
-})
 
 // ---------- headers & footer ----------
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
@@ -664,55 +632,6 @@ function openJira(key: string): void {
   if (jira.value.siteUrl) window.qa.openExternal(`${jira.value.siteUrl}/browse/${key}`)
 }
 const openUrl = (url: string) => window.qa.openExternal(url)
-/** Everything it is linked with — on its day (a click opens it here) or another day (a click goes there). */
-function linksOf(day: string, type: 'entry' | 'note', id: string) {
-  return linkedTo(days.value.get(day)?.links ?? [], { type, id }).map(({ other }) => {
-    const oday = other.day ?? day
-    const d = days.value.get(oday)
-    const e = other.type === 'entry' ? d?.entries.find((x) => x.id === other.id) : undefined
-    const n = other.type === 'note' ? d?.notes.find((x) => x.id === other.id) : undefined
-    const text = e ? titleOf(e) : n ? n.text || n.transcript || (n.audio ? 'Аудиозаметка' : 'Заметка') : (other.hint ?? '')
-    const time = e ? `${formatHM(e.start)}–${formatHM(e.end)}` : n ? formatHM(n.at) : ''
-    const icon = e ? entryIcon(e) : n ? (n.audio ? (n.audio.kind === 'call' ? 'phone' : 'mic') : 'note') : 'link'
-    const color = e ? kindColor(e.kind) : '#fbbf24'
-    // a click: the calendar goes there and the panel opens it
-    const open = () => {
-      if (e) {
-        reveal(oday, e.start, e.end)
-        openEntry(e, oday)
-      } else if (n) {
-        reveal(oday, n.at, n.at + 15 * MINUTE)
-        openNote(oday, { id: n.id, at: n.at, text: n.text, taskId: n.taskId })
-      } else emit('openDay', oday)
-    }
-    return { key: other.id, day: oday, other: oday !== day, text: time ? `${formatHM(e?.start ?? n!.at)} ${text}` : text, title: text, time, icon, color, open }
-  })
-}
-const panelLinks = computed(() => {
-  const p = panel.value
-  const me = panelEntry.value ?? (p?.type === 'note' ? { id: p.note.id } : undefined)
-  if (!p || !me) return []
-  return linksOf(p.day, p.type === 'note' ? 'note' : 'entry', me.id)
-})
-/** The list under an event's link badge. */
-const linkMenu = ref<{ day: string; id: string; style: Record<string, string>; up: boolean }>()
-const linkMenuItems = computed(() => (linkMenu.value ? linksOf(linkMenu.value.day, 'entry', linkMenu.value.id) : []))
-function toggleLinkMenu(ev: MouseEvent, e: Entry, day: string): void {
-  if (linkMenu.value?.id === e.id) return void (linkMenu.value = undefined)
-  const f = placeFloat(ev.currentTarget as HTMLElement, 300, true, 16)
-  linkMenu.value = { day, id: e.id, style: { ...f.style, maxHeight: `${f.maxH}px` }, up: f.up }
-}
-function pickLink(x: { open: () => void }): void {
-  linkMenu.value = undefined
-  x.open()
-}
-function onMenuOutside(e: PointerEvent): void {
-  if (linkMenu.value && !(e.target as HTMLElement).closest('.lmenu, .lbadge')) linkMenu.value = undefined
-}
-window.addEventListener('pointerdown', onMenuOutside, true)
-onBeforeUnmount(() => window.removeEventListener('pointerdown', onMenuOutside, true))
-// the list stays by its badge: moving the calendar closes it
-watch([start, span, zy], () => (linkMenu.value = undefined))
 /** The events and notes around the open one, in time order (across the loaded days) — a click switches. */
 type Item = { key: string; t: number; day: string; text: string; time: string; color: string; icon: string; open: () => void }
 const allItems = computed<Item[]>(() => {
@@ -794,16 +713,6 @@ function onSideResize(e: PointerEvent): void {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up, { once: true })
 }
-/** The date button opens the browser's calendar. */
-const dateInput = ref<HTMLInputElement>()
-function pickDate(): void {
-  if (dateLocked.value) return
-  try {
-    dateInput.value?.showPicker()
-  } catch {
-    dateInput.value?.focus()
-  }
-}
 /** A saved note keeps its day (only a new one can be put on another). */
 const dateLocked = computed(() => (panel.value?.type === 'note' && !panel.value.note.isNew) || !!panelEntry.value?.outlook)
 /** The date field of the panel: a new event / note moves to that day; an existing event is moved there. */
@@ -824,30 +733,11 @@ async function setPanelDay(day: string): Promise<void> {
   } else panel.value = { ...p, day, entry: { ...p.entry, start: p.entry.start + shift, end: p.entry.end + shift }, key: `${p.key}d` }
 }
 function onKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && linkMenu.value) return void (linkMenu.value = undefined)
   if (e.key === 'Escape' && panel.value && !(e.target as HTMLElement).closest('input, textarea')) panel.value = undefined
 }
 window.addEventListener('keydown', onKey)
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
-// ---------- links drawn here — also between days ----------
-const layer = ref<InstanceType<typeof LinkLayer>>()
-const dayOfEnd = (e: LinkEnd) =>
-  e.type === 'entry' ? findEntry(e.id)?.day : [...days.value.values()].find((d) => d.notes.some((x) => x.id === e.id))?.day
-async function onLink(a: LinkEnd, b: LinkEnd): Promise<void> {
-  const da = dayOfEnd(a)
-  const db = dayOfEnd(b)
-  if (!da || !db) return
-  if (da === db) await window.qa.link(da, a, b)
-  else await window.qa.link(da, { ...a, day: da }, { ...b, day: db })
-  await reloadVisible()
-}
-async function onUnlink(id: string): Promise<void> {
-  const day = [...days.value.values()].find((d) => d.links?.some((l) => l.id === id))?.day
-  if (!day) return
-  await window.qa.unlink(day, id)
-  await reloadVisible()
-}
 const isToday = (d: string) => d === today.value
 </script>
 
@@ -861,7 +751,6 @@ const isToday = (d: string) => d === today.value
       <button class="add note" title="Новая заметка" @click="addNote"><Icon name="note" :size="13" />Заметка</button>
       <input v-model="q" class="search" placeholder="Поиск" spellcheck="false" />
       <button class="tog" :class="{ on: onlyProductive }" title="Только продуктивные виды" @click="onlyProductive = !onlyProductive">Продуктивные</button>
-      <button class="tog" :class="{ on: showLinks }" title="Линии связей" @click="showLinks = !showLinks"><Icon name="link" :size="12" />Связи</button>
       <span class="seg" title="Масштаб — или Ctrl + колесо мыши">
         <button v-for="p in PRESETS" :key="p.days" :class="{ on: nearPreset === p.days }" @click="zoomTo(p.days)">{{ p.label }}</button>
       </span>
@@ -885,17 +774,6 @@ const isToday = (d: string) => d === today.value
       </template>
       <button v-else class="cm-act" @click="menuNote"><Icon name="note" :size="14" />Заметка здесь</button>
     </KindMenu>
-    <Teleport to="body">
-      <div v-if="linkMenu" class="lmenu" :class="{ up: linkMenu.up }" :style="linkMenu.style" @pointerdown.stop>
-        <div class="lmh"><Icon name="link" :size="11" />Связано</div>
-        <button v-for="x in linkMenuItems" :key="x.key" class="lmi" :style="{ '--c': x.color }" :title="x.title" @click="pickLink(x)">
-          <Icon :name="x.icon" :size="11" :stroke="2.4" />
-          <span class="lmt">{{ x.other ? `${fmt(x.day, { day: 'numeric', month: 'short' })} · ` : '' }}{{ x.time }}</span>
-          <span class="lmx">{{ x.title }}</span>
-        </button>
-        <div v-if="!linkMenuItems.length" class="lme">Связанные записи не загружены</div>
-      </div>
-    </Teleport>
     <div class="wrap">
       <div class="strip" :class="{ roomy }">
         <!-- dates: fixed on top -->
@@ -1001,14 +879,6 @@ const isToday = (d: string) => d === today.value
               <template v-if="p.w >= 40">
                 <div v-if="p.lines" class="et"><Icon :name="entryIcon(p.e)" :size="10" :stroke="2.4" class="eic" /><span v-if="p.e.task" class="key">{{ p.e.task.key }}</span> {{ titleOf(p.e) }}<Icon v-if="p.e.series" name="repeat" :size="9" :stroke="2.4" class="eflag" /><Icon v-if="p.e.remind && !p.e.remind.fired" name="bell" :size="9" :stroke="2.4" class="eflag" /></div>
                 <div v-if="p.time" class="em">{{ formatHM(p.e.start) }}–{{ formatHM(p.e.end) }}</div>
-                <button
-                  v-if="!linesShown && linkCount.get(p.e.id) && p.h >= 12"
-                  class="lbadge"
-                  :class="{ on: linkMenu?.id === p.e.id }"
-                  :title="`Связей: ${linkCount.get(p.e.id)} — клик: список`"
-                  @pointerdown.stop
-                  @click.stop="toggleLinkMenu($event, p.e, p.day)"
-                ><Icon name="link" :size="9" :stroke="2.6" />{{ linkCount.get(p.e.id) }}</button>
               </template>
             </div>
 
@@ -1029,14 +899,13 @@ const isToday = (d: string) => d === today.value
               @pointerenter="pinPlaces.get(p.note.id) && fan.enter(pinPlaces.get(p.note.id)!.key)"
               @pointerleave="fan.leave()"
               :title="`${formatHM(p.note.at)} ${p.note.text || p.note.transcript || (p.note.audio ? 'Аудиозаметка' : '')}`"
-              @pointerdown.stop="layer?.startDrag($event, { type: 'note', id: p.note.id })"
+              @pointerdown.stop
               @click.stop="openNote(p.day, { id: p.note.id, at: p.note.at, text: p.note.text, taskId: p.note.taskId })"
             >
               <Icon :name="p.note.audio ? (p.note.audio.kind === 'call' ? 'phone' : 'mic') : 'note'" :size="9" :stroke="2.4" />
             </button>
 
             <div v-if="todayNum >= firstDay && todayNum <= lastDay" class="now" :style="{ left: `${xOf(todayNum)}px`, width: `${widthOf(todayNum)}px`, top: `${nowY}px` }"></div>
-            <LinkLayer ref="layer" :sides="colW >= 40" :links="allLinks" :entries="allEntries" :link-style="linkStyle" :tick="[start, span, W, H, placed]" @link="onLink" @unlink="onUnlink" />
           </div>
         </div>
 
@@ -1102,12 +971,10 @@ const isToday = (d: string) => d === today.value
               :key="panel.key"
               :day="panel.day"
               :entry="panelEntry ?? panel.entry"
-              :spans="panelDay?.spans ?? []"
               :recent="[]"
               :now="isToday(panel.day) ? nowMs : undefined"
               :entries="panelDay?.entries ?? []"
               :notes="panelDay?.notes ?? []"
-              :links="panelDay?.links ?? []"
               textarea
               @saved="onSaved"
               @deleted="onPanelClosed"
@@ -1116,15 +983,12 @@ const isToday = (d: string) => d === today.value
             >
               <template #date>
               <div class="pdate-row">
-                <button class="pdate" :disabled="dateLocked" :title="dateLocked ? 'Дата заметки' : 'Выбрать другой день'" @click="pickDate">
-                  <Icon name="calendar" :size="13" />{{ cap(fmt(panel.day, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) }}
-                  <Icon v-if="!dateLocked" name="chevronDown" :size="12" />
-                </button>
-                <input ref="dateInput" class="picker" type="date" tabindex="-1" :value="panel.day" @change="setPanelDay(($event.target as HTMLInputElement).value)" />
+                <span v-if="dateLocked" class="pdate" title="Дата заметки"><Icon name="calendar" :size="13" />{{ cap(fmt(panel.day, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })) }}</span>
+                <DatePick v-else :model-value="panel.day" @update:model-value="(d) => d && setPanelDay(d)" />
               </div>
             </template>
             </EntryEditor>
-            <div v-if="panelEntry && (panelEntry.task || panelEntry.outlook || panelLinks.length)" class="sinfo">
+            <div v-if="panelEntry && (panelEntry.task || panelEntry.outlook)" class="sinfo">
               <div v-if="panelEntry.task" class="srow">
                 <Icon :name="panelEntry.task.key.startsWith('Q-') ? 'checkSquare' : 'jira'" :size="12" />
                 <b>{{ panelEntry.task.key }}</b>
@@ -1135,11 +999,6 @@ const isToday = (d: string) => d === today.value
                 <Icon name="outlook" :size="12" />Встреча из Outlook
                 <button v-if="panelEntry.outlook.joinUrl && panelEntry.end > nowMs" class="lnk" @click="openUrl(panelEntry.outlook.joinUrl)">Teams</button>
               </div>
-              <div v-for="x in panelLinks" :key="x.key" class="srow">
-                <Icon name="link" :size="12" />
-                <span v-if="x.other" class="muted">{{ fmt(x.day, { day: 'numeric', month: 'short' }) }}</span>
-                <button class="lnk ell" :title="x.text" @click="x.open()">{{ x.text }}</button>
-              </div>
             </div>
           </template>
           <template v-else>
@@ -1149,28 +1008,17 @@ const isToday = (d: string) => d === today.value
               :note="panel.note"
               :entries="panelDay?.entries ?? []"
               :notes="panelDay?.notes ?? []"
-              :links="panelDay?.links ?? []"
               :full="panelDay?.notes.find((x) => x.id === panelNoteId)"
               @close="onPanelClosed"
               @saved="reloadVisible"
             >
               <template #date>
               <div class="pdate-row">
-                <button class="pdate" :disabled="dateLocked" :title="dateLocked ? 'Дата заметки' : 'Выбрать другой день'" @click="pickDate">
-                  <Icon name="calendar" :size="13" />{{ cap(fmt(panel.day, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })) }}
-                  <Icon v-if="!dateLocked" name="chevronDown" :size="12" />
-                </button>
-                <input ref="dateInput" class="picker" type="date" tabindex="-1" :value="panel.day" @change="setPanelDay(($event.target as HTMLInputElement).value)" />
+                <span v-if="dateLocked" class="pdate" title="Дата заметки"><Icon name="calendar" :size="13" />{{ cap(fmt(panel.day, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })) }}</span>
+                <DatePick v-else :model-value="panel.day" @update:model-value="(d) => d && setPanelDay(d)" />
               </div>
             </template>
             </NoteEditor>
-            <div v-if="panelLinks.length" class="sinfo">
-              <div v-for="x in panelLinks" :key="x.key" class="srow">
-                <Icon name="link" :size="12" />
-                <span v-if="x.other" class="muted">{{ fmt(x.day, { day: 'numeric', month: 'short' }) }}</span>
-                <button class="lnk ell" :title="x.text" @click="x.open()">{{ x.text }}</button>
-              </div>
-            </div>
           </template>
           </div>
         </div>
@@ -1221,7 +1069,7 @@ const isToday = (d: string) => d === today.value
   font-size: 12px;
 }
 .add.note {
-  color: #fde68a;
+  color: var(--warn-fg);
 }
 .search {
   width: 140px;
@@ -1233,27 +1081,27 @@ const isToday = (d: string) => d === today.value
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
 .tog.on {
-  border-color: rgba(124, 108, 246, 0.6);
-  background: rgba(124, 108, 246, 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
   color: var(--text);
 }
 .seg {
   display: inline-flex;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
 }
 .seg button {
   padding: 3px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -1276,7 +1124,7 @@ const isToday = (d: string) => d === today.value
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   overflow: hidden;
   background: var(--panel);
 }
@@ -1289,7 +1137,7 @@ const isToday = (d: string) => d === today.value
   gap: 6px;
   padding: 8px 8px 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--panel);
   overflow-y: auto;
 }
@@ -1306,7 +1154,7 @@ const isToday = (d: string) => d === today.value
   display: inline-flex;
   padding: 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -1319,7 +1167,7 @@ const isToday = (d: string) => d === today.value
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
   font-size: 12px;
 }
@@ -1339,7 +1187,7 @@ const isToday = (d: string) => d === today.value
   padding: 0;
   border: 0;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 12px;
 }
 
@@ -1394,13 +1242,13 @@ const isToday = (d: string) => d === today.value
   overflow: hidden;
 }
 .fcell.off {
-  background: rgba(248, 113, 113, 0.05);
+  background: rgba(255, 61, 61, 0.05);
 }
 .fcell b {
   font-size: 11.5px;
 }
 .fp {
-  color: #bbf7d0;
+  color: var(--up-fg);
 }
 .frow {
   display: flex;
@@ -1498,20 +1346,20 @@ const isToday = (d: string) => d === today.value
   border-left-color: rgba(255, 255, 255, 0.07);
 }
 .col.off {
-  background: rgba(248, 113, 113, 0.05);
+  background: rgba(255, 61, 61, 0.05);
 }
 .col.month {
-  border-left: 1px solid rgba(148, 163, 184, 0.45);
+  border-left: 1px solid rgba(127, 139, 157, 0.45);
 }
 .col.today {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(68, 138, 255, 0.1);
 }
 .hcanvas .col.hov {
-  background: rgba(139, 124, 255, 0.16);
-  box-shadow: inset 0 -2px 0 #8b7cff;
+  background: rgb(var(--accent-rgb) / 0.16);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .dlabel.hov {
-  color: #fff;
+  color: var(--text-hi);
   font-weight: 700;
 }
 .hline {
@@ -1563,13 +1411,13 @@ const isToday = (d: string) => d === today.value
   cursor: pointer;
 }
 .dlabel:hover {
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .dlabel.off {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .dlabel.today {
-  color: #93c5fd;
+  color: var(--info-fg);
   font-weight: 700;
 }
 /* events: the text close to the edges, smaller; the title wraps as far as the event is tall */
@@ -1578,8 +1426,8 @@ const isToday = (d: string) => d === today.value
   box-sizing: border-box;
   padding: 1px 3px 1px 4px;
   border-left: 3px solid var(--c);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--c) 30%, #11131a);
+  border-radius: var(--r2);
+  background: color-mix(in srgb, var(--c) 30%, var(--bg));
   color: var(--text);
   font-size: 10.5px;
   line-height: 12.5px;
@@ -1616,7 +1464,7 @@ const isToday = (d: string) => d === today.value
 }
 .ev.sel {
   box-shadow:
-    0 0 0 2px #fff,
+    0 0 0 2px var(--text-hi),
     0 4px 14px rgba(0, 0, 0, 0.5);
   z-index: 4;
 }
@@ -1629,7 +1477,7 @@ const isToday = (d: string) => d === today.value
 .ev.future {
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 4px, transparent 4px 9px),
-    color-mix(in srgb, var(--c) 20%, #11131a);
+    color-mix(in srgb, var(--c) 20%, var(--bg));
   border-left-style: dashed;
 }
 .ev.thin.future {
@@ -1669,7 +1517,7 @@ const isToday = (d: string) => d === today.value
   gap: 8px;
   padding: 6px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 13px;
@@ -1679,7 +1527,7 @@ const isToday = (d: string) => d === today.value
   background: rgba(255, 255, 255, 0.07);
 }
 .cm-act.del {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .eic {
   display: inline-block;
@@ -1692,7 +1540,7 @@ const isToday = (d: string) => d === today.value
   white-space: nowrap;
 }
 .key {
-  color: #bfdbfe;
+  color: var(--info-fg);
   font-weight: 600;
 }
 /* the new event: a dashed outline marching round until it is saved */
@@ -1701,19 +1549,19 @@ const isToday = (d: string) => d === today.value
   z-index: 6;
   box-sizing: border-box;
   padding: 3px 6px;
-  border-radius: 5px;
-  color: #e0e7ff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
   font-size: 10.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
   background:
-    linear-gradient(90deg, #a5b4fc 50%, transparent 0) repeat-x top left / 10px 1.5px,
-    linear-gradient(90deg, #a5b4fc 50%, transparent 0) repeat-x bottom left / 10px 1.5px,
-    linear-gradient(0deg, #a5b4fc 50%, transparent 0) repeat-y top left / 1.5px 10px,
-    linear-gradient(0deg, #a5b4fc 50%, transparent 0) repeat-y top right / 1.5px 10px,
-    rgba(124, 108, 246, 0.2);
+    linear-gradient(90deg, var(--accent-fg) 50%, transparent 0) repeat-x top left / 10px 1.5px,
+    linear-gradient(90deg, var(--accent-fg) 50%, transparent 0) repeat-x bottom left / 10px 1.5px,
+    linear-gradient(0deg, var(--accent-fg) 50%, transparent 0) repeat-y top left / 1.5px 10px,
+    linear-gradient(0deg, var(--accent-fg) 50%, transparent 0) repeat-y top right / 1.5px 10px,
+    rgb(var(--accent-rgb) / 0.2);
   animation: ants 0.7s linear infinite;
 }
 @keyframes ants {
@@ -1737,7 +1585,7 @@ const isToday = (d: string) => d === today.value
   display: block;
   height: 4px;
   border-radius: 2px;
-  background: #3b82f6;
+  background: var(--info);
   max-width: calc(100% - 34px);
 }
 .fbar em {
@@ -1750,10 +1598,10 @@ const isToday = (d: string) => d === today.value
   z-index: 6;
   box-sizing: border-box;
   padding: 2px 5px;
-  border: 1px dashed #a5b4fc;
-  border-radius: 4px;
-  background: rgba(124, 108, 246, 0.25);
-  color: #fff;
+  border: 1px dashed var(--accent-fg);
+  border-radius: var(--r2);
+  background: rgb(var(--accent-rgb) / 0.25);
+  color: var(--text-hi);
   font-size: 10.5px;
   pointer-events: none;
 }
@@ -1767,16 +1615,16 @@ const isToday = (d: string) => d === today.value
   height: 15px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: #fbbf24;
-  color: #1c1917;
+  border-radius: var(--r2);
+  background: var(--warn);
+  color: var(--bg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 .now {
   position: absolute;
   height: 2px;
-  background: #ef4444;
+  background: var(--down);
   z-index: 4;
   pointer-events: none;
 }
@@ -1787,7 +1635,7 @@ const isToday = (d: string) => d === today.value
   position: absolute;
   z-index: 2;
   height: 0;
-  border-top: 1px solid rgba(165, 180, 252, 0.75);
+  border-top: 1px solid rgb(var(--accent-rgb) / 0.75);
   pointer-events: none;
 }
 .hcur-t {
@@ -1795,9 +1643,9 @@ const isToday = (d: string) => d === today.value
   left: 2px;
   top: -14px;
   padding: 0 4px;
-  border-radius: 4px;
-  background: rgba(17, 19, 26, 0.85);
-  color: #c7d2fe;
+  border-radius: var(--r2);
+  background: rgba(13, 17, 23, 0.85);
+  color: var(--accent-fg);
   font-size: 10px;
 }
 .hplus {
@@ -1811,13 +1659,13 @@ const isToday = (d: string) => d === today.value
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #7c6cf6;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 .hplus:hover {
-  background: #8b7cff;
+  background: var(--accent);
   transform: scale(1.1);
 }
 .lbadge {
@@ -1829,17 +1677,17 @@ const isToday = (d: string) => d === today.value
   gap: 2px;
   padding: 0 4px;
   border: 0;
-  border-radius: 6px;
-  background: rgba(17, 19, 26, 0.6);
-  color: #ddd6fe;
+  border-radius: var(--r2);
+  background: rgba(13, 17, 23, 0.6);
+  color: var(--accent-fg);
   font-size: 9.5px;
   line-height: 13px;
   cursor: pointer;
 }
 .lbadge.on,
 .lbadge:hover {
-  background: rgba(124, 108, 246, 0.85);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.85);
+  color: var(--text-hi);
 }
 .npin {
   transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
@@ -1847,8 +1695,8 @@ const isToday = (d: string) => d === today.value
 /* under a fanned-out group of notes: the pointer may cross it without the group folding back */
 .fanzone {
   position: absolute;
-  border-radius: 8px;
-  background: rgba(251, 191, 36, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.08);
   cursor: default;
 }
 /* the list: days on the left, the open card highlighted in the middle */
@@ -1887,7 +1735,7 @@ const isToday = (d: string) => d === today.value
 }
 .gday.off,
 .gday.off b {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .gitems {
   display: flex;
@@ -1895,7 +1743,7 @@ const isToday = (d: string) => d === today.value
   gap: 3px;
 }
 .ngroup.current .gday b {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .sgap {
   position: relative;
@@ -1916,17 +1764,17 @@ const isToday = (d: string) => d === today.value
 }
 .sgap:hover::after,
 .sgap.on::after {
-  background: rgba(124, 108, 246, 0.85);
+  background: rgb(var(--accent-rgb) / 0.85);
 }
 .ccard {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(124, 108, 246, 0.6);
-  background: rgba(124, 108, 246, 0.07);
-  box-shadow: 0 0 0 3px rgba(124, 108, 246, 0.12);
+  border-radius: 4px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.07);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.12);
 }
 .pdate-row {
   margin-top: -4px;
@@ -1937,13 +1785,13 @@ const isToday = (d: string) => d === today.value
   gap: 6px;
   padding: 3px 8px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--text);
   font-size: 12px;
 }
 .pdate:hover:not(:disabled) {
-  border-color: rgba(124, 108, 246, 0.6);
+  border-color: rgb(var(--accent-rgb) / 0.6);
 }
 .pdate:disabled {
   border-color: transparent;
@@ -1966,7 +1814,7 @@ const isToday = (d: string) => d === today.value
   padding: 4px 8px;
   border: 0;
   border-left: 3px solid var(--c);
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
   font-size: 11.5px;
@@ -1981,6 +1829,7 @@ const isToday = (d: string) => d === today.value
 .nt {
   flex: none;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .nx {
   flex: 1;
@@ -2003,12 +1852,12 @@ const isToday = (d: string) => d === today.value
   gap: 1px;
   padding: 5px;
   overflow-y: auto;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1b1e29;
+  background: var(--panel-2);
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--text);
 }
 .lmenu .lmh {
   display: flex;
@@ -2016,7 +1865,7 @@ const isToday = (d: string) => d === today.value
   gap: 5px;
   padding: 3px 7px 5px;
   font-size: 10.5px;
-  color: #9ca3af;
+  color: var(--muted);
 }
 .lmenu .lmi {
   display: flex;
@@ -2025,7 +1874,7 @@ const isToday = (d: string) => d === today.value
   padding: 6px 8px;
   border: 0;
   border-left: 3px solid var(--c);
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -2033,13 +1882,14 @@ const isToday = (d: string) => d === today.value
   cursor: pointer;
 }
 .lmenu .lmi:hover {
-  background: rgba(139, 124, 255, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .lmenu .lmt {
   flex: none;
-  color: #9ca3af;
+  color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .lmenu .lmx {
   flex: 1;
@@ -2050,6 +1900,6 @@ const isToday = (d: string) => d === today.value
 }
 .lmenu .lme {
   padding: 6px 8px;
-  color: #9ca3af;
+  color: var(--muted);
 }
 </style>

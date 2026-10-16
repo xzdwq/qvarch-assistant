@@ -1,13 +1,10 @@
-import { addLink, remapLinks } from './links'
-import { dayEnd, dayStart, firstFreeLane, overlap } from './timeline'
+import { dayEnd, dayStart, firstFreeLane } from './timeline'
 import type { DayData, Entry, KindDef, Ms } from './types'
 
 /**
- * Outlook (Microsoft Graph) meetings on the timeline, and calls linked to the meetings they belong to.
+ * Outlook meetings on the timeline (calls are blocks of their own — not tied to meetings).
  *  - a meeting becomes a "Встреча" block; it follows Outlook until the user edits it (then it is theirs),
  *    a block the user deleted is not brought back, a meeting cancelled / declined in Outlook goes away;
- *  - a call (detected separately, by the mic or the Teams status) is linked to the meeting it happened in:
- *    it may start earlier or later and run longer than planned — any real overlap counts.
  */
 export interface OutlookEvent {
   id: string
@@ -111,59 +108,3 @@ export function applyMeetings(d: DayData, events: OutlookEvent[], kinds: KindDef
   d.entries = d.entries.filter((x) => !x.outlook || seen.has(x.outlook.id) || edited(x))
   return changed || d.entries.length !== before
 }
-
-/** The pair key of a link (order-free) — for remembering links the user removed. */
-export const pairKey = (a: string, b: string): string => [a, b].sort().join('|')
-
-/**
- * Links each call block to the meeting(s) it happened in. A call may start before the meeting, join late
- * or run over: it belongs to every meeting it overlaps by ≥ 5 min (or half of a short meeting); failing
- * that, to the one it overlaps most. A link the user removed is not made again. Returns true on change.
- */
-export function linkCallsToMeetings(d: DayData, kinds: KindDef[], newId: () => string, at: Ms): boolean {
-  const callKind = kinds.find((k) => k.id === 'call')?.id ?? 'call'
-  const calls = d.entries.filter((e) => e.kind === callKind && !e.outlook)
-  const meetings = d.entries.filter((e) => e.outlook)
-  if (!calls.length || !meetings.length) return false
-  const dismissed = new Set(d.linkDismissed ?? [])
-  let links = d.links ?? []
-  const before = links.length
-  for (const c of calls) {
-    const scored = meetings.map((m) => ({ m, ov: overlap(c.start, c.end, m.start, m.end) })).filter((x) => x.ov > 0)
-    if (!scored.length) continue
-    const strong = scored.filter((x) => x.ov >= Math.min(5 * 60_000, (x.m.end - x.m.start) / 2))
-    const picked = strong.length ? strong : [scored.reduce((a, b) => (b.ov > a.ov ? b : a))]
-    for (const { m } of picked) {
-      if (dismissed.has(pairKey(c.id, m.id))) continue
-      const next = addLink(links, { type: 'entry', id: c.id }, { type: 'entry', id: m.id }, newId(), at)
-      if (next !== links) {
-        next[next.length - 1].auto = true
-        links = next
-      }
-    }
-  }
-  if (links.length === before) return false
-  d.links = links
-  return true
-}
-
-/**
- * "Фактическое время из …": `keepId` gets the time of `fromId` (a linked block — e.g. the call that really
- * happened in a planned meeting) and `fromId` goes; its links, call and notes move over. An Outlook meeting
- * is always the one kept (deleted, it would come back with the next sync): picking the meeting from its call
- * keeps the meeting with its own time. Two meetings are not merged. Returns the kept block's id.
- */
-export function adoptTime(d: DayData, keepId: string, fromId: string): string | undefined {
-  const a = d.entries.find((e) => e.id === keepId)
-  const b = d.entries.find((e) => e.id === fromId)
-  if (!a || !b || a === b || (a.outlook && b.outlook)) return undefined
-  const [keep, gone] = b.outlook ? [b, a] : [a, b]
-  keep.start = b.start
-  keep.end = b.end
-  d.entries = d.entries.filter((e) => e !== gone)
-  if (d.links) d.links = remapLinks(d.links, [gone.id], keep.id)
-  for (const c of d.calls) if (c.entryId === gone.id) c.entryId = keep.id
-  for (const n of d.notes) if (n.entryId === gone.id) n.entryId = keep.id
-  return keep.id
-}
-

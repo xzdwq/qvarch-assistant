@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { breakdown, gapAround, infoAt } from '@shared/breakdown'
 import { ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW, DOCK_SIDE, DOCK_STRIP, type Dock } from '@shared/island'
-import { clipEntries, dayEnd, dayStart, flattenForDisplay, formatDuration, formatHM, HOUR, joinTitle, laneIsFree, MINUTE, parseQuickDuration, quickRange, scheduleRanges, shiftDay, sortByStart, splitTitle, unionMs, uncutMs as uncutTime } from '@shared/timeline'
-import type { Entry, EntryKind, LinkEnd, Ms, Note, PlanBlock, PublicSettings, Selection } from '@shared/types'
+import { clipEntries, dayEnd, dayStart, flattenForDisplay, formatDuration, formatHM, HOUR, joinTitle, laneIsFree, MINUTE, parseQuickDuration, quickRange, scheduleRanges, shiftDay, splitTitle, unionMs } from '@shared/timeline'
+import type { Entry, EntryKind, Ms, Note, PlanBlock, PublicSettings, Selection } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import { todayKey } from '../lib/today'
 import ThinkingOrb from '../components/ThinkingOrb.vue'
@@ -20,16 +19,14 @@ import type { OrbState } from 'thinking-orbs/engine'
 import { noteEntry, visibleNotes } from '@shared/notes'
 import KindMenu from '../components/KindMenu.vue'
 import LabelInput from '../components/LabelInput.vue'
+import QuickField, { type QuickParsed } from '../components/QuickField.vue'
 import OffsetField from '../components/OffsetField.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import { askSeries } from '../lib/seriesAsk'
 import TimeField from '../components/TimeField.vue'
-import { APP_COLORS, entryIcon, kindColor, kindIcon, kindLabel, kinds, setKinds } from '../lib/palette'
-import LinkLayer from '../components/LinkLayer.vue'
-import LinkPicker from '../components/LinkPicker.vue'
-import { linkedTo } from '@shared/links'
+import { entryIcon, kindColor, kindIcon, kindLabel, kinds, setKinds } from '../lib/palette'
 import { clusterize, useFan } from '../lib/pinfan'
-import { productiveSplit, unlabelledMs, workDayMs } from '@shared/kinds'
+import { productiveSplit, workDayMs } from '@shared/kinds'
 import { recentLabels } from '../lib/recent'
 import { useSelection } from '../lib/selection'
 import { useDay } from '../lib/useDay'
@@ -349,7 +346,7 @@ function onHeadClick(e: MouseEvent): void {
 
 const schedule = computed(() => (settings.value ? scheduleRanges(today.value, settings.value.schedule) : {}))
 const initial = computed<[Ms, Ms]>(() => {
-  const starts = data.value.spans.map((s) => s.start)
+  const starts = data.value.entries.map((e) => e.start)
   const ends = [now.value + 10 * MINUTE]
   if (schedule.value.work) {
     starts.push(schedule.value.work[0])
@@ -381,20 +378,6 @@ const allSegs = computed(() => flattenForDisplay(entries.value, resized.value?.i
 const segs = computed(() => visible(allSegs.value, from.value, to.value))
 /** Lane each main-line entry is displayed on. */
 const laneOf = (id: string) => allSegs.value.find((x) => x.entry.id === id)?.lane ?? 0
-const activity = computed(() => visible(data.value.activity, from.value, to.value))
-const off = computed(() => {
-  const out: Array<{ start: Ms; end: Ms }> = []
-  let prev = from.value
-  for (const s of sortByStart(data.value.spans)) {
-    if (s.start > prev) out.push({ start: prev, end: s.start })
-    prev = Math.max(prev, s.end)
-  }
-  if (prev < now.value - 2 * MINUTE) out.push({ start: prev, end: now.value })
-  return visible(out, from.value, to.value)
-})
-/** Not labelled since the last block — only while QA was on (the bar itself starts right at the block). */
-const uncutMs = computed(() => uncutTime(cursor.value, now.value))
-
 /** Axis labels: ticks + official start/lunch/end markers + "Сейчас"; the more important label wins on overlap. */
 const axis = computed(() => {
   const nowPct = Math.min(pctOf(now.value, from.value, to.value), 88)
@@ -409,7 +392,7 @@ const axis = computed(() => {
   // the wide "Сейчас HH:MM" label needs more room than the others
   const list = tk.list.filter((t) => {
     const p = pctOf(t, from.value, to.value)
-    return Math.abs(p - nowPct) > 9 && taken.slice(1).every((q) => Math.abs(p - q) > 5.5)
+    return Math.abs(p - nowPct) > 9 && taken.slice(1).every((q) => Math.abs(p - q) > 7.5)
   })
   // unlabeled divisions between labels: quarters for hour+ steps, halves otherwise
   const sub = tk.step >= HOUR ? tk.step / 4 : tk.step / 2
@@ -418,13 +401,7 @@ const axis = computed(() => {
   return { list, marks: inView, minor, all: tk.list }
 })
 
-const status = computed(() =>
-  live.value.inCall
-    ? { text: 'Созвон', cls: 'call' }
-    : live.value.idle
-      ? { text: 'Простой', cls: 'idle' }
-      : { text: 'Работаю', cls: 'work' },
-)
+const status = computed(() => (live.value.inCall ? { text: 'Созвон', cls: 'call' } : { text: 'Работаю', cls: 'work' }))
 
 // ---------- the collapsed pill: all blocks as equal chips, independent of the expanded timeline's zoom ----------
 
@@ -441,17 +418,6 @@ const productive = computed(() => split.value.total)
 const productivePct = computed(() => (workMs.value ? Math.min(100, Math.round((split.value.within / workMs.value) * 100)) : 0))
 /** A chip shows its share of the work day; on a day off (no base) — its duration. */
 const chipText = (ms: number) => (workMs.value ? `${Math.max(1, Math.round((ms / workMs.value) * 100))}%` : ms < MINUTE ? '<1м' : formatDuration(ms))
-/** QA-on time not covered by any block, and time in apps (active input), — both absolute. */
-const unlabelled = computed(() =>
-  unlabelledMs(
-    clipEntries(data.value.entries, now.value),
-    data.value.spans.map((x) => ({ start: x.start, end: Math.min(x.end, now.value) })),
-  ),
-)
-const appsMs = computed(() =>
-  data.value.activity.filter((x) => x.kind !== 'idle' && x.kind !== 'locked').reduce((a, x) => a + (x.end - x.start), 0),
-)
-
 const CHIP_GAP = 4
 const CHIP_AREA = PILL_MAX - 117 // handle, gaps, orb, paddings
 /** Estimated chip width for its text (chips size to their content: "12%" or "1ч 05м"). */
@@ -474,16 +440,6 @@ const pillItems = computed(() => {
     // what is still planned for today (dashed), if switched on in the settings
     ...(ui.value.pill.plan ? (data.value.plan ?? []).filter((p) => p.end > now.value).map((p) => ({ type: 'plan' as const, t: Math.max(p.start, now.value), p })) : []),
   ]
-  // the uncut tail is cut by the notes made during it: uncut · note · uncut … (only the last part is "live")
-  if (uncutMs.value >= MINUTE) {
-    const cuts = visibleNotes(data.value.notes).map((n) => n.at).filter((t) => t > cursor.value && t < now.value)
-    const bounds = [cursor.value, ...cuts, now.value]
-    for (let i = 0; i < bounds.length - 1; i++) {
-      const ms = uncutTime(bounds[i], bounds[i + 1])
-      const live = i === bounds.length - 2
-      if (ms >= MINUTE || live) items.push({ type: 'uncut', t: bounds[i], ms, live })
-    }
-  }
   items.sort((a, b) => a.t - b.t || (a.type === 'uncut' ? -1 : 1))
   const width = (it: PillItem) =>
     it.type === 'entry'
@@ -534,8 +490,7 @@ const pillInfo = computed(() => {
     const call = [...data.value.calls].reverse().find((c) => now.value - c.end < 2 * MINUTE)
     return `${l.callApp ?? 'Созвон'}${call ? ` · ${formatDuration(now.value - call.start)}` : ''}`
   }
-  if (l.idle) return '' // "Простой" next to it says it all
-  return l.app ?? '—'
+  return ''
 })
 
 /** "10 сб, окт 2026" */
@@ -548,22 +503,9 @@ const dateText = computed(() => {
 
 // ---------- the frog mascot ----------
 
-/** How long the current app has been in the foreground without a switch (idle breaks the run). */
-const sameAppMs = computed(() => {
-  const app = live.value.app
-  if (!app || live.value.idle) return 0
-  let start = now.value
-  for (let i = data.value.activity.length - 1; i >= 0; i--) {
-    const a = data.value.activity[i]
-    if (a.app !== app || a.kind === 'idle' || a.kind === 'locked' || start - a.end > 2 * MINUTE) break
-    start = a.start
-  }
-  return now.value - start
-})
 /**
  * The orb mirrors what is going on (each state is a distinct animation of thinking-orbs, tinted):
- * idle → slow breathing ring, call → listening wave, long in one app → solving / shaping (time to
- * switch), lots unlabelled → searching globe, day filled → connecting web, after hours → slow weave,
+ * call → listening wave, day filled → connecting web, after hours → slow weave,
  * typing a note → composing sash, otherwise → working orbits.
  */
 const mascot = computed<{ state: OrbState; tint: string; speed: number; title: string }>(() => {
@@ -573,12 +515,7 @@ const mascot = computed<{ state: OrbState; tint: string; speed: number; title: s
   if (recording.value) return { state: 'listening', tint: '#f87171', speed: 1.4, title: 'Идёт запись — клик: открыть' }
   if (voiceBusy.value) return { state: 'solving', tint: '#c4b5fd', speed: 1.8, title: 'Расшифровываю голос…' }
   if (noteOpen.value) return { state: 'composing', tint: '#fde68a', speed: 1, title: 'Пишу заметку — клик по сфере, чтобы закончить' }
-  if (l.idle) return { state: 'breathing', tint: '#94a3b8', speed: 0.5, title: tip('Нет ввода — сфера дремлет') }
   if (l.inCall) return { state: 'listening', tint: '#5eead4', speed: 1, title: tip('Созвон — сфера слушает') }
-  if (sameAppMs.value >= 30 * MINUTE)
-    return { state: 'shaping', tint: '#fcd34d', speed: 0.8, title: tip(`${formatDuration(sameAppMs.value)} в ${l.app} без перерыва — пора размяться`) }
-  if (uncutMs.value >= 2 * HOUR) return { state: 'searching', tint: '#fdba74', speed: 1, title: tip(`${formatDuration(uncutMs.value)} не размечено — что это было?`) }
-  if (sameAppMs.value >= 20 * MINUTE) return { state: 'solving', tint: '#a5b4fc', speed: 1, title: tip(`Фокус: ${formatDuration(sameAppMs.value)} в ${l.app}`) }
   if (workMs.value && split.value.within >= workMs.value) return { state: 'connecting', tint: '#f9a8d4', speed: 1, title: tip('Рабочий день заполнен!') }
   if (dayOff.value || (w && now.value >= w[1])) return { state: 'weaving', tint: '#7dd3fc', speed: 0.6, title: tip('Нерабочее время') }
   return { state: 'working', tint: '#86efac', speed: 1, title: tip('Работаем') }
@@ -624,7 +561,6 @@ async function toggleNote(): Promise<void> {
   clearTimeout(expandTimer)
   expandTimer = undefined
   note.value = { id: crypto.randomUUID(), at: Date.now(), text: '' }
-  nLinks.value = []
   noteHasAudio.value = false
   qMsg.value = ''
   // during a call the panel opens on the call tab; a running recording — on its tab
@@ -645,27 +581,8 @@ async function saveNote(): Promise<void> {
   const n = note.value
   if (n?.text.trim()) {
     await window.qa.saveNote(today.value, { ...n })
-    await applyNoteLinks(n.id)
   }
 }
-/** What the quick note is linked with (blocks / notes of today); stored once the note itself exists. */
-const nLinks = ref<LinkEnd[]>([])
-let nLinksSaved = '[]'
-async function applyNoteLinks(id: string): Promise<void> {
-  const key = JSON.stringify(nLinks.value)
-  if (key === nLinksSaved) return
-  nLinksSaved = key
-  await window.qa.setLinks(today.value, { type: 'note', id }, nLinks.value.map((l) => ({ type: l.type, id: l.id })))
-}
-watch(nLinks, async () => {
-  const n = note.value
-  if (!n) return
-  if (n.text.trim()) {
-    clearTimeout(noteTimer)
-    await window.qa.saveNote(today.value, { ...n })
-    await applyNoteLinks(n.id)
-  } else if (noteHasAudio.value) await applyNoteLinks(n.id)
-})
 async function closeNote(): Promise<void> {
   clearTimeout(noteTimer)
   const n = note.value
@@ -674,13 +591,10 @@ async function closeNote(): Promise<void> {
   qMsg.value = ''
   window.qa.islandBlur()
   if (!n) return
-  if (noteHasAudio.value) return void (await applyNoteLinks(n.id))
-  if (n.text.trim()) {
-    await window.qa.saveNote(today.value, { ...n })
-    await applyNoteLinks(n.id)
-  } else await window.qa.deleteNote(today.value, n.id) // typed and erased — nothing to keep
-  nLinks.value = []
-  nLinksSaved = '[]'
+  // a recording is saved already
+  if (noteHasAudio.value) return
+  if (n.text.trim()) await window.qa.saveNote(today.value, { ...n })
+  else await window.qa.deleteNote(today.value, n.id) // typed and erased — nothing to keep
 }
 
 // ---------- the orb panel: Текст / Аудио / Событие / Звонок ----------
@@ -755,24 +669,38 @@ const fmtRec = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec
 /** Событие: a block in a couple of clicks — kind, period, an optional title. */
 const qKind = ref('task')
 const qLabel = ref('')
-/** What the quick event is linked with; while the list is open the mini island grows to show it. */
-const qLinks = ref<LinkEnd[]>([])
-const qLinksOpen = ref(false)
-// the list unmounts with the note / tab — the extra room goes with it
-watch([() => noteOpen.value, () => qtab.value], () => (qLinksOpen.value = false))
 /** ± minutes from now: − the last N, + the next N. */
 const qOff = ref(-30)
+/** What the «Событие» line says — the quick way, as everywhere. */
+const qParsed = ref<QuickParsed>()
+watch(() => qParsed.value?.q.kind, (k) => k && (qKind.value = k))
+const qTask = ref<TaskRef>()
 async function addQuickEvent(dict?: Dictation): Promise<void> {
   const t = Math.floor(Date.now() / MINUTE) * MINUTE
-  const start = qOff.value < 0 ? t + qOff.value * MINUTE : t
-  const end = qOff.value < 0 ? t : t + qOff.value * MINUTE
+  const q = qParsed.value?.q
+  // the offset field (− the last N minutes / + the next N), unless the line names the time or the duration
+  const off = q?.dur ? -q.dur / MINUTE : qOff.value
+  let start = off < 0 ? t + off * MINUTE : t
+  let end = off < 0 ? t : t + off * MINUTE
+  let day = today.value
+  if (q?.start !== undefined) {
+    start = q.start
+    end = q.end ?? q.start + (q.dur ?? 30 * MINUTE)
+    day = q.day
+  } else if (q && q.day !== today.value) {
+    const shift = dayStart(q.day) - dayStart(today.value)
+    start += shift
+    end += shift
+    day = q.day
+  }
   // first line — the title, the rest — the description
   const parts = splitTitle(qLabel.value)
-  const label = parts.label || (dict ? VOICE_PENDING : kindLabel(qKind.value))
-  const saved = await window.qa.saveEntry(today.value, { start, end, kind: qKind.value, label, description: parts.description, source: 'manual' }, { overlap: true })
-  if (qLinks.value.length) await window.qa.setLinks(today.value, { type: 'entry', id: saved.id }, qLinks.value.map((l) => ({ type: l.type, id: l.id })))
-  qLinks.value = []
-  if (dict) void saveRecording(today.value, { ...dict, at: start }, { entryId: saved.id })
+  const task = qTask.value ?? qParsed.value?.task
+  const title = q ? q.label : parts.label
+  const label = title || (dict ? VOICE_PENDING : task ? `${task.key} ${task.summary}`.trim() : kindLabel(qKind.value))
+  const saved = await window.qa.saveEntry(day, { start, end, kind: qKind.value, label, description: parts.description, task: task ? plainTask(task) : undefined, source: 'manual' }, { overlap: true })
+  if (dict) void saveRecording(day, { ...dict, at: start }, { entryId: saved.id })
+  qTask.value = undefined
   qMsg.value = `Добавлено · ${kindLabel(qKind.value)} ${formatHM(start)}–${formatHM(end)}${dict ? ' · расшифровка…' : ''}`
   qLabel.value = ''
 }
@@ -782,13 +710,10 @@ async function quickToTask(): Promise<void> {
   if (!n?.text.trim()) return
   clearTimeout(noteTimer)
   await window.qa.saveNote(today.value, { ...n })
-  await applyNoteLinks(n.id)
   await window.qa.noteToTask(today.value, n.id)
   // the note is now a "Задача" block on the timeline — the panel closes (nothing left to save or delete)
   noteOpen.value = false
   note.value = undefined
-  nLinks.value = []
-  nLinksSaved = '[]'
   window.qa.islandBlur()
 }
 function onNoteKey(e: KeyboardEvent): void {
@@ -833,7 +758,7 @@ const marker = computed<Selection | null>(() => (sel.selection.value?.day === to
 // the pill content lives in a <Transition> slot (re-rendered by the transition, not by this component):
 // re-measure after anything that changes its width
 watch(
-  () => [pillItems.value, pillInfo.value, status.value.text, marker.value, Math.floor(uncutMs.value / MINUTE), expanded.value, typing.value, ui.value],
+  () => [pillItems.value, pillInfo.value, status.value.text, marker.value, expanded.value, typing.value, ui.value],
   measurePill,
   { flush: 'post' },
 )
@@ -913,7 +838,6 @@ const snapPoints = computed(() => {
   const moving = tdrag.value?.type === 'move' ? tdrag.value.id : undefined
   const pts: Ms[] = [now.value]
   for (const e of data.value.entries) if (e.id !== moving) pts.push(e.start, e.end)
-  for (const s of data.value.spans) pts.push(s.start, s.end)
   for (const c of data.value.calls) pts.push(c.start, c.end)
   const w = schedule.value
   if (w.work) pts.push(...w.work)
@@ -1136,17 +1060,27 @@ function copyFrom(e: Entry): void {
 
 const hoverInfo = computed(() => {
   if (hoverT.value === undefined) return undefined
-  const i = infoAt(entries.value === data.value.entries ? data.value : { ...data.value, entries: entries.value }, hoverT.value)
-  const parts = [formatHM(i.t)]
-  if (i.entry) parts.push(`${kindLabel(i.entry.kind)}: ${i.entry.label}`)
-  for (const p of i.parallel) parts.push(`∥ ${kindLabel(p.kind)}: ${p.label}`)
-  if (i.activity) parts.push(i.activity.title ? `${i.activity.app} — ${i.activity.title}` : i.activity.app)
-  if (i.call) parts.push(`созвон ${i.call.app}`)
-  if (!i.pcOn) parts.push('QA выключено')
+  const t = hoverT.value
+  const at = entries.value.filter((e) => e.start <= t && e.end > t)
+  const call = data.value.calls.find((c) => c.start <= t && c.end >= t)
+  const parts = [formatHM(t), ...at.map((e) => `${kindLabel(e.kind)}: ${e.label}`)]
+  if (call) parts.push(`созвон ${call.app}`)
   return parts.join(' · ')
 })
 
 // ---------- right-click menu ----------
+
+/** The free stretch around a moment: from the block before it to the block after it (or the day's start / now). */
+function gapAround(t: Ms): { start: Ms; end: Ms } {
+  let start = dayStart(today.value)
+  let end = now.value
+  for (const e of data.value.entries) {
+    if (e.start < t && e.end > t) return { start: t, end: t }
+    if (e.end <= t && e.end > start) start = e.end
+    if (e.start >= t && e.start < end) end = e.start
+  }
+  return { start, end: Math.max(start, end) }
+}
 
 const menu = ref<{ x: number; y: number; entryId?: string; multi?: boolean; title: string; planId?: string }>()
 /** Plan blocks already turned into real ones. */
@@ -1183,7 +1117,7 @@ function onTrackContext(e: MouseEvent): void {
   }
   const m = marker.value
   if (!m || t < m.start || t > (m.end ?? now.value)) {
-    const g = gapAround(data.value, t, now.value)
+    const g = gapAround(t)
     if (g.end - g.start < MINUTE) return
     sel.commit(makeSel(g.start, g.end))
   }
@@ -1257,7 +1191,6 @@ const shownLanes = computed(() => totalLanes.value + 1)
 const rowStyle = computed(() => ({ height: `${Math.min(shownLanes.value, 3) * (LANE_H + LANE_GAP) - LANE_GAP}px` }))
 const rowInnerStyle = computed(() => ({ height: `${shownLanes.value * (LANE_H + LANE_GAP) - LANE_GAP}px` }))
 const rowMain = ref<HTMLElement>()
-const layer = ref<InstanceType<typeof LinkLayer>>()
 function laneStyle(s: { lane: number; lanes: number }): Record<string, string> {
   return { top: `${s.lane * (LANE_H + LANE_GAP)}px`, height: `${LANE_H}px`, bottom: 'auto' }
 }
@@ -1265,30 +1198,25 @@ function laneStyle(s: { lane: number; lanes: number }): Record<string, string> {
 // ---------- day list ----------
 
 const LIST_KEY = 'qa.island.list'
-function readList(): { open: boolean; tab: 'entries' | 'apps' } {
+function readList(): { open: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(LIST_KEY) ?? '{}')
-    return { open: v.open !== false, tab: v.tab === 'apps' ? 'apps' : 'entries' }
+    return { open: v.open !== false }
   } catch {
-    return { open: true, tab: 'entries' }
+    return { open: true }
   }
 }
-const listTab = ref<'entries' | 'apps'>(readList().tab)
 /** The journal in the island folds; the state survives restarts. */
 const listOpen = ref(readList().open)
-watch([listOpen, listTab], () => {
+watch(listOpen, () => {
   try {
-    localStorage.setItem(LIST_KEY, JSON.stringify({ open: listOpen.value, tab: listTab.value }))
+    localStorage.setItem(LIST_KEY, JSON.stringify({ open: listOpen.value }))
   } catch {
     // storage unavailable — just don't remember
   }
 })
 function toggleList(): void {
   listOpen.value = !listOpen.value
-}
-function openList(tab: 'entries' | 'apps'): void {
-  listTab.value = tab
-  listOpen.value = true
 }
 const dayEntries = computed(() => [...data.value.entries].sort((a, b) => a.start - b.start || (a.lane ?? 0) - (b.lane ?? 0)))
 const labelledMs = computed(() => unionMs(data.value.entries))
@@ -1308,16 +1236,6 @@ const listRows = computed(() => {
   while (oi < orphans.length) rows.push({ type: 'note', n: orphans[oi++], owned: false })
   return rows
 })
-/** Apps for the marker if there is one, otherwise for the whole day so far. */
-const appsRange = computed<[Ms, Ms]>(() => {
-  if (marker.value) return [marker.value.start, activeEnd.value]
-  const first = data.value.spans.length ? Math.min(...data.value.spans.map((s) => s.start)) : dayStart(today.value)
-  return [first, now.value]
-})
-const appsBreakdown = computed(() => breakdown(data.value, appsRange.value[0], appsRange.value[1]))
-const appsTotal = computed(() => Math.max(1, appsRange.value[1] - appsRange.value[0]))
-const appsRangeLabel = computed(() => (marker.value ? `за ${formatHM(appsRange.value[0])}–${formatHM(appsRange.value[1])}` : 'за день'))
-
 function openEntryMenu(e: MouseEvent, entry: Entry): void {
   if (entry.outlook) return flash('Встреча из Outlook — её меняет только Outlook', false)
   menu.value = { x: e.clientX, y: e.clientY, entryId: entry.id, title: 'Изменить вид' }
@@ -1369,26 +1287,46 @@ function useCall(c: { start: Ms; end: Ms; app: string }): void {
 }
 
 type Dictation = { blob: Blob; durationSec: number; at: number; kind: 'voice' | 'call' }
+/** What the cut row's line says (time, duration, day, kind, task) — the quick way, as everywhere. */
+const cutParsed = ref<QuickParsed>()
+watch(() => cutParsed.value?.q.kind, (k) => k && (kind.value = k))
 async function cut(dict?: Dictation): Promise<void> {
   if (saving.value) return
   const parts = splitTitle(label.value)
-  let text = parts.label
+  const q = cutParsed.value?.q
+  let text = q ? q.label : parts.label
+  let day = today.value
   let range = active.value ? { start: active.value.start, end: activeEnd.value } : undefined
-  // "30м созвон" (in the title line) without a marker → the last 30 minutes
-  const quick = !marker.value ? parseQuickDuration(text) : undefined
-  if (quick) {
-    range = { start: now.value - quick.minutes * MINUTE, end: now.value }
-    text = quick.rest.trim()
+  if (q?.start !== undefined) {
+    // the line names the time: «14:00-15:30», «в 9:30 1ч»
+    range = { start: q.start, end: q.end ?? q.start + (q.dur ?? 30 * MINUTE) }
+    day = q.day
+  } else if (q?.dur && !marker.value) {
+    // «30м созвон» without a marker → the last 30 minutes
+    range = { start: now.value - q.dur, end: now.value }
+  } else if (!q) {
+    const quick = !marker.value ? parseQuickDuration(text) : undefined
+    if (quick) {
+      range = { start: now.value - quick.minutes * MINUTE, end: now.value }
+      text = quick.rest.trim()
+    }
+  }
+  if (range && q && q.start === undefined && q.day !== today.value) {
+    const shift = dayStart(q.day) - dayStart(today.value)
+    range = { start: range.start + shift, end: range.end + shift }
+    day = q.day
   }
   if (!range) return flash('Нечего отрезать — выделите участок шкалы', false)
   if (range.end - range.start < MINUTE) return flash('Слишком короткий отрезок', false)
   saving.value = true
   try {
     // one block per linked task (parallel, on free lanes); without a task — one block
-    const targets: Array<TaskRef | undefined> = cutTasks.value.length ? cutTasks.value.map(plainTask) : [undefined]
+    const named = cutParsed.value?.task
+    const list = named && !cutTasks.value.some((x) => x.key === named.key) ? [...cutTasks.value, named] : cutTasks.value
+    const targets: Array<TaskRef | undefined> = list.length ? list.map(plainTask) : [undefined]
     let firstId: string | undefined
     for (const t of targets) {
-      const saved = await window.qa.saveEntry(today.value, {
+      const saved = await window.qa.saveEntry(day, {
         ...range,
         kind: kind.value,
         // a meeting or a break needs no description — the kind itself (or the linked task) is the label;
@@ -1400,16 +1338,13 @@ async function cut(dict?: Dictation): Promise<void> {
       }, { overlap: true }) // other blocks under the new one stay — they go parallel
       firstId ??= saved.id
     }
-    // links picked for the new block
-    if (firstId && cutLinks.value.length) await window.qa.setLinks(today.value, { type: 'entry', id: firstId }, cutLinks.value.map((l) => ({ ...l })))
-    // the dictation is kept as an audio note linked to the block; its transcript fills the block's text
-    if (dict && firstId) void saveRecording(today.value, { ...dict, at: range.start }, { entryId: firstId })
-    flash(`Сохранено · ${targets.length > 1 ? tasksWord(targets.length) : kindLabel(kind.value)} · ${formatDuration(range.end - range.start)}`, true)
+    // the dictation is kept as an audio note of the block; its transcript fills the block's text
+    if (dict && firstId) void saveRecording(day, { ...dict, at: range.start }, { entryId: firstId })
+    flash(`Сохранено · ${targets.length > 1 ? tasksWord(targets.length) : kindLabel(kind.value)} · ${formatDuration(range.end - range.start)}${day !== today.value ? ` · ${day.slice(8)}.${day.slice(5, 7)}` : ''}`, true)
     if (marker.value) sel.clear()
     label.value = ''
     kind.value = 'task'
     cutTasks.value = []
-    cutLinks.value = []
   } catch (e) {
     flash(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e), false)
   } finally {
@@ -1419,32 +1354,14 @@ async function cut(dict?: Dictation): Promise<void> {
 
 // ---------- inline edit ----------
 
-const edit = ref<{ id: string; start: Ms; end: Ms; label: string; kind: EntryKind; tasks: TaskRef[]; links: LinkEnd[] }>()
+const edit = ref<{ id: string; start: Ms; end: Ms; label: string; kind: EntryKind; tasks: TaskRef[] }>()
 /** The Jira task(s) the next cut goes to — several → one parallel block per task. */
 const cutTasks = ref<TaskRef[]>([])
-/** What the next cut is linked with. */
-const cutLinks = ref<LinkEnd[]>([])
-const linksOf = (e: LinkEnd) => linkedTo(data.value.links ?? [], e).map((x) => x.other)
-/** Linked things of the selected block, for the details line. */
-const selectedLinks = computed(() =>
-  selectedEntry.value
-    ? linksOf({ type: 'entry', id: selectedEntry.value.id }).flatMap((o) => {
-        if (o.type === 'entry') {
-          const e = data.value.entries.find((x) => x.id === o.id)
-          return e ? [{ key: `e${e.id}`, icon: entryIcon(e), color: kindColor(e.kind), text: `${formatHM(e.start)} ${e.label || kindLabel(e.kind)}`, open: () => (entryId.value = e.id) }] : []
-        }
-        const n = data.value.notes.find((x) => x.id === o.id)
-        return n ? [{ key: `n${n.id}`, icon: noteIcon(n), color: '#fbbf24', text: `${formatHM(n.at)} ${n.text || n.transcript || 'Заметка'}`, open: () => openPanelNote(n) }] : []
-      })
-    : [],
-)
-const onLink = (a: LinkEnd, b: LinkEnd) => void window.qa.link(today.value, a, b)
-const onUnlink = (id: string) => void window.qa.unlink(today.value, id)
 watch(entryId, () => (edit.value = undefined))
 
 function startEdit(e: Entry): void {
   if (e.outlook) return flash('Встреча из Outlook — её меняет только Outlook', false)
-  edit.value = { id: e.id, start: e.start, end: e.end, label: joinTitle(e.label, e.description), kind: e.kind, tasks: e.task ? [e.task] : [], links: linksOf({ type: 'entry', id: e.id }) }
+  edit.value = { id: e.id, start: e.start, end: e.end, label: joinTitle(e.label, e.description), kind: e.kind, tasks: e.task ? [e.task] : [] }
 }
 
 async function saveEdit(): Promise<void> {
@@ -1467,7 +1384,6 @@ async function saveEdit(): Promise<void> {
     if (!scope) return
     if (scope === 'all') {
       await window.qa.seriesSave(today.value, next)
-      await window.qa.setLinks(today.value, { type: 'entry', id: ed.id }, ed.links.map((l) => ({ ...l })))
       edit.value = undefined
       return flash('Изменения применены ко всей серии', true)
     }
@@ -1486,7 +1402,6 @@ async function saveEdit(): Promise<void> {
     },
     { overlap: true },
   )
-  await window.qa.setLinks(today.value, { type: 'entry', id: ed.id }, ed.links.map((l) => ({ ...l })))
   edit.value = undefined
   flash('Изменения сохранены', true)
 }
@@ -1575,7 +1490,7 @@ function onKey(e: KeyboardEvent): void {
                 <b
                   v-if="!dock || noteOpen || ui.dock.time"
                   class="ptime"
-                  :title="`Продуктивно ${formatDuration(productive)}${workMs ? ` (${productivePct}% рабочего дня)` : ''}: в рабочие часы ${formatDuration(split.within)}, сверх ${formatDuration(split.over)}. Не размечено за день ${formatDuration(unlabelled)}, в приложениях ${formatDuration(appsMs)}.`"
+                  :title="`Продуктивно ${formatDuration(productive)}${workMs ? ` (${productivePct}% рабочего дня)` : ''}: в рабочие часы ${formatDuration(split.within)}, сверх ${formatDuration(split.over)}.`"
                   >{{ formatDuration(productive) }}</b
                 >
               </span>
@@ -1610,7 +1525,6 @@ function onKey(e: KeyboardEvent): void {
               <span v-for="[key, t] in taskTotals" :key="key" class="st jt" :title="`${key} — ${t.summary}: всего за день`">
                 <Icon name="jira" :size="11" />{{ key }} {{ formatDuration(t.ms) }}
               </span>
-              <span v-if="unlabelled >= 60000" class="st" title="Не размечено"><i class="stripe"></i>{{ formatDuration(unlabelled) }}</span>
               <span v-if="workMs" class="st pct" :title="pctTitle">{{ productivePct }}% полезного</span>
             </div>
           </div>
@@ -1643,17 +1557,6 @@ function onKey(e: KeyboardEvent): void {
                 ></textarea>
                 <div class="qside">
                   <button class="qbtn" :disabled="!note.text.trim()" title="Сделать задачей" @click="quickToTask"><Icon name="checkSquare" :size="13" />В задачу</button>
-                  <LinkPicker
-                    v-model="nLinks"
-                    class="qnl"
-                    :entries="data.entries"
-                    :notes="data.notes"
-                    :self="{ type: 'note', id: note.id }"
-                    :near="note.at"
-                    compact
-                    labeled
-                    @open="(on) => (qLinksOpen = on)"
-                  />
                 </div>
               </div>
             </template>
@@ -1680,9 +1583,18 @@ function onKey(e: KeyboardEvent): void {
                 <OffsetField v-model="qOff" :max="240" class="qoff" />
               </div>
               <div class="qrow">
-                <textarea v-model="qLabel" class="qlabel" :placeholder="`${kindLabel(qKind)} — Enter: добавить, Shift+Enter: новая строка`" spellcheck="false" @keydown.stop @keydown.enter.exact.prevent="addQuickEvent()"></textarea>
+                <QuickField
+                  v-model="qLabel"
+                  class="qlabel"
+                  :day="today"
+                  :placeholder="`${kindLabel(qKind)} · 30м, 14:00-15:00, DOS-123, #вид · @ задача`"
+                  @keydown.stop
+                  @submit="addQuickEvent()"
+                  @kind="(k) => (qKind = k)"
+                  @task="(t) => (qTask = t)"
+                  @parsed="(p) => (qParsed = p)"
+                />
                 <DictateButton compact @recorded="(r) => addQuickEvent(r)" />
-                <LinkPicker v-model="qLinks" class="qlp" :entries="data.entries" :notes="data.notes" compact @open="(on) => (qLinksOpen = on)" />
                 <button class="qbtn ok" @click="addQuickEvent()"><Icon name="check" :size="14" />Добавить</button>
               </div>
             </div>
@@ -1747,7 +1659,6 @@ function onKey(e: KeyboardEvent): void {
               <div v-if="schedule.work[1] < to" class="sch-off" :style="box(schedule.work[1], to, 0)"></div>
             </template>
             <div v-if="schedule.lunch" class="sch-lunch" :style="box(schedule.lunch[0], schedule.lunch[1], 0)"></div>
-            <div v-for="(o, i) in off" :key="`o${i}`" class="off" :style="box(o.start, o.end, 0)"></div>
             <div class="row-scroll" :style="rowStyle">
             <div ref="rowMain" class="row-main" :style="rowInnerStyle">
               <div v-for="l in shownLanes" :key="`lane${l}`" class="lane-bg" :style="{ top: `${(l - 1) * (LANE_H + LANE_GAP)}px`, height: `${LANE_H}px` }"></div>
@@ -1761,7 +1672,6 @@ function onKey(e: KeyboardEvent): void {
                   :title="`План: ${p.task ? p.task.key + ' ' : ''}${p.label} · ${formatHM(p.start)}–${formatHM(p.end)}`"
                 ></div>
               </template>
-              <div v-if="uncutMs >= 60000" class="uncut" :style="{ ...box(cursor, now), height: LANE_H + 'px', bottom: 'auto' }"></div>
               <div
                 v-for="(s, i) in segs"
                 :key="`s${i}`"
@@ -1777,15 +1687,6 @@ function onKey(e: KeyboardEvent): void {
                 <span v-if="s.end === s.entry.end && px(s.start, s.end, TRACK_W) >= 26" class="rh r" @pointerdown="onResizeDown($event, s.entry, 'end')"></span>
               </div>
             </div>
-            </div>
-            <div v-if="ui.island.apps" class="row-apps">
-              <div
-                v-for="(a, i) in activity"
-                :key="i"
-                class="aseg"
-                :class="a.kind"
-                :style="{ ...box(a.start, a.end, 0), background: a.kind === 'idle' || a.kind === 'locked' ? undefined : APP_COLORS[a.kind] }"
-              ></div>
             </div>
             <Transition name="fade">
               <div v-if="marker && !selectedEntry" class="band" :style="box(marker.start, activeEnd, 0)">
@@ -1814,7 +1715,7 @@ function onKey(e: KeyboardEvent): void {
               @pointerenter="pinPlaces.get(n.id) && fan.enter(pinPlaces.get(n.id)!.key)"
               @pointerleave="fan.leave()"
               :title="`${noteTitle(n)}\nПотяните к блоку — связать`"
-              @pointerdown.stop="layer?.startDrag($event, { type: 'note', id: n.id })"
+              @pointerdown.stop
               @click.stop="openPanelNote(n)"
             >
               <Icon :name="noteIcon(n)" :size="10" :stroke="2.2" />
@@ -1824,7 +1725,6 @@ function onKey(e: KeyboardEvent): void {
             <div v-if="pinT !== undefined && pinT >= from && pinT <= to" class="pinline" :style="{ left: `${pct(pinT)}%` }">
               <span title="Тяните влево или вправо" @pointerdown="onPinDown">{{ formatHM(pinT) }}</span>
             </div>
-            <LinkLayer ref="layer" :links="data.links ?? []" :entries="data.entries" :link-style="ui.links.style" :tick="[from, to, segs, rowStyle, ui.island.apps]" @link="onLink" @unlink="onUnlink" />
           </div>
 
           <div class="legend">
@@ -1837,7 +1737,6 @@ function onKey(e: KeyboardEvent): void {
                 <span v-for="[key, t] in taskTotals" :key="key" class="jt" :title="`${key} — ${t.summary}: всего за день`">
                   <Icon name="jira" :size="13" />{{ key }} <b>{{ formatDuration(t.ms) }}</b>
                 </span>
-                <span v-if="unlabelled >= 60000" title="Не размечено"><i class="striped"></i><b>{{ formatDuration(unlabelled) }}</b></span>
                 <span v-if="workMs" class="pct" :title="pctTitle"><b>{{ productivePct }}%</b> полезного</span>
               </span>
             </Transition>
@@ -1862,12 +1761,6 @@ function onKey(e: KeyboardEvent): void {
               </div>
               <div v-if="selectedEntry.task && !edit" class="d-task"><Icon name="checkSquare" :size="12" /><b>{{ selectedEntry.task.key }}</b> {{ selectedEntry.task.summary }}</div>
               <div v-if="selectedEntry.description && !edit" class="d-desc">{{ selectedEntry.description }}</div>
-              <div v-if="selectedLinks.length && !edit" class="d-links">
-                <Icon name="link" :size="12" class="muted" />
-                <button v-for="l in selectedLinks" :key="l.key" class="lchip" :title="l.text" @click="l.open()">
-                  <span class="lic" :style="{ background: l.color }"><Icon :name="l.icon" :size="9" :stroke="2.4" /></span>{{ l.text }}
-                </button>
-              </div>
               <template v-if="!edit">
                 <div class="mini-actions">
                   <button @click="startEdit(selectedEntry)"><Icon name="pencil" :size="13" />Изменить</button>
@@ -1887,7 +1780,6 @@ function onKey(e: KeyboardEvent): void {
                 <div class="editrow">
                   <LabelInput v-model="edit.label" drop-up no-recent multiline :recent="recent" placeholder="Shift+Enter — новая строка" @submit="saveEdit" />
                   <TaskPicker v-model="edit.tasks" single compact />
-                  <LinkPicker v-model="edit.links" :entries="data.entries" :notes="data.notes" :self="{ type: 'entry', id: edit.id }" compact />
                 </div>
                 <div class="actions">
                   <button class="apply" title="Сохранить (Enter)" @click="saveEdit"><Icon name="check" :size="18" :stroke="2.6" /></button>
@@ -1936,20 +1828,19 @@ function onKey(e: KeyboardEvent): void {
               </div>
 
               <div class="inputrow">
-                <LabelInput
+                <QuickField
                   ref="labelInput"
                   v-model="label"
-                  drop-up
-                  no-recent
-                  :recent="recent"
-                  multiline
-                  placeholder="Shift+Enter — новая строка"
+                  class="cutq"
+                  :day="today"
+                  placeholder="30м, 14:00-15:00, DOS-123, #вид · @ задача"
                   @submit="cut()"
-                  @pick="(s) => s.kind && (kind = s.kind)"
+                  @kind="(k) => (kind = k)"
+                  @task="(t) => !cutTasks.some((x) => x.key === t.key) && (cutTasks = [...cutTasks, t])"
+                  @parsed="(p) => (cutParsed = p)"
                 />
                 <DictateButton @recorded="(r) => cut(r)" />
                 <TaskPicker v-model="cutTasks" compact />
-                <LinkPicker v-model="cutLinks" :entries="data.entries" :notes="data.notes" compact />
                 <OffsetField compact class="dialoff" :max="240" :model-value="dial" @update:model-value="onDial" @commit="onDial(dial)" />
               </div>
 
@@ -1992,20 +1883,18 @@ function onKey(e: KeyboardEvent): void {
               <button class="fold" :title="listOpen ? 'Свернуть' : 'Развернуть'" @click="toggleList">
                 <Icon :name="listOpen ? 'chevronDown' : 'chevronRight'" :size="13" />
               </button>
-              <button :class="{ on: listTab === 'entries' }" @click="openList('entries')">
+              <button class="on" @click="listOpen = true">
                 Записи <span class="cnt">{{ dayEntries.length }}</span>
               </button>
-              <button :class="{ on: listTab === 'apps' }" @click="openList('apps')">Приложения</button>
               <span class="spacer"></span>
-              <span class="muted small">{{ listTab === 'apps' ? appsRangeLabel : `размечено ${formatDuration(labelledMs)}` }}</span>
+              <span class="muted small">размечено {{ formatDuration(labelledMs) }}</span>
             </nav>
             <div v-if="listOpen" class="lbody">
-              <template v-if="listTab === 'entries'">
-                <template v-for="r in listRows" :key="r.type === 'entry' ? r.e.id : `n${r.n.id}`">
+              <template v-for="r in listRows" :key="r.type === 'entry' ? r.e.id : `n${r.n.id}`">
                   <div
                     v-if="r.type === 'entry'"
                     class="lrow"
-                    :class="{ sel: r.e.id === entryId, linked: !!linksOf({ type: 'entry', id: r.e.id }).length }"
+                    :class="{ sel: r.e.id === entryId }"
                     @click="clickEntry(r.e)"
                     @contextmenu.prevent="openEntryMenu($event, r.e)"
                   >
@@ -2027,16 +1916,7 @@ function onKey(e: KeyboardEvent): void {
                     <span class="llabel ntxt">{{ r.n.text || r.n.transcript || (r.n.audio ? (r.n.audio.kind === 'call' ? 'Запись звонка' : 'Голосовая заметка') : '') }}</span>
                   </div>
                 </template>
-                <p v-if="!dayEntries.length" class="muted empty">Пока ничего не размечено.</p>
-              </template>
-              <template v-else>
-                <div v-for="a in appsBreakdown.apps.slice(0, 10)" :key="a.app" class="arow">
-                  <span class="aname">{{ a.app }}</span>
-                  <span class="abar"><span :style="{ width: `${(a.ms / appsTotal) * 100}%`, background: APP_COLORS[a.kind] }"></span></span>
-                  <span class="ldur">{{ formatDuration(a.ms) }}</span>
-                </div>
-                <p v-if="!appsBreakdown.apps.length" class="muted empty">Нет данных об активности.</p>
-              </template>
+              <p v-if="!dayEntries.length" class="muted empty">Пока ничего не размечено.</p>
             </div>
           </div>
 
@@ -2113,19 +1993,19 @@ function onKey(e: KeyboardEvent): void {
   border-bottom-right-radius: 0;
 }
 .stage[class*='dock-'] .shell:not(.expanded) {
-  border-radius: 14px;
+  border-radius: var(--r3);
 }
 .stage.dock-top .shell:not(.expanded) {
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 var(--r3) var(--r3);
 }
 .stage.dock-bottom .shell:not(.expanded) {
-  border-radius: 14px 14px 0 0;
+  border-radius: var(--r3) var(--r3) 0 0;
 }
 .stage.dock-left .shell:not(.expanded) {
-  border-radius: 0 14px 14px 0;
+  border-radius: 0 var(--r3) var(--r3) 0;
 }
 .stage.dock-right .shell:not(.expanded) {
-  border-radius: 14px 0 0 14px;
+  border-radius: var(--r3) 0 0 var(--r3);
 }
 /* the slim pill: the move handle, the status and the day's time — nothing else */
 .pill.docked {
@@ -2172,11 +2052,12 @@ function onKey(e: KeyboardEvent): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #93c5fd;
+  color: var(--info-fg);
   font-size: 11.5px;
   font-weight: 600;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .pill.docked .pinfo {
   display: flex;
@@ -2201,9 +2082,10 @@ function onKey(e: KeyboardEvent): void {
 .shell {
   position: relative;
   pointer-events: auto;
-  background: rgba(17, 19, 26, var(--bga, 1));
-  border: 1px solid rgba(255, 255, 255, calc(0.09 * var(--bga, 1)));
-  border-radius: 23px;
+  background: rgba(13, 17, 23, var(--bga, 1));
+  border: 1px solid rgba(58, 70, 88, var(--bga, 1));
+  border-radius: var(--r3);
+  box-shadow: inset 0 2px 0 rgb(var(--accent-rgb) / calc(0.9 * var(--bga, 1)));
   overflow: hidden;
   color: var(--text);
   transition:
@@ -2214,7 +2096,7 @@ function onKey(e: KeyboardEvent): void {
   will-change: width, height;
 }
 .shell.expanded {
-  border-radius: 18px;
+  border-radius: var(--r3);
 }
 
 /* native window dragging */
@@ -2258,8 +2140,8 @@ function onKey(e: KeyboardEvent): void {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
-  color: #6b7280;
+  border-radius: 4px;
+  color: var(--dim);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -2293,21 +2175,25 @@ function onKey(e: KeyboardEvent): void {
   overflow: hidden;
 }
 .pstatus {
-  font-weight: 600;
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .pstatus.work {
-  color: #4ade80;
+  color: var(--up);
 }
 .pstatus.idle {
-  color: #94a3b8;
+  color: var(--muted);
 }
 .pstatus.call {
-  color: #5eead4;
+  color: var(--down-fg);
 }
 .papp {
   flex: none;
   max-width: 150px;
-  color: #cbd5e1;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2316,9 +2202,9 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   gap: 3px;
   padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(165, 180, 252, 0.18);
-  color: #c7d2fe;
+  border-radius: var(--r2);
+  background: rgb(var(--accent-rgb) / 0.18);
+  color: var(--accent-fg);
   font-size: 11px;
 }
 .dot {
@@ -2330,7 +2216,7 @@ function onKey(e: KeyboardEvent): void {
   transition: background 0.3s;
 }
 .dot.idle {
-  background: #6b7280;
+  background: var(--dim);
 }
 .dot.call {
   background: #14b8a6;
@@ -2344,7 +2230,7 @@ function onKey(e: KeyboardEvent): void {
 .mini {
   position: relative;
   height: 22px;
-  border-radius: 5px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.04);
   overflow: hidden;
 }
@@ -2354,7 +2240,7 @@ function onKey(e: KeyboardEvent): void {
   bottom: 0;
 }
 .m-work {
-  background: rgba(99, 102, 241, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .m-lunch {
   background: rgba(249, 115, 22, 0.28);
@@ -2365,27 +2251,27 @@ function onKey(e: KeyboardEvent): void {
 .m-seg {
   bottom: auto !important;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-hi);
   overflow: hidden;
 }
 .m-seg.low {
   top: 12px !important;
 }
 .m-marker {
-  background: rgba(165, 180, 252, 0.3);
-  box-shadow: inset 0 0 0 1px #a5b4fc;
+  background: rgb(var(--accent-rgb) / 0.3);
+  box-shadow: inset 0 0 0 1px var(--accent-fg);
 }
 .m-now {
   width: 2px;
-  background: #ef4444;
+  background: var(--down);
 }
 .m-uncut,
 .uncut {
-  background: repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.45) 0 5px, rgba(148, 163, 184, 0.14) 5px 10px);
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.45) 0 5px, rgba(127, 139, 157, 0.14) 5px 10px);
   background-size: 14px 14px;
   animation: flow 1.4s linear infinite;
 }
@@ -2411,7 +2297,7 @@ function onKey(e: KeyboardEvent): void {
   gap: 5px;
   max-width: 220px;
   padding: 2px 8px 2px 3px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
@@ -2422,7 +2308,7 @@ function onKey(e: KeyboardEvent): void {
   cursor: pointer;
 }
 .lchip:hover {
-  border-color: rgba(167, 139, 250, 0.6);
+  border-color: rgb(var(--accent-rgb) / 0.6);
 }
 .lic {
   flex: none;
@@ -2432,7 +2318,7 @@ function onKey(e: KeyboardEvent): void {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--text-hi);
 }
 .pfill {
   flex: 1;
@@ -2441,7 +2327,7 @@ function onKey(e: KeyboardEvent): void {
   /* only the room that is left — never squeezes the app name */
   flex: 1 1 0;
   width: 0;
-  min-width: 40px;
+  min-width: 20px;
   height: 14px;
 }
 .hwave {
@@ -2457,9 +2343,9 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   gap: 2px;
   padding: 0 5px;
-  border-radius: 999px;
-  background: rgba(251, 191, 36, 0.18);
-  color: #fcd34d;
+  border-radius: var(--r2);
+  background: rgba(255, 183, 77, 0.18);
+  color: var(--warn);
   font-size: 10px;
   font-weight: 700;
 }
@@ -2470,16 +2356,16 @@ function onKey(e: KeyboardEvent): void {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 5px;
-  background: #fbbf24;
-  color: #1c1917;
+  border-radius: var(--r2);
+  background: var(--warn);
+  color: var(--bg);
 }
 .nrow.owned {
   margin-left: 22px;
-  border-left: 2px solid rgba(251, 191, 36, 0.4);
+  border-left: 2px solid rgba(255, 183, 77, 0.4);
 }
 .nrow .ntxt {
-  color: #fde68a;
+  color: var(--warn-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2501,9 +2387,10 @@ function onKey(e: KeyboardEvent): void {
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .pcombo.live {
-  color: #e2e8f0;
+  color: var(--text);
 }
 .cwrap {
   display: inline-block;
@@ -2546,8 +2433,9 @@ function onKey(e: KeyboardEvent): void {
   overflow: hidden;
   font-size: 10px;
   line-height: 13px;
-  color: #94a3b8;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 .pstats .st {
@@ -2560,28 +2448,30 @@ function onKey(e: KeyboardEvent): void {
   width: 9px;
   height: 9px;
   border-radius: 2px;
-  background: repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.7) 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.7) 0 2px, transparent 2px 4px);
 }
 .pstats .jt,
 .totals .jt {
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .pstats .pct {
-  color: #bbf7d0;
+  color: var(--up-fg);
   font-weight: 700;
 }
 .totals b {
   color: var(--text);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .totals .pct b {
-  color: #bbf7d0;
+  color: var(--up-fg);
 }
 .ptime {
   font-size: 11px;
-  color: #bbf7d0;
+  color: var(--up-fg);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .orb-btn {
   position: relative;
@@ -2630,7 +2520,7 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #fde68a;
+  color: var(--warn-fg);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -2638,7 +2528,7 @@ function onKey(e: KeyboardEvent): void {
   font-size: 10px;
 }
 .ntarget {
-  color: #e2e8f0;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2646,8 +2536,8 @@ function onKey(e: KeyboardEvent): void {
   flex: 1;
   resize: none;
   padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(253, 230, 138, 0.25);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 183, 77, 0.25);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   font: inherit;
@@ -2656,16 +2546,16 @@ function onKey(e: KeyboardEvent): void {
   outline: none;
 }
 .ntext:focus {
-  border-color: rgba(253, 230, 138, 0.55);
+  border-color: rgba(255, 183, 77, 0.55);
 }
 .notepin.on {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--text-hi);
 }
 .qtabs {
   flex: none;
   display: inline-flex;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 7px;
+  border-radius: var(--r2);
   overflow: hidden;
 }
 .qtabs button {
@@ -2680,15 +2570,15 @@ function onKey(e: KeyboardEvent): void {
   font-size: 11px;
 }
 .qtabs button.on {
-  background: rgba(253, 230, 138, 0.16);
-  color: #fde68a;
+  background: rgba(255, 183, 77, 0.16);
+  color: var(--warn-fg);
 }
 .qtabs button.hot:not(.on) {
   color: #5eead4;
 }
 .qmsg {
   min-width: 0;
-  color: #86efac;
+  color: var(--up-fg);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2707,11 +2597,11 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   gap: 5px;
   padding: 5px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 12px;
 }
 .qbtn.ok {
-  color: #4ade80;
+  color: var(--up);
 }
 .qside {
   flex: none;
@@ -2752,35 +2642,36 @@ function onKey(e: KeyboardEvent): void {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  background: rgba(248, 113, 113, 0.12);
-  color: #fca5a5;
+  border: 1px solid rgba(255, 61, 61, 0.5);
+  background: rgba(255, 61, 61, 0.12);
+  color: var(--down-fg);
 }
 .recbtn.on {
-  background: #ef4444;
-  color: #fff;
+  background: var(--down);
+  color: var(--text-hi);
   animation: recpulse 1.2s ease-in-out infinite;
 }
 @keyframes recpulse {
   50% {
-    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.25);
+    box-shadow: 0 0 0 6px rgba(255, 61, 61, 0.25);
   }
 }
 .meter {
   flex: 1;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 .meter span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #22c55e, #facc15, #ef4444);
+  background: linear-gradient(90deg, var(--up), var(--warn), var(--down));
   transition: width 0.1s;
 }
 .rt {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-size: 13px;
 }
 .qlp :deep(.chip) {
@@ -2799,7 +2690,7 @@ function onKey(e: KeyboardEvent): void {
   display: inline-flex;
   align-self: flex-start;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 7px;
+  border-radius: var(--r2);
   overflow: hidden;
 }
 .qkinds button,
@@ -2812,24 +2703,22 @@ function onKey(e: KeyboardEvent): void {
   font-size: 11px;
 }
 .qkinds button.on {
-  color: #fff;
+  color: var(--text-hi);
 }
 .qranges button.on {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgb(var(--accent-rgb) / 0.3);
   color: var(--text);
 }
 .qlabel {
   flex: 1;
-  resize: none;
-  line-height: 1.4;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  font: inherit;
+  min-width: 0;
+}
+.qlabel :deep(.qft) {
   font-size: 12px;
-  outline: none;
+}
+.inputrow .cutq {
+  flex: 1;
+  min-width: 0;
 }
 .orb-btn.rec::after {
   content: '';
@@ -2839,15 +2728,15 @@ function onKey(e: KeyboardEvent): void {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #ef4444;
-  box-shadow: 0 0 0 2px #11131a;
+  background: var(--down);
+  box-shadow: 0 0 0 2px var(--bg);
   animation: recpulse 1.2s ease-in-out infinite;
 }
 /* under a fanned-out group of notes: the pointer may cross it without the group folding back */
 .fanzone {
   position: absolute;
-  border-radius: 8px;
-  background: rgba(251, 191, 36, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.08);
   cursor: default;
 }
 .notepin {
@@ -2861,9 +2750,9 @@ function onKey(e: KeyboardEvent): void {
   width: 14px;
   height: 14px;
   margin-left: -7px;
-  border-radius: 4px;
-  background: #fbbf24;
-  color: #1c1917;
+  border-radius: var(--r2);
+  background: var(--warn);
+  color: var(--bg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
@@ -2882,7 +2771,7 @@ function onKey(e: KeyboardEvent): void {
 }
 .planseg {
   border: 1px dashed var(--c);
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: color-mix(in srgb, var(--c) 12%, transparent);
   pointer-events: none;
 }
@@ -2895,11 +2784,12 @@ function onKey(e: KeyboardEvent): void {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .tkey {
   font-weight: 800;
@@ -2920,16 +2810,16 @@ function onKey(e: KeyboardEvent): void {
   gap: 6px;
   margin: -2px 0 4px;
   font-size: 12px;
-  color: #bfdbfe;
+  color: var(--info-fg);
 }
 .d-task b {
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .d-desc {
   margin: -2px 0 6px;
   font-size: 12px;
   line-height: 1.45;
-  color: #cbd5e1;
+  color: var(--text-2);
   white-space: pre-wrap;
   max-height: 72px;
   overflow: auto;
@@ -2937,7 +2827,7 @@ function onKey(e: KeyboardEvent): void {
 .linkbtn {
   border: 0;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent-fg);
   font-size: 12px;
   padding: 2px 4px;
   cursor: pointer;
@@ -2946,17 +2836,17 @@ function onKey(e: KeyboardEvent): void {
   text-decoration: underline;
 }
 .pchip.gap {
-  color: #cbd5e1;
-  background: repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.35) 0 5px, rgba(148, 163, 184, 0.12) 5px 10px);
+  color: var(--text-2);
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.35) 0 5px, rgba(127, 139, 157, 0.12) 5px 10px);
 }
 .pnotechip {
   padding: 0 5px;
-  background: #fbbf24;
-  color: #1c1917;
+  background: var(--warn);
+  color: var(--bg);
 }
 .pchip.live {
-  color: #e2e8f0;
-  background: repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.45) 0 5px, rgba(148, 163, 184, 0.15) 5px 10px);
+  color: var(--text);
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.45) 0 5px, rgba(127, 139, 157, 0.15) 5px 10px);
   background-size: 14px 14px;
   animation: flow 1.4s linear infinite;
 }
@@ -2964,7 +2854,7 @@ function onKey(e: KeyboardEvent): void {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fbbf24;
+  background: var(--warn);
   animation: blink 1.2s ease-in-out infinite;
 }
 @keyframes blink {
@@ -2996,11 +2886,11 @@ function onKey(e: KeyboardEvent): void {
   transition: width 0.6s ease;
 }
 .daybar .elapsed {
-  background: rgba(148, 163, 184, 0.35);
+  background: rgba(127, 139, 157, 0.35);
 }
 .daybar .done {
-  background: linear-gradient(90deg, #22c55e, #a3e635);
-  box-shadow: 0 0 6px rgba(163, 230, 53, 0.6);
+  background: linear-gradient(90deg, var(--up), var(--up));
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.6);
 }
 .pempty {
   font-size: 11px;
@@ -3024,11 +2914,12 @@ function onKey(e: KeyboardEvent): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 -16px;
-  padding: 7px 12px 4px 7px;
+  margin: 0 -16px 8px;
+  padding: 7px 12px 6px 7px;
+  border-bottom: 1px solid var(--border);
 }
 .logo {
-  color: #7c6cf6;
+  color: var(--accent);
 }
 .small {
   font-size: 11px;
@@ -3038,11 +2929,12 @@ function onKey(e: KeyboardEvent): void {
 }
 .total {
   font-variant-numeric: tabular-nums;
-  color: #cbd5e1;
+  font-family: var(--font-data);
+  color: var(--text-2);
 }
 .status {
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   font-size: 12px;
   font-weight: 600;
   transition:
@@ -3050,12 +2942,12 @@ function onKey(e: KeyboardEvent): void {
     color 0.3s;
 }
 .status.work {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--up);
 }
 .status.idle {
-  background: rgba(148, 163, 184, 0.15);
-  color: #cbd5e1;
+  background: rgba(127, 139, 157, 0.15);
+  color: var(--text-2);
 }
 .status.call {
   background: rgba(20, 184, 166, 0.18);
@@ -3067,19 +2959,19 @@ button.icon {
   background: transparent;
   border: 0;
   padding: 4px 5px;
-  color: #94a3b8;
+  color: var(--muted);
 }
 button.icon:hover {
-  color: #fff;
+  color: var(--text-hi);
 }
 button.icon.on {
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .axis {
   position: relative;
   height: 18px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   cursor: pointer;
 }
@@ -3088,12 +2980,13 @@ button.icon.on {
   transform: translateX(-50%);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .axis .sch {
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .axis .lunch {
-  color: #fdba74;
+  color: var(--warn-fg);
 }
 .axis .tk {
   position: absolute;
@@ -3111,9 +3004,9 @@ button.icon.on {
   font-size: 10px;
 }
 .axis .nowlbl {
-  color: #fca5a5;
+  color: var(--down-fg);
   font-weight: 600;
-  background: rgba(17, 19, 26, 0.95);
+  background: rgba(13, 17, 23, 0.95);
   padding: 0 4px;
   z-index: 1;
 }
@@ -3130,9 +3023,9 @@ button.icon.on {
   bottom: -3px;
 }
 .sch-work {
-  background: rgba(99, 102, 241, 0.1);
-  border-left: 2px solid rgba(165, 180, 252, 0.7);
-  border-right: 2px solid rgba(165, 180, 252, 0.7);
+  background: rgb(var(--accent-rgb) / 0.1);
+  border-left: 2px solid rgb(var(--accent-rgb) / 0.7);
+  border-right: 2px solid rgb(var(--accent-rgb) / 0.7);
 }
 .track > .sch-off {
   position: absolute;
@@ -3149,7 +3042,7 @@ button.icon.on {
 .track > .off {
   top: 0;
   bottom: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.35) 0 5px, rgba(0, 0, 0, 0.15) 5px 10px);
 }
 .row-main,
@@ -3172,7 +3065,7 @@ button.icon.on {
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.025);
   pointer-events: none;
 }
@@ -3190,9 +3083,9 @@ button.icon.on {
   bottom: 0;
 }
 .seg {
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: var(--c);
-  color: #fff;
+  color: var(--text-hi);
   font-size: 11px;
   display: flex;
   align-items: center;
@@ -3225,8 +3118,8 @@ button.icon.on {
 }
 .seg.multi {
   box-shadow:
-    0 0 0 2px #fbbf24,
-    0 0 10px rgba(251, 191, 36, 0.35);
+    0 0 0 2px var(--warn),
+    0 0 10px rgba(255, 183, 77, 0.35);
 }
 .pinline {
   position: absolute;
@@ -3234,7 +3127,7 @@ button.icon.on {
   bottom: -2px;
   width: 2px;
   margin-left: -1px;
-  background: #fff;
+  background: var(--text-hi);
   border-radius: 1px;
   pointer-events: none;
   z-index: 5;
@@ -3248,16 +3141,17 @@ button.icon.on {
   left: 50%;
   transform: translateX(-50%);
   padding: 1px 6px;
-  border-radius: 6px;
-  background: #fff;
-  color: #111827;
+  border-radius: var(--r2);
+  background: var(--text-hi);
+  color: var(--panel);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 .seg.sel {
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--text-hi);
   z-index: 2;
 }
 .rh {
@@ -3278,7 +3172,7 @@ button.icon.on {
   background: rgba(255, 255, 255, 0.4);
 }
 .uncut {
-  border-radius: 7px;
+  border-radius: var(--r2);
 }
 .aseg {
   border-radius: 2px;
@@ -3290,21 +3184,21 @@ button.icon.on {
 .aseg:hover {
   opacity: 1;
   box-shadow:
-    0 0 0 1px #fff,
+    0 0 0 1px var(--text-hi),
     0 0 8px rgba(255, 255, 255, 0.35);
   z-index: 2;
 }
 .aseg.idle,
 .aseg.locked {
-  background: repeating-linear-gradient(90deg, #3f3f46 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(90deg, var(--border-3) 0 2px, transparent 2px 4px);
 }
 .band {
   position: absolute;
   top: -3px;
   bottom: -3px;
-  border: 2px solid #a5b4fc;
-  border-radius: 9px;
-  background: rgba(165, 180, 252, 0.14);
+  border: 2px solid var(--accent-fg);
+  border-radius: 4px;
+  background: rgb(var(--accent-rgb) / 0.14);
   pointer-events: none;
   z-index: 3;
   transition:
@@ -3315,12 +3209,13 @@ button.icon.on {
   position: absolute;
   top: -21px;
   padding: 1px 6px;
-  border-radius: 6px;
-  background: #e0e7ff;
-  color: #111827;
+  border-radius: var(--r2);
+  background: var(--text-hi);
+  color: var(--panel);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
   pointer-events: auto;
   cursor: ew-resize;
@@ -3340,8 +3235,8 @@ button.icon.on {
   top: 6px;
   bottom: 6px;
   width: 10px;
-  border-radius: 4px;
-  background: #e0e7ff;
+  border-radius: var(--r2);
+  background: var(--text-hi);
   pointer-events: auto;
   cursor: ew-resize;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
@@ -3357,18 +3252,19 @@ button.icon.on {
   top: 6px;
   z-index: 7;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   border: 0;
-  background: rgba(99, 102, 241, 0.9);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.9);
+  color: var(--text-hi);
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 .hid:hover {
-  background: #575bf0;
+  background: var(--accent);
 }
 .hid.l {
   left: 2px;
@@ -3382,7 +3278,7 @@ button.icon.on {
   bottom: -2px;
   width: 2px;
   margin-left: -1px;
-  background: #ef4444;
+  background: var(--down);
   pointer-events: none;
   z-index: 4;
 }
@@ -3405,7 +3301,7 @@ button.icon.on {
 }
 .legend .hover {
   display: block;
-  color: #cbd5e1;
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3421,8 +3317,8 @@ i.sq {
   border-radius: 2px;
 }
 i.sq.work {
-  background: rgba(99, 102, 241, 0.35);
-  box-shadow: inset 0 0 0 1px #a5b4fc;
+  background: rgb(var(--accent-rgb) / 0.35);
+  box-shadow: inset 0 0 0 1px var(--accent-fg);
 }
 i.sq.lunch {
   background: rgba(249, 115, 22, 0.4);
@@ -3430,7 +3326,7 @@ i.sq.lunch {
 }
 .striped {
   border-radius: 2px;
-  background: repeating-linear-gradient(135deg, #94a3b8 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px);
 }
 .divider {
   height: 1px;
@@ -3455,11 +3351,11 @@ i.sq.lunch {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .d-sub {
-  color: #cbd5e1;
+  color: var(--text-2);
   font-size: 13px;
 }
 .times {
@@ -3471,12 +3367,13 @@ i.sq.lunch {
 }
 .dur {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   margin-left: 4px;
 }
 .seg2 {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   margin-left: 4px;
 }
@@ -3489,17 +3386,17 @@ i.sq.lunch {
 }
 .seg2 button.on {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .inputrow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 .inputrow .dialoff {
   flex: none;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 4px;
 }
 .actions {
   display: flex;
@@ -3512,20 +3409,20 @@ i.sq.lunch {
   align-items: center;
   justify-content: center;
   width: 46px;
-  border-radius: 10px;
-  background: #16a34a;
-  border: 1px solid #16a34a;
-  color: #fff;
+  border-radius: 4px;
+  background: var(--up);
+  border: 1px solid var(--up);
+  color: var(--text-hi);
 }
 .apply:hover:not(:disabled) {
-  background: #15803d;
+  background: var(--up);
 }
 .kseg {
   flex: 1;
   min-width: 0;
   display: flex;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  border-radius: 4px;
   overflow: hidden;
 }
 .kseg button {
@@ -3541,7 +3438,7 @@ i.sq.lunch {
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
   font-size: 11px;
-  color: #cbd5e1;
+  color: var(--text-2);
 }
 .kseg button:first-child {
   border-left: 0;
@@ -3556,7 +3453,7 @@ i.sq.lunch {
   background: rgba(255, 255, 255, 0.07);
 }
 .kseg button.on {
-  color: #fff;
+  color: var(--text-hi);
 }
 .mini-actions {
   display: flex;
@@ -3568,7 +3465,7 @@ i.sq.lunch {
   align-items: center;
   gap: 5px;
   padding: 4px 9px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   font-size: 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -3577,7 +3474,7 @@ i.sq.lunch {
   background: rgba(255, 255, 255, 0.09);
 }
 .mini-actions button.danger {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .editbox {
   display: flex;
@@ -3590,7 +3487,7 @@ i.sq.lunch {
   align-items: center;
   justify-content: center;
   width: 38px;
-  border-radius: 10px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -3605,13 +3502,13 @@ i.sq.lunch {
   align-items: center;
   gap: 4px;
   padding: 8px 6px 7px;
-  border-radius: 10px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 12px;
 }
 .actions4 > button.danger {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .list {
   display: flex;
@@ -3626,7 +3523,7 @@ i.sq.lunch {
 .ltabs button {
   padding: 3px 10px;
   font-size: 12px;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   border: 1px solid transparent;
   color: var(--muted);
@@ -3653,7 +3550,7 @@ i.sq.lunch {
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 12px;
 }
 .lrow {
@@ -3663,21 +3560,22 @@ i.sq.lunch {
   background: rgba(255, 255, 255, 0.05);
 }
 .lrow.sel {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .kic.sm {
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--r2);
   flex: none;
 }
 .ltime,
 .ldur {
   flex: none;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .ltime {
-  color: #cbd5e1;
+  color: var(--text-2);
 }
 .ldur {
   margin-left: auto;
@@ -3691,7 +3589,7 @@ i.sq.lunch {
 }
 .lkey {
   flex: none;
-  color: #93c5fd;
+  color: var(--info-fg);
   font-weight: 600;
   font-size: 11px;
 }
@@ -3710,14 +3608,14 @@ i.sq.lunch {
 }
 .abar {
   height: 7px;
-  border-radius: 4px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
 .abar span {
   display: block;
   height: 100%;
-  border-radius: 4px;
+  border-radius: var(--r2);
 }
 .arow .ldur {
   text-align: right;
@@ -3739,7 +3637,7 @@ i.sq.lunch {
   background: transparent;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 13px;
 }
 .mact:hover {
@@ -3753,12 +3651,12 @@ i.sq.lunch {
   background: transparent;
   text-align: left;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 13px;
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .mdel:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(255, 61, 61, 0.15);
 }
 .foot {
   min-height: 22px;
@@ -3776,9 +3674,9 @@ i.sq.lunch {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #86efac;
+  color: var(--up-fg);
 }
 .toast.bad {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 </style>

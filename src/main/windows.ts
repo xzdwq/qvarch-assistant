@@ -30,9 +30,9 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     title: 'Qvarch Assistant',
     icon: makeIcon(64),
-    backgroundColor: '#0f1117',
+    backgroundColor: '#0d1117',
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#12151d', symbolColor: '#cbd5e1', height: TITLEBAR_HEIGHT },
+    titleBarOverlay: { color: '#0d1117', symbolColor: '#adb7c6', height: TITLEBAR_HEIGHT },
     webPreferences: common(),
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -57,6 +57,8 @@ function intersects(a: Rectangle, b: Rectangle): boolean {
  * Moving is the native window drag (-webkit-app-region: drag on the handle / header).
  */
 export class Island {
+  /** Never shown (development pictures). */
+  static hidden = false
   readonly win: BrowserWindow
   private pill: { x: number; y: number }
   private dock: Dock | undefined
@@ -95,7 +97,7 @@ export class Island {
     this.win.setIgnoreMouseEvents(true, { forward: true })
     load(this.win, 'island')
     forwardConsole(this.win, 'island')
-    this.win.once('ready-to-show', () => this.win.showInactive())
+    this.win.once('ready-to-show', () => !Island.hidden && this.win.showInactive())
     // the native drag ends with "moved" (Windows sends it once, on release)
     this.win.on('moved', () => this.onMoved())
     this.timers.push(setInterval(() => this.tick(), 40))

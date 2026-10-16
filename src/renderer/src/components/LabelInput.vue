@@ -144,7 +144,7 @@ textarea.ml::first-line {
   gap: 6px;
   background: var(--field-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 0 8px;
 }
 .field:focus-within {
@@ -171,7 +171,7 @@ input {
   list-style: none;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   max-height: 220px;
   overflow: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
@@ -193,7 +193,7 @@ li {
   gap: 8px;
   align-items: baseline;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   cursor: pointer;
   font-size: 13px;
 }

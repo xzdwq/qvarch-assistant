@@ -49,8 +49,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => ro?.disconnect())
 const tint = (c: string) => ({ '--c': c })
-const NOW = '#ef4444'
-const NEXT = '#8b7cff'
+const NOW = '#ff3d3d'
+const NEXT = 'var(--accent)'
 </script>
 
 <template>
@@ -116,7 +116,7 @@ const NEXT = '#8b7cff'
 }
 /* a flat card with a coloured edge on the left */
 .card {
-  --c: #8b7cff;
+  --c: var(--accent);
   flex: none;
   display: flex;
   align-items: center;
@@ -125,9 +125,9 @@ const NEXT = '#8b7cff'
   height: 40px;
   box-sizing: border-box;
   padding: 0 14px 0 8px;
-  border-radius: 5px;
+  border-radius: var(--r2);
   border-left: 3px solid var(--c);
-  background: #1b2030;
+  background: var(--panel-2);
 }
 .ic {
   flex: none;
@@ -137,8 +137,8 @@ const NEXT = '#8b7cff'
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--c) 32%, #1b2030);
-  color: #fff;
+  background: color-mix(in srgb, var(--c) 32%, var(--panel-2));
+  color: var(--text-hi);
 }
 .tx {
   min-width: 0;
@@ -147,9 +147,10 @@ const NEXT = '#8b7cff'
   line-height: 1.2;
 }
 .tx small {
-  color: #9aa3b8;
+  color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -164,16 +165,17 @@ const NEXT = '#8b7cff'
 .tx .big {
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 /* what was: no colour, faded */
 .past {
   border-left-color: transparent;
-  background: #171b28;
+  background: var(--panel);
   opacity: 0.6;
 }
 .past .ic {
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
 }
 .now .ic {
   background: var(--c);
@@ -183,7 +185,7 @@ const NEXT = '#8b7cff'
 }
 /* a connector: a line and a dot at its end, in the colour of what comes next */
 .link {
-  --c: #8b7cff;
+  --c: var(--accent);
   --d: var(--c);
   flex: none;
   position: relative;
@@ -227,8 +229,8 @@ const NEXT = '#8b7cff'
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #262b3b;
-  color: #cbd5e1;
+  background: var(--border-2);
+  color: var(--text-2);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .arr.l {

@@ -4,6 +4,7 @@ import type { JiraIssue, MyTaskStatus } from '@shared/jira'
 import { formatDuration } from '@shared/timeline'
 import Icon from '../components/Icon.vue'
 import { formatSec, useJira } from '../lib/jira'
+import JiraDetails from '../components/JiraDetails.vue'
 
 /**
  * Jira tasks: grouped by project, by due date. "Мои" = assigned to me in Jira + picked by hand (★);
@@ -15,6 +16,8 @@ const jira = useJira()
 const mode = ref<'mine' | 'all'>('mine')
 const q = ref('')
 const showDone = ref(false)
+/** The task opened up (fields and description). */
+const opened = ref<string>()
 const tracked = ref<Record<string, number>>({})
 
 async function loadTracked(): Promise<void> {
@@ -32,7 +35,7 @@ const groups = computed(() => {
     (i) =>
       (mode.value === 'all' || i.mine || jira.value.starred.includes(i.key)) &&
       (showDone.value || !isDone(i)) &&
-      (!s || i.key.toLowerCase().includes(s) || i.summary.toLowerCase().includes(s)),
+      (!s || `${i.key} ${i.summary} ${(i.labels ?? []).join(' ')} ${(i.components ?? []).join(' ')}`.toLowerCase().includes(s)),
   )
   const byProject = new Map<string, { name: string; items: JiraIssue[] }>()
   for (const i of list) {
@@ -90,12 +93,18 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 
       <section v-for="[key, g] in groups" :key="key" class="proj">
         <h3>{{ g.name }} <span class="muted">{{ key }} · {{ g.items.length }}</span></h3>
-        <div v-for="i in g.items" :key="i.key" class="row" :class="{ done: isDone(i) }">
+        <template v-for="i in g.items" :key="i.key">
+        <div class="row" :class="{ done: isDone(i), open: opened === i.key }">
+          <button class="chev" :title="opened === i.key ? 'Свернуть' : 'Описание и поля'" @click="opened = opened === i.key ? undefined : i.key"><Icon name="chevronRight" :size="13" /></button>
           <button class="star" :class="{ on: jira.starred.includes(i.key) }" :title="i.mine ? 'Назначена на вас' : jira.starred.includes(i.key) ? 'Убрать из выбранных' : 'Выбрать себе'" @click="star(i)">
             <Icon :name="i.mine ? 'users' : 'star'" :size="13" />
           </button>
           <a class="key" href="#" :title="`Открыть ${i.key} в Jira`" @click.prevent="open(i)">{{ i.key }}</a>
-          <span class="sum" :title="i.summary">{{ i.summary }}</span>
+          <span class="sum" :title="i.summary" @click="opened = opened === i.key ? undefined : i.key">
+            <span class="sumt">{{ i.summary }}</span>
+            <i v-for="c in (i.components ?? []).slice(0, 2)" :key="`c${c}`" class="tg comp">{{ c }}</i>
+            <i v-for="l in (i.labels ?? []).slice(0, 3)" :key="`l${l}`" class="tg">{{ l }}</i>
+          </span>
           <span class="type muted">{{ i.type }}</span>
           <span class="st" :class="i.category">{{ i.status }}</span>
           <span class="mine-seg">
@@ -108,6 +117,8 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
             <span v-if="i.estimateSec" class="ebar"><span :class="{ over: ratio(i) > 1 }" :style="{ width: `${Math.min(100, ratio(i) * 100)}%` }"></span></span>
           </span>
         </div>
+        <JiraDetails v-if="opened === i.key" class="det" :issue="i" />
+        </template>
       </section>
       <p v-if="!groups.length" class="muted">Задач нет{{ mode === 'mine' ? ' — отметьте нужные звёздочкой во «Все открытые»' : '' }}.</p>
     </template>
@@ -116,7 +127,8 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 
 <style scoped>
 .tasks {
-  padding: 0;
+  padding: 12px 14px 16px;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -145,7 +157,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 .mine-seg {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
 }
 .seg button,
@@ -158,13 +170,13 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
   color: var(--muted);
 }
 .seg button.on {
-  background: rgba(99, 102, 241, 0.25);
+  background: rgb(var(--accent-rgb) / 0.25);
   color: var(--text);
 }
 .search {
   width: 260px;
   padding: 5px 9px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -185,7 +197,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
   font-size: 12px;
 }
 .err {
-  color: #f87171;
+  color: var(--down-fg);
 }
 .ico {
   display: inline-flex;
@@ -194,12 +206,17 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 .proj {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 10px 14px;
 }
 h3 {
   margin: 2px 0 8px;
-  font-size: 14px;
+  font-size: 11px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 h3 .muted {
   font-weight: 400;
@@ -207,7 +224,7 @@ h3 .muted {
 }
 .row {
   display: grid;
-  grid-template-columns: 26px 84px minmax(0, 1fr) 96px 120px 128px 48px 150px;
+  grid-template-columns: 18px 26px 84px minmax(0, 1fr) 96px 120px 128px 48px 150px;
   align-items: center;
   gap: 10px;
   padding: 5px 4px;
@@ -216,6 +233,52 @@ h3 .muted {
 }
 .row.done {
   opacity: 0.5;
+}
+.row.open {
+  background: var(--panel-2);
+}
+.chev {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  transition: transform 0.12s;
+}
+.row.open .chev {
+  transform: rotate(90deg);
+  color: var(--accent-fg);
+}
+.sum {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  cursor: default;
+}
+.sumt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--r2);
+  background: var(--panel-3);
+  color: var(--text-2);
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+}
+.tg.comp {
+  background: rgba(68, 138, 255, 0.16);
+  color: var(--info-fg);
+}
+.det {
+  margin: 0 0 6px 18px;
+  border-left: 2px solid var(--accent);
+  background: var(--panel-2);
 }
 .star {
   display: inline-flex;
@@ -226,10 +289,10 @@ h3 .muted {
   color: var(--muted);
 }
 .star.on {
-  color: #fbbf24;
+  color: var(--warn);
 }
 .key {
-  color: #93c5fd;
+  color: var(--info-fg);
   font-weight: 600;
   text-decoration: none;
 }
@@ -251,42 +314,43 @@ h3 .muted {
   justify-self: start;
   max-width: 100%;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--r2);
   font-size: 11px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: rgba(148, 163, 184, 0.18);
-  color: #cbd5e1;
+  background: rgba(127, 139, 157, 0.18);
+  color: var(--text-2);
 }
 .st.indeterminate {
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
+  background: rgba(68, 138, 255, 0.2);
+  color: var(--info-fg);
 }
 .st.done {
-  background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  background: rgba(0, 230, 118, 0.18);
+  color: var(--up-fg);
 }
 .mine-seg button {
   padding: 3px 8px;
   font-size: 11px;
 }
 .mine-seg button.on {
-  background: rgba(168, 85, 247, 0.28);
-  color: #e9d5ff;
+  background: rgb(var(--accent-rgb) / 0.28);
+  color: var(--accent-fg);
 }
 .mine-seg button.on:last-child {
-  background: rgba(34, 197, 94, 0.25);
-  color: #bbf7d0;
+  background: rgba(0, 230, 118, 0.25);
+  color: var(--up-fg);
 }
 .due {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-size: 12px;
   color: var(--muted);
 }
 .due.late {
-  color: #f87171;
+  color: var(--down-fg);
   font-weight: 700;
 }
 .est {
@@ -296,6 +360,7 @@ h3 .muted {
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .ebar {
   height: 4px;
@@ -306,9 +371,9 @@ h3 .muted {
 .ebar span {
   display: block;
   height: 100%;
-  background: #22c55e;
+  background: var(--up);
 }
 .ebar span.over {
-  background: #ef4444;
+  background: var(--down);
 }
 </style>

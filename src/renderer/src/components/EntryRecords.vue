@@ -74,7 +74,6 @@ const isJira = (key?: string) => !!key && !key.startsWith('Q-')
 function openJiraKey(key: string): void {
   if (jiraState.value.siteUrl) window.qa.openExternal(`${jiraState.value.siteUrl}/browse/${key}`)
 }
-const linkCount = (id: string) => (props.data.links ?? []).filter((l) => (l.a.type === 'entry' && l.a.id === id) || (l.b.type === 'entry' && l.b.id === id)).length
 const stripKey = (label: string, key?: string) => (key && label.startsWith(key) ? label.slice(key.length).trim() : label)
 const past = (end: Ms) => props.now !== undefined && end <= props.now
 const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.now && props.now < end
@@ -107,7 +106,6 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
           </span>
           <span v-if="r.e.source === 'ai'" class="ai">AI</span>
           <span v-if="r.e.outlook" class="ol" title="Встреча из Outlook">Outlook</span>
-          <span v-if="linkCount(r.e.id)" class="lnk" :title="`Связей: ${linkCount(r.e.id)}`"><Icon name="link" :size="11" />{{ linkCount(r.e.id) }}</span>
           <button v-if="isJira(r.e.task?.key) && jiraState.siteUrl" class="jl" :title="`Открыть ${r.e.task!.key} в Jira`" @click.stop="openJiraKey(r.e.task!.key)"><Icon name="external" :size="13" /></button>
         </div>
         <div v-for="o in overlapsOf(r.e.id)" :key="`o${o.a.id}${o.b.id}`" class="orow" :class="{ past: past(o.end) }" :title="`Одновременно с «${o.a.label}»`">
@@ -149,7 +147,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   cursor: pointer;
   font-size: 13px;
   transition:
@@ -166,6 +164,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 .time,
 .dur {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   white-space: nowrap;
 }
 /* records: icon | when (time + duration) | what */
@@ -203,7 +202,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -212,7 +211,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   color: var(--text);
 }
 .srt.on {
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .srt.on :deep(svg) {
   transform: scaleY(-1);
@@ -220,15 +219,16 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 .esum b {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .esum .ov {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #fbbf24;
+  color: var(--warn);
 }
 .esum .ov b {
-  color: #fcd34d;
+  color: var(--warn);
 }
 .eic {
   flex: none;
@@ -237,8 +237,8 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  color: #fff;
+  border-radius: var(--r2);
+  color: var(--text-hi);
 }
 .when {
   flex: none;
@@ -252,7 +252,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 }
 .when .time {
   font-size: 12.5px;
-  color: #c7cbd6;
+  color: var(--text-2);
 }
 .when .dur {
   font-size: 11px;
@@ -280,21 +280,21 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   font-size: 11.5px;
 }
 .row.par .when {
-  border-right-color: rgba(251, 191, 36, 0.55);
+  border-right-color: rgba(255, 183, 77, 0.55);
 }
 .ol {
   flex: none;
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: #0369a1;
+  border-radius: var(--r2);
+  background: var(--info);
 }
 .ai {
   flex: none;
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: #4338ca;
+  border-radius: var(--r2);
+  background: var(--accent);
 }
 .lnk {
   flex: none;
@@ -302,7 +302,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   align-items: center;
   gap: 2px;
   font-size: 11px;
-  color: #c4b5fd;
+  color: var(--accent-fg);
 }
 .jl {
   flex: none;
@@ -313,15 +313,15 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #93c5fd;
+  color: var(--info-fg);
 }
 .jl:hover {
-  background: rgba(147, 197, 253, 0.15);
+  background: rgba(68, 138, 255, 0.15);
 }
 .key {
-  color: #93c5fd;
+  color: var(--info-fg);
   font-weight: 600;
   font-size: 12px;
 }
@@ -331,10 +331,10 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   gap: 6px;
   margin: -2px 0 4px 38px;
   padding: 4px 8px;
-  border-radius: 6px;
-  border-left: 2px solid rgba(251, 191, 36, 0.6);
-  background: rgba(251, 191, 36, 0.06);
-  color: #e8d9a8;
+  border-radius: var(--r2);
+  border-left: 2px solid rgba(255, 183, 77, 0.6);
+  background: rgba(255, 183, 77, 0.06);
+  color: var(--warn-fg);
   font-size: 11.5px;
 }
 .orow > span:nth-child(2) {
@@ -345,12 +345,14 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 }
 .orow .otime {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   color: var(--muted);
   white-space: nowrap;
 }
 .orow .odur {
   font-variant-numeric: tabular-nums;
-  color: #fcd34d;
+  font-family: var(--font-data);
+  color: var(--warn);
   white-space: nowrap;
 }
 .grow {
@@ -381,11 +383,11 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   cursor: pointer;
 }
 .pchk input {
-  accent-color: #4ade80;
+  accent-color: var(--up);
   margin: 0;
 }
 .row.plan.done .pchk {
-  color: #4ade80;
+  color: var(--up);
 }
 /* finished — faded; going on — a red line left of the icon */
 .row.past,
@@ -403,8 +405,8 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   bottom: 5px;
   width: 3px;
   border-radius: 2px;
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+  background: var(--down);
+  box-shadow: 0 0 6px rgba(255, 61, 61, 0.6);
 }
 .empty {
   margin: 10px 12px;
@@ -426,7 +428,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 .compact .eic {
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--r2);
 }
 .compact .when {
   width: 76px;

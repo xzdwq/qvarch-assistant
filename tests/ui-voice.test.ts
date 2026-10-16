@@ -32,7 +32,7 @@ describe('mergeUi', () => {
     expect(r.main).toEqual(DEFAULT_UI.main)
   })
   it('does not mutate the base', () => {
-    mergeUi(DEFAULT_UI, { main: { ai: false } })
-    expect(DEFAULT_UI.main.ai).toBe(true)
+    mergeUi(DEFAULT_UI, { main: { plan: false } })
+    expect(DEFAULT_UI.main.plan).toBe(true)
   })
 })

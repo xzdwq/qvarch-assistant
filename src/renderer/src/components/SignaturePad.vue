@@ -5,6 +5,8 @@ import '@fontsource/marck-script/400.css'
 import '@fontsource/bad-script/400.css'
 import '@fontsource/neucha/400.css'
 import Icon from './Icon.vue'
+import { useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
+import { DEFAULT_INK, useInk } from '../lib/ink'
 
 /**
  * A signature (or anything handwritten — a date, initials): drawn with the mouse / a pen, typed in a
@@ -12,6 +14,9 @@ import Icon from './Icon.vue'
  * transparent background, cut to what is there.
  */
 const emit = defineEmits<{ save: [url: string]; close: [] }>()
+// a pen tablet run by Qvarch: the width follows its pressure
+useTabletLive()
+const { state: tablet } = useTablet()
 
 type Mode = 'draw' | 'type' | 'image'
 const mode = ref<Mode>('draw')
@@ -29,21 +34,21 @@ const text = ref('')
 const textIn = ref<HTMLInputElement>()
 
 const canvas = ref<HTMLCanvasElement>()
+const liveCv = ref<HTMLCanvasElement>()
+// the tablet's "Qvarch canvas" — the pad while it is open
+const padBox = ref<HTMLElement>()
+useTabletCanvas(padBox)
 const drawn = ref(false)
-let ctx: CanvasRenderingContext2D | null = null
-let drawing = false
-let pts: Array<{ x: number; y: number }> = []
 const W = 560
 const H = 240
 const DPR = Math.max(2, window.devicePixelRatio || 1)
 
 function setup(): void {
-  const c = canvas.value
-  if (!c) return
-  c.width = W * DPR
-  c.height = H * DPR
-  ctx = c.getContext('2d')
-  ctx?.scale(DPR, DPR)
+  for (const cv of [canvas.value, liveCv.value]) {
+    if (!cv) continue
+    cv.width = W * DPR
+    cv.height = H * DPR
+  }
 }
 onMounted(setup)
 watch(mode, async (m) => {
@@ -54,45 +59,19 @@ watch(mode, async (m) => {
   } else if (m === 'type') textIn.value?.focus()
 })
 
-// ---------- drawing ----------
-function at(e: PointerEvent) {
-  const r = canvas.value!.getBoundingClientRect()
-  return { x: e.clientX - r.left, y: e.clientY - r.top }
-}
-function down(e: PointerEvent): void {
-  if (!ctx) return
-  drawing = true
-  canvas.value!.setPointerCapture(e.pointerId)
-  pts = [at(e)]
-  ctx.strokeStyle = color.value
-  ctx.fillStyle = color.value
-  ctx.lineWidth = width.value
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  // a dot when only clicked
-  ctx.beginPath()
-  ctx.arc(pts[0].x, pts[0].y, width.value / 2, 0, Math.PI * 2)
-  ctx.fill()
-  drawn.value = true
-}
-function move(e: PointerEvent): void {
-  if (!drawing || !ctx) return
-  const p = at(e)
-  pts.push(p)
-  if (pts.length < 3) return
-  // a smooth line: through the midpoints, the points are the curve's controls
-  const [a, b, c] = pts.slice(-3)
-  const m1 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-  const m2 = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2 }
-  ctx.beginPath()
-  ctx.moveTo(m1.x, m1.y)
-  ctx.quadraticCurveTo(b.x, b.y, m2.x, m2.y)
-  ctx.stroke()
-}
-function up(): void {
-  drawing = false
-  pts = []
-}
+// ---------- drawing: smooth ink (lib/ink), the smoothing from the tablet's settings ----------
+const ink = useInk({
+  base: () => canvas.value,
+  live: () => liveCv.value,
+  style: () => {
+    const p = tablet.value?.prefs
+    return { color: color.value, size: width.value * 1.9, streamline: p?.streamline ?? DEFAULT_INK.streamline, smoothing: p?.smoothing ?? DEFAULT_INK.smoothing, thinning: p?.thinning ?? DEFAULT_INK.thinning }
+  },
+  onStroke: () => (drawn.value = true),
+  onHistory: (left) => (drawn.value = left > 0),
+  // the pad is a dialog over everything: Ctrl+Z here while it is open on the drawing tab
+  keys: () => mode.value === 'draw',
+})
 
 // ---------- a picture ----------
 const img = ref<HTMLImageElement>()
@@ -119,7 +98,8 @@ function onImageDrop(e: DragEvent): void {
 
 const clear = (): void => {
   if (mode.value === 'draw') {
-    ctx?.clearRect(0, 0, W, H)
+    ink.snapshot()
+    canvas.value?.getContext('2d')?.clearRect(0, 0, W * DPR, H * DPR)
     drawn.value = false
   } else if (mode.value === 'type') text.value = ''
   else {
@@ -246,16 +226,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <label v-else class="chk"><input v-model="knockWhite" type="checkbox" />Убрать белый фон</label>
         </div>
 
-        <canvas
-          v-if="mode === 'draw'"
-          ref="canvas"
-          class="pad"
-          :style="{ width: `${W}px`, height: `${H}px` }"
-          @pointerdown="down"
-          @pointermove="move"
-          @pointerup="up"
-          @pointercancel="up"
-        ></canvas>
+        <div v-if="mode === 'draw'" ref="padBox" class="pad ink" :style="{ width: `${W}px`, height: `${H}px` }">
+          <canvas ref="canvas"></canvas>
+          <canvas ref="liveCv" @pointerdown="ink.down" @pointermove="ink.move" @pointerup="ink.up" @pointercancel="ink.up"></canvas>
+        </div>
         <div v-else-if="mode === 'type'" class="pad typed" :style="{ width: `${W}px`, height: `${H}px` }">
           <input
             ref="textIn"
@@ -291,13 +265,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-items: flex-start;
   justify-content: center;
   padding-top: 80px;
-  background: rgba(5, 7, 12, 0.55);
+  background: rgba(13, 17, 23, 0.55);
 }
 .sp {
   padding: 12px 14px 14px;
-  border-radius: 14px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171a24;
+  background: var(--panel);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   color: var(--text);
 }
@@ -328,7 +302,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 2px;
   margin-left: 8px;
   padding: 2px;
-  border-radius: 9px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
 }
 .tabs button {
@@ -338,14 +312,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 26px;
   padding: 0 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
   font-size: 12px;
 }
 .tabs button.on {
-  background: rgba(139, 124, 255, 0.22);
-  color: #e0dcff;
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--text-hi);
 }
 .tt {
   font-family: Georgia, serif;
@@ -354,10 +328,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pad {
   display: block;
-  border-radius: 10px;
-  background: #fff;
+  border-radius: 4px;
+  background: var(--text-hi);
   cursor: crosshair;
   touch-action: none;
+}
+.ink {
+  position: relative;
+}
+.ink canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
 }
 .typed {
   position: relative;
@@ -374,7 +358,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   text-align: center;
 }
 .typed input::placeholder {
-  color: #c9ccd6;
+  color: var(--text-2);
 }
 .line {
   position: absolute;
@@ -382,7 +366,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   right: 28px;
   bottom: 62px;
   height: 1px;
-  background: #93a4d8;
+  background: var(--accent);
   pointer-events: none;
 }
 .drop {
@@ -390,8 +374,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background-image: linear-gradient(45deg, #eef0f4 25%, transparent 25%), linear-gradient(-45deg, #eef0f4 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #eef0f4 75%), linear-gradient(-45deg, transparent 75%, #eef0f4 75%);
+  background-image: linear-gradient(45deg, var(--text-hi) 25%, transparent 25%), linear-gradient(-45deg, var(--text-hi) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--text-hi) 75%), linear-gradient(-45deg, transparent 75%, var(--text-hi) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 }
@@ -406,7 +390,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #6b7280;
+  color: var(--dim);
   font-size: 13px;
 }
 .cols {
@@ -424,11 +408,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 .col.on {
-  border-color: #c4b5fd;
+  border-color: var(--accent-fg);
 }
 .col.pick {
   overflow: hidden;
-  background: conic-gradient(#ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+  background: conic-gradient(var(--down), var(--warn), var(--warn), var(--up), #06b6d4, var(--info), var(--accent), #ec4899, var(--down));
   cursor: pointer;
 }
 .col.pick input {
@@ -439,7 +423,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .wd input {
   width: 90px;
-  accent-color: #8b7cff;
+  accent-color: var(--accent);
 }
 .fonts {
   display: inline-flex;
@@ -450,33 +434,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   min-width: 40px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: rgba(255, 255, 255, 0.06);
-  color: #d6dae6;
+  color: var(--text);
   font-size: 19px;
   line-height: 1;
 }
 .fonts button.on {
-  border-color: #8b7cff;
-  background: rgba(139, 124, 255, 0.18);
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.18);
 }
 .chk {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12.5px;
 }
 .chk input {
-  accent-color: #8b7cff;
+  accent-color: var(--accent);
 }
 .x {
   display: inline-flex;
   padding: 5px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
 }
 .x:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -485,14 +469,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 32px;
   padding: 0 14px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
-  color: #d6dae6;
+  color: var(--text);
   font-size: 12.5px;
 }
 .bt.pri {
-  background: #6d5df0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .bt:disabled {
   opacity: 0.45;

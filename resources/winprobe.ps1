@@ -1,6 +1,6 @@
 # Qvarch Assistant system probe.
 # Emits one JSON line per interval: the foreground process and apps currently using the microphone.
-# The window title is read only with -Titles 1 (enabled by the user in settings) — it can contain private text.
+# With -Titles 1 the titles of call apps' windows are read (who a call is with) — nothing else of any window.
 # With -Keys 1 it also emits {"k":[...],"m":N} lines: the moments of key presses (typing combo) and how far
 # the mouse moved since the last line (activity graph). WHICH key was pressed is never read out, stored or
 # emitted — only that some key went down; for the mouse only the distance, not where it is.
@@ -142,7 +142,7 @@ function Write-Sample {
     path  = $path
     mic   = Get-MicUsers
   }
-  if ($Titles -eq 1) { $obj.title = [QaWin]::Title($h); $obj.cw = @([QaWin]::CallWindows()) }
+  if ($Titles -eq 1) { $obj.cw = @([QaWin]::CallWindows()) }
   [Console]::Out.WriteLine(($obj | ConvertTo-Json -Compress -Depth 3))
   [Console]::Out.Flush()
 }

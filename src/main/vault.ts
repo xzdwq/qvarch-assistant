@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import { audiosOf, type VaultHit, type VaultNode } from '../shared/vault'
+import { BOARD_EXT } from '../shared/whiteboard'
 
 const AUDIO_REL = /^\.audio\/[\w.-]+\.webm$/
 
@@ -21,7 +22,7 @@ export class Vault {
   private pending = new Set<string>()
   private timer?: NodeJS.Timeout
   /** User marks of notes / folders (path → colour), in vault/.meta.json. */
-  private meta: { colors: Record<string, string> }
+  private meta: { colors: Record<string, string>; pairs: Record<string, string> }
 
   constructor(dataRoot: string, private onChange: (paths: string[]) => void) {
     this.root = join(dataRoot, 'vault')
@@ -29,9 +30,9 @@ export class Vault {
     mkdirSync(this.root, { recursive: true })
     if (fresh) writeFileSync(join(this.root, 'Начало.md'), WELCOME, 'utf8')
     try {
-      this.meta = { colors: {}, ...JSON.parse(readFileSync(join(this.root, '.meta.json'), 'utf8')) }
+      this.meta = { colors: {}, pairs: {}, ...JSON.parse(readFileSync(join(this.root, '.meta.json'), 'utf8')) }
     } catch {
-      this.meta = { colors: {} }
+      this.meta = { colors: {}, pairs: {} }
     }
   }
   private saveMeta(): void {
@@ -46,9 +47,39 @@ export class Vault {
     else delete this.meta.colors[rel]
     this.saveMeta()
   }
-  /** Marks follow a rename / move; a deleted thing loses its marks. */
+  /**
+   * A note and a board linked (one view of the other): a .md with a .qboard, each with one partner; b undefined —
+   * unlinked. Both directions are kept.
+   */
+  setPair(a: string, b?: string): void {
+    const unlink = (p: string) => {
+      const o = this.meta.pairs[p]
+      if (o) delete this.meta.pairs[o]
+      delete this.meta.pairs[p]
+    }
+    unlink(a)
+    if (b) {
+      const kinds = [a, b].map((p) => (p.toLowerCase().endsWith(BOARD_EXT) ? 'b' : p.toLowerCase().endsWith('.md') ? 'n' : '?')).sort().join('')
+      if (kinds !== 'bn') throw new Error('Связать можно заметку с доской')
+      if (!existsSync(this.abs(a)) || !existsSync(this.abs(b))) throw new Error('Файл не найден')
+      unlink(b)
+      this.meta.pairs[a] = b
+      this.meta.pairs[b] = a
+    }
+    this.saveMeta()
+  }
+
+  /** Marks (and links) follow a rename / move; a deleted thing loses its marks and links. */
   private remapMeta(from: string, to?: string): void {
     let changed = false
+    const pairs: Record<string, string> = {}
+    for (const [k, v] of Object.entries(this.meta.pairs)) {
+      const nk = k === from || k.startsWith(from + '/') ? (to === undefined ? undefined : to + k.slice(from.length)) : k
+      const nv = v === from || v.startsWith(from + '/') ? (to === undefined ? undefined : to + v.slice(from.length)) : v
+      if (nk !== k || nv !== v) changed = true
+      if (nk && nv) pairs[nk] = nv
+    }
+    this.meta.pairs = pairs
     for (const k of Object.keys(this.meta.colors)) {
       if (k !== from && !k.startsWith(from + '/')) continue
       const v = this.meta.colors[k]
@@ -93,7 +124,8 @@ export class Vault {
         const color = this.meta.colors[rel]
         const ctime = st.birthtimeMs || st.ctimeMs
         if (st.isDirectory()) out.push({ path: rel, name, dir: true, mtime: st.mtimeMs, ctime, color, children: walk(file) })
-        else if (extname(name).toLowerCase() === '.md') out.push({ path: rel, name: name.slice(0, -3), dir: false, mtime: st.mtimeMs, ctime, color })
+        else if (extname(name).toLowerCase() === '.md') out.push({ path: rel, name: name.slice(0, -3), dir: false, mtime: st.mtimeMs, ctime, color, pair: this.meta.pairs[rel] })
+        else if (extname(name).toLowerCase() === BOARD_EXT) out.push({ path: rel, name: name.slice(0, -BOARD_EXT.length), dir: false, mtime: st.mtimeMs, ctime, color, board: true, pair: this.meta.pairs[rel] })
       }
       // folders first, then by name (numbers in natural order)
       return out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name, 'ru', { numeric: true })))
@@ -121,12 +153,12 @@ export class Vault {
     this.cache.set(rel, { mtime: statSync(file).mtimeMs, text })
   }
 
-  /** A new note / folder in `dir` with a free name ("Без названия", "Без названия 2", …). Returns its path. */
-  create(dir: string, kind: 'note' | 'folder', name?: string, text = ''): string {
+  /** A new note / board / folder in `dir` with a free name ("Без названия", "Без названия 2", …). Returns its path. */
+  create(dir: string, kind: 'note' | 'folder' | 'board', name?: string, text = ''): string {
     const base = this.abs(dir)
     mkdirSync(base, { recursive: true })
-    const want = cleanName(name || (kind === 'note' ? 'Без названия' : 'Новая папка'))
-    const ext = kind === 'note' ? '.md' : ''
+    const want = cleanName(name || (kind === 'note' ? 'Без названия' : kind === 'board' ? 'Доска' : 'Новая папка'))
+    const ext = kind === 'note' ? '.md' : kind === 'board' ? BOARD_EXT : ''
     let n = 1
     let file = join(base, want + ext)
     while (existsSync(file)) file = join(base, `${want} ${++n}${ext}`)
@@ -142,8 +174,9 @@ export class Vault {
     const isDir = statSync(src).isDirectory()
     const dst = this.abs(toDir)
     if (isDir && (dst === src || dst.startsWith(src + sep))) throw new Error('Нельзя переместить папку в саму себя')
-    const ext = isDir ? '' : '.md'
-    const want = cleanName(name ?? (isDir ? basename(src) : basename(src, '.md')))
+    // a note stays .md, a board stays .qboard
+    const ext = isDir ? '' : extname(src).toLowerCase() === BOARD_EXT ? BOARD_EXT : '.md'
+    const want = cleanName(name ?? (isDir ? basename(src) : basename(src, ext)))
     let file = join(dst, want + ext)
     if (file.toLowerCase() === src.toLowerCase()) {
       if (file !== src) renameSync(src, file) // only the letter case changed
@@ -208,6 +241,12 @@ export class Vault {
     const walk = (nodes: VaultNode[]) => nodes.forEach((n) => (n.dir ? walk(n.children ?? []) : files.push(n.path)))
     walk(this.tree())
     for (const path of files) {
+      // a board: found by its name only (its file is drawing data, not text)
+      if (path.toLowerCase().endsWith(BOARD_EXT)) {
+        const bn = posix.basename(path, BOARD_EXT)
+        if (bn.toLowerCase().includes(needle)) out.push({ path, name: bn, inName: true, count: 0, lines: [] })
+        continue
+      }
       let text: string
       try {
         text = this.read(path)

@@ -3,12 +3,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { Db } from './db'
 import { join } from 'node:path'
 import { DEFAULT_KINDS } from '../shared/kinds'
-import { DEFAULT_AI_PROMPT } from '../shared/aimodel'
 import { DEFAULT_UI, mergeUi } from '../shared/ui'
 import { dayKey, unnest } from '../shared/timeline'
-import { addLink } from '../shared/links'
 import { nextTaskKey, taskNo } from '../shared/board'
-import { randomUUID } from 'node:crypto'
 import type { DayData, KindDef, LocalTask, PublicSettings, SearchHit, Settings, SettingsPatch } from '../shared/types'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -18,8 +15,7 @@ const DEFAULT_SETTINGS: Settings = {
   countKeys: true,
   jira: { projects: ['DOS', 'RND', 'AI'], site: 'https://aoavant.atlassian.net', syncMin: 10 },
   // the user's own app registration "Qvarch Assistant" (ids are not secrets; no client secret is used)
-  outlook: { source: 'local', clientId: '5c35351a-f465-4638-9b90-dce342691ad3', tenantId: 'fe57acdf-2f79-4073-bfea-a0011702442f', syncMin: 10, meetings: true, linkCalls: true, presence: true },
-  ai: { model: 'gpt-4.1-mini', prompt: DEFAULT_AI_PROMPT, sendTitles: false },
+  outlook: { source: 'local', clientId: '5c35351a-f465-4638-9b90-dce342691ad3', tenantId: 'fe57acdf-2f79-4073-bfea-a0011702442f', syncMin: 10, meetings: true, presence: true },
   voice: { enabled: true, autoTranscribe: true, model: 'small' },
   idleThresholdSec: 300,
   sampleIntervalMs: 2000,
@@ -28,8 +24,8 @@ const DEFAULT_SETTINGS: Settings = {
   ui: DEFAULT_UI,
 }
 
-/** Settings keys of removed integrations (OpenAI, Microsoft) — dropped from disk with their tokens. */
-const LEGACY_SETTINGS = ['openai', 'graph'] as const
+/** Settings keys of removed integrations / features (OpenAI, Microsoft, the AI analysis) — dropped from disk. */
+const LEGACY_SETTINGS = ['openai', 'graph', 'ai'] as const
 /** The current Jira settings; anything else under "jira" is the old API-token integration and is dropped. */
 const JIRA_KEYS = ['clientId', 'projects', 'site', 'syncMin']
 
@@ -59,6 +55,7 @@ export class Store {
   constructor() {
     mkdirSync(this.root, { recursive: true })
     this.db = new Db(join(this.root, 'qvarch.db'))
+    this.dropRemovedData()
     this.importJsonDays()
     this.numberTasks()
     const raw = (readJson<Settings>(this.settingsFile) ?? {}) as Settings & Record<string, unknown>
@@ -78,7 +75,6 @@ export class Store {
       island: { ...DEFAULT_SETTINGS.island, ...raw.island },
       jira: { ...DEFAULT_SETTINGS.jira, ...raw.jira },
       outlook: { ...DEFAULT_SETTINGS.outlook, ...raw.outlook },
-      ai: { ...DEFAULT_SETTINGS.ai, ...raw.ai },
       voice: { ...DEFAULT_SETTINGS.voice, ...raw.voice },
       ui: mergeUi(DEFAULT_UI, raw.ui),
     }
@@ -110,6 +106,31 @@ export class Store {
     console.warn(`[store] imported ${days.length} days from JSON into SQLite; the files are kept in ${backup}`)
   }
 
+  /**
+   * Once (0.83): the history of active programs and the links between things are removed from every stored
+   * day — those features are gone. A consistent copy of the database is made first (qvarch.db.before-0.83.bak).
+   */
+  private dropRemovedData(): void {
+    const mark = join(this.root, '.dropped-0.83')
+    if (existsSync(mark)) return
+    const backup = join(this.root, 'qvarch.db.before-0.83.bak')
+    if (!existsSync(backup)) this.db.db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`)
+    let n = 0
+    for (const day of this.db.listDays()) {
+      const d = this.db.getDay(day) as (DayData & Record<string, unknown>) | undefined
+      if (!d || !('activity' in d || 'links' in d || 'linkDismissed' in d)) continue
+      delete d.activity
+      delete d.links
+      delete d.linkDismissed
+      this.db.putDay(d)
+      n++
+    }
+    // the AI analysis is gone too: its key must not stay on disk
+    rmSync(join(this.root, 'ai-secrets.bin'), { force: true })
+    writeFileSync(mark, `${new Date().toISOString()} — ${n} days cleaned\n`)
+    console.warn(`[store] removed the programs history and links from ${n} days (backup: ${backup})`)
+  }
+
   day(day: string): DayData {
     let d = this.days.get(day)
     if (d) {
@@ -117,31 +138,18 @@ export class Store {
       this.days.delete(day)
       this.days.set(day, d)
     } else {
-      d = this.db.getDay(day) ?? { day, spans: [], activity: [], calls: [], entries: [], notes: [] }
+      d = this.db.getDay(day) ?? { day, calls: [], entries: [], notes: [] }
       d.calls ??= []
       d.notes ??= []
-      // "nested" blocks are gone: they move to a parallel lane; a dictated note gets a real link to its block
+      // "nested" blocks are gone: they move to a parallel lane
       const un = unnest(d.entries)
       if (un.changed) {
         d.entries = un.entries
         this.dirty.add(day)
       }
-      for (const n of d.notes) {
-        if (!n.entryId || !d.entries.some((e) => e.id === n.entryId)) continue
-        const next = addLink(d.links ?? [], { type: 'note', id: n.id }, { type: 'entry', id: n.entryId }, randomUUID(), n.at)
-        if (next.length !== (d.links?.length ?? 0)) {
-          d.links = next
-          this.dirty.add(day)
-        }
-      }
       const legacy = d as DayData & { calendar?: unknown; aiSummary?: unknown }
-      // migrations: window titles (unless the user enables capturing them) and data of removed integrations
-      const dropTitles = !this.settings.captureTitles
-      if (d.activity.some((a) => (dropTitles && a.title !== undefined) || 'jiraKeys' in a) || legacy.calendar || legacy.aiSummary) {
-        for (const a of d.activity as unknown as Array<Record<string, unknown>>) {
-          if (dropTitles) delete a.title
-          delete a.jiraKeys
-        }
+      // data of removed integrations
+      if (legacy.calendar || legacy.aiSummary) {
         delete legacy.calendar
         delete legacy.aiSummary
         d.calls = d.calls.filter((c) => c.source === 'mic' || c.source === 'teams')
@@ -193,7 +201,6 @@ export class Store {
     if (patch.countKeys !== undefined) s.countKeys = patch.countKeys
     if (patch.jira) s.jira = { ...s.jira, ...patch.jira, syncMin: Math.max(1, Math.min(240, Number(patch.jira.syncMin ?? s.jira.syncMin) || 10)) }
     if (patch.outlook) s.outlook = { ...s.outlook, ...patch.outlook, syncMin: Math.max(1, Math.min(240, Number(patch.outlook.syncMin ?? s.outlook.syncMin) || 10)) }
-    if (patch.ai) s.ai = { ...s.ai, ...patch.ai }
     if (patch.voice) s.voice = { ...s.voice, ...patch.voice }
     if (patch.island) s.island = { ...s.island, ...patch.island }
     if (patch.ui) s.ui = mergeUi(s.ui, patch.ui)

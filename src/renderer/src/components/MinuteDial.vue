@@ -110,7 +110,7 @@ function onMove(e: PointerEvent): void {
 }
 .fill {
   fill: none;
-  stroke: #818cf8;
+  stroke: var(--accent);
   stroke-width: 6;
   stroke-linecap: round;
   transition: d 0.12s ease;
@@ -120,8 +120,8 @@ function onMove(e: PointerEvent): void {
   stroke-width: 1;
 }
 .knob {
-  fill: #e0e7ff;
-  stroke: #6366f1;
+  fill: var(--text-hi);
+  stroke: var(--accent);
   stroke-width: 2;
   transition:
     cx 0.12s ease,
@@ -132,14 +132,15 @@ function onMove(e: PointerEvent): void {
   r: 6;
 }
 .val {
-  fill: #e5e7eb;
+  fill: var(--text);
   font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .cap {
-  fill: #8b93a7;
+  fill: var(--muted);
   font-size: 8px;
   text-anchor: middle;
 }

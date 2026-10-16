@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { dayEnd, formatDuration, joinTitle, MINUTE, splitTitle, trackedMs } from '@shared/timeline'
-import type { Entry, EntryKind, Link, LinkEnd, Ms, Note, Span } from '@shared/types'
-import { linkedTo } from '@shared/links'
+import { dayEnd, formatDuration, joinTitle, MINUTE, splitTitle } from '@shared/timeline'
+import type { Entry, EntryKind, Ms, Note } from '@shared/types'
 import { VOICE_PENDING } from '@shared/voice'
 import { kindLabel, kinds } from '../lib/palette'
 import { saveRecording } from '../lib/recorder'
 import LabelInput, { type Recent } from './LabelInput.vue'
 import TaskPicker from './TaskPicker.vue'
-import LinkPicker from './LinkPicker.vue'
 import DictateButton from './DictateButton.vue'
 import { plainTask, type TaskRef } from '@shared/jira'
 import Icon from './Icon.vue'
@@ -17,6 +15,8 @@ import OffsetField from './OffsetField.vue'
 import PopChip from './PopChip.vue'
 import { beforeLabel, REMIND_BEFORE, REPEAT_RULES, type Remind, type RepeatRule } from '@shared/repeat'
 import { askSeries } from '../lib/seriesAsk'
+import QuickField, { type QuickParsed } from './QuickField.vue'
+import { dayStart } from '@shared/timeline'
 
 /** followsNow — the end is "now" (N minutes back); startsNow — the start is "now" (N minutes ahead). */
 export type Draft = Omit<Entry, 'id'> & { id?: string; followsNow?: boolean; startsNow?: boolean }
@@ -30,12 +30,10 @@ export interface AddPrefs {
 const props = defineProps<{
   day: string
   entry: Draft
-  spans: Span[]
   recent: Recent[]
   now?: Ms
   entries: Entry[]
   notes: Note[]
-  links: Link[]
   /** Shown for a new block without a range picked on the timeline. */
   add?: AddPrefs
   /** A moment was clicked on the timeline ("от курсора" is possible). */
@@ -60,14 +58,21 @@ const label = ref('')
 const kind = ref<EntryKind>('task')
 /** The Jira task this time goes to. */
 const tasks = ref<TaskRef[]>([])
-/** What this block is linked with (other blocks / notes of the day). */
-const linked = ref<LinkEnd[]>([])
 const error = ref('')
 const busy = ref(false)
 const labelInput = ref<InstanceType<typeof LabelInput>>()
+const quickEl = ref<InstanceType<typeof QuickField>>()
+/** What the quick line of a new event says (time, duration, day, kind, task). */
+const parsed = ref<QuickParsed>()
+const isNew = computed(() => !props.entry.id && !props.entry.outlook)
+watch(() => parsed.value?.q.kind, (k) => k && isNew.value && (kind.value = k))
+/** A task picked with «@» joins the event's tasks. */
+function addTask(t: TaskRef): void {
+  if (!tasks.value.some((x) => x.key === t.key)) tasks.value = [...tasks.value, t]
+}
 const area = ref<HTMLTextAreaElement>()
 defineExpose({
-  focus: () => (props.textarea ? area.value?.focus() : labelInput.value?.focus()),
+  focus: () => (isNew.value ? quickEl.value?.focus() : props.textarea ? area.value?.focus() : labelInput.value?.focus()),
   /** "Continue that topic": take kind and text of another entry. */
   copyFrom: (e: Pick<Entry, 'kind' | 'label' | 'description'>) => {
     kind.value = e.kind
@@ -78,7 +83,7 @@ defineExpose({
   },
 })
 const copied = ref('')
-/** An Outlook meeting is Outlook's: only a reminder and links can be set here. */
+/** An Outlook meeting is Outlook's: only a reminder can be set here. */
 const readonly = computed(() => !!props.entry.outlook)
 
 // ---------- a reminder ----------
@@ -130,18 +135,12 @@ watch(
     label.value = joinTitle(props.entry.label, props.entry.description)
     tasks.value = props.entry.task ? [props.entry.task] : []
     kind.value = props.entry.kind
-    linked.value = props.entry.id ? linkedTo(props.links, { type: 'entry', id: props.entry.id }).map((x) => x.other) : []
     error.value = ''
     copied.value = ''
     initRemind()
     repeatRule.value = ''
   },
   { immediate: true },
-)
-// a link drawn / removed on the timeline while the block is open shows up here too
-watch(
-  () => props.links,
-  (l) => props.entry.id && (linked.value = linkedTo(l, { type: 'entry', id: props.entry.id }).map((x) => x.other)),
 )
 // times follow the entry/marker live (marker drags on the timeline)
 watch(
@@ -156,7 +155,6 @@ watch(
 )
 
 const effectiveEnd = computed(() => (followsNow.value && props.now ? props.now : end.value))
-const tracked = computed(() => trackedMs(start.value, effectiveEnd.value, props.spans))
 
 function pushRange(): void {
   if (props.entry.id) return
@@ -183,10 +181,9 @@ async function save(dict?: Dictation): Promise<void> {
   }
   busy.value = true
   try {
-    // an Outlook meeting: only its reminder and links
+    // an Outlook meeting: only its reminder
     if (readonly.value && props.entry.id) {
       await window.qa.setRemind(props.day, props.entry.id, remind.value ?? null)
-      await window.qa.setLinks(props.day, { type: 'entry', id: props.entry.id }, linked.value.map((l) => ({ type: l.type, id: l.id })))
       emit('saved', { ...(props.entry as Entry), remind: remind.value })
       return
     }
@@ -208,23 +205,54 @@ async function save(dict?: Dictation): Promise<void> {
           remind: remind.value,
         }
         await window.qa.seriesSave(props.day, next)
-        await window.qa.setLinks(props.day, { type: 'entry', id: next.id }, linked.value.map((l) => ({ type: l.type, id: l.id })))
         emit('saved', next)
         return
       }
     }
     const { followsNow: _f, startsNow: _n, ...base } = props.entry
+    // a new event: what its quick line says wins over the form (time, duration, day, task; the title is the rest)
+    let day = props.day
+    let s0 = start.value
+    let e0 = endT
+    let title = splitTitle(label.value).label
+    const qp = isNew.value ? parsed.value : undefined
+    const taskList = [...tasks.value]
+    if (qp) {
+      const q = qp.q
+      title = q.label
+      if (q.start !== undefined) {
+        s0 = q.start
+        e0 = q.end ?? q.start + (q.dur ?? endT - start.value)
+        day = q.day
+      } else {
+        if (q.dur) {
+          if (followsNow.value) s0 = e0 - q.dur
+          else e0 = s0 + q.dur
+        }
+        if (q.day !== props.day) {
+          const shift = dayStart(q.day) - dayStart(props.day)
+          s0 += shift
+          e0 += shift
+          day = q.day
+        }
+      }
+      if (qp.task && !taskList.some((x) => x.key === qp.task!.key)) taskList.push(qp.task)
+      if (!(e0 > s0)) {
+        error.value = 'Конец должен быть позже начала'
+        return
+      }
+    }
     // a new block linked to several tasks → one parallel block per task
-    const targets: Array<TaskRef | undefined> = tasks.value.length ? tasks.value.map(plainTask) : [undefined]
+    const targets: Array<TaskRef | undefined> = taskList.length ? taskList.map(plainTask) : [undefined]
     let saved: Entry | undefined
     for (const [n, t] of targets.entries()) {
-      const r = await window.qa.saveEntry(props.day, {
+      const r = await window.qa.saveEntry(day, {
         ...base,
-        start: start.value,
-        end: endT,
+        start: s0,
+        end: e0,
         // a meeting or a break needs no description — the kind itself (or the linked task) is the label;
         // dictated: a placeholder until the transcript fills it
-        label: splitTitle(label.value).label || (dict ? VOICE_PENDING : t ? `${t.key} ${t.summary}` : kindLabel(kind.value)),
+        label: title || (dict ? VOICE_PENDING : t ? `${t.key} ${t.summary}` : kindLabel(kind.value)),
         description: splitTitle(label.value).description,
         task: t,
         kind: kind.value,
@@ -235,12 +263,10 @@ async function save(dict?: Dictation): Promise<void> {
       }, { overlap: true })
       saved ??= r
     }
-    if (saved && (props.entry.id || linked.value.length))
-      await window.qa.setLinks(props.day, { type: 'entry', id: saved.id }, linked.value.map((l) => ({ type: l.type, id: l.id })))
-    // the dictation is kept as an audio note linked to the block; its transcript fills the block's text
-    if (dict && saved) void saveRecording(props.day, { ...dict, at: start.value }, { entryId: saved.id })
+    // the dictation is kept as an audio note of the block; its transcript fills the block's text
+    if (dict && saved) void saveRecording(day, { ...dict, at: s0 }, { entryId: saved.id })
     // a new block with a repeat: its copies every hour / day / week / year
-    if (saved && !props.entry.id && repeatRule.value) await window.qa.repeatEntry(props.day, saved.id, repeatRule.value, repeatCount.value)
+    if (saved && !props.entry.id && repeatRule.value) await window.qa.repeatEntry(day, saved.id, repeatRule.value, repeatCount.value)
     if (saved) emit('saved', saved)
   } catch (e) {
     error.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
@@ -288,7 +314,7 @@ watch(
       <!-- a new block's form is always there — nothing to close -->
       <button v-if="entry.id" class="hbtn" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="16" /></button>
     </div>
-    <div v-if="readonly" class="ro"><Icon name="outlook" :size="13" />Встреча из Outlook — время, название и вид меняет только Outlook. Здесь — напоминание и связи.</div>
+    <div v-if="readonly" class="ro"><Icon name="outlook" :size="13" />Встреча из Outlook — время, название и вид меняет только Outlook. Здесь — напоминание.</div>
 
     <!-- the host may put the date here (the task calendar) -->
     <slot name="date" />
@@ -302,7 +328,6 @@ watch(
       <span class="dash">–</span>
       <TimeField :model-value="effectiveEnd" :live="followsNow" :min="start + 60000" :max="dayEnd(day)" @update:model-value="setEnd" />
       <span class="dur">{{ formatDuration(effectiveEnd - start) }}</span>
-      <span v-if="tracked < effectiveEnd - start - 60000" class="muted small" title="Сколько из этого времени QA было включено">QA {{ formatDuration(tracked) }}</span>
     </div>
     <div v-if="add && !readonly" class="presets">
       <button
@@ -334,6 +359,18 @@ watch(
     </div>
 
     <div v-if="readonly" class="rotitle">{{ entry.label }}<span v-if="entry.description" class="muted">{{ entry.description }}</span></div>
+    <QuickField
+      v-else-if="isNew"
+      ref="quickEl"
+      v-model="label"
+      :day="day"
+      :enter-newline="textarea"
+      :rows="textarea ? 3 : 1"
+      @submit="save()"
+      @kind="(k) => (kind = k)"
+      @task="addTask"
+      @parsed="(p) => (parsed = p)"
+    />
     <textarea
       v-else-if="textarea"
       ref="area"
@@ -358,7 +395,6 @@ watch(
     <!-- everything else — one row of equal chips; their choices open as lists (the card never jumps) -->
     <div class="bar">
       <TaskPicker v-if="!readonly" v-model="tasks" :single="!!entry.id" compact />
-      <LinkPicker v-model="linked" :entries="entries" :notes="notes" :self="entry.id ? { type: 'entry', id: entry.id } : undefined" compact />
       <DictateButton v-if="!readonly" compact @recorded="(r) => save(r)" />
       <PopChip v-model:open="remindOpen" icon="bell" :label="remindShort" :active="remindMode !== 'off'" :title="remindMode === 'off' ? 'Напомнить — уведомление Windows' : `Напоминание: ${remindShort}`">
         <button class="pci" :class="{ cur: remindMode === 'off' }" @click="(remindMode = 'off'), (remindOpen = false)">Не напоминать</button>
@@ -412,27 +448,31 @@ watch(
 }
 h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 11px;
+  font-family: var(--font-data);
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 .badge {
   font-size: 10px;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: #4338ca;
+  border-radius: var(--r2);
+  background: var(--accent);
 }
 .spacer {
   flex: 1;
 }
 .badge.ol {
-  background: #0369a1;
+  background: var(--info);
 }
 .badge.rep {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(124, 108, 246, 0.25);
-  color: #c7d2fe;
+  background: rgb(var(--accent-rgb) / 0.25);
+  color: var(--accent-fg);
 }
 .ro {
   display: flex;
@@ -440,13 +480,14 @@ h3 {
   gap: 6px;
   margin-top: -4px;
   padding: 6px 9px;
-  border-radius: 8px;
-  background: rgba(3, 105, 161, 0.14);
-  color: #9cc9e6;
+  border-radius: 4px;
+  background: rgba(68, 138, 255, 0.14);
+  color: var(--info-fg);
   font-size: 12px;
 }
 .rot {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
   font-size: 15px;
 }
 .rotitle {
@@ -466,9 +507,9 @@ h3 {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--r2);
   font-size: 12px;
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .hbtn {
   display: inline-flex;
@@ -478,7 +519,7 @@ h3 {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -487,7 +528,7 @@ h3 {
   color: var(--text);
 }
 .hbtn.danger:hover {
-  color: #fca5a5;
+  color: var(--down-fg);
 }
 .when {
   display: flex;
@@ -501,6 +542,7 @@ h3 {
 .dur {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .small {
   font-size: 12px;
@@ -519,7 +561,7 @@ h3 {
   gap: 3px;
   padding: 3px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -529,11 +571,11 @@ h3 {
   color: var(--text);
 }
 .presets .pill {
-  color: #c7d2fe;
+  color: var(--accent-fg);
 }
 .presets .dbtn.on {
-  background: rgba(124, 108, 246, 0.22);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--text-hi);
 }
 .presets .sep {
   width: 1px;
@@ -556,7 +598,7 @@ h3 {
   min-height: 64px;
   max-height: 420px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--field-bg);
   color: var(--text);
@@ -582,7 +624,7 @@ h3 {
   min-width: 30px;
   height: 28px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--kc, var(--muted));
@@ -595,7 +637,7 @@ h3 {
   background: var(--hover);
 }
 .kinds button.on {
-  color: #fff;
+  color: var(--text-hi);
   font-weight: 600;
 }
 /* one row of equal chips (task, links, voice, reminder, repeat) */
@@ -615,7 +657,7 @@ h3 {
 .bar :deep(.dict) {
   padding: 0;
   width: 32px;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 .bar :deep(.dict.on) {
   width: auto;
@@ -634,10 +676,10 @@ h3 {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #a5b4fc;
+  color: var(--accent-fg);
 }
 .error {
-  color: #fca5a5;
+  color: var(--down-fg);
   font-size: 13px;
 }
 .foot {

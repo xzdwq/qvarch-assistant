@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, mergeIntervals, MINUTE, scheduleRanges, trackedMs } from '@shared/timeline'
+import { clipEntries, dayEnd, dayStart, formatDuration, formatHM, HOUR, MINUTE, scheduleRanges, unionMs } from '@shared/timeline'
 import { productiveMs } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
-import type { LinkEnd, PublicSettings, Selection } from '@shared/types'
+import type { PublicSettings, Selection } from '@shared/types'
 import { useSelection } from '../lib/selection'
 import { addWidget, arrange, COLS, OLD_COLS_SCALE, resizeWidget, DEFAULT_DASHBOARD, WIDGETS, widgetInfo, type Widget, type WidgetType } from '@shared/dashboard'
 import Icon from '../components/Icon.vue'
@@ -11,7 +11,6 @@ import Timeline from '../components/Timeline.vue'
 import NoteList from '../components/NoteList.vue'
 import TaskCalendar from '../components/TaskCalendar.vue'
 import ThinkingOrb from '../components/ThinkingOrb.vue'
-import CalendarView from './CalendarView.vue'
 import TaskList from './TaskList.vue'
 import { kinds } from '../lib/palette'
 import { useDay } from '../lib/useDay'
@@ -30,19 +29,20 @@ import NoteEditor from '../components/NoteEditor.vue'
  * to resize (snapped to the grid); widgets push each other and float up — rows, columns, stacks.
  */
 const props = defineProps<{ settings: PublicSettings }>()
-const emit = defineEmits<{ go: [view: 'day' | 'calendar' | 'tasks' | 'notebook' | 'settings', day?: string, entryId?: string] }>()
+const emit = defineEmits<{ go: [view: 'day' | 'calendar' | 'work' | 'notebook' | 'settings', day?: string, entryId?: string] }>()
 
 // ---------- the layout (remembered) ----------
 /** The layout on the 60-column grid; one saved on the old 12-column grid (qa.dash) is scaled over once. */
 const KEY = 'qa.dash.v60'
 const OLD_KEY = 'qa.dash'
 function readLayout(): Widget[] {
-  const valid = (v: unknown): v is Widget[] => Array.isArray(v) && v.every((w) => w && WIDGETS.some((x) => x.type === (w as Widget).type))
+  // widgets of removed kinds drop out — the rest of a saved layout stays
+  const known = (v: unknown): Widget[] | undefined => (Array.isArray(v) ? (v as Widget[]).filter((w) => w && WIDGETS.some((x) => x.type === w.type)) : undefined)
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as unknown
-    if (valid(v)) return arrange(v)
-    const old = JSON.parse(localStorage.getItem(OLD_KEY) ?? 'null') as unknown
-    if (valid(old)) return arrange(old.map((w) => ({ ...w, x: w.x * OLD_COLS_SCALE, w: w.w * OLD_COLS_SCALE })))
+    const v = known(JSON.parse(localStorage.getItem(KEY) ?? 'null'))
+    if (v?.length) return arrange(v)
+    const old = known(JSON.parse(localStorage.getItem(OLD_KEY) ?? 'null'))
+    if (old?.length) return arrange(old.map((w) => ({ ...w, x: w.x * OLD_COLS_SCALE, w: w.w * OLD_COLS_SCALE })))
   } catch {
     // a broken layout — the default one
   }
@@ -189,14 +189,6 @@ async function onDelete(id: string): Promise<void> {
   } else await window.qa.deleteEntry(today.value, id)
   await reload()
 }
-async function onLink(a: LinkEnd, b: LinkEnd): Promise<void> {
-  await window.qa.link(today.value, a, b)
-  await reload()
-}
-async function onUnlink(id: string): Promise<void> {
-  await window.qa.unlink(today.value, id)
-  await reload()
-}
 async function onMerge(ids: string[]): Promise<void> {
   await window.qa.mergeEntries(today.value, ids)
   await reload()
@@ -210,8 +202,9 @@ async function onPlanChange(c: { id: string; start: number; end: number }): Prom
 const schedule = computed(() => scheduleRanges(today.value, props.settings.schedule))
 const bounds = computed<[number, number]>(() => [dayStart(today.value), dayEnd(today.value)])
 const initial = computed<[number, number]>(() => {
-  const starts = data.value.spans.map((s) => s.start)
-  const ends = [...data.value.spans.map((s) => s.end), now.value]
+  // the work day, the day's blocks and now
+  const starts = data.value.entries.map((e) => e.start)
+  const ends = [...data.value.entries.map((e) => e.end), now.value]
   if (schedule.value.work) {
     starts.push(schedule.value.work[0])
     ends.push(schedule.value.work[1])
@@ -221,10 +214,9 @@ const initial = computed<[number, number]>(() => {
   return [Math.max(dayStart(today.value), Math.floor((from - 15 * MINUTE) / HOUR) * HOUR), Math.min(dayEnd(today.value), Math.ceil((to + 15 * MINUTE) / HOUR) * HOUR)]
 })
 const stats = computed(() => {
-  const d = { ...data.value, entries: clipEntries(data.value.entries, now.value) }
-  const pcOn = d.spans.reduce((s, x) => s + Math.max(0, Math.min(x.end, now.value) - x.start), 0)
-  const labelled = mergeIntervals(d.entries).reduce((s, e) => s + trackedMs(e.start, e.end, d.spans), 0)
-  return { pcOn, labelled, productive: productiveMs(d.entries, kinds.value), unlabelled: Math.max(0, pcOn - labelled), count: data.value.entries.length }
+  const entries = clipEntries(data.value.entries, now.value)
+  const calls = entries.filter((e) => e.kind === 'call' || e.kind === 'meeting')
+  return { labelled: unionMs(entries), productive: productiveMs(entries, kinds.value), calls: unionMs(calls), count: data.value.entries.length }
 })
 const notes = computed(() => visibleNotes(data.value.notes))
 // creating a block: from now, ± minutes (as on the timeline page)
@@ -250,7 +242,7 @@ const createDraft = computed<Draft>(() => {
   const span = createAdd.value.min * MINUTE
   return { start: createAdd.value.back ? b - span : b, end: createAdd.value.back ? b : b + span, kind: 'task', label: '', source: 'manual', followsNow: createAdd.value.back, startsNow: !createAdd.value.back }
 })
-const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.idle ? 'Простой' : live.value.app ? `Работаю · ${live.value.app}` : 'Работаю'))
+const orbText = computed(() => (live.value.inCall ? `Созвон${live.value.callApp ? ` · ${live.value.callApp}` : ''}` : 'В работе'))
 
 </script>
 
@@ -271,12 +263,10 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             :key="`qe${quickKey}`"
             :day="today"
             :entry="createDraft"
-            :spans="data.spans"
             :recent="[]"
             :now="now"
             :entries="data.entries"
             :notes="data.notes"
-            :links="data.links ?? []"
             :add="marker ? undefined : createAdd"
             textarea
             @update:add="(a) => (createAdd = a)"
@@ -290,7 +280,6 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             :note="quickNote"
             :entries="data.entries"
             :notes="data.notes"
-            :links="data.links ?? []"
             @close="quick = undefined"
           />
         </div>
@@ -314,10 +303,9 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
           <div v-if="editing" class="shield"></div>
 
           <div v-if="w.type === 'stats'" class="stats">
-            <div><span>QA включено</span><b>{{ formatDuration(stats.pcOn) }}</b></div>
-            <div><span>Продуктивно</span><b class="g">{{ formatDuration(stats.productive) }}</b></div>
             <div><span>Размечено</span><b>{{ formatDuration(stats.labelled) }}</b></div>
-            <div><span>Не размечено</span><b class="y">{{ formatDuration(stats.unlabelled) }}</b></div>
+            <div><span>Продуктивно</span><b class="g">{{ formatDuration(stats.productive) }}</b></div>
+            <div><span>Встречи и созвоны</span><b>{{ formatDuration(stats.calls) }}</b></div>
             <div><span>Записей</span><b>{{ stats.count }}</b></div>
           </div>
 
@@ -334,7 +322,6 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             :bounds="bounds"
             :initial="initial"
             :selection="marker"
-            :link-style="settings.ui.links.style"
             :follow="settings.ui.timeline"
             @select="(id) => emit('go', 'day', today, id)"
             @selection="onSelection"
@@ -344,8 +331,6 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             @change-kind="onKind"
             @delete-entry="onDelete"
             @merge="onMerge"
-            @link="onLink"
-            @unlink="onUnlink"
             @plan-changed="reload"
             @plan-change="onPlanChange"
           />
@@ -359,14 +344,13 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
             <p v-else class="empty">Заметок сегодня нет</p>
           </div>
 
-          <CalendarView v-else-if="w.type === 'calendar'" :day="today" :work-days="settings.schedule.workDays" @open="(d) => emit('go', 'day', d)" />
-          <TaskCalendar v-else-if="w.type === 'week'" :link-style="settings.ui.links.style" :work-days="settings.schedule.workDays" @open-day="(d) => emit('go', 'day', d)" />
+          <TaskCalendar v-else-if="w.type === 'week'" :work-days="settings.schedule.workDays" @open-day="(d) => emit('go', 'day', d)" />
           <TaskList v-else-if="w.type === 'tasks'" @open-day="(d) => emit('go', 'day', d)" @settings="emit('go', 'settings')" />
 
           <div v-else-if="w.type === 'orb'" class="orb">
-            <ThinkingOrb :state="live.inCall ? 'listening' : live.idle ? 'breathing' : 'working'" :size="64" :px="72" />
+            <ThinkingOrb :state="live.inCall ? 'listening' : 'working'" :size="64" :px="72" />
             <b>{{ orbText }}</b>
-            <span class="muted">{{ formatHM(now) }} · не размечено {{ formatDuration(stats.unlabelled) }}</span>
+            <span class="muted">{{ formatHM(now) }} · размечено {{ formatDuration(stats.labelled) }}</span>
           </div>
 
           <NotebookView v-else-if="w.type === 'notebook'" widget />
@@ -377,12 +361,10 @@ const orbText = computed(() => (live.value.inCall ? 'Созвон' : live.value.
               :key="createKey"
               :day="today"
               :entry="createDraft"
-              :spans="data.spans"
               :recent="[]"
               :now="now"
               :entries="data.entries"
               :notes="data.notes"
-              :links="data.links ?? []"
               :add="marker ? undefined : createAdd"
               textarea
               @update:add="(a) => (createAdd = a)"
@@ -425,7 +407,7 @@ async function window_follow(on: boolean): Promise<void> {
   align-items: center;
   gap: 6px;
   padding: 5px 11px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 12.5px;
 }
 .dbar .ghost {
@@ -448,9 +430,9 @@ async function window_follow(on: boolean): Promise<void> {
   padding: 5px;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #1c2030;
+  background: var(--panel-2);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
 }
 .addmenu button {
@@ -459,7 +441,7 @@ async function window_follow(on: boolean): Promise<void> {
   background: transparent;
 }
 .addmenu button:hover {
-  background: rgba(139, 92, 246, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
 }
 .grid {
   position: relative;
@@ -468,17 +450,17 @@ async function window_follow(on: boolean): Promise<void> {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(124, 108, 246, 0.025);
+  background: rgb(var(--accent-rgb) / 0.025);
 }
 .gcol.major {
-  border-left: 1px dashed rgba(124, 108, 246, 0.22);
+  border-left: 1px dashed rgb(var(--accent-rgb) / 0.22);
 }
 .wd {
   position: absolute;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-radius: 12px;
+  border-radius: var(--r3);
   border: 1px solid var(--border);
   background: var(--panel);
   overflow: hidden;
@@ -492,7 +474,7 @@ async function window_follow(on: boolean): Promise<void> {
   z-index: 10;
   transition: none;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-  border-color: rgba(124, 108, 246, 0.7);
+  border-color: rgb(var(--accent-rgb) / 0.7);
 }
 .wh {
   flex: none;
@@ -502,14 +484,14 @@ async function window_follow(on: boolean): Promise<void> {
   height: 32px;
   padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--border);
-  color: #c3c8d6;
+  color: var(--text-2);
   font-size: 12.5px;
   font-weight: 600;
   user-select: none;
 }
 .editing .wh {
   cursor: grab;
-  background: rgba(124, 108, 246, 0.08);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 .grip {
   color: var(--muted);
@@ -524,7 +506,7 @@ async function window_follow(on: boolean): Promise<void> {
   display: inline-flex;
   padding: 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
 }
@@ -546,7 +528,7 @@ async function window_follow(on: boolean): Promise<void> {
 }
 /* while editing every side pulls: a lit edge under the pointer, a small dot in the corner */
 .editing .wd {
-  border-color: rgba(124, 108, 246, 0.45);
+  border-color: rgb(var(--accent-rgb) / 0.45);
 }
 .rz {
   position: absolute;
@@ -585,7 +567,7 @@ async function window_follow(on: boolean): Promise<void> {
   content: '';
   position: absolute;
   border-radius: 2px;
-  background: #8b7cff;
+  background: var(--accent);
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -652,7 +634,7 @@ async function window_follow(on: boolean): Promise<void> {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #8b7cff;
+  background: var(--accent);
 }
 /* widgets */
 .stats {
@@ -673,12 +655,13 @@ async function window_follow(on: boolean): Promise<void> {
 .stats b {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
 }
 .stats b.g {
-  color: #4ade80;
+  color: var(--up);
 }
 .stats b.y {
-  color: #fbbf24;
+  color: var(--warn);
 }
 .wb.t-timeline :deep(.tl) {
   flex: none;
@@ -751,7 +734,7 @@ async function window_follow(on: boolean): Promise<void> {
   flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--r2);
 }
 .orb {
   height: 100%;
@@ -783,7 +766,7 @@ async function window_follow(on: boolean): Promise<void> {
   align-items: flex-start;
   justify-content: center;
   padding-top: 70px;
-  background: rgba(5, 7, 12, 0.5);
+  background: rgba(13, 17, 23, 0.5);
 }
 .qc {
   width: 520px;
@@ -791,9 +774,9 @@ async function window_follow(on: boolean): Promise<void> {
   max-height: calc(100vh - 100px);
   overflow: auto;
   padding: 12px 16px 16px;
-  border-radius: 14px;
+  border-radius: var(--r3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171a24;
+  background: var(--panel);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 .qc-tabs {
@@ -808,14 +791,14 @@ async function window_follow(on: boolean): Promise<void> {
   gap: 6px;
   padding: 5px 11px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
-  color: #9aa3b8;
+  color: var(--muted);
   font-size: 12.5px;
 }
 .qc-tabs button.on {
-  background: rgba(124, 108, 246, 0.2);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.2);
+  color: var(--text-hi);
 }
 .qc-tabs .grow {
   flex: 1;
