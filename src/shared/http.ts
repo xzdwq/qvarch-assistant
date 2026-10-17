@@ -29,6 +29,8 @@ export interface HttpKV {
   on: boolean
   key: string
   value: string
+  /** A secret (a token, a cookie): shown hidden, kept encrypted on disk (Windows DPAPI). Variables only. */
+  secret?: boolean
 }
 export type HttpBodyMode = 'none' | 'json' | 'raw' | 'urlencoded' | 'form'
 export interface HttpBody {
@@ -66,6 +68,8 @@ export interface HttpFolder {
   type: 'folder'
   name: string
   open?: boolean
+  /** When its chain stops: "error" and statuses — 4xx, 5xx, 401, 400-404 (comma separated); empty — never. */
+  stopOn?: string
   children: HttpNode[]
 }
 export type HttpNode = HttpRequest | HttpFolder
@@ -108,6 +112,23 @@ export interface HttpRunResult {
   error?: string
   /** Where it failed: the pre script, a pre request, the request, the post script. */
   stage?: 'pre' | 'chain' | 'request' | 'post'
+}
+
+/** What a chain stops on by default: no answer / a script error, and any 4xx / 5xx answer. */
+export const DEFAULT_STOP_ON = 'error, 4xx, 5xx'
+/** Why a step stops its chain (by the folder's stopOn), or nothing. */
+export function stopReason(spec: string, out: HttpRunResult): string | undefined {
+  const parts = spec.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)
+  if (out.error && parts.includes('error')) return out.error
+  const s = out.response?.status
+  if (s === undefined) return undefined
+  for (const p of parts) {
+    const m = p.match(/^([1-5])xx$/)
+    if (m && Math.floor(s / 100) === Number(m[1])) return `ответ ${s}`
+    const r = p.match(/^(\d{3})(?:-(\d{3}))?$/)
+    if (r && s >= Number(r[1]) && s <= Number(r[2] ?? r[1])) return `ответ ${s}`
+  }
+  return undefined
 }
 
 export const httpId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)

@@ -1,7 +1,7 @@
 import type { UiPrefs } from '@shared/types'
 
 /** The sections of the main window, in the default menu order. */
-export type View = 'dashboard' | 'day' | 'calendar' | 'work' | 'reports' | 'notebook' | 'release' | 'http' | 'terminal' | 'pdf' | 'settings'
+export type View = 'dashboard' | 'day' | 'calendar' | 'work' | 'reports' | 'notebook' | 'release' | 'browser' | 'http' | 'terminal' | 'pdf' | 'settings'
 export const VIEWS: Array<{ id: Exclude<View, 'settings'>; icon: string; label: string }> = [
   { id: 'dashboard', icon: 'dashboard', label: 'Дашборд' },
   { id: 'day', icon: 'timeline', label: 'Таймлайн' },
@@ -10,7 +10,8 @@ export const VIEWS: Array<{ id: Exclude<View, 'settings'>; icon: string; label: 
   { id: 'reports', icon: 'chart', label: 'Аналитика' },
   { id: 'notebook', icon: 'notebook', label: 'Блокнот' },
   { id: 'release', icon: 'branch', label: 'Релиз' },
-  { id: 'http', icon: 'globe', label: 'HTTP' },
+  { id: 'browser', icon: 'globe', label: 'Браузер' },
+  { id: 'http', icon: 'api', label: 'HTTP' },
   { id: 'terminal', icon: 'terminal', label: 'Терминал' },
   { id: 'pdf', icon: 'signature', label: 'Подпись PDF' },
 ]

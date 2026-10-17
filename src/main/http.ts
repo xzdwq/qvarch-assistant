@@ -1,7 +1,8 @@
+import { safeStorage } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import vm from 'node:vm'
-import { buildHeaders, buildUrl, DEFAULT_HTTP_SETTINGS, fill, findNode, sampleDoc, type HttpDoc, type HttpSettings, type HttpRequest, type HttpResponse, type HttpRunResult, type HttpRunStep } from '../shared/http'
+import { buildHeaders, buildUrl, DEFAULT_HTTP_SETTINGS, fill, findNode, sampleDoc, stopReason, type HttpDoc, type HttpFolder, type HttpKV, type HttpSettings, type HttpRequest, type HttpResponse, type HttpRunResult, type HttpRunStep } from '../shared/http'
 
 /**
  * The HTTP section's backend: the collection (data/http.json, a test one made on the first start) and running a
@@ -21,7 +22,17 @@ export class HttpClient {
     }
     try {
       const d = JSON.parse(readFileSync(this.file, 'utf8')) as HttpDoc
-      return { v: 1, items: Array.isArray(d.items) ? d.items : [], vars: Array.isArray(d.vars) ? d.vars : [], settings: { ...DEFAULT_HTTP_SETTINGS, ...d.settings } }
+      // secret variables are kept encrypted
+      const vars = (Array.isArray(d.vars) ? d.vars : []).map((v: HttpKV & { enc?: string }) => {
+        if (!v.enc) return v
+        const { enc, ...rest } = v
+        try {
+          return { ...rest, value: safeStorage.decryptString(Buffer.from(enc, 'base64')) }
+        } catch {
+          return { ...rest, value: '' }
+        }
+      })
+      return { v: 1, items: Array.isArray(d.items) ? d.items : [], vars, settings: { ...DEFAULT_HTTP_SETTINGS, ...d.settings } }
     } catch {
       return { v: 1, items: [], vars: [] }
     }
@@ -29,14 +40,94 @@ export class HttpClient {
 
   save(doc: HttpDoc): void {
     const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(doc, null, 2))
+    // a secret variable's value goes to disk encrypted (Windows DPAPI) — never as plain text
+    const crypt = safeStorage.isEncryptionAvailable()
+    const vars = doc.vars.map((v) => (v.secret && v.value && crypt ? { ...v, value: '', enc: safeStorage.encryptString(v.value).toString('base64') } : v))
+    writeFileSync(tmp, JSON.stringify({ ...doc, vars }, null, 2))
     renameSync(tmp, this.file)
   }
 
+  /**
+   * A recorded chain comes in (from the browser): its folder on top, its variables set (secret ones stay secret).
+   */
+  import(folder: HttpFolder, vars: HttpKV[]): void {
+    const doc = this.load()
+    doc.items.unshift(folder)
+    for (const v of vars) {
+      const row = doc.vars.find((x) => x.key === v.key)
+      if (row) Object.assign(row, { value: v.value, on: true, ...(v.secret ? { secret: true } : {}) })
+      else doc.vars.push({ on: true, key: v.key, value: v.value, ...(v.secret ? { secret: true } : {}) })
+    }
+    this.save(doc)
+  }
+
+  /** Running requests (a single one or a chain) — each can be stopped. */
+  private aborts = new Map<string, AbortController>()
+  abort(runId: string): void {
+    this.aborts.get(runId)?.abort()
+  }
+
   /** Runs a request (its pre requests and scripts first), with the collection's variables. */
-  async run(req: HttpRequest, doc: HttpDoc): Promise<HttpRunResult> {
+  async run(req: HttpRequest, doc: HttpDoc, runId?: string): Promise<HttpRunResult> {
     const vars: Record<string, string> = {}
     for (const v of doc.vars) if (v.on && v.key) vars[v.key] = v.value
+    const ctl = new AbortController()
+    if (runId) this.aborts.set(runId, ctl)
+    try {
+      const out = await this.exec(req, doc, vars, ctl.signal)
+      // the variables set by the scripts stay in the collection
+      for (const [k, v] of Object.entries(vars)) {
+        const row = doc.vars.find((x) => x.key === k)
+        if (row) row.value = v
+        else doc.vars.push({ on: true, key: k, value: v })
+      }
+      this.save(doc)
+      return out
+    } finally {
+      if (runId) this.aborts.delete(runId)
+    }
+  }
+
+  /**
+   * A folder's requests one after another, the variables passing on (a token, an id). Runs here, not in the
+   * window — it goes on whatever the window shows; stops on what `stopOn` names, or when asked (abort).
+   * Each step is reported as it ends; the variables go into the collection's file after each (only them —
+   * the requests may be being edited meanwhile).
+   */
+  async chain(ids: string[], doc: HttpDoc, stopOn: string, runId: string, onStep: (i: number, id: string, out: HttpRunResult) => void): Promise<{ stopped?: string }> {
+    const vars: Record<string, string> = {}
+    for (const v of doc.vars) if (v.on && v.key) vars[v.key] = v.value
+    const ctl = new AbortController()
+    this.aborts.set(runId, ctl)
+    try {
+      for (let i = 0; i < ids.length; i++) {
+        if (ctl.signal.aborted) return { stopped: 'Прервано' }
+        const req = findNode(doc.items, ids[i])
+        if (!req || req.type !== 'request') continue
+        const out = await this.exec(req, doc, vars, ctl.signal)
+        this.mergeVars(vars)
+        onStep(i, req.id, out)
+        if (ctl.signal.aborted) return { stopped: 'Прервано' }
+        const why = stopReason(stopOn, out)
+        if (why) return { stopped: `Остановлено на №${i + 1}: ${why}` }
+      }
+      return {}
+    } finally {
+      this.aborts.delete(runId)
+    }
+  }
+  /** The variables a run set — into the file as they are now (nothing else of it touched). */
+  private mergeVars(vars: Record<string, string>): void {
+    const disk = this.load()
+    for (const [k, v] of Object.entries(vars)) {
+      const row = disk.vars.find((x) => x.key === k)
+      if (row) row.value = v
+      else disk.vars.push({ on: true, key: k, value: v })
+    }
+    this.save(disk)
+  }
+
+  private async exec(req: HttpRequest, doc: HttpDoc, vars: Record<string, string>, signal: AbortSignal): Promise<HttpRunResult> {
     const logs: string[] = []
     const chain: HttpRunStep[] = []
     const out: HttpRunResult = { logs, vars, chain, hasResult: false }
@@ -50,7 +141,7 @@ export class HttpClient {
         chain.push(step)
         try {
           if (p.pre.script.trim()) this.script(p.pre.script, { req: p, vars, logs, label: p.name })
-          const r = await this.send(p, vars, settings)
+          const r = await this.send(p, vars, settings, signal)
           step.status = r.status
           step.time = r.time
           if (p.post.trim()) this.script(p.post, { req: p, res: r, vars, logs, label: p.name })
@@ -65,7 +156,7 @@ export class HttpClient {
         this.script(req.pre.script, { req, vars, logs, label: 'перед запросом' })
       }
       out.stage = 'request'
-      out.response = await this.send(req, vars, settings)
+      out.response = await this.send(req, vars, settings, signal)
       if (req.post.trim()) {
         out.stage = 'post'
         const r = this.script(req.post, { req, res: out.response, vars, logs, label: 'обработка' })
@@ -76,17 +167,11 @@ export class HttpClient {
     } catch (e) {
       out.error = msg(e)
     }
-    // the variables set by the scripts stay in the collection
-    for (const [k, v] of Object.entries(vars)) {
-      const row = doc.vars.find((x) => x.key === k)
-      if (row) row.value = v
-      else doc.vars.push({ on: true, key: k, value: v })
-    }
-    this.save(doc)
     return out
   }
 
-  private async send(r: HttpRequest, vars: Record<string, string>, settings: HttpSettings): Promise<HttpResponse> {
+  private async send(r: HttpRequest, vars: Record<string, string>, settings: HttpSettings, stop?: AbortSignal): Promise<HttpResponse> {
+    if (stop?.aborted) throw new Error('Прервано')
     const url = buildUrl(r, vars)
     if (!/^https?:\/\//i.test(url)) throw new Error(`Адрес должен начинаться с http:// или https:// — «${url || 'пусто'}»`)
     const headers = buildHeaders(r, vars, settings)
@@ -115,6 +200,8 @@ export class HttpClient {
     const ctl = new AbortController()
     const limitSec = Math.max(1, Math.min(600, Number(settings.timeoutSec) || 60))
     const timer = setTimeout(() => ctl.abort(), limitSec * 1000)
+    const onStop = () => ctl.abort()
+    stop?.addEventListener('abort', onStop)
     try {
       const res = await fetch(url, { method: r.method, headers, body, signal: ctl.signal, redirect: 'follow' })
       const buf = Buffer.from(await res.arrayBuffer())
@@ -124,9 +211,10 @@ export class HttpClient {
       const text = buf.subarray(0, LIMIT).toString('utf8') + (buf.length > LIMIT ? '\n…(обрезано)' : '')
       return { status: res.status, statusText: res.statusText, headers: [...res.headers.entries()], body: text, time, size: buf.length, url: res.url || url }
     } catch (e) {
-      throw new Error(ctl.signal.aborted ? `Нет ответа за ${limitSec} с` : `Не удалось выполнить запрос: ${msg(e)}`)
+      throw new Error(stop?.aborted ? 'Прервано' : ctl.signal.aborted ? `Нет ответа за ${limitSec} с` : `Не удалось выполнить запрос: ${msg(e)}`)
     } finally {
       clearTimeout(timer)
+      stop?.removeEventListener('abort', onStop)
     }
   }
 

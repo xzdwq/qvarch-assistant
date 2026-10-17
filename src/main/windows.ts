@@ -1,4 +1,5 @@
 import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { IPC, type IslandLayout } from '../shared/api'
 import { ISLAND_PILL, ISLAND_WINDOW, nextDock, type Dock } from '../shared/island'
@@ -39,9 +40,33 @@ export function createMainWindow(): BrowserWindow {
     void shell.openExternal(url)
     return { action: 'deny' }
   })
+  // the app never leaves its own page (a file dropped on it would open in its place)
+  // (it is one page: a navigation is never its own — loading and reloading are not navigations)
+  win.webContents.on('will-navigate', (e) => e.preventDefault())
   load(win, 'index')
   forwardConsole(win, 'main')
+  // pinned to the taskbar: it must start the portable exe itself (the copy it unpacks into %TEMP% is not the app)
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE
+  if (process.platform === 'win32' && exe) win.setAppDetails({ appId: 'com.qvarch.assistant', appIconPath: exe, appIconIndex: 0, relaunchCommand: `"${exe}"`, relaunchDisplayName: 'Qvarch Assistant' })
   return win
+}
+
+/**
+ * The app's Start menu shortcut (if there is one) points at the portable exe: one made while it ran from a
+ * temporary copy pointed there — after that copy went, Windows showed a blank icon for the app (the taskbar too).
+ */
+export function fixShortcut(): void {
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE
+  if (process.platform !== 'win32' || !exe || !app.isPackaged) return
+  const lnk = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Qvarch Assistant.lnk')
+  if (!existsSync(lnk)) return
+  try {
+    const cur = shell.readShortcutLink(lnk)
+    if (cur.target === exe && cur.appUserModelId === 'com.qvarch.assistant') return
+    shell.writeShortcutLink(lnk, 'replace', { target: exe, icon: exe, iconIndex: 0, appUserModelId: 'com.qvarch.assistant', description: 'Qvarch Assistant' })
+  } catch {
+    // not ours to touch after all
+  }
 }
 
 function intersects(a: Rectangle, b: Rectangle): boolean {

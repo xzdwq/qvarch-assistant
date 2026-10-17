@@ -17,6 +17,7 @@ import ReleaseView from './ReleaseView.vue'
 import PdfSignView from './PdfSignView.vue'
 import HttpView from './HttpView.vue'
 import TerminalView from './TerminalView.vue'
+import BrowserView from './BrowserView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import DatePick from '../components/DatePick.vue'
 import StatusBar from '../components/StatusBar.vue'
@@ -80,6 +81,18 @@ function run(cmd: AppCommand): void {
 /** Once opened, the terminal stays mounted (hidden in other sections). */
 const termOpened = ref(false)
 watch(view, (v) => v === 'terminal' && (termOpened.value = true), { immediate: true })
+/** The browser too: once opened it stays (its pages live in the main process; hidden in other sections). */
+const brOpened = ref(false)
+watch(view, (v) => v === 'browser' && (brOpened.value = true), { immediate: true })
+/** A chain recorded in the browser went to HTTP: open it there, its first request picked. */
+function openHttp(id: string): void {
+  try {
+    localStorage.setItem('qa.http.sel', id)
+  } catch {
+    // fine
+  }
+  view.value = 'http'
+}
 const menu = computed(() => orderedViews(settings.value?.ui.menu).filter((v) => v.id === view.value || !settings.value?.ui.menu.hidden.includes(v.id)))
 
 const sectionName = computed(() => (view.value === 'settings' ? 'Настройки' : (VIEWS.find((v) => v.id === view.value)?.label ?? '')))
@@ -180,12 +193,14 @@ function setAppZoom(z: number): void {
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
         <div v-else-if="view === 'terminal'" class="termslot"></div>
+        <div v-else-if="view === 'browser'" class="termslot"></div>
         <PdfSignView v-else-if="view === 'pdf'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
       <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep" />
+      <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep" :active="view === 'browser'" @open-http="openHttp" />
     </main>
-    <StatusBar :section="sectionName" @terminal="view = 'terminal'" />
+    <StatusBar :section="sectionName" @terminal="view = 'terminal'" @browser="view = 'browser'" />
   </div>
 </template>
 

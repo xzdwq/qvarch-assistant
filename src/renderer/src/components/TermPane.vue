@@ -50,6 +50,8 @@ onMounted(async () => {
   term.loadAddon(fit)
   term.loadAddon(new WebLinksAddon((_e, uri) => window.qa.openExternal(uri)))
   term.open(box.value!)
+  // (the development pictures drive it: the snap steps reach the terminal through its box)
+  ;(box.value as HTMLElement & { qaTerm?: Terminal }).qaTerm = term
   // what the shell printed before this pane was drawn; what comes meanwhile waits (and is not drawn twice)
   let upto = -1
   const early: Array<[string, number]> = []
@@ -77,7 +79,32 @@ onMounted(async () => {
       void navigator.clipboard.readText().then((t) => t && window.qa.termWrite(props.session.id, t))
       return false
     }
+    // a piece of the typed command selected with the mouse: Backspace / Delete remove it, Ctrl+X cuts it
+    if (term?.hasSelection() && (e.key === 'Backspace' || e.key === 'Delete' || (e.ctrlKey && e.code === 'KeyX'))) {
+      if (cutSelection(e.ctrlKey && e.code === 'KeyX')) return false
+      if (e.key !== 'Backspace' && e.key !== 'Delete') return true
+      term.clearSelection()
+    }
     return true
+  })
+  // right click: a selection — copied; none — the clipboard pasted (as in Windows Terminal)
+  box.value!.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    if (!term) return
+    if (term.hasSelection()) {
+      void navigator.clipboard.writeText(term.getSelection())
+      term.clearSelection()
+    } else void navigator.clipboard.readText().then((t) => t && window.qa.termWrite(props.session.id, t))
+    term.focus()
+  })
+  // a click in the command being typed puts the cursor there (a drag stays a selection)
+  let down: { x: number; y: number } | undefined
+  box.value!.addEventListener('mousedown', (e) => e.button === 0 && (down = { x: e.clientX, y: e.clientY }))
+  box.value!.addEventListener('mouseup', (e) => {
+    const d = down
+    down = undefined
+    if (!d || e.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) return
+    setTimeout(() => clickToCursor(e.clientX, e.clientY))
   })
   ro = new ResizeObserver(() => requestAnimationFrame(fitNow))
   ro.observe(box.value!)
@@ -85,6 +112,55 @@ onMounted(async () => {
   fitNow()
   if (props.active) term.focus()
 })
+// ---------- the command line with the mouse: the cursor by a click, a selected piece deleted ----------
+/** The rows of the command being typed: the cursor's row and the ones wrapped with it. */
+function inputRows(): { first: number; last: number } | undefined {
+  if (!term || props.session.busy || term.modes.mouseTrackingMode !== 'none' || term.buffer.active.type !== 'normal') return undefined
+  const b = term.buffer.active
+  const cur = b.baseY + b.cursorY
+  let first = cur
+  while (first > 0 && b.getLine(first)?.isWrapped) first--
+  let last = cur
+  while (b.getLine(last + 1)?.isWrapped) last++
+  return { first, last }
+}
+/** The cursor moved by arrows (the shell's own editing follows) to a row / column of the buffer. */
+function cursorTo(row: number, col: number): void {
+  if (!term) return
+  const b = term.buffer.active
+  const d = row * term.cols + col - ((b.baseY + b.cursorY) * term.cols + b.cursorX)
+  if (!d) return
+  const app = term.modes.applicationCursorKeysMode
+  const key = d > 0 ? (app ? '\x1bOC' : '\x1b[C') : app ? '\x1bOD' : '\x1b[D'
+  window.qa.termWrite(props.session.id, key.repeat(Math.abs(d)))
+}
+function clickToCursor(x: number, y: number): void {
+  const rows = inputRows()
+  const screen = box.value?.querySelector('.xterm-screen')
+  if (!term || !rows || !screen || term.hasSelection()) return
+  const r = screen.getBoundingClientRect()
+  const col = Math.floor((x - r.left) / (r.width / term.cols))
+  const row = term.buffer.active.viewportY + Math.floor((y - r.top) / (r.height / term.rows))
+  if (row < rows.first || row > rows.last || col < 0 || col >= term.cols) return
+  cursorTo(row, col)
+}
+/** A selection inside the command being typed: deleted (and copied, for a cut). False — it is elsewhere. */
+function cutSelection(copy: boolean): boolean {
+  const rows = inputRows()
+  const p = term?.getSelectionPosition()
+  if (!term || !rows || !p) return false
+  // (the cells are counted from 0, whatever xterm's typings say; the end is the cell after the last one)
+  const s = { row: p.start.y, col: p.start.x }
+  const e = { row: p.end.y, col: p.end.x }
+  if (s.row < rows.first || e.row > rows.last) return false
+  const len = (e.row - s.row) * term.cols + (e.col - s.col)
+  if (len <= 0) return false
+  if (copy) void navigator.clipboard.writeText(term.getSelection())
+  term.clearSelection()
+  cursorTo(e.row, e.col)
+  window.qa.termWrite(props.session.id, '\x7f'.repeat(len))
+  return true
+}
 onBeforeUnmount(() => {
   off?.()
   ro?.disconnect()

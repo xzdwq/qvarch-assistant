@@ -23,12 +23,14 @@ import { keyTotals } from '../shared/board'
 import type { MyTaskStatus } from '../shared/jira'
 import { Store } from './store'
 import { Tracker } from './tracker'
-import { createMainWindow, Island, TITLEBAR_HEIGHT } from './windows'
+import { createMainWindow, fixShortcut, Island, TITLEBAR_HEIGHT } from './windows'
 import { themeBg, themeSymbol } from '../shared/theme'
-import type { HttpDoc, HttpRequest } from '../shared/http'
+import type { HttpDoc, HttpFolder, HttpKV, HttpRequest } from '../shared/http'
 import { runSnap } from './snap'
 import { HttpClient } from './http'
 import { Terminals } from './terminal'
+import { Browser } from './browser'
+import { BROWSER_METHODS } from '../shared/browser'
 import type { TermConfig } from '../shared/terminal'
 
 const ISLAND_HOTKEY = 'Control+Alt+Space'
@@ -46,6 +48,7 @@ let mainWin: BrowserWindow | undefined
 let tablet: TabletService | undefined
 let island: Island | undefined
 let terminals: Terminals | undefined
+let browser: Browser | undefined
 let selection: Selection | null = null
 let tray: Tray | undefined
 let jira: Jira
@@ -192,6 +195,7 @@ type Nav = { day?: string; entryId?: string; view?: 'day' | 'settings' }
 function showMain(nav?: Nav): void {
   if (!mainWin || mainWin.isDestroyed()) {
     mainWin = createMainWindow()
+    browser?.attach(mainWin)
     applyWindowTheme()
     // "only the Qvarch window" follows this window
     tablet?.refresh()
@@ -868,7 +872,22 @@ function registerIpc(): void {
   const http = new HttpClient(store.root)
   ipcMain.handle(IPC.httpLoad, () => http.load())
   ipcMain.handle(IPC.httpSave, (_e, doc: HttpDoc) => http.save(doc))
-  ipcMain.handle(IPC.httpRun, (_e, req: HttpRequest, doc: HttpDoc) => http.run(req, doc))
+  ipcMain.handle(IPC.httpRun, (_e, req: HttpRequest, doc: HttpDoc, runId?: string) => http.run(req, doc, typeof runId === 'string' ? runId : undefined))
+  ipcMain.handle(IPC.httpChain, (_e, ids: string[], doc: HttpDoc, stopOn: string, runId: string) =>
+    http.chain(Array.isArray(ids) ? ids.map(String) : [], doc, String(stopOn ?? ''), String(runId), (i, id, out) => toMain(IPC.httpChainEv, runId, i, id, out)),
+  )
+  ipcMain.handle(IPC.httpAbort, (_e, runId: string) => http.abort(String(runId)))
+  ipcMain.handle(IPC.httpImport, (_e, folder: HttpFolder, vars: HttpKV[]) => http.import(JSON.parse(JSON.stringify(folder)) as HttpFolder, JSON.parse(JSON.stringify(vars)) as HttpKV[]))
+
+  // ---------- the browser ----------
+  browser = new Browser(store.root, (type, payload) => toMain(IPC.browserEv, type, payload))
+  if (mainWin && !mainWin.isDestroyed()) browser.attach(mainWin)
+  const br = browser
+  ipcMain.handle(IPC.browser, (_e, m: string, ...a: unknown[]) => {
+    if (!BROWSER_METHODS.includes(m as (typeof BROWSER_METHODS)[number])) throw new Error(`browser: нет метода ${m}`)
+    return (br[m as (typeof BROWSER_METHODS)[number]] as (...x: unknown[]) => unknown).apply(br, a)
+  })
+  ipcMain.on(IPC.browserLayout, (_e, rects: Parameters<Browser['layout']>[0]) => br.layout(Array.isArray(rects) ? rects : []))
 
   ipcMain.on(IPC.openExternal, (_e, url: string) => {
     // web pages only (Jira, links in notes) — never file:// or app protocols
@@ -937,6 +956,7 @@ app.on('second-instance', () => showMain())
 
 
 app.whenReady().then(() => {
+  fixShortcut()
   // no application menu: Electron's default one (hidden behind our title bar) still owns Ctrl+Z / Ctrl+Y (its
   // "Edit → Undo" — the page never sees the key, a board can't undo) and Ctrl+= / Ctrl+- (Chromium's page zoom,
   // shared with the island). Text fields keep their own undo, copy and paste.
@@ -992,9 +1012,11 @@ app.whenReady().then(() => {
   if (SNAP) {
     Island.hidden = true
     mainWin = createMainWindow()
+    browser?.attach(mainWin)
     applyWindowTheme()
     createIslandWindow()
-    void runSnap(SNAP, mainWin, island?.win)
+    // a broken steps file must not leave the app hanging
+    runSnap(SNAP, mainWin, island?.win).catch((e) => (console.error('snap:', e), app.exit(1)))
     return
   }
   tracker.start()
@@ -1035,5 +1057,6 @@ app.on('before-quit', () => {
   voice?.stop()
   vault?.stop()
   terminals?.killAll()
+  browser?.closeAll()
   store?.close()
 })

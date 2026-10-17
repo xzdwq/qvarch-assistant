@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, type QaApi } from '../shared/api'
 
 function listen<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -111,7 +111,23 @@ const api: QaApi = {
   onTermState: (cb) => listen(IPC.termState, cb),
   onTermAlerts: (cb) => listen(IPC.termAlertsEv, cb),
   httpSave: (doc) => ipcRenderer.invoke(IPC.httpSave, doc),
-  httpRun: (req, doc) => ipcRenderer.invoke(IPC.httpRun, req, doc),
+  httpRun: (req, doc, runId) => ipcRenderer.invoke(IPC.httpRun, req, doc, runId),
+  httpChain: (ids, doc, stopOn, runId) => ipcRenderer.invoke(IPC.httpChain, ids, doc, stopOn, runId),
+  httpAbort: (runId) => ipcRenderer.invoke(IPC.httpAbort, runId),
+  onHttpChain: (cb) => {
+    const h = (_e: unknown, runId: string, i: number, id: string, out: Parameters<typeof cb>[3]) => cb(runId, i, id, out)
+    ipcRenderer.on(IPC.httpChainEv, h)
+    return () => void ipcRenderer.off(IPC.httpChainEv, h)
+  },
+  httpImport: (folder, vars) => ipcRenderer.invoke(IPC.httpImport, folder, vars),
+  browser: (m, ...a) => ipcRenderer.invoke(IPC.browser, m, ...a),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  browserLayout: (rects) => ipcRenderer.send(IPC.browserLayout, rects),
+  onBrowser: (cb) => {
+    const h = (_e: unknown, type: string, payload: unknown) => cb(type, payload)
+    ipcRenderer.on(IPC.browserEv, h)
+    return () => void ipcRenderer.off(IPC.browserEv, h)
+  },
   jiraVersionIssues: (id) => ipcRenderer.invoke(IPC.jiraVersionIssues, id),
   calendarRange: (from, to) => ipcRenderer.invoke(IPC.calendarRange, from, to),
   openExternal: (url) => ipcRenderer.send(IPC.openExternal, url),

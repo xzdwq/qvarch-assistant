@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   allRequests,
   buildUrl,
+  DEFAULT_STOP_ON,
   DEFAULT_HTTP_SETTINGS,
   findNode,
   HTTP_METHODS,
@@ -15,9 +16,10 @@ import {
   type HttpFolder,
   type HttpNode,
   type HttpRequest,
-  type HttpRunResult,
 } from '@shared/http'
 import Icon from '../components/Icon.vue'
+import StopOnPicker from '../components/StopOnPicker.vue'
+import { abortChain, backTo, chainRun, lastStep, results, startChain } from '../lib/httpRuns'
 import KvEditor from '../components/KvEditor.vue'
 import CodeArea from '../components/CodeArea.vue'
 import Markdown from '../components/Markdown.vue'
@@ -139,6 +141,7 @@ function duplicate(n: HttpNode): void {
   sel.value = c.id
 }
 function onRowClick(n: HttpNode): void {
+  backTo.value = undefined
   if (n.type === 'folder') n.open = !n.open
   sel.value = n.id
 }
@@ -225,33 +228,78 @@ function movePre(i: number, d: number): void {
 }
 
 // ---------- run ----------
-const results = reactive(new Map<string, HttpRunResult>())
-const running = ref(false)
+/** One request at a time from here (its id — to stop it). */
+const single = ref<string>()
+const running = computed(() => !!single.value)
 const result = computed(() => (req.value ? results.get(req.value.id) : undefined))
 type RTab = 'result' | 'body' | 'headers' | 'log'
 const rtab = ref<RTab>('body')
+/** The variables a run set (a token…) come back into the collection. */
+function takeVars(vars: Record<string, string>): void {
+  for (const [k, v] of Object.entries(vars)) {
+    const row = doc.vars.find((x) => x.key === k)
+    if (row) row.value = v
+    else doc.vars.splice(Math.max(0, doc.vars.length - 1), 0, { on: true, key: k, value: v })
+  }
+}
 async function run(): Promise<void> {
   const r = req.value
-  if (!r || running.value) return
-  running.value = true
+  if (!r || single.value) return
+  const runId = Math.random().toString(36).slice(2)
+  single.value = runId
   try {
-    const out = await window.qa.httpRun(JSON.parse(JSON.stringify(r)) as HttpRequest, JSON.parse(JSON.stringify(doc)) as HttpDoc)
+    const out = await window.qa.httpRun(JSON.parse(JSON.stringify(r)) as HttpRequest, JSON.parse(JSON.stringify(doc)) as HttpDoc, runId)
     results.set(r.id, out)
-    // the variables the scripts set (a token…) come back into the collection
-    for (const [k, v] of Object.entries(out.vars)) {
-      const row = doc.vars.find((x) => x.key === k)
-      if (row) row.value = v
-      else doc.vars.splice(Math.max(0, doc.vars.length - 1), 0, { on: true, key: k, value: v })
-    }
+    takeVars(out.vars)
     rtab.value = out.error && !out.response ? 'log' : out.hasResult ? 'result' : 'body'
   } finally {
-    running.value = false
+    single.value = undefined
   }
+}
+function abortSingle(): void {
+  if (single.value) void window.qa.httpAbort(single.value)
+}
+// a chain's step (it runs in the main process) — its variables into this collection too
+watch(lastStep, (s) => s && takeVars(s.out.vars))
+
+// ---------- a folder: its requests as a chain, run in order (in the main process — it goes on while you look around) ----------
+const folder = computed(() => {
+  const n = sel.value ? findNode(doc.items, sel.value) : undefined
+  return n?.type === 'folder' ? n : undefined
+})
+const folderReqs = computed(() => (folder.value ? allRequests(folder.value.children) : []))
+/** This folder's chain (the latest run of it). */
+const myChain = computed(() => (folder.value && chainRun.value?.folderId === folder.value.id ? chainRun.value : undefined))
+const chainBusy = computed(() => !!chainRun.value?.running)
+function runFolder(): void {
+  const f = folder.value
+  if (!f || chainBusy.value || !folderReqs.value.length) return
+  void startChain(
+    f.id,
+    folderReqs.value.map((x) => x.req.id),
+    doc,
+    f.stopOn ?? DEFAULT_STOP_ON,
+  )
+}
+const stepState = (id: string) => {
+  const r = results.get(id)
+  if (!r) return undefined
+  return { status: r.response?.status, time: r.response?.time, error: r.error }
+}
+/** Opened from a chain: the way back to it (backTo — kept apart, the section may be left and opened again). */
+const backName = computed(() => {
+  const n = backTo.value ? findNode(doc.items, backTo.value) : undefined
+  return n?.type === 'folder' ? n.name : undefined
+})
+function openStep(id: string): void {
+  backTo.value = sel.value
+  sel.value = id
 }
 function onKey(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault()
-    void run()
+    // a folder picked — its chain
+    void (folder.value ? runFolder() : run())
   }
 }
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -325,6 +373,15 @@ const mColor = (m: string) => METHOD_COLOR[m as keyof typeof METHOD_COLOR] ?? 'v
 // ---------- the side's width (dragged, like the notebook's) ----------
 const SIDE_KEY = 'qa.http.side'
 const sideW = ref(Math.min(560, Math.max(200, Number(localStorage.getItem(SIDE_KEY)) || 280)))
+/** The requests panel hidden (like the notebook's): the request takes the width. */
+const sideHidden = ref(localStorage.getItem('qa.http.hidden') === '1')
+watch(sideHidden, (v) => {
+  try {
+    localStorage.setItem('qa.http.hidden', v ? '1' : '0')
+  } catch {
+    // fine
+  }
+})
 function dragSide(e: PointerEvent): void {
   e.preventDefault()
   const x0 = e.clientX
@@ -351,10 +408,11 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
 </script>
 
 <template>
-  <div class="hv" :style="{ gridTemplateColumns: `${sideW}px minmax(0, 1fr)` }">
+  <div class="hv" :style="{ gridTemplateColumns: sideHidden ? 'minmax(0, 1fr)' : `${sideW}px minmax(0, 1fr)` }">
     <!-- the collection -->
-    <aside class="tree">
+    <aside v-if="!sideHidden" class="tree">
       <div class="tbar">
+        <button class="shide" title="Скрыть панель" @click="sideHidden = true"><Icon name="sidebar" :size="14" /></button>
         <span class="cap">Запросы</span>
         <span class="grow"></span>
         <button title="Новый запрос" @click="addRequest"><Icon name="plus" :size="14" /></button>
@@ -397,7 +455,8 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
       <!-- the variables -->
       <div v-if="varsOpen" class="vars">
         <div class="cap vh">Переменные · <span class="muted">{{ VAR }} в адресе, параметрах, заголовках, теле</span></div>
-        <KvEditor :rows="doc.vars" key-hint="имя" value-hint="значение" />
+        <KvEditor :rows="doc.vars" key-hint="имя" value-hint="значение" secrets />
+        <p class="hint">🔒 — секрет: значение скрыто и хранится зашифрованным (токены, куки, пароли).</p>
       </div>
       <div v-if="setOpen && doc.settings" class="vars">
         <div class="cap vh">Для всех запросов</div>
@@ -413,6 +472,8 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
     <!-- the request -->
     <section v-if="req" class="main">
       <div class="line">
+        <button v-if="sideHidden" class="sshow" title="Показать панель запросов" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
+        <button v-if="backName" class="back" :title="`Вернуться к цепочке «${backName}»`" @click="(sel = backTo), (backTo = undefined)"><Icon name="chevronLeft" :size="14" />{{ backName }}</button>
         <input v-model="req.name" class="rname" spellcheck="false" title="Название запроса" />
         <span class="grow"></span>
         <span v-if="copied" class="copied">Скопировано: {{ copied }}</span>
@@ -423,7 +484,8 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
           <option v-for="m in HTTP_METHODS" :key="m" :value="m" :style="{ color: mColor(m) }">{{ m }}</option>
         </select>
         <input v-model="req.url" class="url" placeholder="https://… · {{переменная}}" spellcheck="false" @keydown.enter.prevent="run" />
-        <button class="primary go" :disabled="running" title="Отправить (Ctrl+Enter)" @click="run">{{ running ? 'Отправляю…' : 'Отправить' }}</button>
+        <button v-if="!running" class="primary go" title="Отправить (Ctrl+Enter)" @click="run">Отправить</button>
+        <button v-else class="abort go" title="Прервать запрос" @click="abortSingle"><Icon name="stop" :size="12" />Прервать</button>
       </div>
       <div v-if="fullUrl && fullUrl !== req.url" class="full" :title="fullUrl">→ {{ fullUrl }}</div>
 
@@ -524,7 +586,46 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
         </div>
       </div>
     </section>
+    <section v-else-if="folder" class="main fold">
+      <div class="line">
+        <button v-if="sideHidden" class="sshow" title="Показать панель запросов" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
+        <Icon name="folderOpen" :size="16" class="fi" />
+        <input v-model="folder.name" class="rname" spellcheck="false" title="Название папки" />
+      </div>
+      <div class="frun">
+        <button v-if="!myChain?.running" class="primary go" :disabled="chainBusy || !folderReqs.length" :title="chainBusy ? 'Уже выполняется другая цепочка' : 'Выполнить все запросы папки сверху вниз (Ctrl+Enter)'" @click="runFolder">▶ Запустить по порядку</button>
+        <button v-else class="abort" title="Прервать: текущий запрос обрывается, следующие не выполняются" @click="abortChain"><Icon name="stop" :size="12" />Прервать</button>
+        <StopOnPicker :model-value="folder.stopOn ?? DEFAULT_STOP_ON" @update:model-value="(v) => folder && (folder.stopOn = v)" />
+        <span v-if="myChain" class="cstate" :class="{ bad: myChain.stopped }">
+          <template v-if="myChain.running">Выполняется {{ myChain.done + 1 }} из {{ myChain.ids.length }}…</template>
+          <template v-else-if="myChain.stopped">{{ myChain.stopped }}</template>
+          <template v-else>Готово: {{ myChain.done }} из {{ myChain.ids.length }}</template>
+        </span>
+      </div>
+      <div class="chain">
+        <div
+          v-for="(x, i) in folderReqs"
+          :key="x.req.id"
+          class="cr"
+          :class="{ now: myChain?.running && myChain.ids[myChain.done] === x.req.id, bad: stepState(x.req.id)?.error || (stepState(x.req.id)?.status ?? 0) >= 400 }"
+          title="Открыть запрос (вернуться к цепочке — стрелкой «назад»)"
+          @click="openStep(x.req.id)"
+        >
+          <span class="cn">{{ i + 1 }}</span>
+          <b class="mt" :style="{ color: mColor(x.req.method) }">{{ short(x.req.method) }}</b>
+          <span class="cnm">{{ [...x.path, x.req.name].join(' / ') }}</span>
+          <span v-if="myChain?.running && myChain.ids[myChain.done] === x.req.id" class="cspin"></span>
+          <template v-else-if="stepState(x.req.id)">
+            <b v-if="stepState(x.req.id)!.status" class="st" :class="statusCls(stepState(x.req.id)!.status!)">{{ stepState(x.req.id)!.status }}</b>
+            <span v-if="stepState(x.req.id)!.time" class="muted">{{ stepState(x.req.id)!.time }} мс</span>
+            <span v-if="stepState(x.req.id)!.error" class="rerr" :title="stepState(x.req.id)!.error">{{ stepState(x.req.id)!.error }}</span>
+          </template>
+        </div>
+        <p v-if="!folderReqs.length" class="hint">В папке нет запросов</p>
+      </div>
+    </section>
     <section v-else class="main empty">
+      <button v-if="sideHidden" class="sshow" title="Показать панель запросов" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
       <p class="hint">Выберите запрос слева или создайте новый</p>
     </section>
 
@@ -551,6 +652,140 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
 }
 .grow {
   flex: 1;
+}
+.shide,
+.sshow {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+}
+.shide:hover,
+.sshow:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.shide {
+  margin: 0 4px 0 -6px;
+}
+.fold .fi {
+  color: var(--warn);
+}
+.frun {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.abort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-color: var(--down);
+  background: rgba(255, 61, 61, 0.16);
+  color: var(--down-fg);
+}
+.cstate {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.cstate.bad {
+  color: var(--down-fg);
+}
+.fopt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.fopt.dim {
+  opacity: 0.5;
+}
+.chain {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: auto;
+}
+.cr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  cursor: default;
+}
+.cr:last-child {
+  border-bottom: 0;
+}
+.cr:hover {
+  background: var(--hover);
+}
+.cr.now {
+  background: rgb(var(--accent-rgb) / 0.12);
+}
+.cr.bad {
+  box-shadow: inset 3px 0 0 var(--down);
+}
+.cn {
+  width: 22px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 11px;
+  text-align: right;
+}
+.cnm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+}
+.cspin {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: hv-spin 0.8s linear infinite;
+}
+@keyframes hv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cr .rerr {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .hint {
   margin: 6px 0 0;

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { reactive, watch } from 'vue'
 import type { HttpKV } from '@shared/http'
 import Icon from './Icon.vue'
 
-/** Rows «key = value» with an on/off box; one empty row is always at the end (typing in it adds a row). */
-const props = defineProps<{ rows: HttpKV[]; keyHint?: string; valueHint?: string }>()
+/**
+ * Rows «key = value» with an on/off box; one empty row is always at the end (typing in it adds a row).
+ * `secrets` — the variables' editor: a lock per row makes the value a secret (hidden, kept encrypted).
+ */
+const props = defineProps<{ rows: HttpKV[]; keyHint?: string; valueHint?: string; secrets?: boolean }>()
+/** Secret values shown for a moment (the eye). */
+const shown = reactive(new Set<number>())
 // the empty last row
 watch(
   () => props.rows.length && props.rows[props.rows.length - 1],
@@ -20,11 +25,16 @@ function drop(i: number): void {
 </script>
 
 <template>
-  <div class="kv">
+  <div class="kv" :class="{ sec: secrets }">
     <div v-for="(r, i) in rows" :key="i" class="kr" :class="{ off: !r.on }">
       <input v-model="r.on" type="checkbox" title="Отправлять" :disabled="!r.key && !r.value" />
       <input v-model="r.key" class="k" :placeholder="keyHint ?? 'ключ'" spellcheck="false" />
-      <input v-model="r.value" class="v" :placeholder="valueHint ?? 'значение · {{переменная}}'" spellcheck="false" />
+      <span v-if="secrets" class="vw">
+        <input v-model="r.value" class="v" :type="r.secret && !shown.has(i) ? 'password' : 'text'" :placeholder="valueHint ?? 'значение · {{переменная}}'" spellcheck="false" autocomplete="off" />
+        <button v-if="r.secret && r.value" class="eye" :title="shown.has(i) ? 'Скрыть' : 'Показать'" @click="shown.has(i) ? shown.delete(i) : shown.add(i)"><Icon :name="shown.has(i) ? 'eyeOff' : 'eye'" :size="12" /></button>
+      </span>
+      <input v-else v-model="r.value" class="v" :placeholder="valueHint ?? 'значение · {{переменная}}'" spellcheck="false" />
+      <button v-if="secrets" class="lock" :class="{ on: r.secret }" :title="r.secret ? 'Секрет: скрыт и хранится зашифрованным. Клик — сделать обычной' : 'Сделать секретом (скрыть, хранить зашифрованным)'" :disabled="!r.key" @click="r.secret = !r.secret || undefined"><Icon name="lock" :size="12" /></button>
       <button v-if="r.key || r.value" class="x" title="Удалить" @click="drop(i)"><Icon name="x" :size="12" /></button>
       <span v-else class="x"></span>
     </div>
@@ -44,6 +54,43 @@ function drop(i: number): void {
   grid-template-columns: 28px minmax(0, 1fr) minmax(0, 2fr) 28px;
   align-items: center;
   border-bottom: 1px solid var(--border);
+}
+.kv.sec .kr {
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 2fr) 28px 28px;
+}
+.vw {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.vw input {
+  flex: 1;
+  min-width: 0;
+}
+.eye {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.lock {
+  display: inline-flex;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+}
+.lock.on {
+  color: var(--warn);
+}
+.lock:disabled {
+  opacity: 0.3;
 }
 .kr:last-child {
   border-bottom: 0;

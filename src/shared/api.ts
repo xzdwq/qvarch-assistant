@@ -5,7 +5,8 @@ import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
 import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from './jira'
-import type { HttpDoc, HttpRequest, HttpRunResult } from './http'
+import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
+import type { BrowserApi } from './browser'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
 import type { VaultHit, VaultNode } from './vault'
@@ -184,7 +185,22 @@ export interface QaApi {
   /** HTTP: the collection (a test one on the first start), saving it, running a request. */
   httpLoad(): Promise<HttpDoc>
   httpSave(doc: HttpDoc): Promise<void>
-  httpRun(req: HttpRequest, doc: HttpDoc): Promise<HttpRunResult>
+  httpRun(req: HttpRequest, doc: HttpDoc, runId?: string): Promise<HttpRunResult>
+  /** A folder's requests in order, in the main process (goes on whatever the window shows); steps come as events. */
+  httpChain(ids: string[], doc: HttpDoc, stopOn: string, runId: string): Promise<{ stopped?: string }>
+  /** Stops a run / a chain (the request on its way is cut off). */
+  httpAbort(runId: string): Promise<void>
+  onHttpChain(cb: (runId: string, i: number, id: string, out: HttpRunResult) => void): () => void
+  /** A chain recorded in the browser → a folder on top of the collection, its variables set. */
+  httpImport(folder: HttpFolder, vars: HttpKV[]): Promise<void>
+  /** A dropped file's path on disk. */
+  pathForFile(file: File): string
+  /** Браузер: a method of the pages' side (see BrowserApi). */
+  browser<K extends keyof BrowserApi>(m: K, ...a: Parameters<BrowserApi[K]>): Promise<Awaited<ReturnType<BrowserApi[K]>>>
+  /** Where the visible pages go (sent often — no answer). */
+  browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number } }>): void
+  /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */
+  onBrowser(cb: (type: string, payload: unknown) => void): () => void
   /** A page of the Jira releases of the projects (unreleased first). */
   jiraVersions(q: string, offset: number, limit: number): Promise<{ items: JiraVersion[]; total: number; unreleased: number }>
   /** The task keys of a Jira release. */
@@ -337,6 +353,13 @@ export const IPC = {
   termAlertsEv: 'qa:termAlertsEv',
   httpSave: 'qa:httpSave',
   httpRun: 'qa:httpRun',
+  httpImport: 'qa:httpImport',
+  httpChain: 'qa:httpChain',
+  httpAbort: 'qa:httpAbort',
+  httpChainEv: 'qa:httpChainEv',
+  browser: 'qa:browser',
+  browserLayout: 'qa:browserLayout',
+  browserEv: 'qa:browserEv',
   jiraVersionIssues: 'qa:jiraVersionIssues',
   calendarRange: 'qa:calendarRange',
   openExternal: 'qa:openExternal',

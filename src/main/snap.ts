@@ -1,4 +1,4 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, WebContentsView, type BrowserWindow } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -11,6 +11,10 @@ interface Step {
   name: string
   win?: 'main' | 'island'
   js?: string
+  /** Runs in the first visible browser page (a WebContentsView) — after js. */
+  vjs?: string
+  /** A mouse moved across the window (x, y → x, y in n steps): every cursor change of the window and its pages is logged. */
+  move?: [number, number, number, number, number]
   wait?: number
   w?: number
   h?: number
@@ -27,6 +31,14 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
   if (island) await ready(island)
   // no transitions: a hidden window may never finish one (and Vue waits for it between sections)
   for (const w of [main, island]) await w?.webContents.insertCSS('*, *::before, *::after { transition: none !important; animation-duration: 0s !important }')
+  // QA_SNAP_SHOW: the main window is drawn for real (the browser's pages paint only in a shown window) — fully
+  // transparent, clicks pass through it, no focus, no taskbar button: nothing appears, nothing is taken from the user
+  if (process.env.QA_SNAP_SHOW) {
+    main.setSkipTaskbar(true)
+    main.setOpacity(0)
+    main.setIgnoreMouseEvents(true)
+    main.showInactive()
+  }
   await sleep(1500)
   const log: string[] = []
   for (const s of steps) {
@@ -35,9 +47,37 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
     try {
       if (s.w && s.h) w.setContentSize(s.w, s.h)
       if (s.js) log.push(`${s.name}: ${JSON.stringify(await w.webContents.executeJavaScript(s.js, true))}`)
+      if (s.move) {
+        const [x0, y0, x1, y1, n] = s.move
+        const seen: string[] = []
+        const all = [w.webContents, ...w.contentView.children.filter((x): x is WebContentsView => x instanceof WebContentsView).map((v) => v.webContents)]
+        const offs = all.map((wc, k) => {
+          const h = (_e: unknown, type: string) => seen.push(`${k === 0 ? 'app' : 'view' + k}:${type}`)
+          wc.on('cursor-changed', h)
+          return () => wc.off('cursor-changed', h)
+        })
+        for (let i = 0; i <= n; i++) {
+          w.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(x0 + ((x1 - x0) * i) / n), y: Math.round(y0 + ((y1 - y0) * i) / n) })
+          await sleep(25)
+        }
+        await sleep(200)
+        offs.forEach((f) => f())
+        log.push(`${s.name} cursors: ${seen.join(' ')}`)
+      }
+      if (s.vjs) {
+        const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())
+        log.push(`${s.name} (page): ${v ? JSON.stringify(await v.webContents.executeJavaScript(s.vjs, true)) : 'no page'}`)
+      }
       await sleep(s.wait ?? 700)
       const img = await w.webContents.capturePage()
       writeFileSync(join(out, `${s.name}.png`), img.toPNG())
+      // the browser's pages are views of their own (not in the window's picture): each visible one apart
+      for (const [i, v] of w.contentView.children.entries()) {
+        if (!(v instanceof WebContentsView) || !v.getVisible()) continue
+        const b = v.getBounds()
+        writeFileSync(join(out, `${s.name}.view${i}.png`), (await v.webContents.capturePage()).toPNG())
+        log.push(`${s.name}: view${i} at ${b.x},${b.y} ${b.width}x${b.height}`)
+      }
     } catch (e) {
       log.push(`${s.name}: ERROR ${e instanceof Error ? e.message : String(e)}`)
     }

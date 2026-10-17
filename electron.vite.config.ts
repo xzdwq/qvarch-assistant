@@ -10,6 +10,8 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    // the app's windows, and the browser section's pages (sign-in forms only)
+    build: { rollupOptions: { input: { index: resolve('src/preload/index.ts'), browser: resolve('src/preload/browser.ts') } } },
   },
   renderer: {
     resolve: { alias: { '@shared': resolve('src/shared') } },

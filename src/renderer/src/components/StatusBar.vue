@@ -7,10 +7,12 @@ import { todayKey } from '../lib/today'
 import { useJira } from '../lib/jira'
 import { useOutlook } from '../lib/outlook'
 import { termLight, useTermSessions } from '../lib/terminal'
+import { recItems, recState, startBrowser } from '../lib/browser'
 
 /** The window's bottom line (a terminal's status bar): the call, the connections, today's time, the clock. */
 defineProps<{ section: string }>()
-const emit = defineEmits<{ terminal: [] }>()
+const emit = defineEmits<{ terminal: []; browser: [] }>()
+startBrowser()
 const terms = useTermSessions()
 const { data, live, now } = useDay(todayKey)
 const jira = useJira()
@@ -37,6 +39,7 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
     <button v-if="terms.length" class="it term" :class="termLight.kind" :title="termLight.title" @click="emit('terminal')">
       <i class="led" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
     </button>
+    <button v-if="recState.on" class="it term rec" title="Браузер записывает запросы — открыть" @click="emit('browser')"><i class="led err blinkrec"></i>REC · {{ recItems.length }}</button>
     <span class="sep"></span>
     <span class="it n">СЕГОДНЯ <b>{{ formatDuration(today.all) }}</b></span>
     <span class="it n opt">ЗАДАЧИ <b>{{ formatDuration(today.tasks) }}</b></span>
@@ -93,6 +96,12 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
 }
 .term:hover {
   color: var(--text);
+}
+.term.rec {
+  color: var(--down-fg);
+}
+.blinkrec {
+  animation: blink 1s steps(2) infinite;
 }
 .term.alert {
   color: var(--text-hi);

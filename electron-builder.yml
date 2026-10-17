@@ -26,6 +26,9 @@ nsis:
   artifactName: ${productName} Setup ${version}.${ext}
 portable:
   artifactName: ${productName} ${version} portable.${ext}
+  # one fixed folder in %TEMP% for every run and version: Windows keys the tray icon by the exe path (a random
+  # folder each run made a new 'app' in the taskbar settings), and a new version overwrites the old copy
+  unpackDirName: QvarchAssistant
 asar: true
 # the terminal's native PTY must live outside the asar
 asarUnpack:
