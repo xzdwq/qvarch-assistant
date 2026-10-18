@@ -1,8 +1,8 @@
 import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
 import { deleteProject, importVscodeProjects, readProjects, saveProject, setReleaseDataDir } from './release/config'
-import { randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { IPC, type AppCommand } from '../shared/api'
 import { clipEntries, dayEnd, dayKey, dayStart, shiftDay, firstFreeLane, mergeEntries, pinLanes, placeEntry, putEntry, scheduleRanges } from '../shared/timeline'
@@ -30,7 +30,9 @@ import { runSnap } from './snap'
 import { HttpClient } from './http'
 import { Terminals } from './terminal'
 import { Browser } from './browser'
+import { ClipLog } from './clipLog'
 import { BROWSER_METHODS } from '../shared/browser'
+import type { EventRef } from '../shared/noteEvents'
 import type { TermConfig } from '../shared/terminal'
 
 const ISLAND_HOTKEY = 'Control+Alt+Space'
@@ -49,6 +51,7 @@ let tablet: TabletService | undefined
 let island: Island | undefined
 let terminals: Terminals | undefined
 let browser: Browser | undefined
+let clipLog: ClipLog | undefined
 let selection: Selection | null = null
 let tray: Tray | undefined
 let jira: Jira
@@ -447,7 +450,8 @@ function registerIpc(): void {
     const d = store.day(day)
     const prev = input.id ? d.entries.find((e) => e.id === input.id) : undefined
     if (prev?.outlook) throw new Error(OUTLOOK_RO)
-    const entry: Entry = { ...prev, ...input, id: input.id ?? randomUUID(), label: input.label.trim() }
+    const entry: Entry = { ...prev, ...input, id: input.id ?? randomUUID(), label: input.label.trim(), created: prev?.created ?? input.created ?? (prev ? undefined : Date.now()) }
+    if (entry.created === undefined) delete entry.created
     if (!entry.remind) delete entry.remind
     else if (prev?.remind && (remindAt(prev.remind, prev.start) !== remindAt(entry.remind, entry.start))) entry.remind = { ...entry.remind, fired: false }
     // a new block dropped over existing ones goes to the first free lane; existing blocks keep theirs
@@ -559,6 +563,26 @@ function registerIpc(): void {
     writeFileSync(r.filePath, Buffer.from(bytes))
     return r.filePath
   })
+  ipcMain.handle(IPC.fileSave, async (_e, bytes: Uint8Array, name: string, ext: string) => {
+    const e = /^[a-z0-9]{1,8}$/i.test(ext) ? ext.toLowerCase() : 'bin'
+    const opts = { defaultPath: name, filters: [{ name: e.toUpperCase(), extensions: [e] }, { name: 'Все файлы', extensions: ['*'] }] }
+    const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return undefined
+    writeFileSync(r.filePath, Buffer.from(bytes))
+    return r.filePath
+  })
+  ipcMain.handle(IPC.hashOf, async (_e, src: { text?: string; bytes?: Uint8Array; path?: string }, key?: string) => {
+    const algs = ['md5', 'sha1', 'sha256', 'sha512'] as const
+    const hs = algs.map((a) => (key ? createHmac(a, key) : createHash(a)))
+    if (typeof src?.path === 'string' && src.path) {
+      // a file of any size: read in pieces
+      for await (const chunk of createReadStream(src.path)) for (const h of hs) h.update(chunk as Buffer)
+    } else {
+      const data = src?.bytes ? Buffer.from(src.bytes) : Buffer.from(String(src?.text ?? ''), 'utf8')
+      for (const h of hs) h.update(data)
+    }
+    return Object.fromEntries(algs.map((a, i) => [a, hs[i].digest('hex')]))
+  })
   ipcMain.handle(IPC.pdfSave, async (_e, bytes: Uint8Array, name: string) => {
     const opts = { defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] }
     const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
@@ -567,6 +591,16 @@ function registerIpc(): void {
     return r.filePath
   })
 
+  // every event of every day, light (the notebook's «@» list and its chips)
+  ipcMain.handle(IPC.eventsIndex, (): EventRef[] => {
+    const out: EventRef[] = []
+    for (const day of store.listDays()) {
+      const d = store.peek(day)
+      if (!d) continue
+      for (const e of d.entries) out.push({ day, id: e.id, label: e.label, kind: e.kind, start: e.start, end: e.end, outlook: !!e.outlook, ...(e.task ? { task: e.task.key } : {}), ...(e.created ? { created: e.created } : {}) })
+    }
+    return out
+  })
   ipcMain.handle(IPC.rangeDays, (_e, from: string, to: string) => {
     return store
       .listDays()
@@ -879,6 +913,18 @@ function registerIpc(): void {
   ipcMain.handle(IPC.httpAbort, (_e, runId: string) => http.abort(String(runId)))
   ipcMain.handle(IPC.httpImport, (_e, folder: HttpFolder, vars: HttpKV[]) => http.import(JSON.parse(JSON.stringify(folder)) as HttpFolder, JSON.parse(JSON.stringify(vars)) as HttpKV[]))
 
+  // ---------- Инструменты · the clipboard's history ----------
+  const clips = new ClipLog(store.root, (s) => toMain(IPC.clipEv, s))
+  clipLog = clips
+  ipcMain.handle(IPC.clip, (_e, m: string, a?: unknown) => {
+    if (m === 'get') return clips.get()
+    if (m === 'set') return clips.setOn(!!a)
+    if (m === 'remove') return clips.remove(String(a))
+    if (m === 'clear') return clips.clear()
+    if (m === 'copy') return clips.copy(String(a))
+    throw new Error(`clip: нет метода ${m}`)
+  })
+
   // ---------- the browser ----------
   browser = new Browser(store.root, (type, payload) => toMain(IPC.browserEv, type, payload))
   if (mainWin && !mainWin.isDestroyed()) browser.attach(mainWin)
@@ -934,6 +980,12 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultSetColor, (_e, p: string, color?: string) => vault.setColor(str(p), typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined))
   ipcMain.handle(IPC.vaultDeleteAudio, (_e, p: string) => vault.deleteAudio(str(p)))
   ipcMain.handle(IPC.vaultRestoreAudio, (_e, p: string, audio: Uint8Array) => vault.restoreAudio(str(p), audio))
+  ipcMain.handle(IPC.vaultSaveImage, (_e, bytes: Uint8Array) => vault.saveImage(bytes))
+  ipcMain.handle(IPC.vaultReadImage, (_e, p: string) => vault.readImage(str(p)))
+  ipcMain.handle(IPC.vaultDeleteImage, (_e, p: string) => vault.deleteImage(str(p)))
+  ipcMain.handle(IPC.vaultRestoreImage, (_e, p: string, bytes: Uint8Array) => vault.restoreImage(str(p), bytes))
+  ipcMain.handle(IPC.vaultClipImage, (_e, save: boolean) => vault.clipImage(!!save))
+  ipcMain.handle(IPC.vaultFetchImage, (_e, url: string) => vault.fetchImage(str(url)))
 
   ipcMain.handle(IPC.getSelection, () => selection)
   ipcMain.on(IPC.setSelection, (_e, sel: Selection | null) => {
@@ -1058,5 +1110,6 @@ app.on('before-quit', () => {
   vault?.stop()
   terminals?.killAll()
   browser?.closeAll()
+  clipLog?.flush()
   store?.close()
 })

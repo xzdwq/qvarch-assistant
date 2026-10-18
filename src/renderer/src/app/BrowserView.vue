@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowR
 import { readSpec, specToHttp, type ApiOp, type ApiSpec } from '@shared/openapi'
 import { load as yamlLoad } from 'js-yaml'
 import type { HttpNode } from '@shared/http'
-import { browserId, findLinks, recordingToHttp, toUrl, type Bookmark, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecLink } from '@shared/browser'
+import { browserId, deviceFit, DEVICES, findLinks, recordingToHttp, RESPONSIVE, toUrl, UA_MOBILE, type Bookmark, type BrowserSettings, type DeviceMode, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecLink } from '@shared/browser'
 import { METHOD_COLOR } from '@shared/http'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
@@ -123,6 +123,8 @@ onBrowserEvent((type, p) => {
     else if (key === 'closeTab') closeTab(id)
     else if (key === 'focusUrl') void focusUrl(pi)
     else if (key === 'bookmark') toggleStar(id)
+    else if (key === 'device') toggleDevice(id)
+    else if (key === 'history') openHistory()
   } else if (type === 'open') {
     const { url, newTab: nt } = p as { url: string; newTab: boolean }
     openUrl(url, nt)
@@ -131,6 +133,8 @@ onBrowserEvent((type, p) => {
   else if (type === 'recError') recError.value = String(p)
   else if (type === 'pwAsk') pwAsk.value = p as { askId: string; origin: string; username: string; update: boolean }
   else if (type === 'passwords') passwords.value = p as PasswordInfo[]
+  else if (type === 'history') histOpen.value && void loadHistory()
+  else if (type === 'settings') bSettings.value = p as BrowserSettings
 })
 /** A link from a bookmark / the start page: into the current tab (or a new one). */
 function openUrl(url: string, inNew = false): void {
@@ -263,7 +267,8 @@ watch(covering, async (on) => {
 let lastSent = ''
 function sendLayout(): void {
   type B = { x: number; y: number; w: number; h: number }
-  const rects: Array<B & { id: string; dev?: B }> = []
+  const rects: Array<B & { id: string; dev?: B; scale?: number }> = []
+  const fits: Record<string, B & { scale: number }> = {}
   const box = (el: Element): B => {
     const r = el.getBoundingClientRect()
     return { x: r.left, y: r.top, w: r.width, h: r.height }
@@ -273,10 +278,21 @@ function sendLayout(): void {
       const el = pageEls.get(p.id)
       if (!el || !p.active || !pageShown(p.active)) continue
       const dv = devEls.get(p.id)
-      rects.push({ id: p.active, ...box(el), ...(dv && byId(p.active)?.devtools ? { dev: box(dv) } : {}) })
+      const dev = dv && byId(p.active)?.devtools ? { dev: box(dv) } : {}
+      const device = byId(p.active)?.device
+      const area = areaEls.get(p.id)
+      if (device && area) {
+        // the device mode: the page as big as the device, made smaller to fit
+        const a = box(area)
+        const fit = deviceFit(device, a)
+        fits[p.id] = { x: fit.x - a.x, y: fit.y - a.y, w: fit.w, h: fit.h, scale: fit.scale }
+        rects.push({ id: p.active, x: fit.x, y: fit.y, w: fit.w, h: fit.h, scale: fit.scale, ...dev })
+      } else rects.push({ id: p.active, ...box(el), ...dev })
     }
   }
-  const key = JSON.stringify(rects.map((r) => [r.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.dev && [Math.round(r.dev.y), Math.round(r.dev.h)]]))
+  const fk = JSON.stringify(fits)
+  if (fk !== JSON.stringify(devFits.value)) devFits.value = fits
+  const key = JSON.stringify(rects.map((r) => [r.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.scale, r.dev && [Math.round(r.dev.x), Math.round(r.dev.y), Math.round(r.dev.w), Math.round(r.dev.h)]]))
   if (key === lastSent) return
   lastSent = key
   window.qa.browserLayout(rects)
@@ -296,7 +312,7 @@ onBeforeUnmount(() => {
   window.qa.browserLayout([])
 })
 watch(
-  () => [props.active, bLayout.panes.map((p) => `${p.id}:${p.active}`).join(), tabs.value.map((t) => `${t.id}${t.url}${t.error ? 'e' : ''}${t.devtools ? 'd' : ''}`).join(), recOpen.value, recW.value, bLayout.split],
+  () => [props.active, bLayout.panes.map((p) => `${p.id}:${p.active}`).join(), tabs.value.map((t) => `${t.id}${t.url}${t.error ? 'e' : ''}${t.devtools ? 'd' : ''}${t.device ? `${t.device.w}x${t.device.h}` : ''}`).join(), recOpen.value, recW.value, bLayout.split],
   () => nextTick(sendLayout),
 )
 /** The docked developer tools: their box under the page (its height dragged, remembered). */
@@ -345,6 +361,100 @@ function dragDev(e: PointerEvent): void {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
 }
+// ---------- the device mode ----------
+/** Each pane's device area (under its device bar) and where the device's page sits in it. */
+const areaEls = new Map<string, HTMLElement>()
+const devFits = shallowRef<Record<string, { x: number; y: number; w: number; h: number; scale: number }>>({})
+function areaRef(pid: string, el: unknown): void {
+  const prev = areaEls.get(pid)
+  if (el === prev) return
+  if (prev) ro?.unobserve(prev)
+  if (el instanceof HTMLElement) {
+    areaEls.set(pid, el)
+    ro?.observe(el)
+  } else areaEls.delete(pid)
+  void nextTick(sendLayout)
+}
+const DEV_KEY = 'qa.browser.device'
+function lastDevice(): DeviceMode {
+  try {
+    const d = JSON.parse(localStorage.getItem(DEV_KEY) ?? 'null') as DeviceMode | null
+    if (d && d.w > 0 && d.h > 0) return d
+  } catch {
+    // none
+  }
+  return { ...RESPONSIVE }
+}
+function setDevice(id: string | undefined, d?: DeviceMode): void {
+  if (!id) return
+  if (d) {
+    try {
+      localStorage.setItem(DEV_KEY, JSON.stringify(d))
+    } catch {
+      // fine
+    }
+  }
+  void window.qa.browser('device', id, d ? { ...d } : undefined)
+}
+function toggleDevice(id: string | undefined): void {
+  const t = byId(id)
+  if (!t || !pageShown(id)) return
+  setDevice(id, t.device ? undefined : lastDevice())
+}
+/** A preset picked (its name), or «Адаптивный» — the sizes stay. */
+function pickDevice(id: string | undefined, name: string): void {
+  const cur = byId(id)?.device
+  if (!cur) return
+  const p = DEVICES.find((x) => x.name === name)
+  setDevice(id, p ? { ...p } : { ...RESPONSIVE, w: cur.w, h: cur.h })
+}
+/** The sizes typed: a device of one's own (as Chrome's «Адаптивный»). */
+function sizeDevice(id: string | undefined, w: number, h: number): void {
+  const cur = byId(id)?.device
+  if (!cur || !(w >= 50 && h >= 50)) return
+  setDevice(id, { ...cur, name: '', w: Math.min(4000, Math.round(w)), h: Math.min(4000, Math.round(h)) })
+}
+function patchDevice(id: string | undefined, patch: Partial<DeviceMode>): void {
+  const cur = byId(id)?.device
+  if (!cur) return
+  const next = { ...cur, ...patch }
+  // a preset changed by hand is one's own
+  if (patch.mobile !== undefined || patch.dpr !== undefined) next.name = ''
+  if (patch.mobile !== undefined) next.ua = patch.mobile ? cur.ua || UA_MOBILE : undefined
+  setDevice(id, next)
+}
+const rotateDevice = (id: string | undefined) => {
+  const cur = byId(id)?.device
+  if (cur) setDevice(id, { ...cur, w: cur.h, h: cur.w })
+}
+const DPRS = [1, 1.25, 1.5, 2, 2.625, 3, 3.5, 4]
+const dprList = (d: DeviceMode) => (DPRS.includes(d.dpr) ? DPRS : [...DPRS, d.dpr].sort((a, b) => a - b))
+const devGroups = [
+  { label: 'Телефоны', list: DEVICES.filter((d) => d.mobile && d.w < 600) },
+  { label: 'Планшеты', list: DEVICES.filter((d) => d.mobile && d.w >= 600) },
+  { label: 'Компьютеры', list: DEVICES.filter((d) => !d.mobile) },
+]
+const numIn = (e: Event) => Number((e.target as HTMLInputElement).value)
+const below = (e: MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect()
+async function deviceMenu(id: string | undefined, e: MouseEvent): Promise<void> {
+  const cur = byId(id)?.device
+  if (!cur) return
+  const r = below(e)
+  const items = [
+    { id: '', label: 'Адаптивный — свои размеры', checked: !cur.name },
+    ...devGroups.flatMap((g) => [{ id: '-', label: '' }, { id: `#${g.label}`, label: g.label }, ...g.list.map((d) => ({ id: d.name, label: `${d.name}    ${d.w} × ${d.h}`, checked: cur.name === d.name }))]),
+  ]
+  const pick = await window.qa.browser('choose', items, r.left, r.bottom + 2)
+  if (pick !== undefined) pickDevice(id, pick)
+}
+async function dprMenu(id: string | undefined, e: MouseEvent): Promise<void> {
+  const cur = byId(id)?.device
+  if (!cur) return
+  const r = below(e)
+  const pick = await window.qa.browser('choose', [{ id: '#', label: 'Плотность пикселей (DPR)' }, ...dprList(cur).map((v) => ({ id: String(v), label: String(v), checked: v === cur.dpr }))], r.left, r.bottom + 2)
+  if (pick) patchDevice(id, { dpr: Number(pick) })
+}
+
 function pageRef(pid: string, el: unknown): void {
   const prev = pageEls.get(pid)
   if (el === prev) return
@@ -939,6 +1049,96 @@ function resetSite(id: string): void {
   if (confirm(`Сбросить всё, что сайт ${host} сохранил в этом браузере — кэш, куки (вход на сайт), localStorage, IndexedDB, service workers — и перезагрузить страницу?`)) void window.qa.browser('resetSite', id)
 }
 
+// ---------- the history ----------
+const bSettings = ref<BrowserSettings>({ history: true, ua: '' })
+void window.qa.browser('settings').then((v) => (bSettings.value = v))
+const histOpen = ref(false)
+const visits = shallowRef<Visit[]>([])
+const histQ = ref('')
+const histLimit = ref(300)
+async function loadHistory(): Promise<void> {
+  visits.value = await window.qa.browser('visits')
+}
+function openHistory(): void {
+  histQ.value = ''
+  histLimit.value = 300
+  histOpen.value = true
+  void loadHistory()
+}
+watch(histQ, () => (histLimit.value = 300))
+const histFound = computed(() => {
+  const words = histQ.value.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return visits.value
+  return visits.value.filter((v) => {
+    const s = `${v.title} ${v.url}`.toLowerCase()
+    return words.every((w) => s.includes(w))
+  })
+})
+const dayOf = (t: number) => new Date(t).toLocaleDateString('sv-SE')
+function dayTitle(k: string): string {
+  const today = dayOf(Date.now())
+  if (k === today) return 'Сегодня'
+  if (k === dayOf(Date.now() - 864e5)) return 'Вчера'
+  return new Date(`${k}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: k.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric' })
+}
+const histDays = computed(() => {
+  const out: Array<{ k: string; title: string; items: Visit[]; total: number }> = []
+  const totals = new Map<string, number>()
+  for (const v of histFound.value) totals.set(dayOf(v.at), (totals.get(dayOf(v.at)) ?? 0) + 1)
+  for (const v of histFound.value.slice(0, histLimit.value)) {
+    const k = dayOf(v.at)
+    let d = out[out.length - 1]
+    if (!d || d.k !== k) out.push((d = { k, title: dayTitle(k), items: [], total: totals.get(k) ?? 0 }))
+    d.items.push(v)
+  }
+  return out
+})
+const hhmm = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+function histGo(v: Visit, e: MouseEvent): void {
+  const inNew = e.ctrlKey || e.metaKey || e.button === 1
+  openUrl(v.url, inNew)
+  if (!inNew) histOpen.value = false
+}
+function histDel(ids: string[]): void {
+  visits.value = visits.value.filter((v) => !ids.includes(v.id))
+  void window.qa.browser('visitsDelete', ids)
+}
+function histDelDay(k: string, title: string): void {
+  const n = visits.value.filter((v) => dayOf(v.at) === k).length
+  const what = title === 'Сегодня' || title === 'Вчера' ? `историю за ${title.toLowerCase()}` : `историю за ${title}`
+  if (!confirm(`Удалить ${what} — ${n} ${plural(n, 'страницу', 'страницы', 'страниц')}?`)) return
+  const from = new Date(`${k}T00:00:00`)
+  const to = new Date(from)
+  to.setDate(to.getDate() + 1)
+  visits.value = visits.value.filter((v) => dayOf(v.at) !== k)
+  void window.qa.browser('visitsDelete', { from: from.getTime(), to: to.getTime() })
+}
+async function histClear(e: MouseEvent): Promise<void> {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const pick = await window.qa.browser('choose', [{ id: '#', label: 'Удалить из истории' }, { id: 'h', label: 'За последний час' }, { id: 'd', label: 'За сегодня' }, { id: 'w', label: 'За последние 7 дней' }, { id: '-', label: '' }, { id: 'all', label: 'Всю историю…' }], r.left, r.bottom + 2)
+  if (!pick) return
+  const now = Date.now()
+  if (pick === 'all') {
+    if (!confirm(`Удалить всю историю браузера (${visits.value.length})? Подсказки в строке адреса тоже забудутся.`)) return
+    visits.value = []
+    void window.qa.browser('clearHistory')
+    return
+  }
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+  const from = pick === 'h' ? now - 3600e3 : pick === 'd' ? midnight.getTime() : now - 7 * 864e5
+  visits.value = visits.value.filter((v) => v.at < from)
+  void window.qa.browser('visitsDelete', { from, to: now + 60e3 })
+}
+async function setHistoryOn(on: boolean): Promise<void> {
+  bSettings.value = await window.qa.browser('setSettings', { history: on })
+}
+function plural(n: number, one: string, few: string, many: string): string {
+  const a = n % 10
+  const b = n % 100
+  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many
+}
+
 // ---------- passwords ----------
 const passwords = ref<PasswordInfo[]>([])
 void window.qa.browser('passwords').then((l) => (passwords.value = l))
@@ -1031,6 +1231,7 @@ const BASE_VAR = '{{base_…}}'
           <button class="swb" :class="{ on: recOpen && panelMode === 'api' }" title="Swagger / OpenAPI сайта: найти и взять его запросы" @click="openSwagger(true)"><b>{}</b></button>
         </span>
         <button class="ib" :class="{ on: recOpen }" title="Записанные запросы" @click="recOpen = !recOpen"><Icon name="list" :size="14" /></button>
+        <button class="ib" title="История (Ctrl+H)" @click="openHistory"><Icon name="history" :size="15" /></button>
         <button class="ib" title="Сохранённые пароли" @click="pwOpen = ''"><Icon name="lock" :size="14" /></button>
       </div>
 
@@ -1094,6 +1295,7 @@ const BASE_VAR = '{{base_…}}'
               </div>
               <ZoomChip v-if="p.active && pageShown(p.active)" :model-value="byId(p.active)?.zoom ?? 100" :min="25" :max="300" title="Масштаб страницы · колесо, Ctrl+колесо над страницей · клик — 100%" @update:model-value="(z) => p.active && window_zoom(p.active, z)" />
               <button class="tb" :class="{ on: byId(p.active)?.ruler }" :title="byId(p.active)?.ruler ? 'Убрать линейки' : 'Линейки: тяните из линейки — линия, обратно в линейку — убрать'" :disabled="!pageShown(p.active)" @click="p.active && toggleRuler(p.active)"><Icon name="ruler" :size="14" /></button>
+              <button class="tb" :class="{ on: !!byId(p.active)?.device }" :title="byId(p.active)?.device ? 'Выключить режим устройства (Ctrl+Shift+M)' : 'Режим устройства: страница как на телефоне, планшете или экране нужного размера (Ctrl+Shift+M)'" :disabled="!pageShown(p.active)" @click="toggleDevice(p.active)"><Icon name="devices" :size="15" /></button>
               <button v-if="byId(p.active)?.devtools" class="tb" :title="devSide === 'right' ? 'Инструменты разработчика — вниз' : 'Инструменты разработчика — справа'" @click="devSide = devSide === 'right' ? 'bottom' : 'right'"><Icon :name="devSide === 'right' ? 'rows' : 'columns'" :size="14" /></button>
               <button class="tb" :class="{ on: byId(p.active)?.devtools }" title="Инструменты разработчика (F12)" :disabled="!pageShown(p.active)" @click="p.active && window_nav(p.active, 'devtools')"><Icon name="code" :size="14" /></button>
             </div>
@@ -1129,8 +1331,32 @@ const BASE_VAR = '{{base_…}}'
                   <button v-if="byId(p.active)!.error!.cert" @click="p.active && window_trust(p.active, byId(p.active)!.error!.host!)">Открыть всё равно</button>
                 </div>
               </div>
+              <!-- the device mode: its bar, and the device's page in the middle -->
+              <template v-if="p.active && pageShown(p.active) && byId(p.active)?.device">
+                <template v-for="dv in [byId(p.active)!.device!]" :key="p.active">
+                  <div class="dbar">
+                    <button class="dpick" title="Устройство" @click="deviceMenu(p.active, $event)"><span class="dname">{{ dv.name || 'Адаптивный' }}</span><Icon name="chevronDown" :size="11" /></button>
+                    <input class="dnum" type="number" min="50" max="4000" :value="dv.w" title="Ширина, CSS px" @change="sizeDevice(p.active, numIn($event), dv.h)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+                    <span class="dx">×</span>
+                    <input class="dnum" type="number" min="50" max="4000" :value="dv.h" title="Высота, CSS px" @change="sizeDevice(p.active, dv.w, numIn($event))" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+                    <button class="tb rot" title="Повернуть" @click="rotateDevice(p.active)"><Icon name="rotate" :size="13" /></button>
+                    <span class="dsep"></span>
+                    <button v-if="dv.mobile" class="dpick dpr" title="Плотность пикселей (DPR)" @click="dprMenu(p.active, $event)">DPR {{ dv.dpr }}<Icon name="chevronDown" :size="11" /></button>
+                    <span v-else class="dpick dpr off" title="У компьютера плотность пикселей — как у вашего экрана. Своя плотность — у мобильных устройств (включите «Касания»)">DPR экрана</span>
+                    <button class="dchip" :class="{ on: dv.mobile }" :title="dv.mobile ? 'Мобильное устройство: касания вместо мыши, мобильный User-Agent. Клик — как компьютер' : 'Как компьютер. Клик — мобильное: касания и мобильный User-Agent'" @click="patchDevice(p.active, { mobile: !dv.mobile })"><i></i><span>Касания</span></button>
+                    <span class="grow"></span>
+                    <span v-if="devFits[p.id]" class="dscale" :title="devFits[p.id].scale < 1 ? 'Не помещается — показано уменьшенным' : 'В натуральную величину'">{{ Math.round(devFits[p.id].scale * 100) }}%</span>
+                    <button class="tb" title="Выключить режим устройства (Ctrl+Shift+M)" @click="setDevice(p.active)"><Icon name="x" :size="13" /></button>
+                  </div>
+                  <div :ref="(el) => areaRef(p.id, el)" class="darea">
+                    <div v-if="devFits[p.id]" class="dframe" :style="{ left: devFits[p.id].x + 'px', top: devFits[p.id].y + 'px', width: devFits[p.id].w + 'px', height: devFits[p.id].h + 'px' }">
+                      <img v-if="shots[p.active]" class="shot" :src="`data:image/jpeg;base64,${shots[p.active]}`" alt="" />
+                    </div>
+                  </div>
+                </template>
+              </template>
               <!-- the page's picture while something of the app is over it -->
-              <img v-if="p.active && shots[p.active]" class="shot" :src="`data:image/jpeg;base64,${shots[p.active]}`" alt="" />
+              <img v-if="p.active && shots[p.active] && !byId(p.active)?.device" class="shot" :src="`data:image/jpeg;base64,${shots[p.active]}`" alt="" />
             </div>
             <!-- the developer tools, docked under the page -->
             <template v-if="p.active && pageShown(p.active) && byId(p.active)?.devtools">
@@ -1334,6 +1560,35 @@ const BASE_VAR = '{{base_…}}'
           </template>
           <p v-else class="hint">Связей между запросами не найдено — запросы перенесутся с записанными значениями.</p>
           <div class="tqb"><button class="primary" @click="doTransfer">Создать в HTTP ({{ transferPreview.folder.children.length }})</button><button @click="transfer = undefined">Отмена</button></div>
+        </div>
+      </div>
+      <!-- the history -->
+      <div v-if="histOpen" class="bq-back" @mousedown.self="histOpen = false">
+        <div class="bq hist" tabindex="-1" @keydown.esc="histOpen = false">
+          <div class="hh">
+            <span class="cap">История</span>
+            <label class="hsw" :title="bSettings.history ? 'Открытые страницы запоминаются' : 'Открытые страницы не запоминаются'"><input type="checkbox" :checked="bSettings.history" @change="setHistoryOn(($event.target as HTMLInputElement).checked)" /><i></i>Сохранять историю</label>
+            <span class="grow"></span>
+            <button class="hclr" :disabled="!visits.length" @click="histClear">Удалить<Icon name="chevronDown" :size="11" /></button>
+            <button class="ib" title="Закрыть (Esc)" @click="histOpen = false"><Icon name="x" :size="14" /></button>
+          </div>
+          <label class="hsearch"><Icon name="search" :size="13" /><input :ref="(el) => el && histOpen && !histQ && (el as HTMLInputElement).focus()" v-model="histQ" placeholder="Поиск: название или адрес" spellcheck="false" /><span v-if="histQ" class="muted">{{ histFound.length }}</span></label>
+          <p v-if="!bSettings.history" class="hoff">История не сохраняется: новые страницы не запоминаются. Уже сохранённое осталось — его можно удалить.</p>
+          <div class="hlist">
+            <template v-for="d in histDays" :key="d.k">
+              <div class="hday"><span class="hdt">{{ d.title }}</span><span class="muted">{{ d.total }}</span><button class="hdel" title="Удалить этот день из истории" @click="histDelDay(d.k, d.title)"><Icon name="trash" :size="12" /></button></div>
+              <div v-for="v in d.items" :key="v.id" class="hrow" :title="v.url" @click="histGo(v, $event)" @mousedown.middle.prevent @auxclick.prevent="$event.button === 1 && histGo(v, $event)">
+                <span class="htm">{{ hhmm(v.at) }}</span>
+                <span class="htt">{{ v.title || v.url }}</span>
+                <span class="hurl">{{ hostOf(v.url) }}</span>
+                <button class="hdel" title="Удалить из истории" @click.stop="histDel([v.id])"><Icon name="x" :size="12" /></button>
+              </div>
+            </template>
+            <button v-if="histFound.length > histLimit" class="hmore" @click="histLimit += 500">Показать ещё ({{ histFound.length - histLimit }})</button>
+            <p v-if="!visits.length" class="hint hempty">{{ bSettings.history ? 'История пуста. Здесь появятся страницы, которые вы открываете, — по дням, со временем открытия.' : 'История пуста и не сохраняется.' }}</p>
+            <p v-else-if="!histFound.length" class="hint hempty">Ничего не нашлось</p>
+          </div>
+          <p class="hint hfoot">Клик — открыть, Ctrl+клик или средняя кнопка — в новой вкладке. Хранится 90 дней, только на этом компьютере.</p>
         </div>
       </div>
       <!-- the saved passwords -->
@@ -2053,6 +2308,7 @@ const BASE_VAR = '{{base_…}}'
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  container: pg / inline-size;
 }
 .dgrip {
   flex: none;
@@ -2115,6 +2371,154 @@ const BASE_VAR = '{{base_…}}'
   to {
     background-position: 150% 0;
   }
+}
+/* ---------- the device mode ---------- */
+.dbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dpick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.dname {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* narrow: the secondary goes first, the bar never wraps nor cuts its close button */
+@container pg (max-width: 640px) {
+  .dsep,
+  .dscale {
+    display: none;
+  }
+}
+@container pg (max-width: 540px) {
+  .dchip span {
+    display: none;
+  }
+  .dname {
+    max-width: 90px;
+  }
+}
+@container pg (max-width: 470px) {
+  .dpick.dpr {
+    display: none;
+  }
+}
+@container pg (max-width: 390px) {
+  .dbar .tb.rot {
+    display: none;
+  }
+  .dnum {
+    width: 50px;
+  }
+}
+.dpick.off {
+  border-style: dashed;
+  color: var(--muted);
+  cursor: default;
+}
+.dpick:not(.off):hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.dpick :deep(svg) {
+  color: var(--muted);
+}
+.dnum {
+  flex: none;
+  width: 62px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: 12px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.dnum::-webkit-inner-spin-button,
+.dnum::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.dx {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dsep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+.dchip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dchip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--panel-3);
+}
+.dchip.on {
+  color: var(--text);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+}
+.dchip.on i {
+  background: var(--accent);
+}
+.dscale {
+  flex: none;
+  padding: 0 6px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+}
+.darea {
+  position: absolute;
+  inset: 34px 0 0;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.015) 0 8px, transparent 8px 16px), var(--bg);
+}
+.dframe {
+  position: absolute;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--border-2),
+    0 8px 30px rgba(0, 0, 0, 0.45);
 }
 .shot {
   position: absolute;
@@ -2489,6 +2893,220 @@ const BASE_VAR = '{{base_…}}'
 }
 .bq.wide {
   width: min(760px, calc(100vw - 32px));
+}
+/* the history */
+.bq.hist {
+  width: min(820px, calc(100vw - 32px));
+  height: 80vh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.bq.hist .hh {
+  gap: 12px;
+  height: 46px;
+  padding: 0 8px 0 16px;
+  white-space: nowrap;
+}
+.hsw {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hsw input {
+  display: none;
+}
+.hsw i {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--panel-3);
+  transition: background 0.15s;
+}
+.hsw i::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 0.15s;
+}
+.hsw input:checked + i {
+  background: var(--accent);
+}
+.hsw input:checked + i::after {
+  transform: translateX(12px);
+  background: #fff;
+}
+.hclr {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.hclr:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.hclr:disabled {
+  opacity: 0.4;
+}
+.hsearch {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 12px 16px 4px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: var(--bg);
+  color: var(--muted);
+}
+.hsearch:focus-within {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}
+.hsearch input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+.hsearch .muted {
+  font-family: var(--font-data);
+  font-size: 11.5px;
+}
+.hoff {
+  flex: none;
+  margin: 8px 16px 0;
+  padding: 8px 10px;
+  border-radius: var(--r2);
+  background: rgba(255, 179, 0, 0.1);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.hlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 8px 16px;
+}
+.hday {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 6px 6px 0 6px;
+  background: var(--panel);
+  color: var(--text-hi);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.hdt::first-letter {
+  text-transform: uppercase;
+}
+.hday .muted {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 400;
+}
+.hrow {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, max-content) 24px;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: var(--r2);
+  cursor: pointer;
+}
+.hrow:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.htm {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+}
+.htt {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hurl {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hdel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+.hday .hdel {
+  margin-left: auto;
+}
+.hrow:hover .hdel,
+.hday:hover .hdel {
+  opacity: 1;
+}
+.hdel:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.hmore {
+  display: block;
+  margin: 10px auto;
+  padding: 6px 14px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.bq .hempty {
+  margin: 24px 6px;
+  font-size: 13px;
+}
+.bq .hfoot {
+  flex: none;
+  padding: 8px 16px 10px;
+  border-top: 1px solid var(--border);
 }
 .bq.help {
   width: min(820px, calc(100vw - 32px));

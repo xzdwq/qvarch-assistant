@@ -3,7 +3,7 @@ import { createHash, X509Certificate } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { SOURCE_SCHEME, sourcePage } from './viewSource'
-import { browserId, type Bookmark, type BrowserTab, type HistoryItem, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecState } from '../shared/browser'
+import { browserId, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserSettings, type BrowserTab, type DeviceMode, type HistoryItem, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecState } from '../shared/browser'
 
 /**
  * The Браузер section's pages: each tab a WebContentsView of its own over the main window (the renderer reports
@@ -17,6 +17,9 @@ const MAX_BODY = 1024 * 1024
 /** All the answers' texts kept, at most — the oldest lose theirs first. */
 const MAX_BODIES = 150 * 1024 * 1024
 const MAX_HISTORY = 3000
+/** The history by days: the last 90 days, at most this many openings. */
+const MAX_VISITS = 30000
+const VISITS_DAYS = 90
 
 interface Tab {
   t: BrowserTab
@@ -27,6 +30,12 @@ interface Tab {
   dev?: WebContentsView
   /** The rulers over the page: on, and the guides pulled out of them (px from the left / the top). */
   ruler: { on: boolean; v: number[]; h: number[] }
+  /** Who keeps the protocol attached (the recording, the device mode). */
+  dbg: Set<'rec' | 'device'>
+  /** The device mode's scale as last told to the page. */
+  devScale?: number
+  /** This tab's last visit (its title comes later). */
+  visit?: Visit
 }
 interface Saved {
   id: string
@@ -42,14 +51,18 @@ interface Pending {
   hasPostData?: boolean
 }
 type Box = { x: number; y: number; w: number; h: number }
-type Rect = Box & { id: string; dev?: Box }
+type Rect = Box & { id: string; dev?: Box; scale?: number }
 
 export class Browser {
   private tabs = new Map<string, Tab>()
   private win: BrowserWindow | undefined
   private ses: Session
   private file: string
-  private data: { bookmarks: Bookmark[]; history: HistoryItem[] }
+  private data: { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings }
+  private visitsFile: string
+  private visitList: Visit[] | undefined
+  private visitsTimer?: NodeJS.Timeout
+  private uaDefault: string
   private saveTimer?: NodeJS.Timeout
   private shown = new Set<string>()
   private covered = false
@@ -74,12 +87,14 @@ export class Browser {
     private emit: (type: string, payload: unknown) => void,
   ) {
     this.file = join(root, 'browser.json')
+    this.visitsFile = join(root, 'browser-history.json')
     this.data = this.read()
     this.pwInit(root)
     this.rulerInit()
     this.ses = session.fromPartition(PARTITION)
     // a browser's User-Agent (not "Electron" / the app — some sites refuse those)
-    this.ses.setUserAgent(this.ses.getUserAgent().replace(/\s+Electron\/\S+/i, '').replace(/\s+qvarch[-\w]*\/\S+/i, ''))
+    this.uaDefault = this.ses.getUserAgent().replace(/\s+Electron\/\S+/i, '').replace(/\s+qvarch[-\w]*\/\S+/i, '')
+    this.ses.setUserAgent(this.data.settings.ua || this.uaDefault)
     // each site's certificate as Chromium checked it — kept to show it (the check itself stays Chromium's: -3)
     this.ses.setCertificateVerifyProc((req, cb) => {
       const chain: string[] = []
@@ -140,6 +155,11 @@ export class Browser {
       const r = rects.find((x) => x.id === id)
       if (r && r.w > 1 && r.h > 1) {
         put(t.view, r)
+        // the device mode: the page drawn smaller to fit the pane
+        if (t.t.device && r.scale && r.scale !== t.devScale) {
+          t.devScale = r.scale
+          void this.deviceApply(t, true)
+        }
         if (!this.shown.has(id)) t.view.setVisible(true)
       } else if (this.shown.has(id)) t.view.setVisible(false)
       if (t.dev) {
@@ -163,7 +183,13 @@ export class Browser {
         const t = this.tabs.get(id)
         if (!t) continue
         try {
-          shots[id] = (await t.view.webContents.capturePage()).toJPEG(82).toString('base64')
+          let img = await t.view.webContents.capturePage()
+          // the device mode: the picture is the device's whole size, the page drawn smaller in its corner
+          if (t.t.device && t.devScale && t.devScale < 1) {
+            const sz = img.getSize()
+            img = img.crop({ x: 0, y: 0, width: Math.max(1, Math.round(sz.width * t.devScale)), height: Math.max(1, Math.round(sz.height * t.devScale)) })
+          }
+          shots[id] = img.toJPEG(82).toString('base64')
           if (t.dev?.getVisible()) shots[`${id}:dev`] = (await t.dev.webContents.capturePage()).toJPEG(82).toString('base64')
         } catch {
           // not drawn yet
@@ -192,7 +218,7 @@ export class Browser {
     const view = new WebContentsView({ webPreferences: { session: this.ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(__dirname, '../preload/browser.js') } })
     view.setBackgroundColor('#ffffff')
     view.setVisible(false)
-    const tab: Tab = { t: { id, url, title: url === 'about:blank' ? 'Новая вкладка' : url, loading: false, canBack: false, canFwd: false, zoom: 100 }, view, rec: false, ruler: { on: false, v: [], h: [] } }
+    const tab: Tab = { t: { id, url, title: url === 'about:blank' ? 'Новая вкладка' : url, loading: false, canBack: false, canFwd: false, zoom: 100 }, view, rec: false, ruler: { on: false, v: [], h: [] }, dbg: new Set() }
     this.tabs.set(id, tab)
     this.win?.contentView.addChildView(view)
     this.wire(tab)
@@ -269,6 +295,13 @@ export class Browser {
     dev.webContents.on('zoom-changed', (_e, dir) => {
       const z = dev.webContents.getZoomLevel() + (dir === 'in' ? 0.5 : -0.5)
       dev.webContents.setZoomLevel(Math.min(4, Math.max(-3, z)))
+    })
+    // Ctrl+Shift+M in the tools: our device mode (theirs has no place in a docked view)
+    dev.webContents.on('before-input-event', (e, i) => {
+      if (i.type === 'keyDown' && (i.control || i.meta) && i.shift && i.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        this.emit('key', { id: t.t.id, key: 'device' })
+      }
     })
     wc.setDevToolsWebContents(dev.webContents)
     wc.openDevTools({ mode: 'detach', activate: false })
@@ -598,6 +631,19 @@ export class Browser {
   }
   closeAll(): void {
     for (const id of [...this.tabs.keys()]) this.close(id)
+    // what waits to be written goes now (the app quits)
+    try {
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer)
+        writeFileSync(this.file, JSON.stringify(this.data, null, 2))
+      }
+      if (this.visitsTimer && this.visitList) {
+        clearTimeout(this.visitsTimer)
+        writeFileSync(this.visitsFile, JSON.stringify({ visits: this.visitList }))
+      }
+    } catch {
+      // the disk refused — nothing more to do on the way out
+    }
   }
 
   private byContents(wc: WebContents): Tab | undefined {
@@ -621,10 +667,17 @@ export class Browser {
     wc.on('did-navigate', (_e, url) => {
       t.url = url
       t.favicon = undefined
-      this.visit(url, t.title)
+      // its title comes later (the old one is the previous page's)
+      this.visit(tab, url, '', true)
       sync()
     })
-    wc.on('did-navigate-in-page', (_e, url, isMain) => isMain && ((t.url = url), sync()))
+    wc.on('did-navigate-in-page', (_e, url, isMain) => {
+      if (!isMain) return
+      t.url = url
+      // a single-page site's own pages count as openings too
+      this.visit(tab, url, t.title, true)
+      sync()
+    })
     wc.on('will-navigate', (e) => {
       if (e.url.startsWith('file:') && !wc.getURL().startsWith('file:') && !e.url.startsWith(SOURCE_SCHEME)) {
         e.preventDefault()
@@ -633,7 +686,7 @@ export class Browser {
     })
     wc.on('page-title-updated', (_e, title) => {
       t.title = title
-      this.visit(t.url, title)
+      this.visit(tab, t.url, title, false)
       this.changed()
     })
     // the window's rules allow no remote pictures: the icon comes over as data (small ones only)
@@ -692,6 +745,8 @@ export class Browser {
       if (ctrl && k === 'u') return e.preventDefault(), this.viewSource(t.id)
       if (ctrl && k === 'p') return e.preventDefault(), wc.print()
       if (ctrl && i.shift && k === 'i') return e.preventDefault(), this.nav(t.id, 'devtools')
+      if (ctrl && i.shift && k === 'm') return send('device')
+      if (ctrl && k === 'h') return send('history')
     })
     wc.on('context-menu', (_e, p) => {
       const items: MenuItemConstructorOptions[] = []
@@ -730,13 +785,92 @@ export class Browser {
   }
 
   // ---------- bookmarks, history ----------
-  private read(): { bookmarks: Bookmark[]; history: HistoryItem[] } {
+  private read(): { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings } {
     try {
-      const d = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<{ bookmarks: Bookmark[]; history: HistoryItem[] }>
-      return { bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [], history: Array.isArray(d.history) ? d.history : [] }
+      const d = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings> }>
+      const st = d.settings ?? {}
+      return {
+        bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
+        history: Array.isArray(d.history) ? d.history : [],
+        settings: { history: typeof st.history === 'boolean' ? st.history : DEFAULT_BROWSER_SETTINGS.history, ua: typeof st.ua === 'string' ? st.ua : DEFAULT_BROWSER_SETTINGS.ua },
+      }
     } catch {
-      return { bookmarks: [], history: [] }
+      return { bookmarks: [], history: [], settings: { ...DEFAULT_BROWSER_SETTINGS } }
     }
+  }
+  /** The history by days — read when first needed (the older history: one opening per page, its last). */
+  private visitsAll(): Visit[] {
+    if (this.visitList) return this.visitList
+    let list: Visit[] | undefined
+    try {
+      const d = JSON.parse(readFileSync(this.visitsFile, 'utf8')) as { visits?: Visit[] }
+      if (Array.isArray(d.visits)) list = d.visits.filter((v) => v && typeof v.url === 'string' && typeof v.at === 'number')
+    } catch {
+      // none yet
+    }
+    list ??= this.data.history.map((h) => ({ id: browserId(), url: h.url, title: h.title, at: h.last })).sort((a, b) => b.at - a.at)
+    this.visitList = list
+    this.trimVisits()
+    return list
+  }
+  private trimVisits(): void {
+    const l = this.visitList
+    if (!l) return
+    const old = Date.now() - VISITS_DAYS * 864e5
+    let n = Math.min(l.length, MAX_VISITS)
+    while (n > 0 && l[n - 1].at < old) n--
+    l.length = n
+  }
+  private saveVisits(): void {
+    clearTimeout(this.visitsTimer)
+    this.visitsTimer = setTimeout(() => {
+      if (!this.visitList) return
+      const tmp = `${this.visitsFile}.tmp`
+      writeFileSync(tmp, JSON.stringify({ visits: this.visitList }))
+      renameSync(tmp, this.visitsFile)
+    }, 1500)
+  }
+  visits(): Visit[] {
+    return this.visitsAll()
+  }
+  visitsDelete(what: string[] | { from: number; to: number }): void {
+    const all = this.visitsAll()
+    const gone = Array.isArray(what) ? new Set(what) : undefined
+    const out = (v: Visit) => (gone ? gone.has(v.id) : !Array.isArray(what) && v.at >= what.from && v.at < what.to)
+    const left = all.filter((v) => !out(v))
+    const removed = all.filter(out)
+    this.visitList = left
+    // a page with no openings left goes from the suggestions too
+    const still = new Set(left.map((v) => v.url))
+    const urls = new Set(removed.map((v) => v.url).filter((u) => !still.has(u)))
+    if (urls.size) this.data.history = this.data.history.filter((h) => !urls.has(h.url))
+    for (const t of this.tabs.values()) if (t.visit && out(t.visit)) t.visit = undefined
+    this.saveVisits()
+    this.save()
+    this.emit('history', null)
+  }
+  settings(): BrowserSettings {
+    return { ...this.data.settings }
+  }
+  setSettings(patch: Partial<BrowserSettings>): BrowserSettings {
+    const s = this.data.settings
+    if (typeof patch.history === 'boolean') s.history = patch.history
+    if (typeof patch.ua === 'string') {
+      s.ua = patch.ua.replace(/[\r\n]+/g, ' ').trim().slice(0, 1000)
+      const ua = s.ua || this.uaDefault
+      this.ses.setUserAgent(ua)
+      // the open tabs too (a device mode keeps its own)
+      for (const t of this.tabs.values()) {
+        t.view.webContents.setUserAgent(ua)
+        if (t.t.device) void this.deviceApply(t)
+      }
+    }
+    this.save()
+    this.emit('settings', this.settings())
+    return this.settings()
+  }
+  defaultUa(): string {
+    return this.uaDefault
   }
   private save(): void {
     clearTimeout(this.saveTimer)
@@ -754,8 +888,20 @@ export class Browser {
     this.save()
     this.emit('bookmarks', list)
   }
-  private visit(url: string, title: string): void {
-    if (!/^https?:/i.test(url)) return
+  /** A page opened (`fresh` — a navigation, not its title coming): kept, unless the history is off. */
+  private visit(tab: Tab, url: string, title: string, fresh: boolean): void {
+    if (!/^https?:/i.test(url) || !this.data.settings.history) return
+    const list = this.visitsAll()
+    const last = tab.visit
+    if (fresh && !(last && last.url === url)) {
+      tab.visit = { id: browserId(), url, title, at: Date.now() }
+      list.unshift(tab.visit)
+      if (list.length > MAX_VISITS + 500) this.trimVisits()
+      this.saveVisits()
+    } else if (last && last.url === url && title && last.title !== title) {
+      last.title = title
+      this.saveVisits()
+    }
     const h = this.data.history
     const i = h.findIndex((x) => x.url === url)
     if (i >= 0) {
@@ -785,7 +931,11 @@ export class Browser {
   }
   clearHistory(): void {
     this.data.history = []
+    this.visitList = []
+    for (const t of this.tabs.values()) t.visit = undefined
+    this.saveVisits()
     this.save()
+    this.emit('history', null)
   }
   /** A bookmark folder's contents as a native menu (it opens over the pages). Picks → the renderer. */
   folderMenu(id: string, x: number, y: number): void {
@@ -806,10 +956,15 @@ export class Browser {
     Menu.buildFromTemplate(toItems(folder.children)).popup({ window: this.win, x: Math.round(x), y: Math.round(y) })
   }
   /** A native menu of choices (a bookmark's actions): the picked id, or nothing. */
-  choose(items: Array<{ id: string; label: string }>, x: number, y: number): Promise<string | undefined> {
+  /** A native menu (over the pages): '-' — a line, '#…' — a heading, `checked` — the current one. */
+  choose(items: Array<{ id: string; label: string; checked?: boolean }>, x: number, y: number): Promise<string | undefined> {
     return new Promise((res) => {
       let picked: string | undefined
-      Menu.buildFromTemplate(items.map((i) => (i.id === '-' ? { type: 'separator' as const } : { label: i.label, click: () => (picked = i.id) }))).popup({
+      Menu.buildFromTemplate(
+        items.map((i): MenuItemConstructorOptions =>
+          i.id === '-' ? { type: 'separator' } : i.id.startsWith('#') ? { label: i.label, enabled: false } : { label: i.label, type: i.checked === undefined ? 'normal' : 'checkbox', checked: !!i.checked, click: () => (picked = i.id) },
+        ),
+      ).popup({
         window: this.win,
         x: Math.round(x),
         y: Math.round(y),
@@ -846,25 +1001,33 @@ export class Browser {
   recFull(ids: string[]): RecFull[] {
     return ids.map((id) => this.recItems.find((x) => x.id === id)).filter((x): x is RecFull => !!x)
   }
-  private async recAttach(tab: Tab): Promise<void> {
-    if (tab.rec) return
+  /**
+   * The protocol (Chrome DevTools) on a page: shared by the recording and the device mode — attached while
+   * either needs it. Detached from outside (the page gone): both stop.
+   */
+  private dbgUse(tab: Tab, who: 'rec' | 'device'): Electron.Debugger {
     const d = tab.view.webContents.debugger
-    try {
-      if (!d.isAttached()) d.attach('1.3')
-      tab.rec = true
+    if (!d.isAttached()) {
+      d.attach('1.3')
       d.removeAllListeners('message')
       d.removeAllListeners('detach')
-      d.on('message', (_e, method, params) => this.onCdp(tab, method, params as Record<string, unknown>))
-      d.on('detach', () => (tab.rec = false))
-      await d.sendCommand('Network.enable', { maxPostDataSize: 1024 * 1024 })
-    } catch (e) {
-      tab.rec = false
-      this.emit('recError', `Вкладка «${tab.t.title}»: запись не включилась — ${e instanceof Error ? e.message : String(e)}`)
+      d.on('message', (_e, method, params) => tab.rec && this.onCdp(tab, method, params as Record<string, unknown>))
+      d.on('detach', () => {
+        tab.rec = false
+        tab.dbg.clear()
+        tab.devScale = undefined
+        if (tab.t.device) {
+          tab.t.device = undefined
+          this.changed()
+        }
+      })
     }
+    tab.dbg.add(who)
+    return d
   }
-  private recDetach(tab: Tab): void {
-    if (!tab.rec) return
-    tab.rec = false
+  private dbgDrop(tab: Tab, who: 'rec' | 'device'): void {
+    tab.dbg.delete(who)
+    if (tab.dbg.size) return
     const d = tab.view.webContents.debugger
     try {
       d.removeAllListeners('message')
@@ -872,6 +1035,91 @@ export class Browser {
       if (d.isAttached()) d.detach()
     } catch {
       // gone
+    }
+  }
+  private async recAttach(tab: Tab): Promise<void> {
+    if (tab.rec) return
+    try {
+      const d = this.dbgUse(tab, 'rec')
+      tab.rec = true
+      await d.sendCommand('Network.enable', { maxPostDataSize: 1024 * 1024 })
+    } catch (e) {
+      tab.rec = false
+      this.dbgDrop(tab, 'rec')
+      this.emit('recError', `Вкладка «${tab.t.title}»: запись не включилась — ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  private recDetach(tab: Tab): void {
+    if (!tab.rec) return
+    tab.rec = false
+    // the device mode stays: only the network goes quiet
+    if (tab.dbg.size > 1) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
+    this.dbgDrop(tab, 'rec')
+  }
+  // ---------- the device mode ----------
+  device(id: string, d?: DeviceMode): void {
+    const t = this.tabs.get(id)
+    if (!t) return
+    const before = t.t.device
+    if (!d) {
+      if (!before) return
+      t.t.device = undefined
+      t.devScale = undefined
+      const dbg = t.view.webContents.debugger
+      const wasMobileUa = !!before.ua
+      void (async () => {
+        try {
+          if (dbg.isAttached()) {
+            await dbg.sendCommand('Emulation.clearDeviceMetricsOverride')
+            await dbg.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false })
+            await dbg.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: false })
+            await dbg.sendCommand('Emulation.setUserAgentOverride', { userAgent: this.data.settings.ua || this.uaDefault })
+          }
+        } catch {
+          // the page is going
+        }
+        this.dbgDrop(t, 'device')
+        // the site saw a phone: it is asked again as itself
+        if (wasMobileUa) t.view.webContents.reload()
+      })()
+      this.changed()
+      return
+    }
+    const w = Math.round(Math.min(4000, Math.max(50, d.w)))
+    const h = Math.round(Math.min(4000, Math.max(50, d.h)))
+    const dpr = Math.min(5, Math.max(0.5, d.dpr || 1))
+    t.t.device = { name: String(d.name ?? ''), w, h, dpr, mobile: !!d.mobile, ua: d.ua || undefined }
+    const uaChanged = (before?.ua ?? '') !== (t.t.device.ua ?? '')
+    this.changed()
+    void this.deviceApply(t).then(() => uaChanged && t.view.webContents.getURL() && !t.view.webContents.getURL().startsWith('about:') && t.view.webContents.reload())
+  }
+  /** The device mode told to the page: its size, scale (to fit the pane), touch, User-Agent. */
+  private async deviceApply(t: Tab, sizeOnly = false): Promise<void> {
+    const dv = t.t.device
+    if (!dv) return
+    try {
+      const d = this.dbgUse(t, 'device')
+      const scale = t.devScale ?? 1
+      await d.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width: dv.w,
+        height: dv.h,
+        // (Chromium honours its own density for a mobile device only; a computer keeps the screen's)
+        deviceScaleFactor: dv.mobile ? dv.dpr : 0,
+        mobile: dv.mobile,
+        scale,
+        screenWidth: dv.w,
+        screenHeight: dv.h,
+        screenOrientation: dv.w > dv.h ? { type: 'landscapePrimary', angle: 90 } : { type: 'portraitPrimary', angle: 0 },
+      })
+      if (sizeOnly) return
+      await d.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: dv.mobile, maxTouchPoints: dv.mobile ? 5 : 1 })
+      await d.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: dv.mobile, configuration: dv.mobile ? 'mobile' : 'desktop' })
+      await d.sendCommand('Emulation.setUserAgentOverride', { userAgent: dv.ua || this.data.settings.ua || this.uaDefault })
+    } catch (e) {
+      this.emit('recError', `Режим устройства не включился: ${e instanceof Error ? e.message : String(e)}`)
+      t.t.device = undefined
+      this.dbgDrop(t, 'device')
+      this.changed()
     }
   }
   private onCdp(tab: Tab, method: string, p: Record<string, unknown>): void {

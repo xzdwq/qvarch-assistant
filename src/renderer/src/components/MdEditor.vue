@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { createApp, nextTick, onBeforeUnmount, onMounted, ref, watch, type App } from 'vue'
+import { computed, createApp, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type App } from 'vue'
 import ThinkingOrb from './ThinkingOrb.vue'
-import Icon from './Icon.vue'
-import { EditorSelection, EditorState, type Range } from '@codemirror/state'
+import Icon, { iconSvg } from './Icon.vue'
+import { EditorSelection, EditorState, Prec, type Range } from '@codemirror/state'
 import {
   Decoration,
   EditorView,
@@ -22,8 +22,12 @@ import { CODE_LANGUAGES, FENCE_PICK, fenceLang, FORMATTABLE, formatCode, indentF
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
-import { AUDIO_EMBED } from '@shared/vault'
-import { audioUrl, fixDuration, transcribing } from '../lib/notebook'
+import { AUDIO_EMBED, IMAGE_EMBED, imageEmbed } from '@shared/vault'
+import { audioUrl, draggedImageUrl, fixDuration, hasImages, imageUrl, takeImages, transcribing } from '../lib/notebook'
+import { durText, eventLink, jiraLink, parseNoteLink, periodText, pickGroups, statusOf, statusText, type EventRef, type NoteLink } from '@shared/noteEvents'
+import type { JiraIssue } from '@shared/jira'
+import { eventOf, events, eventsNow, eventsTick, issueOf, jiraSite, kindOf } from '../lib/noteEvents'
+import { todayKey } from '../lib/today'
 
 /**
  * The notebook's editor (CodeMirror 6), like Obsidian's Live Preview: what is finished reads as the result —
@@ -31,7 +35,7 @@ import { audioUrl, fixDuration, transcribing } from '../lib/notebook'
  * A recording line is a player; [[a link]] opens that note.
  */
 const props = defineProps<{ text: string }>()
-const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string]; exitUp: [] }>()
+const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string, at: { from: number; to: number }]; exitUp: []; warn: [text: string] }>()
 
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
@@ -219,6 +223,166 @@ const TRASH = ICON('<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0
 const COPY = ICON('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>', 15)
 const CHECK = ICON('<path d="M20 6 9 17l-5-5"/>', 15)
 const MIC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>'
+const EXPAND = ICON('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>', 14)
+/** A picture over everything, as big as the window lets it (a click / Esc closes it). */
+function showFull(src: string): void {
+  const back = document.createElement('div')
+  back.className = 'qa-lightbox'
+  const img = document.createElement('img')
+  img.src = src
+  img.alt = ''
+  back.append(img)
+  const close = () => {
+    back.remove()
+    window.removeEventListener('keydown', onKey, true)
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    close()
+  }
+  back.onclick = close
+  window.addEventListener('keydown', onKey, true)
+  document.body.append(back)
+}
+/** The line of a picture removed (and a blank line it leaves doubled). */
+function removeLine(v: EditorView, text: string): void {
+  const d = v.state.doc
+  for (let n = 1; n <= d.lines; n++) {
+    const l = d.line(n)
+    if (l.text.trim() !== text) continue
+    let from = l.from
+    let to = Math.min(d.length, l.to + 1)
+    // no double blank line left behind
+    const prevBlank = n > 1 && !d.line(n - 1).text.trim()
+    const nextBlank = n < d.lines && !d.line(n + 1).text.trim()
+    if (prevBlank && nextBlank) to = Math.min(d.length, d.line(n + 1).to + 1)
+    if (n === d.lines && n > 1) from = d.line(n - 1).to
+    v.dispatch({ changes: { from, to } })
+    return
+  }
+}
+/** A picture of the note: as wide as the note at most (smaller ones — their own size). */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly rel: string,
+    /** Under its line's raw text (the cursor is on it). */
+    readonly under: boolean,
+  ) {
+    super()
+  }
+  eq(o: ImageWidget): boolean {
+    return o.rel === this.rel && o.under === this.under
+  }
+  toDOM(v: EditorView): HTMLElement {
+    const box = document.createElement('span')
+    box.className = this.under ? 'cm-img under' : 'cm-img'
+    const img = document.createElement('img')
+    img.alt = ''
+    img.draggable = false
+    img.onload = () => v.requestMeasure()
+    img.onclick = () => img.src && showFull(img.src)
+    void imageUrl(this.rel)
+      .then((u) => (img.src = u))
+      .catch(() => {
+        box.classList.add('missing')
+        box.textContent = 'Изображение не найдено'
+        box.title = this.rel
+      })
+    // (inline blocks: a block in a line would get CodeMirror's empty line boxes around it)
+    const inner = document.createElement('span')
+    inner.className = 'cm-img-in'
+    const bar = document.createElement('span')
+    bar.className = 'cm-img-bar'
+    const btn = (svg: string, title: string, fn: () => void) => {
+      const b = document.createElement('button')
+      b.innerHTML = svg
+      b.title = title
+      b.onmousedown = (e) => e.preventDefault()
+      b.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        fn()
+      }
+      return b
+    }
+    bar.append(
+      btn(EXPAND, 'Открыть в полный размер', () => img.src && showFull(img.src)),
+      btn(TRASH, 'Убрать изображение из заметки (Ctrl+Z — вернуть)', () => removeLine(v, imageEmbed(this.rel))),
+    )
+    inner.append(img, bar)
+    box.append(inner)
+    return box
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+// ---------- an event / a Jira task mentioned in the note: a live chip ----------
+const dmShort = (t: number) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace(/\.$/, '')
+class EventChip extends WidgetType {
+  constructor(
+    readonly link: NoteLink,
+    /** The link's own text (shown when the event is not known). */
+    readonly text: string,
+    /** Changes when what the chip shows may have (the list reloaded, a minute passed). */
+    readonly stamp: string,
+  ) {
+    super()
+  }
+  eq(o: EventChip): boolean {
+    return o.stamp === this.stamp && o.text === this.text && JSON.stringify(o.link) === JSON.stringify(this.link)
+  }
+  toDOM(): HTMLElement {
+    const box = document.createElement('span')
+    box.className = 'cm-ev'
+    const now = Date.now()
+    const part = (cls: string, text: string, title?: string) => {
+      const e = document.createElement('span')
+      e.className = cls
+      e.textContent = text
+      if (title) e.title = title
+      return e
+    }
+    const ic = document.createElement('span')
+    ic.className = 'cm-ev-ic'
+    box.append(ic)
+    const l = this.link
+    if (l.kind === 'event') {
+      const e = eventOf(l.day, l.id)
+      if (!e) {
+        ic.innerHTML = iconSvg('calendar', 13)
+        box.classList.add(events.value.length ? 'gone' : 'wait')
+        box.append(part('cm-ev-t', this.text))
+        if (events.value.length) box.append(part('cm-ev-st gone', 'событие удалено'))
+        box.title = events.value.length ? 'Этого события больше нет на таймлайне' : ''
+      } else {
+        const k = kindOf(e.kind)
+        ic.innerHTML = iconSvg(k?.icon ?? 'tag', 13)
+        if (k?.color) box.style.setProperty('--ev', k.color)
+        const st = statusOf(e, now)
+        box.append(part('cm-ev-t', e.label || this.text), part('cm-ev-p', `${periodText(e, now)} · ${durText(e.end - e.start)}`), part(`cm-ev-st ${st}`, statusText(e, now)))
+        if (e.created) box.append(part('cm-ev-c', `созд. ${dmShort(e.created)}`, `Создано ${new Date(e.created).toLocaleString('ru-RU')}`))
+        box.title = `${k?.label ?? e.kind}${e.outlook ? ' · встреча Outlook' : ''}${e.task ? ` · ${e.task}` : ''} — клик: открыть на таймлайне`
+        box.onclick = () => window.qa.openMain(e.day, e.id)
+      }
+    } else {
+      const is = issueOf(l.key)
+      ic.innerHTML = iconSvg('jira', 13)
+      box.style.setProperty('--ev', '#2684ff')
+      box.append(part('cm-ev-t', is ? `${is.key} ${is.summary}` : this.text))
+      if (is) box.append(part(`cm-ev-st ${is.category === 'done' ? 'done' : is.category === 'indeterminate' ? 'now' : 'ahead'}`, is.status))
+      box.title = 'Задача Jira — клик: открыть в браузере'
+      box.onclick = () => jiraSite.value && window.qa.openExternal(`${jiraSite.value.replace(/\/$/, '')}/browse/${l.key}`)
+    }
+    box.onmousedown = (ev) => ev.preventDefault()
+    return box
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
 class AudioWidget extends WidgetType {
   constructor(
     readonly rel: string,
@@ -606,6 +770,11 @@ function decorate(v: EditorView): DecorationSet {
             if (touched(n.from, n.to)) return false
             const marks = n.node.getChildren('LinkMark')
             const url = n.node.getChild('URL')
+            const ev = url ? parseNoteLink(s.sliceDoc(url.from, url.to)) : undefined
+            if (ev && marks.length >= 2) {
+              out.push(Decoration.replace({ widget: new EventChip(ev, s.sliceDoc(marks[0].to, marks[1].from), chipStamp()) }).range(n.from, n.to))
+              return false
+            }
             if (marks.length >= 2 && url && marks[1].from > marks[0].to) {
               const href = s.sliceDoc(url.from, url.to)
               out.push(hide.range(n.from, marks[0].to))
@@ -627,8 +796,13 @@ function decorate(v: EditorView): DecorationSet {
     for (let pos = from; pos <= to; ) {
       const line = lineOf(pos)
       const m = line.text.match(AUDIO_EMBED)
+      const im = line.text.match(IMAGE_EMBED)
       if (inCode(line.from)) {
         // code — as it is
+      } else if (im) {
+        // the picture; with the cursor on its line — its text, and the picture under it
+        if (touched(line.from, line.to)) out.push(Decoration.widget({ widget: new ImageWidget(im[1], true), side: 1 }).range(line.to))
+        else out.push(Decoration.replace({ widget: new ImageWidget(im[1], false) }).range(line.from, line.to))
       } else if (m) {
         if (!touched(line.from, line.to) && line.length) out.push(Decoration.replace({ widget: new AudioWidget(m[1], transcribing.get(m[1]) ?? '') }).range(line.from, line.to))
       } else {
@@ -663,6 +837,170 @@ const live = ViewPlugin.fromClass(
   },
   { decorations: (p) => p.decorations },
 )
+/** Pictures put in the note's own lines, at the line of `pos` (after it, when it has text). */
+function insertImages(v: EditorView, rels: string[], pos = v.state.selection.main.head): void {
+  if (!rels.length) return
+  const line = v.state.doc.lineAt(Math.min(pos, v.state.doc.length))
+  const body = rels.map(imageEmbed).join('\n')
+  const at = line.length ? line.to : line.from
+  const ins = (line.length ? '\n' : '') + body + '\n'
+  v.dispatch({ changes: { from: at, insert: ins }, selection: { anchor: at + ins.length }, scrollIntoView: true })
+  v.focus()
+}
+const warn = (t: string) => emit('warn', t)
+/** A picture pasted (a screenshot, a copied image) or dropped (files, an image from a web page) → the vault. */
+const pictures = EditorView.domEventHandlers({
+  paste(e, v) {
+    const dt = e.clipboardData
+    // text goes as text (a table copied from Excel carries a picture of itself too)
+    if (!dt || dt.getData('text/plain').trim() || !hasImages(dt)) return false
+    e.preventDefault()
+    const at = v.state.selection.main.head
+    void takeImages({ files: [...dt.files] }, warn).then((rels) => insertImages(v, rels, at))
+    return true
+  },
+  dragover(e) {
+    const t = e.dataTransfer?.types ?? []
+    if (!t.includes('Files') && !t.includes('text/html')) return false
+    // (text dragged inside the note stays CodeMirror's)
+    if (t.includes('Files')) e.preventDefault()
+    return false
+  },
+  drop(e, v) {
+    const dt = e.dataTransfer
+    const uri = hasImages(dt) ? undefined : draggedImageUrl(dt)
+    if (!dt || (!hasImages(dt) && !uri)) return false
+    e.preventDefault()
+    const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head
+    void takeImages({ files: [...dt.files], uri }, warn).then((rels) => insertImages(v, rels, pos))
+    return true
+  },
+})
+// ---------- «@»: the events to mention ----------
+const chipNow = ref(Date.now())
+const chipStamp = () => `${eventsTick.value}:${Math.floor(chipNow.value / 30000)}`
+interface Picker {
+  /** Where «@» is. */
+  from: number
+  to: number
+  query: string
+  x: number
+  y: number
+  up: boolean
+}
+const picker = ref<Picker>()
+const pickIdx = ref(0)
+/** «@» closed with Esc: not opened again for it. */
+let dismissedAt = -1
+const AT = /(?:^|[\s(«"'])@([^\n@]{0,60})$/
+function inCodeAt(v: EditorView, pos: number): boolean {
+  for (let n: ReturnType<ReturnType<typeof syntaxTree>['resolveInner']> | null = syntaxTree(v.state).resolveInner(pos, -1); n; n = n.parent) if (/Code/.test(n.name)) return true
+  return false
+}
+function checkPicker(v: EditorView): void {
+  const sel = v.state.selection.main
+  if (!sel.empty) return closePicker()
+  const line = v.state.doc.lineAt(sel.head)
+  const m = AT.exec(line.text.slice(0, sel.head - line.from))
+  if (!m || /\s{2,}$/.test(m[1]) || inCodeAt(v, sel.head)) return closePicker()
+  const from = sel.head - m[1].length - 1
+  if (from === dismissedAt) return closePicker()
+  const c = v.coordsAtPos(from)
+  if (!c) return closePicker()
+  const up = window.innerHeight - c.bottom < 380 && c.top > window.innerHeight - c.bottom
+  if (picker.value?.query !== m[1]) pickIdx.value = 0
+  picker.value = { from, to: sel.head, query: m[1], x: Math.min(c.left, window.innerWidth - 500), y: up ? window.innerHeight - c.top + 4 : c.bottom + 4, up }
+  void eventsNow()
+}
+function closePicker(): void {
+  picker.value = undefined
+}
+// the Jira tasks for the query (asked a moment after typing stops)
+const jiraHits = shallowRef<JiraIssue[]>([])
+let jiraTimer: ReturnType<typeof setTimeout> | undefined
+let jiraSeq = 0
+watch(
+  () => (picker.value ? picker.value.query.trim() : undefined),
+  (q) => {
+    clearTimeout(jiraTimer)
+    if (q === undefined) return void (jiraHits.value = [])
+    const my = ++jiraSeq
+    jiraTimer = setTimeout(async () => {
+      try {
+        const r = await window.qa.jiraFind(q, 0, q ? 6 : 3, 'pick')
+        if (my === jiraSeq) jiraHits.value = r.items
+      } catch {
+        if (my === jiraSeq) jiraHits.value = []
+      }
+    }, 220)
+  },
+)
+type PickRow = { head: string; more?: number } | { ev: EventRef } | { jira: JiraIssue }
+const pickRows = computed<PickRow[]>(() => {
+  void eventsTick.value
+  const p = picker.value
+  if (!p) return []
+  const g = pickGroups(events.value, p.query, chipNow.value, todayKey.value)
+  const out: PickRow[] = []
+  const group = (head: string, list: EventRef[], more?: number) => {
+    if (!list.length) return
+    out.push({ head, more })
+    for (const ev of list) out.push({ ev })
+  }
+  group('Сегодня', g.today)
+  group('Запланировано', g.ahead, g.more.ahead)
+  group('Ранее', g.past, g.more.past)
+  if (jiraHits.value.length) {
+    out.push({ head: 'Задачи Jira' })
+    for (const jira of jiraHits.value) out.push({ jira })
+  }
+  return out
+})
+const pickable = computed(() => pickRows.value.filter((r) => !('head' in r)))
+watch(pickable, (l) => pickIdx.value >= l.length && (pickIdx.value = Math.max(0, l.length - 1)))
+function pickAt(i: number): void {
+  const r = pickable.value[i]
+  const p = picker.value
+  if (!r || !p || !view) return
+  const ins = 'ev' in r ? eventLink(r.ev) : 'jira' in r ? jiraLink(r.jira.key, r.jira.summary) : ''
+  view.dispatch({ changes: { from: p.from, to: p.to, insert: `${ins} ` }, selection: { anchor: p.from + ins.length + 1 }, scrollIntoView: true })
+  closePicker()
+  view.focus()
+}
+const pickerKeys = Prec.highest(
+  keymap.of([
+    { key: 'ArrowDown', run: () => (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value + 1) % pickable.value.length), scrollPick(), true) : false) },
+    { key: 'ArrowUp', run: () => (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value - 1 + pickable.value.length) % pickable.value.length), scrollPick(), true) : false) },
+    { key: 'Enter', run: () => (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
+    { key: 'Tab', run: () => (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
+    {
+      key: 'Escape',
+      run: () => {
+        if (!picker.value) return false
+        dismissedAt = picker.value.from
+        closePicker()
+        return true
+      },
+    },
+  ]),
+)
+const pickEl = ref<HTMLElement>()
+function scrollPick(): void {
+  void nextTick(() => pickEl.value?.querySelector('.pk.on')?.scrollIntoView({ block: 'nearest' }))
+}
+const rowIndex = (r: PickRow) => pickable.value.indexOf(r)
+const kindIcon = (k: string) => kindOf(k)?.icon ?? 'tag'
+const kindColor = (k: string) => kindOf(k)?.color ?? 'var(--muted)'
+const kindLabel = (k: string) => kindOf(k)?.label ?? k
+const dayText = (t: number) => dmShort(t)
+// the chips follow the clock and the list
+const chipTimer = setInterval(() => {
+  chipNow.value = Date.now()
+  if (view?.state.doc.toString().includes('qvarch://')) view.dispatch({})
+}, 30_000)
+onBeforeUnmount(() => clearInterval(chipTimer))
+watch(eventsTick, () => view?.dispatch({}))
+
 /** Clicks on what is rendered: a link opens in the browser, [[a note]] opens it; Ctrl+click works on raw text too. */
 const clicks = EditorView.domEventHandlers({
   mousedown(e, v) {
@@ -764,7 +1102,7 @@ function act(what: 'cut' | 'copy' | 'paste' | 'all' | 'event' | 'code' | 'bold' 
     })
   else if (what === 'all') v.dispatch({ selection: { anchor: 0, head: v.state.doc.length } })
   else if (what === 'event') {
-    if (text.trim()) emit('toEvent', text.trim())
+    if (text.trim()) emit('toEvent', text.trim(), { from: r.from, to: r.to })
     return
   } else if (what === 'bold') wrap('**')(v)
   else if (what === 'code') {
@@ -827,6 +1165,8 @@ onMounted(() => {
         theme,
         live,
         clicks,
+        pictures,
+        pickerKeys,
         contextMenu,
         placeholder('Пишите… # заголовок, **жирный**, - список, - [ ] задача, [[другая заметка]]'),
         keymap.of([
@@ -848,11 +1188,15 @@ onMounted(() => {
         keymap.of([{ key: 'Mod-b', run: wrap('**') }, { key: 'Mod-i', run: wrap('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) emit('change', u.state.doc.toString())
+          if (u.focusChanged && !u.view.hasFocus) closePicker()
+          else if (u.transactions.some((t) => t.isUserEvent('input') || t.isUserEvent('delete') || t.isUserEvent('select'))) checkPicker(u.view)
+          else if (u.docChanged && picker.value) closePicker()
         }),
       ],
     }),
   })
 })
+onMounted(() => props.text.includes('qvarch://') && void eventsNow())
 onBeforeUnmount(() => view?.destroy())
 
 // the same note changed elsewhere (another pane, a transcript, a reload): only the changed middle is replaced
@@ -877,6 +1221,27 @@ watch(
 
 defineExpose({
   focus: () => view?.focus(),
+  /**
+   * A piece of the text («В событие») replaced by the event made from it — where it still is (the text may have
+   * moved meanwhile), else after the cursor's line.
+   */
+  linkEvent(at: { from: number; to: number }, text: string, ev: Pick<EventRef, 'day' | 'id' | 'label'>): void {
+    if (!view) return
+    const doc = view.state.doc.toString()
+    const link = eventLink(ev)
+    let from = doc.slice(at.from, at.to).trim() === text ? at.from : doc.indexOf(text)
+    let to = from >= 0 ? (doc.slice(at.from, at.to).trim() === text ? at.to : from + text.length) : -1
+    if (from < 0) {
+      from = to = view.state.doc.lineAt(view.state.selection.main.head).to
+      view.dispatch({ changes: { from, insert: ` ${link}` } })
+      return
+    }
+    view.dispatch({ changes: { from, to, insert: link }, selection: { anchor: from + link.length } })
+  },
+  /** Pictures (already in the vault) into the note, at the cursor's line. */
+  insertImages(rels: string[]): void {
+    if (view) insertImages(view, rels)
+  },
   /** The cursor at the very start of the text (coming down from the title). */
   focusStart(): void {
     if (!view) return
@@ -908,6 +1273,29 @@ defineExpose({
 <template>
   <div ref="host" class="mde"></div>
   <Teleport to="body">
+    <div v-if="picker" ref="pickEl" class="mde-pick" :class="{ up: picker.up }" :style="{ left: `${picker.x}px`, [picker.up ? 'bottom' : 'top']: `${picker.y}px` }" @mousedown.prevent>
+      <template v-for="(r, i) in pickRows" :key="i">
+        <div v-if="'head' in r" class="pk-h">{{ r.head }}<span v-if="r.more" class="pk-more">ещё {{ r.more }} — уточните поиск</span></div>
+        <button v-else-if="'ev' in r" class="pk" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)" @click="pickAt(rowIndex(r))">
+          <span class="pk-ic" :style="{ color: kindColor(r.ev.kind), background: `color-mix(in srgb, ${kindColor(r.ev.kind)} 16%, transparent)` }"><Icon :name="kindIcon(r.ev.kind)" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.ev.label || 'Без названия' }}</span>
+            <span class="pk-m">{{ kindLabel(r.ev.kind) }}<template v-if="r.ev.outlook"> · Outlook</template> · {{ periodText(r.ev, chipNow) }} · {{ durText(r.ev.end - r.ev.start) }}<template v-if="r.ev.created"> · созд. {{ dayText(r.ev.created) }}</template></span>
+          </span>
+          <span class="pk-st" :class="statusOf(r.ev, chipNow)">{{ statusText(r.ev, chipNow) }}</span>
+        </button>
+        <button v-else class="pk" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)" @click="pickAt(rowIndex(r))">
+          <span class="pk-ic" style="color: #2684ff; background: rgba(38, 132, 255, 0.16)"><Icon name="jira" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.jira.key }} {{ r.jira.summary }}</span>
+            <span class="pk-m">{{ r.jira.type }} · {{ r.jira.project.name }}</span>
+          </span>
+          <span class="pk-st" :class="r.jira.category === 'done' ? 'done' : r.jira.category === 'indeterminate' ? 'now' : 'ahead'">{{ r.jira.status }}</span>
+        </button>
+      </template>
+      <p v-if="!pickRows.length" class="pk-empty">{{ events.length ? 'Ничего не нашлось' : 'Загружаю события…' }}</p>
+      <div class="pk-f">↑↓ — выбрать · Enter — вставить · Esc — закрыть · пишите дальше — поиск</div>
+    </div>
     <div v-if="menu" ref="menuEl" class="mde-menu" :style="{ left: `${menuPos.left}px`, top: `${menuPos.top}px` }" @contextmenu.prevent>
       <button :disabled="!menu.sel" @click="act('cut')"><Icon name="scissors" :size="14" />Вырезать<kbd>Ctrl+X</kbd></button>
       <button :disabled="!menu.sel" @click="act('copy')"><Icon name="copy" :size="14" />Копировать<kbd>Ctrl+C</kbd></button>
@@ -927,6 +1315,142 @@ defineExpose({
 </template>
 
 <style>
+.mde-pick {
+  position: fixed;
+  z-index: 5000;
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: calc(100vw - 16px);
+  max-height: 360px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r3);
+  background: var(--pop);
+  box-shadow: var(--shadow);
+  font-family: var(--font-ui);
+}
+.mde-pick .pk-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 8px 4px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mde-pick .pk-more {
+  color: var(--dim);
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.mde-pick .pk {
+  flex: none;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.mde-pick .pk.on {
+  background: rgb(var(--accent-rgb) / 0.14);
+}
+.mde-pick .pk-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r2);
+}
+.mde-pick .pk-b {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mde-pick .pk-t,
+.mde-pick .pk-m {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mde-pick .pk-t {
+  font-size: 13px;
+}
+.mde-pick .pk-m {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mde-pick .pk-st,
+.cm-ev-st {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.mde-pick .pk-st.done,
+.cm-ev-st.done {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-2);
+}
+.mde-pick .pk-st.now,
+.cm-ev-st.now {
+  background: rgba(0, 230, 118, 0.16);
+  color: var(--up-fg);
+}
+.mde-pick .pk-st.ahead,
+.cm-ev-st.ahead {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--info-fg, #7dd3fc);
+}
+.cm-ev-st.gone {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--down-fg);
+}
+.mde-pick .pk-empty {
+  margin: 0;
+  padding: 14px 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.mde-pick .pk-f {
+  position: sticky;
+  bottom: -4px;
+  margin: 4px -4px -4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--pop);
+  color: var(--dim);
+  font-size: 11px;
+}
+.qa-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.qa-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
 /* the right-click menu (teleported) */
 .mde-menu {
   position: fixed;
@@ -986,6 +1510,117 @@ defineExpose({
   max-width: 820px;
   margin: 0 auto;
   min-height: 0;
+}
+.mde :deep(.cm-ev) {
+  --ev: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin: 1px 0;
+  padding: 1px 8px 1px 3px;
+  border: 1px solid color-mix(in srgb, var(--ev) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ev) 9%, transparent);
+  vertical-align: baseline;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mde :deep(.cm-ev:hover) {
+  background: color-mix(in srgb, var(--ev) 18%, transparent);
+}
+.mde :deep(.cm-ev-ic) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ev) 22%, transparent);
+  color: var(--ev);
+}
+.mde :deep(.cm-ev-t) {
+  overflow: hidden;
+  color: var(--text-hi);
+  font-size: 0.95em;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.mde :deep(.cm-ev-p),
+.mde :deep(.cm-ev-c) {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.mde :deep(.cm-ev.gone .cm-ev-t) {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.mde :deep(.cm-ev.wait) {
+  opacity: 0.6;
+}
+.mde :deep(.cm-img) {
+  display: inline-block;
+  max-width: 100%;
+  margin: 4px 0;
+  vertical-align: top;
+  line-height: 0;
+}
+/* under its line's text: a row of its own */
+.mde :deep(.cm-img.under) {
+  width: 100%;
+  margin-top: 6px;
+}
+.mde :deep(.cm-img-in) {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.mde :deep(.cm-img img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  cursor: zoom-in;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.mde :deep(.cm-img.missing) {
+  padding: 10px 12px;
+  border: 1px dashed var(--border-2);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+.mde :deep(.cm-img-bar) {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.mde :deep(.cm-img-in:hover .cm-img-bar) {
+  opacity: 1;
+}
+.mde :deep(.cm-img-bar button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(15, 17, 23, 0.78);
+  color: #e6e9f2;
+  line-height: 1;
+}
+.mde :deep(.cm-img-bar button:hover) {
+  background: rgba(15, 17, 23, 0.95);
+  color: #fff;
 }
 .mde :deep(.cm-audio) {
   display: inline-flex;

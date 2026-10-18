@@ -12,6 +12,8 @@ import TabletView from './TabletView.vue'
 import { ACCENTS, DEFAULT_THEME } from '@shared/theme'
 import { orderedViews, VIEWS } from '../lib/views'
 import { startListDrag } from '../lib/listDrag'
+import { onBrowserEvent } from '../lib/browser'
+import { DEFAULT_BROWSER_SETTINGS, UA_PRESETS, type BrowserSettings } from '@shared/browser'
 
 const props = defineProps<{ settings: PublicSettings }>()
 const emit = defineEmits<{ changed: [s: PublicSettings] }>()
@@ -47,7 +49,7 @@ const f = reactive({
 })
 
 /** Settings are split into sections (like System Settings): a sidebar, or tabs on top in a narrow window. */
-type Cat = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira'
+type Cat = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira' | 'browser'
 const CATS: Array<{ id: Cat; icon: string; label: string }> = [
   { id: 'general', icon: 'clock', label: 'Основное' },
   { id: 'kinds', icon: 'tag', label: 'Виды занятости' },
@@ -57,8 +59,40 @@ const CATS: Array<{ id: Cat; icon: string; label: string }> = [
   { id: 'tablet', icon: 'penTool', label: 'Планшет' },
   { id: 'outlook', icon: 'calendar', label: 'Outlook и Teams' },
   { id: 'jira', icon: 'jira', label: 'Jira' },
+  { id: 'browser', icon: 'browser', label: 'Браузер' },
 ]
 const cat = ref<Cat>(readCat())
+// ---------- the browser ----------
+const brSet = ref<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })
+const uaDefault = ref('')
+/** The User-Agent being typed (one's own). */
+const uaOwn = ref<string>()
+void window.qa.browser('settings').then((v) => (brSet.value = v))
+void window.qa.browser('defaultUa').then((v) => (uaDefault.value = v))
+onBrowserEvent((type, p) => type === 'settings' && (brSet.value = p as BrowserSettings))
+async function brPatch(patch: Partial<BrowserSettings>): Promise<void> {
+  brSet.value = await window.qa.browser('setSettings', patch)
+}
+const uaPick = computed(() => {
+  if (uaOwn.value !== undefined) return 'own'
+  const i = UA_PRESETS.findIndex((p) => p.ua === brSet.value.ua)
+  return i < 0 ? 'own' : String(i)
+})
+const uaShown = computed(() => uaOwn.value ?? (brSet.value.ua || uaDefault.value))
+function onUaPick(v: string): void {
+  if (v === 'own') {
+    uaOwn.value = brSet.value.ua || uaDefault.value
+    return
+  }
+  uaOwn.value = undefined
+  void brPatch({ ua: UA_PRESETS[Number(v)]?.ua ?? '' })
+}
+function applyUa(): void {
+  const v = (uaOwn.value ?? '').replace(/\s+/g, ' ').trim()
+  // the built-in one typed back — it is the built-in one
+  void brPatch({ ua: v === uaDefault.value ? '' : v })
+  if (!v) uaOwn.value = undefined
+}
 function readCat(): Cat {
   try {
     const v = localStorage.getItem('qa.settingsCat')
@@ -577,6 +611,40 @@ function toggleDay(id: number): void {
       </div>
     </section>
 
+    <section v-show="cat === 'browser'">
+      <h3>Браузер</h3>
+      <div class="olopts">
+        <label class="switch"><input type="checkbox" :checked="brSet.history" @change="brPatch({ history: ($event.target as HTMLInputElement).checked })" /><span>Сохранять историю посещений</span></label>
+      </div>
+      <p class="muted small">Открытые страницы запоминаются по дням, со временем открытия: 90 дней, только на этом компьютере. По ним же — подсказки в строке адреса. Сама история — в разделе «Браузер»: кнопка с часами или Ctrl+H. Выключение не удаляет уже сохранённое.</p>
+      <h3 class="mt">User-Agent</h3>
+      <p class="muted small">Как браузер представляется сайтам. Действует сразу на все вкладки; уже открытые страницы увидят его после обновления (F5). У вкладки в режиме устройства — User-Agent этого устройства.</p>
+      <div class="grid">
+        <label class="span2">
+          Вариант
+          <select :value="uaPick" @change="onUaPick(($event.target as HTMLSelectElement).value)">
+            <option v-for="(p, i) in UA_PRESETS" :key="i" :value="String(i)">{{ p.label }}</option>
+            <option value="own">Свой…</option>
+          </select>
+        </label>
+        <label class="span2">
+          Строка User-Agent
+          <textarea
+            class="uabox"
+            :value="uaShown"
+            rows="3"
+            spellcheck="false"
+            :readonly="uaPick !== 'own'"
+            placeholder="Mozilla/5.0 …"
+            @input="uaOwn = ($event.target as HTMLTextAreaElement).value"
+            @change="applyUa"
+            @keydown.enter.prevent="($event.target as HTMLTextAreaElement).blur()"
+          ></textarea>
+        </label>
+      </div>
+      <p v-if="uaPick === 'own'" class="muted small">Впишите строку и нажмите Enter (или щёлкните мимо). Пустая строка — встроенный User-Agent.</p>
+    </section>
+
     <section v-show="cat === 'jira'">
       <h3>Jira</h3>
       <p class="muted small">Своё приложение Atlassian (OAuth 2.0): developer.atlassian.com → ваше приложение → Settings. Callback: <code>http://localhost:47321/callback</code>. Секрет хранится зашифрованным на этом компьютере.</p>
@@ -780,6 +848,17 @@ function toggleDay(id: number): void {
 }
 .span2 {
   grid-column: 1 / -1;
+}
+.uabox {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font-family: var(--font-data);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.uabox[readonly] {
+  color: var(--text-2);
 }
 .small {
   font-size: 12px;

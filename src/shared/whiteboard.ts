@@ -121,7 +121,25 @@ export interface ShapeItem {
   dash?: boolean
 }
 
-export type BoardItem = InkItem | TextItem | ShapeItem
+/**
+ * A picture (a file in vault/.images): its box x, y, w, h turned `rot` around its centre. Always under the ink,
+ * text and shapes — one draws over it.
+ */
+export interface ImageItem {
+  id: string
+  type: 'image'
+  x: number
+  y: number
+  w: number
+  h: number
+  rot?: number
+  /** The vault's path: .images/<file>. */
+  src: string
+}
+
+export type BoardItem = InkItem | TextItem | ShapeItem | ImageItem
+/** A box turned around its centre (a shape, a picture). */
+type Boxed = Pick<ShapeItem, 'x' | 'y' | 'w' | 'h' | 'rot'>
 
 /** A new id (not crypto-strong — only to tell items apart). */
 export const itemId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
@@ -177,6 +195,21 @@ export function parseBoard(text: string): Board {
     ...(bg.texture === 'paper' ? { texture: 'paper' as const } : {}),
   }
   for (const it of Array.isArray(r.items) ? r.items : []) {
+    const im = it as Partial<ImageItem>
+    if (im?.type === 'image') {
+      if (typeof im.src !== 'string' || !/^\.images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp)$/i.test(im.src)) continue
+      b.items.push({
+        id: str(im.id, itemId()),
+        type: 'image',
+        x: num(im.x, -1e7, 1e7, 0),
+        y: num(im.y, -1e7, 1e7, 0),
+        w: num(im.w, 1, 1e7, 100),
+        h: num(im.h, 1, 1e7, 100),
+        src: im.src,
+        ...(typeof im.rot === 'number' && Number.isFinite(im.rot) && im.rot % 360 !== 0 ? { rot: im.rot % 360 } : {}),
+      })
+      continue
+    }
     const sh = it as Partial<ShapeItem>
     if (sh?.type === 'shape') {
       if (!SHAPES.some((x) => x.kind === sh.kind)) continue
@@ -252,6 +285,11 @@ export interface Box {
 
 /** Where an item is (with its line width). */
 export function itemBox(i: BoardItem): Box {
+  if (i.type === 'image') {
+    if (!i.rot) return { x0: i.x, y0: i.y, x1: i.x + i.w, y1: i.y + i.h }
+    const cs = [shapeCorner(i, 0, 0), shapeCorner(i, i.w, 0), shapeCorner(i, 0, i.h), shapeCorner(i, i.w, i.h)]
+    return { x0: Math.min(...cs.map((c) => c[0])), y0: Math.min(...cs.map((c) => c[1])), x1: Math.max(...cs.map((c) => c[0])), y1: Math.max(...cs.map((c) => c[1])) }
+  }
   if (i.type === 'shape') {
     const pad = i.width / 2 + (isLineKind(i.kind) && i.kind !== 'line' ? Math.max(8, i.width * 4) : 0)
     if (isLineKind(i.kind))
@@ -301,6 +339,12 @@ const segDist2 = (px: number, py: number, ax: number, ay: number, bx: number, by
 export function hitsItem(i: BoardItem, x: number, y: number, r: number, interior = true): boolean {
   const b = itemBox(i)
   if (x < b.x0 - r || x > b.x1 + r || y < b.y0 - r || y > b.y1 + r) return false
+  if (i.type === 'image') {
+    const [lx, ly] = shapeLocal(i, x, y)
+    const dx = Math.max(-lx, 0, lx - i.w)
+    const dy = Math.max(-ly, 0, ly - i.h)
+    return dx * dx + dy * dy <= r * r
+  }
   if (i.type === 'shape') {
     const reach = r + i.width / 2
     if (isLineKind(i.kind)) return segDist2(x, y, i.x, i.y, i.x + i.w, i.y + i.h) <= reach * reach
@@ -452,6 +496,16 @@ export const apply = (m: Affine, x: number, y: number): [number, number] => [m.a
 /** An item moved / scaled / turned (line widths and font sizes scale with it). */
 export function transformItem<T extends BoardItem>(i: T, m: Affine): T {
   const s = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c))
+  if (i.type === 'image') {
+    const [cx, cy] = apply(m, i.x + i.w / 2, i.y + i.h / 2)
+    const w = i.w * s
+    const h = i.h * s
+    const rot = Math.round((((i.rot ?? 0) + (Math.atan2(m.b, m.a) * 180) / Math.PI) % 360) * 100) / 100
+    const out: ImageItem = { ...i, x: cx - w / 2, y: cy - h / 2, w, h }
+    if (rot) out.rot = rot
+    else delete out.rot
+    return out as T
+  }
   if (i.type === 'shape') {
     const sh = i as ShapeItem
     if (isLineKind(sh.kind)) {
@@ -489,7 +543,7 @@ export function transformItem<T extends BoardItem>(i: T, m: Affine): T {
 
 /** Is an item caught by a selection frame (any of its line inside / its box crossing it)? */
 export function inFrame(i: BoardItem, f: Box): boolean {
-  if (i.type === 'text' || i.type === 'shape') {
+  if (i.type === 'text' || i.type === 'shape' || i.type === 'image') {
     const b = itemBox(i)
     return b.x1 >= f.x0 && b.x0 <= f.x1 && b.y1 >= f.y0 && b.y0 <= f.y1
   }
@@ -503,14 +557,14 @@ export function inFrame(i: BoardItem, f: Box): boolean {
 
 // ---------- shapes: geometry and outlines ----------
 /** A point of a shape's own box (u, v from its top-left) on the board — it turns around its centre. */
-export function shapeCorner(sh: ShapeItem, u: number, v: number): [number, number] {
+export function shapeCorner(sh: Boxed, u: number, v: number): [number, number] {
   const a = ((sh.rot ?? 0) * Math.PI) / 180
   const dx = u - sh.w / 2
   const dy = v - sh.h / 2
   return [sh.x + sh.w / 2 + dx * Math.cos(a) - dy * Math.sin(a), sh.y + sh.h / 2 + dx * Math.sin(a) + dy * Math.cos(a)]
 }
 /** A board point in a shape's own box. */
-export function shapeLocal(sh: ShapeItem, x: number, y: number): [number, number] {
+export function shapeLocal(sh: Boxed, x: number, y: number): [number, number] {
   const a = (-(sh.rot ?? 0) * Math.PI) / 180
   const dx = x - (sh.x + sh.w / 2)
   const dy = y - (sh.y + sh.h / 2)

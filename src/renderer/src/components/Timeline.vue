@@ -32,10 +32,6 @@ const props = defineProps<{
   planDragging?: boolean
   /** Following the time (the main window): see UiPrefs.timeline. */
   follow?: UiPrefs['timeline']
-  /** No legend / toggles under it (the dashboard). */
-  bare?: boolean
-  /** Lower lanes, no "Созвоны" (the dashboard). */
-  compact?: boolean
   /** The window (position, scale) is remembered under this key — switching sections keeps it. */
   viewKey?: string
 }>()
@@ -309,7 +305,7 @@ const lanes = computed(() => layoutLanes(viewEntries.value, movingId.value))
 const laneOf = (id: string) => lanes.value.get(id)?.lane ?? 0
 const mainLane = ref<HTMLElement>()
 /** Parallel blocks get their own lanes: the "Работа" row grows up to 3 lanes, more lanes scroll. */
-const laneH = computed(() => (props.compact ? 31 : 36))
+const laneH = computed(() => 36)
 const LANE_GAP = 4
 /** Lanes in use + one empty lane below (a drop target); up to 3 visible, more scroll. */
 const totalLanes = computed(() => Math.max(1, ...[...lanes.value.values()].map((l) => l.lanes)))
@@ -646,7 +642,7 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
       <div v-if="showPlan" class="l-plan" :style="{ height: `${planH}px` }">План</div>
       <div class="l-main" :style="{ height: `${mainH}px` }">Работа</div>
       <div class="l-pulse" title="Клавиши">Активность</div>
-      <div v-if="!compact" class="l-calls">Созвоны</div>
+      <div class="l-calls">Созвоны</div>
     </div>
 
     <div
@@ -764,7 +760,7 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
         </div>
 
         <!-- calls -->
-        <div v-if="!compact" class="lane callsl" @pointerdown="onLaneDown($event)">
+        <div class="lane callsl" @pointerdown="onLaneDown($event)">
           <div
             v-for="(c, i) in calls"
             :key="i"
@@ -793,7 +789,7 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
     </div>
   </div>
 
-  <div v-if="!bare" class="legend">
+  <div class="legend">
     <span v-for="k in legend.kinds" :key="k"><i :style="{ background: kindColor(k) }"></i>{{ kindLabel(k) }}</span>
     <span v-if="schedule.work"><i class="sq work"></i>Рабочее время</span>
     <span v-if="schedule.lunch"><i class="sq lunch"></i>Обед</span>

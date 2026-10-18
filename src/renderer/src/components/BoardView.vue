@@ -26,6 +26,7 @@ import {
   type BoardItem,
   type Box,
   type GridKind,
+  type ImageItem,
   type InkItem,
   type ShapeItem,
   type ShapeKind,
@@ -39,6 +40,7 @@ import { rememberBg } from '../lib/boardPrefs'
 import { penNow, useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { placeFloat, useAnchor } from '../lib/floating'
 import { historyOf } from '../lib/boardHistory'
+import { draggedImageUrl, hasImages, imageUrl, takeImages } from '../lib/notebook'
 
 /**
  * Доска: an endless sheet in the notebook (a .qboard file). Ink: pen (pressure from the tablet run by Qvarch /
@@ -49,7 +51,7 @@ import { historyOf } from '../lib/boardHistory'
  * The visible area is the tablet's "Qvarch canvas".
  */
 const props = defineProps<{ path: string; text: string }>()
-const emit = defineEmits<{ change: [text: string]; info: [text: string] }>()
+const emit = defineEmits<{ change: [text: string]; info: [text: string]; warn: [text: string] }>()
 
 useTabletLive()
 const { state: tablet } = useTablet()
@@ -101,8 +103,9 @@ watch(
       if (kept.length !== sel.value.size) sel.value = new Set(kept)
     }
     const ink = board.value.items.filter((i) => i.type === 'ink').length
-    const text = board.value.items.length - ink
-    emit('info', `Штрихов: ${ink}${text ? ` · Текстов: ${text}` : ''}`)
+    const pics = board.value.items.filter((i) => i.type === 'image').length
+    const text = board.value.items.length - ink - pics
+    emit('info', `Штрихов: ${ink}${text ? ` · Текстов: ${text}` : ''}${pics ? ` · Изображений: ${pics}` : ''}`)
   },
   { immediate: true },
 )
@@ -457,9 +460,71 @@ function drawGrid(g: CanvasRenderingContext2D, bg: BoardBg, v: View, w: number, 
   }
 }
 
+// ---------- pictures: loaded once per run, drawn under everything ----------
+const pics = new Map<string, { img?: HTMLImageElement; failed?: boolean; ready: Promise<void> }>()
+function pic(src: string): { img?: HTMLImageElement; failed?: boolean; ready: Promise<void> } {
+  let p = pics.get(src)
+  if (p) return p
+  const entry: { img?: HTMLImageElement; failed?: boolean; ready: Promise<void> } = { ready: Promise.resolve() }
+  entry.ready = imageUrl(src)
+    .then(
+      (u) =>
+        new Promise<void>((res) => {
+          const img = new Image()
+          img.onload = () => ((entry.img = img), res())
+          img.onerror = () => ((entry.failed = true), res())
+          img.src = u
+        }),
+    )
+    .catch(() => void (entry.failed = true))
+    .then(() => schedule())
+  pics.set(src, entry)
+  p = entry
+  return p
+}
+function drawImageItem(g: CanvasRenderingContext2D, i: ImageItem): void {
+  const p = pic(i.src)
+  g.save()
+  g.translate(i.x + i.w / 2, i.y + i.h / 2)
+  if (i.rot) g.rotate((i.rot * Math.PI) / 180)
+  g.translate(-i.w / 2, -i.h / 2)
+  g.globalAlpha = 1
+  if (p.img) {
+    g.imageSmoothingEnabled = true
+    g.imageSmoothingQuality = 'high'
+    g.drawImage(p.img, 0, 0, i.w, i.h)
+  } else {
+    // loading — a light box; the file gone — a crossed one
+    const lw = Math.max(i.w, i.h) / 240
+    g.fillStyle = 'rgba(127, 127, 127, 0.12)'
+    g.fillRect(0, 0, i.w, i.h)
+    g.strokeStyle = 'rgba(127, 127, 127, 0.55)'
+    g.lineWidth = lw
+    g.setLineDash([lw * 4, lw * 3])
+    g.strokeRect(0, 0, i.w, i.h)
+    g.setLineDash([])
+    if (p.failed) {
+      g.beginPath()
+      g.moveTo(0, 0)
+      g.lineTo(i.w, i.h)
+      g.moveTo(i.w, 0)
+      g.lineTo(0, i.h)
+      g.stroke()
+    }
+  }
+  g.restore()
+}
+
 function drawItems(g: CanvasRenderingContext2D, items: BoardItem[], v: View, w: number, h: number, hideId?: string, paper?: string): void {
   const vx1 = v.x + w / v.z
   const vy1 = v.y + h / v.z
+  // the pictures first: whatever is drawn goes over them
+  for (const i of items) {
+    if (i.type !== 'image') continue
+    const bx = itemBox(i)
+    if (bx.x1 < v.x || bx.x0 > vx1 || bx.y1 < v.y || bx.y0 > vy1) continue
+    drawImageItem(g, i)
+  }
   const tooth = paper ? toothOf(g, paper) : undefined
   // the ink drawn since the last text / shape: laid down (with the tooth cut out) before the next one
   let lg: CanvasRenderingContext2D | undefined
@@ -479,7 +544,7 @@ function drawItems(g: CanvasRenderingContext2D, items: BoardItem[], v: View, w: 
     lg = undefined
   }
   for (const i of items) {
-    if (i.id === hideId) continue
+    if (i.id === hideId || i.type === 'image') continue
     const bx = itemBox(i)
     if (bx.x1 < v.x || bx.x0 > vx1 || bx.y1 < v.y || bx.y0 > vy1) continue
     if (i.type !== 'ink') flush()
@@ -673,8 +738,87 @@ function deleteSelected(): void {
 }
 /** Copied items (this app run). */
 let clip: BoardItem[] = []
+/** The clipboard's picture when the board's own Ctrl+C was made: a newer one is pasted as a picture. */
+let clipSig = ''
 function copySelected(): void {
   clip = board.value.items.filter((i) => sel.value.has(i.id))
+  void window.qa.vaultClipImage(false).then((r) => (clipSig = r.sig))
+}
+/** Ctrl+V: a picture copied anywhere after the board's own copy — it; else the board's copied items. */
+async function pasteAny(): Promise<void> {
+  const r = await window.qa.vaultClipImage(false).catch(() => ({ sig: '' }))
+  if (r.sig && r.sig !== clipSig) {
+    clipSig = r.sig
+    try {
+      const saved = await window.qa.vaultClipImage(true)
+      if (saved.rel) return addImages([saved.rel], hover ? toWorld(...hover) : undefined)
+    } catch (e) {
+      return warn(e)
+    }
+  }
+  pasteClip()
+}
+const warn = (e: unknown) => emit('warn', e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+/**
+ * Pictures (already in the vault) onto the board, centred at a point (the view's middle): as big as on the
+ * screen, at most most of the view; several — a little apart. They come selected, to be moved / sized at once.
+ */
+async function addImages(rels: string[], at?: readonly [number, number]): Promise<void> {
+  const v = view.value
+  if (!rels.length || !v) return
+  const [cx, cy] = at ?? [v.x + W.value / 2 / v.z, v.y + H.value / 2 / v.z]
+  const fresh: ImageItem[] = []
+  let off = 0
+  for (const src of rels) {
+    const p = pic(src)
+    await p.ready
+    const nw = p.img?.naturalWidth || 480
+    const nh = p.img?.naturalHeight || 320
+    // a screenshot's pixels are the screen's: as big as it was on it
+    let w = nw / devicePixelRatio / v.z
+    let h = nh / devicePixelRatio / v.z
+    const k = Math.min(1, (W.value * 0.7) / v.z / w, (H.value * 0.7) / v.z / h)
+    w *= k
+    h *= k
+    fresh.push({ id: itemId(), type: 'image', x: cx - w / 2 + off, y: cy - h / 2 + off, w, h, src })
+    off += 24 / v.z
+  }
+  commit({ ...board.value, items: [...board.value.items, ...fresh] })
+  tp.value.tool = 'select'
+  sel.value = new Set(fresh.map((i) => i.id))
+  wrap.value?.focus({ preventScroll: true })
+}
+const imgInput = ref<HTMLInputElement>()
+function pickImages(): void {
+  if (!imgInput.value) return
+  imgInput.value.value = ''
+  imgInput.value.click()
+}
+async function onImagesPicked(): Promise<void> {
+  const files = [...(imgInput.value?.files ?? [])]
+  if (files.length) await addImages(await takeImages({ files }, (t) => emit('warn', t)))
+}
+const dropping = ref(false)
+function onDragOver(e: DragEvent): void {
+  const t = e.dataTransfer?.types ?? []
+  if (!t.includes('Files') && !t.includes('text/html')) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  dropping.value = true
+}
+function onDragLeave(e: DragEvent): void {
+  if (!wrap.value?.contains(e.relatedTarget as Node | null)) dropping.value = false
+}
+async function onDrop(e: DragEvent): Promise<void> {
+  dropping.value = false
+  const dt = e.dataTransfer
+  const uri = hasImages(dt) ? undefined : draggedImageUrl(dt)
+  if (!dt || (!hasImages(dt) && !uri)) return
+  e.preventDefault()
+  const files = [...dt.files]
+  const [sx, sy] = local(e)
+  const at = toWorld(sx, sy)
+  await addImages(await takeImages({ files, uri }, (t) => emit('warn', t)), at)
 }
 function pasteClip(dx = 24 / (view.value?.z ?? 1)): void {
   if (!clip.length) return
@@ -938,7 +1082,9 @@ function onDown(e: PointerEvent): void {
       drag = { kind: 'move', wx, wy, moved: false }
       return
     }
-    const hit = [...board.value.items].reverse().find((i) => hitsItem(i, wx, wy, 6 / v.z))
+    // what is drawn over a picture is hit before the picture
+    const top = [...board.value.items].reverse()
+    const hit = top.find((i) => i.type !== 'image' && hitsItem(i, wx, wy, 6 / v.z)) ?? top.find((i) => i.type === 'image' && hitsItem(i, wx, wy, 6 / v.z))
     if (hit) {
       const next = new Set(e.shiftKey ? sel.value : [])
       if (e.shiftKey && next.has(hit.id)) next.delete(hit.id)
@@ -1090,6 +1236,11 @@ function eraseAt(sx: number, sy: number): void {
   let changed = false
   const out: BoardItem[] = []
   for (const i of preview) {
+    // a picture is not erased (one erases the ink over it); it goes with Delete
+    if (i.type === 'image') {
+      out.push(i)
+      continue
+    }
     if (i.type !== 'ink' || tp.value.eraseWhole) {
       if (hitsItem(i, wx, wy, r, false)) changed = true
       else out.push(i)
@@ -1208,7 +1359,7 @@ function onKey(e: KeyboardEvent): void {
     else if (c === 'KeyX' && sel.value.size) {
       copySelected()
       deleteSelected()
-    } else if (c === 'KeyV') pasteClip()
+    } else if (c === 'KeyV') void pasteAny()
     else if (c === 'KeyD' && sel.value.size) {
       copySelected()
       pasteClip()
@@ -1346,6 +1497,7 @@ const GRIDS: Array<{ id: GridKind; label: string }> = [
 
 // ---------- export ----------
 async function exportPng(): Promise<void> {
+  await Promise.all(board.value.items.flatMap((i) => (i.type === 'image' ? [pic(i.src).ready] : [])))
   const box = boardBox(board.value.items)
   if (!box) {
     emit('info', 'Доска пуста — нечего сохранять')
@@ -1391,6 +1543,7 @@ const cursor = computed(() => {
           <Icon name="chevronDown" :size="10" />
         </button>
         <button :class="{ on: tp.tool === 'hand' }" title="Рука (H, или пробел, или средняя / правая кнопка)" @click="tp.tool = 'hand'"><Icon name="hand" :size="15" /></button>
+        <button title="Изображение — или вставьте из буфера (Ctrl+V), или перетащите файл на доску. Рисовать можно поверх него" @click="pickImages"><Icon name="image" :size="15" /></button>
       </span>
       <span class="sep"></span>
       <span v-if="usesColor" class="cols">
@@ -1422,7 +1575,8 @@ const cursor = computed(() => {
       <button class="tbtn" title="Сохранить картинкой (PNG)" @click="exportPng"><Icon name="download" :size="15" /><span class="lbl">PNG</span></button>
     </div>
 
-    <div ref="wrap" class="sheet" tabindex="0" :style="{ cursor }" @wheel="onWheel" @keydown="onKey" @keyup="onKeyUp" @contextmenu.prevent>
+    <div ref="wrap" class="sheet" :class="{ dropping }" tabindex="0" :style="{ cursor }" @wheel="onWheel" @keydown="onKey" @keyup="onKeyUp" @contextmenu.prevent @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+      <input ref="imgInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden @change="onImagesPicked" />
       <canvas ref="cv"></canvas>
       <canvas ref="lv" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onLeave"></canvas>
       <textarea
@@ -1725,6 +1879,16 @@ const cursor = computed(() => {
   overflow: hidden;
   outline: none;
   touch-action: none;
+}
+.sheet.dropping::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  z-index: 6;
+  border: 2px dashed rgb(var(--accent-rgb) / 0.8);
+  border-radius: 10px;
+  background: rgb(var(--accent-rgb) / 0.06);
+  pointer-events: none;
 }
 .sheet canvas {
   position: absolute;

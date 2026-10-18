@@ -8,20 +8,16 @@ import ZoomChip from '../components/ZoomChip.vue'
 import { setKinds } from '../lib/palette'
 import DayView from './DayView.vue'
 import SettingsView from './SettingsView.vue'
-import TaskCalendar from '../components/TaskCalendar.vue'
 import WorkView from './WorkView.vue'
 import NotebookView from './NotebookView.vue'
-import DashboardView from './DashboardView.vue'
-import ReportsView from './ReportsView.vue'
 import ReleaseView from './ReleaseView.vue'
-import PdfSignView from './PdfSignView.vue'
+import ToolsView from './ToolsView.vue'
 import HttpView from './HttpView.vue'
 import TerminalView from './TerminalView.vue'
 import BrowserView from './BrowserView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import DatePick from '../components/DatePick.vue'
 import StatusBar from '../components/StatusBar.vue'
-import { titleActions } from '../lib/titlebar'
 import { onNewDay, todayKey } from '../lib/today'
 
 import { orderedViews, VIEWS, type View } from '../lib/views'
@@ -58,7 +54,7 @@ const off = window.qa.onNavigate((nav) => {
 })
 onBeforeUnmount(off)
 
-/** From the dashboard: open a section (a day / a block on it). */
+/** From a section: open another one (a day / a block on it). */
 function go(v: View, d?: string, entryId?: string): void {
   if (d) day.value = d
   focusEntry.value = entryId
@@ -66,9 +62,7 @@ function go(v: View, d?: string, entryId?: string): void {
 }
 function closeMenu(): void {
   menuOpen.value = false
-  actMenu.value = ''
 }
-const actMenu = ref('')
 onMounted(() => window.addEventListener('click', closeMenu))
 onBeforeUnmount(() => window.removeEventListener('click', closeMenu))
 
@@ -147,17 +141,6 @@ function setAppZoom(z: number): void {
       <span class="dragfill"></span>
       </div>
 
-      <!-- the open section's own actions (icons only) -->
-      <div v-if="titleActions.length" class="tacts nodrag" @click.stop>
-        <span v-for="a in titleActions" :key="a.id" class="tact">
-          <button class="ico" :class="{ on: a.on || actMenu === a.id }" :title="a.title" @click="a.menu ? (actMenu = actMenu === a.id ? '' : a.id) : ((actMenu = ''), a.click?.())"><Icon :name="a.icon" :size="15" /></button>
-          <div v-if="a.menu && actMenu === a.id" class="dropdown amenu">
-            <button v-for="m in a.menu" :key="m.label" @click="(m.click(), (actMenu = ''))"><Icon :name="m.icon" :size="14" />{{ m.label }}</button>
-            <p v-if="!a.menu.length" class="muted small">Всё уже добавлено</p>
-          </div>
-        </span>
-      </div>
-
       <div class="tside r">
       <span class="dragfill"></span>
       <ZoomChip class="azoom" :model-value="appZoom" :min="50" :max="200" title="Масштаб окна · колесо — изменить, клик — 100%" @update:model-value="setAppZoom" />
@@ -184,17 +167,14 @@ function setAppZoom(z: number): void {
     <SeriesAsk />
     <main v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
-        <DashboardView v-if="view === 'dashboard'" :settings="settings" @go="go" />
-        <DayView v-else-if="view === 'day'" :day="day" :settings="settings" :focus-entry="focusEntry" @open-day="(d, id) => ((day = d), (focusEntry = id))" />
-        <TaskCalendar v-else-if="view === 'calendar'" fill :work-days="settings.schedule.workDays" @open-day="(d) => ((day = d), (view = 'day'))" />
+        <DayView v-if="view === 'day'" :day="day" :settings="settings" :focus-entry="focusEntry" @open-day="(d, id) => ((day = d), (focusEntry = id))" />
         <NotebookView v-else-if="view === 'notebook'" />
-        <ReportsView v-else-if="view === 'reports'" @go="go" />
         <WorkView v-else-if="view === 'work'" :settings="settings" @go="go" @settings="view = 'settings'" @open-day="(d) => ((day = d), (view = 'day'))" />
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
         <div v-else-if="view === 'terminal'" class="termslot"></div>
         <div v-else-if="view === 'browser'" class="termslot"></div>
-        <PdfSignView v-else-if="view === 'pdf'" />
+        <ToolsView v-else-if="view === 'tools'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
       <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep" />
@@ -297,25 +277,6 @@ function setAppZoom(z: number): void {
 }
 .tside.r {
   justify-content: flex-end;
-}
-.tacts {
-  flex: none;
-  align-self: center;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--panel);
-}
-.tact {
-  position: relative;
-}
-.dropdown.amenu {
-  left: 50%;
-  right: auto;
-  margin-left: -110px;
-  min-width: 220px;
 }
 .dropdown {
   position: absolute;
@@ -433,7 +394,7 @@ main {
   overflow: auto;
   min-height: 0;
 }
-main:has(> .tcal.fill),
+main:has(> .tools),
 main:has(> .nb),
 main:has(> .rep),
 main:has(> .sh),

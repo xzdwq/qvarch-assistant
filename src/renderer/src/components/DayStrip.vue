@@ -6,7 +6,7 @@ import { entryIcon, kindColor } from '../lib/palette'
 import Icon from './Icon.vue'
 
 /**
- * The day as a chain under the dashboard's timeline: what was (faded, joined by a dotted line) · now · in
+ * The day as a chain under the timeline: what was (faded, joined by a dotted line) · now · in
  * how long the next one starts · what is next (joined by plain lines). Flat cards with a coloured edge;
  * overflow scrolls sideways (the arrows move it).
  */

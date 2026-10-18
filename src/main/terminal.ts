@@ -99,6 +99,15 @@ if (Get-Command PSConsoleHostReadLine -ErrorAction SilentlyContinue) {
     [Console]::Write("$([char]27)]633;QC$([char]7)")
     $l
   }
+  # Ctrl+A: the whole typed line selected — PSReadLine's own selection (typing / Delete replace it) and the
+  # window's (shown, Ctrl+C copies it): the line's length and the cursor's place go to the window
+  Set-PSReadLineKeyHandler -Chord 'Ctrl+a' -BriefDescription 'QvSelectAll' -ScriptBlock {
+    $qvB = $null
+    $qvC = $null
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$qvB, [ref]$qvC)
+    [Console]::Write("$([char]27)]633;QA;$($qvB.Length);$qvC$([char]7)")
+    [Microsoft.PowerShell.PSConsoleReadLine]::SelectAll()
+  }
 }
 `
 /** What the shells must not inherit: NO_COLOR would make oh-my-posh and the tools colourless. */

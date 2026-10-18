@@ -30,6 +30,7 @@ import {
   remap,
   saveAll,
   setText,
+  takeImages,
   splitWith,
   swapTab,
   toggleSplit,
@@ -317,34 +318,25 @@ async function openHit(h: VaultHit, line?: VaultHit['lines'][number]): Promise<v
 const parts = (s: string, at: number, len: number) => ({ a: s.slice(0, at), m: s.slice(at, at + len), b: s.slice(at + len) })
 
 // ---------- panes ----------
-/** `widget` — the dashboard's notebook: the files panel is shown / hidden there on its own. */
-const props = defineProps<{ widget?: boolean }>()
-const WIDGET_SIDE = 'qa.nb.widgetSideHidden'
-const widgetSide = ref(readWidgetSide())
-function readWidgetSide(): boolean {
-  try {
-    return localStorage.getItem(WIDGET_SIDE) === '1'
-  } catch {
-    return false
-  }
-}
 const sideHidden = computed({
-  get: () => (props.widget ? widgetSide.value : !!layout.sideHidden),
-  set: (v: boolean) => {
-    if (!props.widget) {
-      layout.sideHidden = v
-      return
-    }
-    widgetSide.value = v
-    try {
-      localStorage.setItem(WIDGET_SIDE, v ? '1' : '0')
-    } catch {
-      // not remembered — fine
-    }
-  },
+  get: () => !!layout.sideHidden,
+  set: (v: boolean) => (layout.sideHidden = v),
 })
 /** "В событие" from the editor's menu: the selected text for a new block. */
 const eventText = ref<string>()
+/** Where the text made into an event is (its editor and place) — it becomes the event's chip. */
+let eventAt: { key: string; from: number; to: number } | undefined
+function toEvent(p: Pane, text: string, at: { from: number; to: number }): void {
+  eventAt = { key: `${p.id}:${p.active}`, ...at }
+  eventText.value = text
+}
+function onEventMade(day: string, e: { id: string; label: string }): void {
+  const at = eventAt
+  const text = eventText.value
+  eventAt = undefined
+  if (!at || !text) return
+  editors.get(at.key)?.linkEvent(at, text, { day, id: e.id, label: e.label || text })
+}
 type Ed = InstanceType<typeof MdEditor>
 const editors = new Map<string, Ed>()
 /** Editors by pane and note: a renamed note's new editor may come before the old one is gone. */
@@ -353,6 +345,23 @@ function setEditor(key: string, el: unknown): void {
   else editors.delete(key)
 }
 const editorOf = (p: Pane | undefined) => (p?.active ? editors.get(`${p.id}:${p.active}`) : undefined)
+// ---------- pictures into a note (the button; a paste / a drop — the editor's own) ----------
+const imgInput = ref<HTMLInputElement>()
+let imgPane: Pane | undefined
+function pickImages(p: Pane): void {
+  imgPane = p
+  if (!imgInput.value) return
+  imgInput.value.value = ''
+  imgInput.value.click()
+}
+async function onImagesPicked(): Promise<void> {
+  const files = [...(imgInput.value?.files ?? [])]
+  const p = imgPane
+  imgPane = undefined
+  if (!files.length || !p) return
+  const rels = await takeImages({ files }, say)
+  editorOf(p)?.insertImages(rels)
+}
 const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
 const dirty = (path: string) => {
   const d = docs.get(path)
@@ -745,6 +754,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               >
                 <Icon :name="recInto?.pane === p.id ? 'stop' : 'mic'" :size="14" />
               </button>
+              <button class="tb" title="Вставить изображение — или вставьте из буфера (Ctrl+V), или перетащите файл в заметку" @click="pickImages(p)"><Icon name="image" :size="14" /></button>
             </template>
             <button class="tb" :class="{ on: layout.panes.length > 1 }" :title="layout.panes.length > 1 ? 'Одна колонка (Ctrl+\\)' : 'Разделить'" @click="toggleSplit">
               <Icon name="columns" :size="14" />
@@ -773,6 +783,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 :text="docs.get(p.active)!.text"
                 @change="(t) => setText(p.active!, t)"
                 @info="(t) => (boardInfo = { ...boardInfo, [p.active!]: t })"
+                @warn="say"
               />
             </div>
             <div v-else class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
@@ -801,8 +812,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   @wiki="(w) => openWiki(w)"
                   @transcribe="(a) => transcribeInto(p.active!, a)"
                   @drop-audio="(a) => dropAudio(p.active!, a)"
-                  @to-event="(t) => (eventText = t)"
+                  @to-event="(t, at) => toEvent(p, t, at)"
                   @exit-up="titleUp(p)"
+                  @warn="say"
                 />
               </template>
             </div>
@@ -834,9 +846,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </section>
       </template>
       <Transition name="fade"><div v-if="msg" class="toast">{{ msg }}</div></Transition>
+      <input ref="imgInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden @change="onImagesPicked" />
     </div>
 
-    <EventModal v-if="eventText !== undefined" :text="eventText" @close="eventText = undefined" />
+    <EventModal v-if="eventText !== undefined" :text="eventText" @created="onEventMade" @close="eventText = undefined" />
     <Teleport to="body">
       <div v-if="ctx" class="nctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop>
         <template v-if="!ctx.node || ctx.node.dir">

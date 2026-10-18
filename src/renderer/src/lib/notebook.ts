@@ -1,5 +1,5 @@
 import { reactive, ref, shallowRef, watch } from 'vue'
-import { audiosOf, filesOf, remapPath, type VaultNode } from '@shared/vault'
+import { audiosOf, filesOf, imagesOf, remapPath, type VaultNode } from '@shared/vault'
 import { toWav16k } from './recorder'
 import { remapHistory } from './boardHistory'
 
@@ -70,6 +70,7 @@ export async function save(path: string): Promise<void> {
     d.saved = text
     d.error = undefined
     void syncAudio(before, text)
+    void syncImages(before, text)
   } catch (e) {
     d.error = e instanceof Error ? e.message : String(e)
   }
@@ -97,6 +98,81 @@ async function syncAudio(before: string, after: string): Promise<void> {
     }
   }
 }
+/**
+ * A picture gone from a note / a board → its file is deleted from the disk (if nothing else has it); kept for
+ * this session, so that an undo brings it back.
+ */
+const removedImages = new Map<string, Uint8Array>()
+async function syncImages(before: string, after: string): Promise<void> {
+  const was = new Set(imagesOf(before))
+  const now = new Set(imagesOf(after))
+  for (const rel of now)
+    if (!was.has(rel) && removedImages.has(rel)) {
+      await window.qa.vaultRestoreImage(rel, removedImages.get(rel)!)
+      removedImages.delete(rel)
+      imageUrls.delete(rel)
+    }
+  for (const rel of was) {
+    if (now.has(rel)) continue
+    try {
+      const bytes = await window.qa.vaultReadImage(rel)
+      if (await window.qa.vaultDeleteImage(rel)) removedImages.set(rel, bytes)
+    } catch {
+      // already gone
+    }
+  }
+}
+/** A picture of the vault as an address the page can show (made once per run). */
+const imageUrls = new Map<string, Promise<string>>()
+export function imageUrl(rel: string): Promise<string> {
+  let u = imageUrls.get(rel)
+  if (!u) {
+    u = window.qa.vaultReadImage(rel).then((b) => URL.createObjectURL(new Blob([b as BlobPart])))
+    u.catch(() => imageUrls.delete(rel))
+    imageUrls.set(rel, u)
+  }
+  return u
+}
+const IMAGE_FILE = /^image\/(png|jpeg|gif|webp|bmp)$/
+/**
+ * Pictures from a drop / a paste / a file picker → the vault: their paths (each picture that could not be
+ * taken is reported, the rest still go in). Files first; else an image's address (dragged from a web page).
+ */
+export async function takeImages(dt: { files?: FileList | File[] | null; uri?: string }, warn: (msg: string) => void): Promise<string[]> {
+  const out: string[] = []
+  const files = [...(dt.files ?? [])].filter((f) => IMAGE_FILE.test(f.type))
+  for (const f of files) {
+    try {
+      out.push(await window.qa.vaultSaveImage(new Uint8Array(await f.arrayBuffer())))
+    } catch (e) {
+      warn(`«${f.name}»: ${e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)}`)
+    }
+  }
+  if (!files.length && dt.uri) {
+    try {
+      out.push(await window.qa.vaultFetchImage(dt.uri))
+    } catch (e) {
+      warn(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+    }
+  }
+  return out
+}
+/** Does a drag / a paste carry pictures (files, or an image dragged from a page)? */
+export function hasImages(dt: DataTransfer | null): boolean {
+  if (!dt) return false
+  if ([...dt.items].some((i) => i.kind === 'file' && IMAGE_FILE.test(i.type))) return true
+  return [...dt.files].some((f) => IMAGE_FILE.test(f.type))
+}
+/** An image's address in a drag from a web page (none — undefined). */
+export function draggedImageUrl(dt: DataTransfer | null): string | undefined {
+  if (!dt) return undefined
+  const html = dt.getData('text/html')
+  const m = /<img[^>]+src="([^"]+)"/i.exec(html)
+  const src = m?.[1]?.replace(/&amp;/g, '&')
+  if (src && (/^https?:\/\//i.test(src) || src.startsWith('data:image/'))) return src
+  return undefined
+}
+
 /** "Delete the audio, keep the transcript": the recording's line goes, and with it the file. */
 export async function dropAudio(path: string, audio: string): Promise<void> {
   const d = doc(path)

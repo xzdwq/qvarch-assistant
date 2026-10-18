@@ -41,6 +41,15 @@ export interface VaultHit {
   lines: Array<{ line: number; col: number; len: number; text: string; at: number }>
 }
 
+/** A picture of a note / a board: vault/.images/<file> (its own line `![[.images/<file>]]` in a note). */
+export const IMAGE_REL = /^\.images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp)$/i
+export const IMAGE_EMBED = /^!\[\[(\.images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp))\]\]\s*$/i
+export const imageEmbed = (rel: string) => `![[${rel}]]`
+/** The pictures a note or a board has (anywhere in its text — a board keeps them in its JSON). */
+export function imagesOf(text: string): string[] {
+  return [...new Set(text.match(/\.images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp)/gi) ?? [])]
+}
+
 /** A voice recording in a note: a line `![[.audio/<file>.webm]]` (Obsidian's embed syntax). */
 export const AUDIO_EMBED = /^!\[\[(\.audio\/[\w.-]+\.webm)\]\]\s*$/
 export const audioEmbed = (rel: string) => `![[${rel}]]`

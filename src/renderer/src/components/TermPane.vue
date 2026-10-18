@@ -67,6 +67,17 @@ onMounted(async () => {
   for (const [d, end] of early) if (end > upto) term.write(end - d.length < upto ? d.slice(upto - (end - d.length)) : d)
   early.length = 0
   term.onData((d) => window.qa.termWrite(props.session.id, d))
+  // Ctrl+A in the shell: the typed line (its length, the cursor's place in it) — shown selected here too
+  term.parser.registerOscHandler(633, (data) => {
+    const m = /^QA;(\d+);(\d+)$/.exec(data)
+    if (!m || !term) return false
+    const len = Number(m[1])
+    const at = Number(m[2])
+    const b = term.buffer.active
+    const start = (b.baseY + b.cursorY) * term.cols + b.cursorX - at
+    if (len > 0 && start >= 0) term.select(start % term.cols, Math.floor(start / term.cols), len)
+    return true
+  })
   // Ctrl+C with a selection — copy; Ctrl+V — paste (the shell gets the text)
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true
@@ -76,6 +87,7 @@ onMounted(async () => {
       return false
     }
     if (e.ctrlKey && e.code === 'KeyV') {
+      term?.clearSelection()
       void navigator.clipboard.readText().then((t) => t && window.qa.termWrite(props.session.id, t))
       return false
     }
@@ -85,6 +97,8 @@ onMounted(async () => {
       if (e.key !== 'Backspace' && e.key !== 'Delete') return true
       term.clearSelection()
     }
+    // a key typed over a Ctrl+A selection: the shell replaces the line, the shown selection goes
+    if (term?.hasSelection() && !['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) && !(e.ctrlKey && (e.code === 'KeyA' || e.code === 'KeyC'))) term.clearSelection()
     return true
   })
   // right click: a selection — copied; none — the clipboard pasted (as in Windows Terminal)

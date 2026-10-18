@@ -63,6 +63,8 @@ export interface Entry {
   remind?: Remind
   /** One of a repeated series (copies every hour / day / week / year). */
   series?: { id: string; rule: RepeatRule }
+  /** When it was made (events made before 0.106 have none). */
+  created?: Ms
 }
 
 /** A planned block of the day ("План на день") — kept apart from what actually happened (Entry). */

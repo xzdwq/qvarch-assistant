@@ -2,18 +2,23 @@
 import { ref, watch } from 'vue'
 import type { PublicSettings } from '@shared/types'
 import TaskList from './TaskList.vue'
+import ReportsView from './ReportsView.vue'
+import TaskCalendar from '../components/TaskCalendar.vue'
 import WorkBoard from './WorkBoard.vue'
 import WorkList from './WorkList.vue'
 
-/** Моя работа: the week and the day in one place (Работа), everything as a filtered list (Список), Jira. */
+/**
+ * Моя работа: the week and the day in one place (Работа), everything as a filtered list (Список), Jira, the
+ * calendar of the weeks (Календарь) and the analytics (Аналитика).
+ */
 defineProps<{ settings: PublicSettings }>()
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string]; settings: []; openDay: [day: string] }>()
-type Tab = 'work' | 'list' | 'jira'
+type Tab = 'work' | 'list' | 'jira' | 'calendar' | 'reports'
 const KEY = 'qa.work.tab'
 const read = (): Tab => {
   try {
     const v = localStorage.getItem(KEY)
-    return v === 'list' || v === 'jira' ? v : 'work'
+    return v === 'list' || v === 'jira' || v === 'calendar' || v === 'reports' ? v : 'work'
   } catch {
     return 'work'
   }
@@ -29,6 +34,8 @@ watch(tab, (v) => {
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'work', label: 'Работа' },
   { id: 'list', label: 'Список' },
+  { id: 'reports', label: 'Аналитика' },
+  { id: 'calendar', label: 'Календарь' },
   { id: 'jira', label: 'Jira' },
 ]
 /** A row / a day opened from here goes to the timeline (with the block in focus). */
@@ -42,7 +49,9 @@ const open = (day: string, entryId?: string) => emit('go', 'day', day, entryId)
     </div>
     <WorkBoard v-if="tab === 'work'" class="wbody" :settings="settings" @open-day="open" />
     <WorkList v-else-if="tab === 'list'" class="wbody" @open-day="open" />
-    <TaskList v-else class="wbody" @settings="emit('settings')" @open-day="(d) => emit('openDay', d)" />
+    <TaskList v-else-if="tab === 'jira'" class="wbody" @settings="emit('settings')" @open-day="(d) => emit('openDay', d)" />
+    <TaskCalendar v-else-if="tab === 'calendar'" class="wbody" fill :work-days="settings.schedule.workDays" @open-day="(d) => emit('openDay', d)" />
+    <ReportsView v-else class="wbody rep-in" @go="(_v, d, id) => d && open(d, id)" />
   </div>
 </template>
 

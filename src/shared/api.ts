@@ -7,6 +7,7 @@ import type { PulsePoint } from './pulse'
 import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi } from './browser'
+import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
 import type { VaultHit, VaultNode } from './vault'
@@ -64,8 +65,14 @@ export interface QaApi {
   pdfSave(bytes: Uint8Array, name: string): Promise<string | undefined>
   /** Saves an exported picture where the user picks (a save dialog); undefined when cancelled. */
   imageSave(bytes: Uint8Array, name: string, ext: 'png' | 'svg'): Promise<string | undefined>
+  /** Any bytes saved where the user picks (a «save as» dialog for that extension); the path, or undefined. */
+  fileSave(bytes: Uint8Array, name: string, ext: string): Promise<string | undefined>
+  /** MD5 / SHA-1 / SHA-256 / SHA-512 (hex) of a text, bytes or a file on disk (read as a stream); HMAC with a key. */
+  hashOf(src: { text?: string; bytes?: Uint8Array; path?: string }, key?: string): Promise<Record<'md5' | 'sha1' | 'sha256' | 'sha512', string>>
   /** Reports / the week sheet: the blocks of every day with data in [from, to] and how long QA was on. */
   rangeDays(from: string, to: string): Promise<RangeDay[]>
+  /** Every event of every day, light — the notebook's «@» list and its chips. */
+  eventsIndex(): Promise<import('./noteEvents').EventRef[]>
   deleteEntry(day: string, id: string): Promise<void>
   /** Moves a block to [start, end] — on the same day or another one (its links follow). */
   moveEntry(from: string, to: string, id: string, start: number, end: number): Promise<void>
@@ -193,12 +200,19 @@ export interface QaApi {
   onHttpChain(cb: (runId: string, i: number, id: string, out: HttpRunResult) => void): () => void
   /** A chain recorded in the browser → a folder on top of the collection, its variables set. */
   httpImport(folder: HttpFolder, vars: HttpKV[]): Promise<void>
+  /** Инструменты · the clipboard's history (texts copied anywhere; kept encrypted, the last 1000). */
+  clipGet(): Promise<ClipState>
+  clipSet(on: boolean): Promise<ClipState>
+  clipRemove(id: string): Promise<void>
+  clipClear(): Promise<void>
+  clipCopy(id: string): Promise<void>
+  onClip(cb: (s: ClipState) => void): () => void
   /** A dropped file's path on disk. */
   pathForFile(file: File): string
   /** Браузер: a method of the pages' side (see BrowserApi). */
   browser<K extends keyof BrowserApi>(m: K, ...a: Parameters<BrowserApi[K]>): Promise<Awaited<ReturnType<BrowserApi[K]>>>
   /** Where the visible pages go (sent often — no answer). */
-  browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number } }>): void
+  browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number }; scale?: number }>): void
   /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */
   onBrowser(cb: (type: string, payload: unknown) => void): () => void
   /** A page of the Jira releases of the projects (unreleased first). */
@@ -239,6 +253,16 @@ export interface QaApi {
   /** Deletes a recording from the disk if no note embeds it any more; true if deleted. */
   vaultDeleteAudio(path: string): Promise<boolean>
   vaultRestoreAudio(path: string, audio: Uint8Array): Promise<void>
+  /** A picture for a note / a board (its type by its bytes); its vault path (.images/…). */
+  vaultSaveImage(bytes: Uint8Array): Promise<string>
+  vaultReadImage(path: string): Promise<Uint8Array>
+  /** Deletes a picture from the disk if no note / board has it any more; true if deleted. */
+  vaultDeleteImage(path: string): Promise<boolean>
+  vaultRestoreImage(path: string, bytes: Uint8Array): Promise<void>
+  /** The clipboard's picture: its signature ('' — none); saved into the vault when asked. */
+  vaultClipImage(save: boolean): Promise<{ sig: string; rel?: string }>
+  /** A picture by its address (dragged from a web page) → the vault. */
+  vaultFetchImage(url: string): Promise<string>
   // ---------- repeats ----------
   /** Copies of a block every hour / day / week / year (count in all, the block included) — a series. */
   repeatEntry(day: string, id: string, rule: RepeatRule, count: number): Promise<number>
@@ -280,11 +304,14 @@ export const IPC = {
   planDone: 'qa:planDone',
   mergeEntries: 'qa:mergeEntries',
   rangeDays: 'qa:rangeDays',
+  eventsIndex: 'qa:eventsIndex',
   sigList: 'qa:sigList',
   sigSave: 'qa:sigSave',
   sigDelete: 'qa:sigDelete',
   pdfSave: 'qa:pdfSave',
   imageSave: 'qa:imageSave',
+  fileSave: 'qa:fileSave',
+  hashOf: 'qa:hashOf',
   tabletState: 'qa:tabletState',
   tabletSet: 'qa:tabletSet',
   tabletLive: 'qa:tabletLive',
@@ -358,6 +385,8 @@ export const IPC = {
   httpAbort: 'qa:httpAbort',
   httpChainEv: 'qa:httpChainEv',
   browser: 'qa:browser',
+  clip: 'qa:clip',
+  clipEv: 'qa:clipEv',
   browserLayout: 'qa:browserLayout',
   browserEv: 'qa:browserEv',
   jiraVersionIssues: 'qa:jiraVersionIssues',
@@ -382,6 +411,12 @@ export const IPC = {
   vaultPair: 'qa:vaultPair',
   vaultDeleteAudio: 'qa:vaultDeleteAudio',
   vaultRestoreAudio: 'qa:vaultRestoreAudio',
+  vaultSaveImage: 'qa:vaultSaveImage',
+  vaultReadImage: 'qa:vaultReadImage',
+  vaultDeleteImage: 'qa:vaultDeleteImage',
+  vaultRestoreImage: 'qa:vaultRestoreImage',
+  vaultClipImage: 'qa:vaultClipImage',
+  vaultFetchImage: 'qa:vaultFetchImage',
   repeatEntry: 'qa:repeatEntry',
   seriesSave: 'qa:seriesSave',
   seriesDelete: 'qa:seriesDelete',

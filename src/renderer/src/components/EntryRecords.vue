@@ -8,10 +8,10 @@ import Icon from './Icon.vue'
 
 /**
  * "Записи": the day's blocks in time order with the plan between them (dashed, "по плану" makes the block once),
- * the totals and where blocks ran at the same time. `compact` — the dashboard's smaller one; with `now` the
+ * the totals and where blocks ran at the same time. With `now` the
  * finished blocks fade and the one going on is marked.
  */
-const props = defineProps<{ data: DayData; selectedId?: string; compact?: boolean; now?: Ms }>()
+const props = defineProps<{ data: DayData; selectedId?: string; now?: Ms }>()
 const emit = defineEmits<{ select: [id: string]; changed: [] }>()
 
 const sorted = computed(() => [...props.data.entries].sort((a, b) => a.start - b.start || (a.lane ?? 0) - (b.lane ?? 0)))
@@ -80,13 +80,13 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
 </script>
 
 <template>
-  <div class="recs" :class="{ compact }">
+  <div class="recs">
     <div v-if="rows.length" class="esum">
       <span title="Пересечения посчитаны один раз">Записей <b>{{ sorted.length }}</b> · <b>{{ formatDuration(totals.real) }}</b></span>
       <span v-for="k in byKind" :key="k.kind" class="kt" :title="kindLabel(k.kind)"><i :style="{ background: kindColor(k.kind) }"></i><b>{{ formatDuration(k.ms) }}</b></span>
-      <span v-if="totals.parallel >= MINUTE" class="ov" title="Пересечения"><Icon name="layers" :size="compact ? 11 : 12" /><b>{{ formatDuration(totals.parallel) }}</b></span>
+      <span v-if="totals.parallel >= MINUTE" class="ov" title="Пересечения"><Icon name="layers" :size="12" /><b>{{ formatDuration(totals.parallel) }}</b></span>
       <span class="grow"></span>
-      <button class="srt" :class="{ on: desc }" :title="desc ? 'Сначала поздние' : 'Сначала ранние'" @click="toggleSort"><Icon name="sort" :size="compact ? 12 : 13" /></button>
+      <button class="srt" :class="{ on: desc }" :title="desc ? 'Сначала поздние' : 'Сначала ранние'" @click="toggleSort"><Icon name="sort" :size="13" /></button>
     </div>
     <template v-for="r in rows" :key="r.id">
       <template v-if="r.kind === 'entry'">
@@ -95,7 +95,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
           :class="{ selected: r.e.id === selectedId, par: overlapIds.has(r.e.id), past: past(r.e.end), going: going(r.e.start, r.e.end) }"
           @click="emit('select', r.e.id)"
         >
-          <span class="eic" :style="{ background: kindColor(r.e.kind) }" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="compact ? 11 : 12" :stroke="2.4" /></span>
+          <span class="eic" :style="{ background: kindColor(r.e.kind) }" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="12" :stroke="2.4" /></span>
           <span class="when">
             <span class="time">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
             <span class="dur">{{ formatDuration(r.e.end - r.e.start) }}</span>
@@ -117,7 +117,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
         </div>
       </template>
       <div v-else class="row plan" :class="{ done: r.done, past: past(r.p.end) }" :style="{ '--c': kindColor(r.p.kind) }">
-        <span class="eic pl" :title="`План · ${kindLabel(r.p.kind)}`"><Icon :name="entryIcon(r.p)" :size="compact ? 11 : 12" :stroke="2.4" /></span>
+        <span class="eic pl" :title="`План · ${kindLabel(r.p.kind)}`"><Icon :name="entryIcon(r.p)" :size="12" :stroke="2.4" /></span>
         <span class="when">
           <span class="time">{{ formatHM(r.p.start) }}–{{ formatHM(r.p.end) }}</span>
           <span class="dur">{{ formatDuration(r.p.end - r.p.start) }}</span>
@@ -414,56 +414,4 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
   font-size: 12.5px;
 }
 /* the dashboard's: smaller type, tighter rows */
-.compact .row {
-  gap: 6px;
-  padding: 3px 6px 3px 9px;
-  font-size: 12px;
-}
-.compact .esum {
-  gap: 4px 10px;
-  padding: 2px 6px 6px;
-  margin-bottom: 2px;
-  font-size: 11px;
-}
-.compact .eic {
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r2);
-}
-.compact .when {
-  width: 76px;
-  padding-right: 6px;
-  line-height: 1.2;
-}
-.compact .when .time {
-  font-size: 11.5px;
-}
-.compact .when .dur,
-.compact .desc {
-  font-size: 10.5px;
-}
-.compact .key {
-  font-size: 11px;
-}
-.compact .ol,
-.compact .ai {
-  font-size: 9.5px;
-  padding: 0 4px;
-}
-.compact .jl {
-  width: 22px;
-  height: 22px;
-}
-.compact .orow {
-  margin: -1px 0 3px 33px;
-  padding: 2px 6px;
-  font-size: 10.5px;
-}
-.compact .pchk {
-  font-size: 10.5px;
-}
-.compact .row.going::before {
-  top: 4px;
-  bottom: 4px;
-}
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { Entry } from '@shared/types'
 import { MINUTE } from '@shared/timeline'
 import { useDay } from '../lib/useDay'
 import { todayKey } from '../lib/today'
@@ -8,7 +9,7 @@ import Icon from './Icon.vue'
 
 /** "В событие": a new block for today in a window over everything, its text filled in. */
 const props = defineProps<{ text: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; created: [day: string, entry: Entry] }>()
 
 const today = todayKey
 const { data, now } = useDay(today)
@@ -44,7 +45,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           :add="add"
           textarea
           @update:add="(a) => (add = a)"
-          @saved="emit('close')"
+          @saved="(e) => (emit('created', today, e), emit('close'))"
         />
       </div>
     </div>
