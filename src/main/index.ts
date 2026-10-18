@@ -971,12 +971,16 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultSearch, (_e, q: string) => vault.search(str(q)))
   ipcMain.handle(IPC.vaultSaveAudio, (_e, audio: Uint8Array) => vault.saveAudio(audio))
   ipcMain.handle(IPC.vaultReadAudio, (_e, p: string) => vault.readAudio(str(p)))
-  ipcMain.handle(IPC.vaultTranscribe, (_e, wav: Uint8Array) => {
+  ipcMain.handle(IPC.vaultTranscribe, (_e, wav: Uint8Array, key?: string) => {
     if (!store.cfg.voice.enabled) throw new Error('Расшифровка выключена в настройках')
-    return voice.transcribe(`vault-${randomUUID()}`, wav)
+    return voice.transcribe(`vault-${typeof key === 'string' && key ? key : randomUUID()}`, wav)
   })
+  // the recording deleted: its whisper stopped (or taken out of the queue)
+  ipcMain.on(IPC.vaultTranscribeCancel, (_e, key: string) => typeof key === 'string' && key && voice.cancel(`vault-${key}`))
   ipcMain.on(IPC.vaultReveal, (_e, p: string) => vault.reveal(str(p)))
   ipcMain.handle(IPC.vaultPair, (_e, a: string, b?: string) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
+  // an emoji mark: one emoji (a few code points), no text
+  ipcMain.handle(IPC.vaultSetEmoji, (_e, p: string, emoji?: string) => vault.setEmoji(str(p), typeof emoji === 'string' && emoji && emoji.length <= 16 && /\p{Extended_Pictographic}/u.test(emoji) ? emoji : undefined))
   ipcMain.handle(IPC.vaultSetColor, (_e, p: string, color?: string) => vault.setColor(str(p), typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined))
   ipcMain.handle(IPC.vaultDeleteAudio, (_e, p: string) => vault.deleteAudio(str(p)))
   ipcMain.handle(IPC.vaultRestoreAudio, (_e, p: string, audio: Uint8Array) => vault.restoreAudio(str(p), audio))

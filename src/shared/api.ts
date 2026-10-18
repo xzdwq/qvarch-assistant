@@ -244,10 +244,14 @@ export interface QaApi {
   vaultSaveAudio(audio: Uint8Array): Promise<string>
   vaultReadAudio(path: string): Promise<Uint8Array>
   /** WAV 16 kHz → text (local whisper). */
-  vaultTranscribe(wav: Uint8Array): Promise<string>
+  vaultTranscribe(wav: Uint8Array, key?: string): Promise<string>
+  /** Stops a recording's transcription (running or waiting) — its recording was deleted. */
+  vaultTranscribeCancel(key: string): void
   vaultReveal(path: string): void
   /** A colour mark of a note / folder (undefined — none). */
   vaultSetColor(path: string, color?: string): Promise<void>
+  /** An emoji mark of a note / board / folder (undefined — none). */
+  vaultSetEmoji(path: string, emoji?: string): Promise<void>
   /** Links a note with a board (b undefined — unlinks). */
   vaultPair(a: string, b?: string): Promise<void>
   /** Deletes a recording from the disk if no note embeds it any more; true if deleted. */
@@ -406,8 +410,10 @@ export const IPC = {
   vaultSaveAudio: 'qa:vaultSaveAudio',
   vaultReadAudio: 'qa:vaultReadAudio',
   vaultTranscribe: 'qa:vaultTranscribe',
+  vaultTranscribeCancel: 'qa:vaultTranscribeCancel',
   vaultReveal: 'qa:vaultReveal',
   vaultSetColor: 'qa:vaultSetColor',
+  vaultSetEmoji: 'qa:vaultSetEmoji',
   vaultPair: 'qa:vaultPair',
   vaultDeleteAudio: 'qa:vaultDeleteAudio',
   vaultRestoreAudio: 'qa:vaultRestoreAudio',

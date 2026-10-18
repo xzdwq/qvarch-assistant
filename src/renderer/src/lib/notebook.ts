@@ -90,6 +90,7 @@ async function syncAudio(before: string, after: string): Promise<void> {
     }
   for (const rel of was) {
     if (now.has(rel)) continue
+    cancelTranscribe(rel)
     try {
       const bytes = await window.qa.vaultReadAudio(rel)
       if (await window.qa.vaultDeleteAudio(rel)) removedAudio.set(rel, bytes)
@@ -175,6 +176,7 @@ export function draggedImageUrl(dt: DataTransfer | null): string | undefined {
 
 /** "Delete the audio, keep the transcript": the recording's line goes, and with it the file. */
 export async function dropAudio(path: string, audio: string): Promise<void> {
+  cancelTranscribe(audio)
   const d = doc(path)
   const lines = d.text.split('\n')
   const i = lines.findIndex((l) => l.trim() === `![[${audio}]]`)
@@ -350,16 +352,34 @@ export function remap(from: string, to: string): void {
 /** The transcription of a recording in progress: path of the audio → state. */
 export const transcribing = reactive(new Map<string, 'run' | 'error'>())
 export const transcribeError = ref('')
+/** Recordings deleted while their transcription ran: the text that still comes is thrown away. */
+const stopped = new Set<string>()
+/** A recording is gone: its transcription stops (the whisper process is killed). */
+export function cancelTranscribe(audio: string): void {
+  if (transcribing.get(audio) !== 'run') return
+  stopped.add(audio)
+  transcribing.delete(audio)
+  window.qa.vaultTranscribeCancel(audio)
+}
+export class TranscribeCancelled extends Error {}
 export async function transcribe(audio: string): Promise<string> {
+  stopped.delete(audio)
   transcribing.set(audio, 'run')
   transcribeError.value = ''
   try {
     const bytes = await window.qa.vaultReadAudio(audio)
     const wav = await toWav16k(new Blob([bytes as BlobPart], { type: 'audio/webm' }))
-    const text = await window.qa.vaultTranscribe(wav)
+    if (stopped.has(audio)) throw new TranscribeCancelled()
+    const text = await window.qa.vaultTranscribe(wav, audio)
+    if (stopped.has(audio)) throw new TranscribeCancelled()
     transcribing.delete(audio)
     return text
   } catch (e) {
+    if (e instanceof TranscribeCancelled || stopped.has(audio)) {
+      stopped.delete(audio)
+      transcribing.delete(audio)
+      throw new TranscribeCancelled()
+    }
     transcribing.set(audio, 'error')
     transcribeError.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
     throw e
@@ -370,6 +390,8 @@ export function putTranscript(path: string, audio: string, text: string): void {
   const d = doc(path)
   const lines = d.text.split('\n')
   const i = lines.findIndex((l) => l.trim() === `![[${audio}]]`)
+  // the recording is no longer in the note: its text is not wanted
+  if (i < 0) return
   const body = text.trim() || '(тишина — ничего не распознано)'
   if (i < 0) lines.push('', body)
   else lines.splice(i + 1, 0, body, '')

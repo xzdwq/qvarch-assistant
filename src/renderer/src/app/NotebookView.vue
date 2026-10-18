@@ -8,6 +8,8 @@ import BoardView from '../components/BoardView.vue'
 import { isBoard, serializeBoard } from '@shared/whiteboard'
 import { freshBoard } from '../lib/boardPrefs'
 import EventModal from '../components/EventModal.vue'
+import EmojiPick from '../components/EmojiPick.vue'
+import NodeMark from '../components/NodeMark.vue'
 import { fmtSec, useRecorder } from '../lib/recorder'
 import {
   closeEverywhere,
@@ -31,6 +33,7 @@ import {
   saveAll,
   setText,
   takeImages,
+  TranscribeCancelled,
   splitWith,
   swapTab,
   toggleSplit,
@@ -263,7 +266,7 @@ async function onDrop(): Promise<void> {
 // the right-click menu
 const ctx = ref<{ x: number; y: number; node?: VaultNode }>()
 function openCtx(e: MouseEvent, node?: VaultNode): void {
-  ctx.value = { x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 260), node }
+  ctx.value = { x: Math.min(e.clientX, window.innerWidth - 310), y: Math.min(e.clientY, window.innerHeight - 300), node }
   if (node?.dir) folder.value = node.path
 }
 /** The menu closes first — the action gets the node it was opened on. */
@@ -432,24 +435,31 @@ function onSplitResize(e: PointerEvent): void {
 
 // ---------- voice: into the open note, or a note of its own ----------
 const recorder = useRecorder()
-const recInto = ref<{ path: string; pane: string }>()
+/** Recording into a note; `inline` — its place is shown in the text (no bar above). */
+const recInto = ref<{ path: string; pane: string; inline?: boolean }>()
 async function startRec(p: Pane): Promise<void> {
   if (!p.active) return
   if (recorder.rec.value) return void stopRec()
-  if (await recorder.start('voice')) recInto.value = { path: p.active, pane: p.id }
-  else say(recorder.error.value)
+  if (await recorder.start('voice')) {
+    const ed = isBoard(p.active) ? undefined : editorOf(p)
+    ed?.startRecMarker()
+    recInto.value = { path: p.active, pane: p.id, inline: !!ed }
+  } else say(recorder.error.value)
 }
 async function stopRec(): Promise<void> {
   const into = recInto.value
   recInto.value = undefined
   const r = await recorder.stop()
   if (!into) return
+  const pane = layout.panes.find((x) => x.id === into.pane)
+  const ed = pane?.active === into.path ? editorOf(pane) : undefined
+  // the place shown while recording
+  const at = ed?.takeRecMarker() ?? null
   if (!r) return say('Слишком короткая запись')
   try {
     const rel = await window.qa.vaultSaveAudio(new Uint8Array(await r.blob.arrayBuffer()))
-    const pane = layout.panes.find((x) => x.id === into.pane)
-    const ed = editorOf(pane)
-    if (ed && pane?.active === into.path) ed.insertBlock(audioEmbed(rel))
+    if (ed && at !== null) ed.insertAudioAt(at, audioEmbed(rel))
+    else if (ed) ed.insertBlock(audioEmbed(rel))
     else {
       const d = doc(into.path)
       setText(into.path, `${d.text.replace(/\s*$/, '')}\n\n${audioEmbed(rel)}\n`)
@@ -463,7 +473,9 @@ async function stopRec(): Promise<void> {
 async function transcribeInto(path: string, rel: string): Promise<void> {
   try {
     putTranscript(path, rel, await transcribe(rel))
-  } catch {
+  } catch (e) {
+    // the recording was deleted meanwhile: nothing to say
+    if (e instanceof TranscribeCancelled) return
     say(transcribeError.value || 'Не удалось расшифровать')
   }
 }
@@ -506,10 +518,28 @@ const created = (path: string) => {
   return c ? new Date(c).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 }
 const colorOf = (path: string) => findNode(path)?.color
+const emojiOf = (path: string) => findNode(path)?.emoji
 async function setColor(n: VaultNode, color?: string): Promise<void> {
   await window.qa.vaultSetColor(n.path, color)
   await loadTree()
 }
+async function setEmoji(n: VaultNode, emoji?: string): Promise<void> {
+  await window.qa.vaultSetEmoji(n.path, emoji)
+  await loadTree()
+}
+/** The emoji offered right in the menu; «…» opens the whole list. */
+const QUICK_EMOJI = ['⭐', '🔥', '✅', '❗', '📌', '💡', '🚀', '🐞', '📊', '🎯']
+/** The whole emoji list for a node (its place: where its menu was). */
+const emojiFor = ref<{ node: VaultNode; x: number; y: number }>()
+function moreEmoji(): void {
+  const c = ctx.value
+  if (!c?.node) return
+  emojiFor.value = { node: c.node, x: Math.min(c.x, window.innerWidth - 360), y: Math.min(c.y, window.innerHeight - 340) }
+  ctx.value = undefined
+}
+const closeEmoji = () => (emojiFor.value = undefined)
+onMounted(() => window.addEventListener('pointerdown', closeEmoji))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', closeEmoji))
 
 // ---------- tabs: drag to reorder (or to the other pane) ----------
 const tabDrag = ref<{ pane: number; path: string }>()
@@ -653,7 +683,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           @keydown.f2="startRename(r.node.path)"
         >
           <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev" />
-          <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic" :style="r.node.color ? { color: r.node.color } : {}" />
+          <NodeMark v-if="r.node.dir && r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="folder" :size="14" class="fic" />
+          <Icon v-else-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic" :style="r.node.color ? { color: r.node.color } : {}" />
+          <NodeMark v-else-if="r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="note" :size="13" class="fic emo" />
           <span v-else-if="r.node.color" class="fmark" :style="{ background: r.node.color }"></span>
           <Icon v-else :name="r.node.board ? 'presentation' : 'note'" :size="13" class="fic note" />
           <input
@@ -728,7 +760,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 @drop.prevent="onTabDrop"
                 @dragend="onTabDrop"
               >
-                <span v-if="colorOf(t.path)" class="fmark sm" :style="{ background: colorOf(t.path) }"></span>
+                <NodeMark v-if="emojiOf(t.path)" :emoji="emojiOf(t.path)" :color="colorOf(t.path)" icon="note" :size="12" />
+                <span v-else-if="colorOf(t.path)" class="fmark sm" :style="{ background: colorOf(t.path) }"></span>
                 <Icon v-else :name="isBoard(t.path) ? 'presentation' : 'note'" :size="12" class="tic" />
                 <span class="tname">{{ noteName(t.path) }}</span>
                 <span v-if="dirty(t.path)" class="ndot"></span>
@@ -768,7 +801,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </button>
               <button title="Открыть рядом (в другой колонке)" @click="showPair(pi, true)"><Icon name="columns" :size="12" /></button>
             </div>
-            <div v-if="recInto?.pane === p.id" class="recbar">
+            <div v-if="recInto?.pane === p.id && !recInto.inline" class="recbar">
               <span class="rdot"></span>
               <span class="meter"><span :style="{ width: `${recorder.level.value * 100}%` }"></span></span>
               <b>{{ fmtSec(recorder.sec.value) }}</b>
@@ -789,7 +822,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <div v-else class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
               <div class="crumbs">
                 <template v-for="(c, ci) in dirOf(p.active).split('/').filter(Boolean)" :key="ci"><span>{{ c }}</span><Icon name="chevronRight" :size="10" /></template>
-                <span class="leaf">{{ noteName(p.active) }}</span>
+                <span class="leaf"><NodeMark v-if="emojiOf(p.active) || colorOf(p.active)" :emoji="emojiOf(p.active)" :color="colorOf(p.active)" icon="note" :size="13" />{{ noteName(p.active) }}</span>
               </div>
               <input
                 :ref="(el) => el && titleEls.set(p.id, el as HTMLInputElement)"
@@ -815,6 +848,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   @to-event="(t, at) => toEvent(p, t, at)"
                   @exit-up="titleUp(p)"
                   @warn="say"
+                  @record="!recInto && startRec(p)"
+                  @stop-rec="stopRec"
+                  :rec="recInto?.pane === p.id && recInto.inline ? { sec: recorder.sec.value, level: recorder.level.value } : undefined"
+                  @pick-image="pickImages(p)"
                 />
               </template>
             </div>
@@ -849,6 +886,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <input ref="imgInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden @change="onImagesPicked" />
     </div>
 
+    <Teleport to="body">
+      <div v-if="emojiFor" class="nemo" :style="{ left: `${emojiFor.x}px`, top: `${emojiFor.y}px` }" @pointerdown.stop>
+        <EmojiPick @pick="(u) => (setEmoji(emojiFor!.node, u), (emojiFor = undefined))" />
+      </div>
+    </Teleport>
     <EventModal v-if="eventText !== undefined" :text="eventText" @created="onEventMade" @close="eventText = undefined" />
     <Teleport to="body">
       <div v-if="ctx" class="nctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop>
@@ -871,8 +913,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <button @click="ctxRun((n) => reveal(n!.path))"><Icon name="external" :size="13" />Показать в проводнике</button>
           <div class="csep"></div>
           <div class="ccolors" title="Цветная метка">
-            <button class="cnone" :class="{ on: !ctx.node.color }" title="Без метки" @click="ctxRun((n) => setColor(n!))"><Icon name="x" :size="11" /></button>
+            <button class="cnone" :class="{ on: !ctx.node.color }" title="Без цвета" @click="ctxRun((n) => setColor(n!))"><Icon name="x" :size="11" /></button>
             <button v-for="c in MARK_COLORS" :key="c" class="cdot" :class="{ on: ctx.node.color === c }" :style="{ background: c }" @click="ctxRun((n) => setColor(n!, c))"></button>
+          </div>
+          <div class="ccolors cemo" title="Эмодзи-метка (вместе с цветом — на его подложке)">
+            <button class="cnone" :class="{ on: !ctx.node.emoji }" title="Без эмодзи" @click="ctxRun((n) => setEmoji(n!))"><Icon name="x" :size="11" /></button>
+            <button v-for="e in QUICK_EMOJI" :key="e" class="ce" :class="{ on: ctx.node.emoji === e }" @click="ctxRun((n) => setEmoji(n!, e))">{{ e }}</button>
+            <button class="ce more" title="Все эмодзи — с поиском" @click="moreEmoji"><Icon name="more" :size="12" /></button>
           </div>
           <div class="csep"></div>
           <button class="danger" @click="ctxRun((n) => remove(n!))"><Icon name="trash" :size="13" />Удалить</button>
@@ -1681,6 +1728,35 @@ mark {
 }
 .nctx .ccolors .cnone.on {
   border-color: var(--text-hi);
+}
+.nctx .cemo {
+  gap: 2px;
+}
+.nctx .ccolors .ce {
+  width: 22px;
+  height: 22px;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 14px;
+}
+.nctx .ccolors .ce.on {
+  box-shadow: 0 0 0 1.5px var(--text-hi);
+}
+.nctx .ccolors .ce.more {
+  color: var(--muted);
+}
+.nemo {
+  position: fixed;
+  z-index: 5000;
+}
+.crumbs .leaf {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* (an emoji is a bit wider than an icon: the name stays where the others are) */
+.fic.emo {
+  margin-left: 14px;
+  margin-right: -3px;
 }
 .nctx .csep {
   height: 1px;

@@ -11,6 +11,8 @@ export interface VaultNode {
   ctime: number
   /** A colour mark set by the user (the icon in the tree takes it). */
   color?: string
+  /** An emoji mark (shown instead of the icon; with the colour, on its tint). */
+  emoji?: string
   /** A board (.qboard), not a note. */
   board?: boolean
   /** Linked with (a note ↔ a board): the other one's path. */

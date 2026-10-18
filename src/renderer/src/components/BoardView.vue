@@ -50,10 +50,11 @@ import { draggedImageUrl, hasImages, imageUrl, takeImages } from '../lib/noteboo
  * and its grid; a minimap; undo / redo (kept per board while the app runs); clear; PNG export.
  * The visible area is the tablet's "Qvarch canvas".
  */
-const props = defineProps<{ path: string; text: string }>()
+/** `preview`: only shown (a board inside a note) — no tools, no input, always the whole board in view. */
+const props = defineProps<{ path: string; text: string; preview?: boolean }>()
 const emit = defineEmits<{ change: [text: string]; info: [text: string]; warn: [text: string] }>()
 
-useTabletLive()
+if (!props.preview) useTabletLive()
 const { state: tablet } = useTablet()
 
 // ---------- the board & its file; the history lives outside (kept when the board is left) ----------
@@ -71,6 +72,7 @@ watch(
     // changed outside (another pane, another editor): take it, the history no longer applies
     lastJson = t
     board.value = parseBoard(t)
+    if (props.preview) fit()
     hist.undo.length = 0
     hist.redo.length = 0
     sel.value = new Set()
@@ -257,7 +259,8 @@ const lv = ref<HTMLCanvasElement>()
 const mm = ref<HTMLCanvasElement>()
 const W = ref(1)
 const H = ref(1)
-const canvasTarget = useTabletCanvas(wrap)
+// a preview in a note is no tablet surface
+const canvasTarget = useTabletCanvas(props.preview ? ref<HTMLElement>() : wrap)
 const viewKey = () => `qa.board.view:${props.path}`
 type View = { x: number; y: number; z: number }
 const view = ref<View>()
@@ -272,6 +275,7 @@ function readView(): View | undefined {
 let viewTimer: ReturnType<typeof setTimeout> | undefined
 watch(view, (v) => {
   clearTimeout(viewTimer)
+  if (props.preview) return schedule()
   viewTimer = setTimeout(() => {
     try {
       if (v) localStorage.setItem(viewKey(), JSON.stringify(v))
@@ -1415,7 +1419,8 @@ function resize(): void {
     mm.value.width = MM_W * devicePixelRatio
     mm.value.height = MM_H * devicePixelRatio
   }
-  if (!view.value) {
+  if (props.preview) fit()
+  else if (!view.value) {
     view.value = readView()
     if (!view.value) fit()
   }
@@ -1496,6 +1501,23 @@ const GRIDS: Array<{ id: GridKind; label: string }> = [
 ]
 
 // ---------- export ----------
+/** The whole board as PNG (its pictures loaded first); undefined — the board is empty. */
+async function pngBytes(): Promise<Uint8Array | undefined> {
+  await Promise.all(board.value.items.flatMap((i) => (i.type === 'image' ? [pic(i.src).ready] : [])))
+  const box = boardBox(board.value.items)
+  if (!box) return undefined
+  const pad = 32
+  const w = Math.ceil(box.x1 - box.x0 + pad * 2)
+  const h = Math.ceil(box.y1 - box.y0 + pad * 2)
+  const scale = Math.min(2, 8000 / Math.max(w, h))
+  const c = document.createElement('canvas')
+  c.width = Math.round(w * scale)
+  c.height = Math.round(h * scale)
+  paintBoard(c.getContext('2d')!, board.value, board.value.items, { x: box.x0 - pad, y: box.y0 - pad, z: 1 }, w, h, scale)
+  const blob = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/png'))
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : undefined
+}
+defineExpose({ pngBytes })
 async function exportPng(): Promise<void> {
   await Promise.all(board.value.items.flatMap((i) => (i.type === 'image' ? [pic(i.src).ready] : [])))
   const box = boardBox(board.value.items)
@@ -1530,7 +1552,7 @@ const cursor = computed(() => {
 
 <template>
   <div class="bd">
-    <div class="bar">
+    <div v-if="!props.preview" class="bar">
       <span class="tools">
         <button :class="{ on: tp.tool === 'select' }" title="Выделение (V): рамка или клик; тянуть — перенести, углы — масштаб, кружок — поворот, Delete — удалить" @click="tp.tool = 'select'"><Icon name="pointer" :size="15" /></button>
         <button :class="{ on: tp.tool === 'pen' }" title="Перо (P)" @click="tp.tool = 'pen'"><Icon name="pencil" :size="15" /></button>
@@ -1575,7 +1597,11 @@ const cursor = computed(() => {
       <button class="tbtn" title="Сохранить картинкой (PNG)" @click="exportPng"><Icon name="download" :size="15" /><span class="lbl">PNG</span></button>
     </div>
 
-    <div ref="wrap" class="sheet" :class="{ dropping }" tabindex="0" :style="{ cursor }" @wheel="onWheel" @keydown="onKey" @keyup="onKeyUp" @contextmenu.prevent @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+    <div v-if="props.preview" ref="wrap" class="sheet preview">
+      <canvas ref="cv"></canvas>
+      <canvas ref="lv"></canvas>
+    </div>
+    <div v-else ref="wrap" class="sheet" :class="{ dropping }" tabindex="0" :style="{ cursor }" @wheel="onWheel" @keydown="onKey" @keyup="onKeyUp" @contextmenu.prevent @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
       <input ref="imgInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple hidden @change="onImagesPicked" />
       <canvas ref="cv"></canvas>
       <canvas ref="lv" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onLeave"></canvas>

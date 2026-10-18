@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, createApp, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type App } from 'vue'
+import { computed, createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type App } from 'vue'
 import ThinkingOrb from './ThinkingOrb.vue'
 import Icon, { iconSvg } from './Icon.vue'
-import { EditorSelection, EditorState, Prec, type Range } from '@codemirror/state'
+import { EditorSelection, EditorState, Prec, StateField, Transaction, type Range } from '@codemirror/state'
 import {
   Decoration,
   EditorView,
@@ -19,7 +19,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { codeFolding, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language'
 import { CODE_LANGUAGES, FENCE_PICK, fenceLang, FORMATTABLE, formatCode, indentFold } from '../lib/codeblocks'
-import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
+import { autocompletion, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
 import { AUDIO_EMBED, IMAGE_EMBED, imageEmbed } from '@shared/vault'
@@ -28,14 +28,22 @@ import { durText, eventLink, jiraLink, parseNoteLink, periodText, pickGroups, st
 import type { JiraIssue } from '@shared/jira'
 import { eventOf, events, eventsNow, eventsTick, issueOf, jiraSite, kindOf } from '../lib/noteEvents'
 import { todayKey } from '../lib/today'
+import { boardMd, workMd, calloutMd, chartMd, findBlocks, mermaidMd, NEW_CHART, NEW_MERMAID, newTable, tableMd, TOC_MD, toggleMd, type BlockKind } from '@shared/noteBlocks'
+import NoteBlockHost from './blocks/NoteBlockHost.vue'
+import BlockRecording from './blocks/BlockRecording.vue'
+import { tree } from '../lib/notebook'
+import { StateEffect } from '@codemirror/state'
+import { matchCmds, pickerMode, type CmdId, type NoteCmd } from '../lib/noteCommands'
+import { loadEmoji, searchEmoji, useEmoji, type Emoji } from '../lib/emoji'
 
 /**
  * The notebook's editor (CodeMirror 6), like Obsidian's Live Preview: what is finished reads as the result —
  * headings, bold, links, lists, checkboxes, quotes — and the Markdown signs show only where the cursor is.
  * A recording line is a player; [[a link]] opens that note.
  */
-const props = defineProps<{ text: string }>()
-const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string, at: { from: number; to: number }]; exitUp: []; warn: [text: string] }>()
+/** `rec`: a recording into this note is going on (its place is shown in the text). */
+const props = defineProps<{ text: string; rec?: { sec: number; level: number } }>()
+const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string, at: { from: number; to: number }]; exitUp: []; warn: [text: string]; record: []; pickImage: []; stopRec: [] }>()
 
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
@@ -626,7 +634,302 @@ const hide = Decoration.replace({})
 const bullet = Decoration.replace({ widget: new BulletWidget() })
 const rule = Decoration.replace({ widget: new RuleWidget() })
 
+// ---------- components: a table, a chart, a diagram, a callout, a fold, the contents ----------
+interface CompRange {
+  kind: BlockKind
+  from: number
+  to: number
+  src: string
+}
+/** The headings of a note (for its contents): outside code fences. */
+function headingsOf(state: EditorState): Array<{ level: number; text: string; pos: number }> {
+  const out: Array<{ level: number; text: string; pos: number }> = []
+  let fence = ''
+  for (let no = 1; no <= state.doc.lines; no++) {
+    const l = state.doc.line(no)
+    const f = /^\s*(`{3,}|~{3,})/.exec(l.text)
+    if (f) {
+      if (!fence) fence = f[1]
+      else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = ''
+      continue
+    }
+    const m = !fence && /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l.text)
+    if (m) out.push({ level: m[1].length, text: m[2], pos: l.from })
+  }
+  return out
+}
+/** A component just put in by «@»: its first field takes the focus. */
+let focusSrc = ''
+class CompWidget extends WidgetType {
+  constructor(
+    readonly kind: BlockKind,
+    readonly src: string,
+    /** The contents' headings (JSON) — the only outside thing a component shows. */
+    readonly extra: string,
+  ) {
+    super()
+  }
+  eq(o: CompWidget): boolean {
+    return o.kind === this.kind && o.src === this.src && o.extra === this.extra
+  }
+  get estimatedHeight(): number {
+    const n = this.src.split('\n').length
+    return this.kind === 'audio' ? 48 : this.kind === 'image' ? 320 : this.kind === 'board' ? 440 : this.kind === 'table' ? 24 + n * 34 : this.kind === 'chart' ? 400 : this.kind === 'mermaid' ? 300 : this.kind === 'toc' ? 60 + n * 26 : 40 + n * 24
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const dom = document.createElement('div')
+    dom.className = 'cm-comp'
+    const autofocus = !!focusSrc && focusSrc === this.src
+    if (autofocus) focusSrc = ''
+    const props = reactive({
+      kind: this.kind,
+      src: this.src,
+      headings: this.extra ? (JSON.parse(this.extra) as Array<{ level: number; text: string; pos: number }>) : [],
+      autofocus,
+      onChange: (src: string) => compReplace(view, dom, src),
+      onRemove: () => compRemove(view, dom),
+      onGo: (pos: number) => {
+        view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 60 }) })
+        view.focus()
+      },
+      onExit: (dir: 1 | -1) => compExit(view, dom, dir),
+      onDrag: (e: PointerEvent) => compDrag(view, dom, e),
+      onDuplicate: () => compDuplicate(view, dom),
+      onTranscribe: (rel: string) => emit('transcribe', rel),
+      onDropAudio: (rel: string) => emit('dropAudio', rel),
+    })
+    const app = createApp({ render: () => h(NoteBlockHost, props) })
+    app.mount(dom)
+    // a component grows (a row added, a picture drawn): the editor measures again
+    const ro = new ResizeObserver(() => view.requestMeasure())
+    ro.observe(dom)
+    ;(dom as CompDom)._qa = { app, props, ro }
+    return dom
+  }
+  updateDOM(dom: HTMLElement): boolean {
+    const q = (dom as CompDom)._qa
+    if (!q || q.props.kind !== this.kind) return false
+    q.props.src = this.src
+    q.props.headings = this.extra ? JSON.parse(this.extra) : []
+    return true
+  }
+  destroy(dom: HTMLElement): void {
+    const q = (dom as CompDom)._qa
+    q?.ro.disconnect()
+    q?.app.unmount()
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+type CompDom = HTMLElement & { _qa?: { app: App; props: { kind: BlockKind; src: string; headings: unknown }; ro: ResizeObserver } }
+function buildComps(state: EditorState): { ranges: CompRange[]; deco: DecorationSet } {
+  const found = findBlocks(state.doc.toString().split('\n'))
+  const heads = found.some((b) => b.kind === 'toc') ? JSON.stringify(headingsOf(state)) : ''
+  const ranges = found.map((b) => ({ kind: b.kind, from: state.doc.line(b.line0).from, to: state.doc.line(b.line1).to, src: b.src }))
+  return { ranges, deco: Decoration.set(ranges.map((r) => Decoration.replace({ widget: new CompWidget(r.kind, r.src, r.kind === 'toc' ? heads : ''), block: true }).range(r.from, r.to))) }
+}
+const compField = StateField.define<{ ranges: CompRange[]; deco: DecorationSet }>({
+  create: buildComps,
+  update: (v, tr) => (tr.docChanged ? buildComps(tr.state) : v),
+  provide: (f) => [EditorView.decorations.from(f, (v) => v.deco), EditorView.atomicRanges.of((view) => view.state.field(f).deco)],
+})
+function compAt(view: EditorView, dom: HTMLElement): CompRange | undefined {
+  let pos: number
+  try {
+    pos = view.posAtDOM(dom)
+  } catch {
+    return undefined
+  }
+  const rs = view.state.field(compField).ranges
+  return rs.find((r) => r.from === pos) ?? rs.find((r) => pos >= r.from && pos <= r.to)
+}
+function compReplace(view: EditorView, dom: HTMLElement, src: string): void {
+  const r = compAt(view, dom)
+  if (!r || r.src === src) return
+  view.dispatch({ changes: { from: r.from, to: r.to, insert: src }, annotations: Transaction.userEvent.of('input.component') })
+}
+// ---------- a recording going on: shown where it will be ----------
+const recUi = reactive({ sec: 0, level: 0, onStop: () => emit('stopRec') })
+watch(
+  () => props.rec,
+  (r) => {
+    recUi.sec = r?.sec ?? 0
+    recUi.level = r?.level ?? 0
+  },
+)
+class RecWidget extends WidgetType {
+  eq(): boolean {
+    return true
+  }
+  toDOM(): HTMLElement {
+    const dom = document.createElement('div')
+    dom.className = 'cm-comp cm-rec'
+    const app = createApp({ render: () => h(BlockRecording, recUi) })
+    app.mount(dom)
+    ;(dom as HTMLElement & { _app?: App })._app = app
+    return dom
+  }
+  destroy(dom: HTMLElement): void {
+    ;(dom as HTMLElement & { _app?: App })._app?.unmount()
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+const setRec = StateEffect.define<number | null>()
+const recField = StateField.define<number | null>({
+  create: () => null,
+  update: (v, tr) => {
+    for (const e of tr.effects) if (e.is(setRec)) return e.value
+    return v === null ? null : tr.changes.mapPos(v, 1)
+  },
+  provide: (f) => EditorView.decorations.from(f, (pos) => (pos === null ? Decoration.none : Decoration.set([Decoration.widget({ widget: new RecWidget(), block: true, side: 1 }).range(pos)]))),
+})
+/** What goes with a component taken out: its lines, and one of two blank lines it leaves next to each other. */
+function cutOf(view: EditorView, r: CompRange): { from: number; to: number } {
+  const doc = view.state.doc
+  const len = doc.length
+  if (r.to >= len) return { from: Math.max(0, r.from - 1), to: r.to }
+  const cut = { from: r.from, to: r.to + 1 }
+  const prevBlank = r.from > 0 && !doc.lineAt(r.from - 1).text.trim()
+  const after = r.to + 1 <= len ? doc.lineAt(r.to + 1) : undefined
+  if (prevBlank && after && !after.text.trim() && after.to < len) cut.to = after.to + 1
+  return cut
+}
+function compRemove(view: EditorView, dom: HTMLElement): void {
+  const r = compAt(view, dom)
+  if (!r) return
+  const { from, to } = cutOf(view, r)
+  view.dispatch({ changes: { from, to }, selection: { anchor: from }, annotations: Transaction.userEvent.of('delete.component') })
+  view.focus()
+}
+function compDuplicate(view: EditorView, dom: HTMLElement): void {
+  const r = compAt(view, dom)
+  if (!r) return
+  view.dispatch({ changes: { from: r.to, insert: `\n\n${r.src}` }, annotations: Transaction.userEvent.of('input.component') })
+}
+/**
+ * A component dragged by its handle: a line shows where it goes (between lines, never inside another
+ * component); dropped — it moves there (one undo step).
+ */
+function compDrag(view: EditorView, dom: HTMLElement, e0: PointerEvent): void {
+  const r = compAt(view, dom)
+  if (!r) return
+  const line = document.createElement('div')
+  line.className = 'cm-comp-drop'
+  document.body.append(line)
+  const ghost = document.createElement('div')
+  ghost.className = 'cm-comp-ghost'
+  ghost.textContent = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска' }[r.kind]
+  document.body.append(ghost)
+  dom.classList.add('cm-comp-moving')
+  let target: number | undefined
+  const content = view.contentDOM.getBoundingClientRect()
+  const place = (x: number, y: number) => {
+    ghost.style.left = `${x + 14}px`
+    ghost.style.top = `${y + 10}px`
+    const pos = view.posAtCoords({ x: content.left + 40, y }, false)
+    const l = view.state.doc.lineAt(pos)
+    const box = view.coordsAtPos(l.from)
+    const below = box ? y > (box.top + box.bottom) / 2 : false
+    let at = below ? Math.min(view.state.doc.length, l.to + 1) : l.from
+    // never inside a component: before or after it, whichever is nearer
+    const inside = view.state.field(compField).ranges.find((c) => at > c.from && at <= c.to)
+    if (inside) {
+      const a = view.coordsAtPos(inside.from)
+      const b = view.coordsAtPos(inside.to)
+      at = a && b && y > (a.top + b.bottom) / 2 ? Math.min(view.state.doc.length, inside.to + 1) : inside.from
+    }
+    target = at === r.from || at === r.to + 1 || (at > r.from && at <= r.to) ? undefined : at
+    const c = view.coordsAtPos(at === view.state.doc.length && at > 0 && view.state.sliceDoc(at - 1, at) !== '\n' ? at : at, 1)
+    line.style.display = target === undefined || !c ? 'none' : 'block'
+    if (c) {
+      line.style.left = `${content.left}px`
+      line.style.width = `${content.width}px`
+      line.style.top = `${(at >= view.state.doc.length && at > view.state.doc.lineAt(at).from ? c.bottom : c.top) - 1}px`
+    }
+  }
+  place(e0.clientX, e0.clientY)
+  const move = (ev: PointerEvent) => place(ev.clientX, ev.clientY)
+  const up = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('keydown', esc, true)
+    line.remove()
+    ghost.remove()
+    dom.classList.remove('cm-comp-moving')
+    if (target === undefined) return
+    const len = view.state.doc.length
+    const cut = cutOf(view, r)
+    // the place is in what is cut out (the blank line after it): just before the cut
+    if (target > cut.from && target < cut.to) target = cut.from
+    if (target === cut.from && cut.from === r.from) return
+    const at = target
+    // blank lines around it where text is next to it (a line right after a callout / a table would join it in Markdown)
+    const doc = view.state.doc
+    const lineAt = at >= len ? doc.line(doc.lines) : doc.lineAt(at)
+    const prevText = at >= len ? lineAt.text : lineAt.number > 1 ? doc.line(lineAt.number - 1).text : ''
+    const nextText = at >= len ? '' : lineAt.text
+    const ins = at >= len && view.state.sliceDoc(len - 1, len) !== '\n' ? `\n\n${r.src}` : `${prevText.trim() && at < len ? '\n' : ''}${r.src}\n${nextText.trim() ? '\n' : ''}`
+    view.dispatch({ changes: [{ ...cut, insert: '' }, { from: at, insert: ins }], annotations: Transaction.userEvent.of('move.component'), scrollIntoView: true })
+  }
+  const esc = (ev: KeyboardEvent) => {
+    if (ev.key !== 'Escape') return
+    target = undefined
+    up()
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('keydown', esc, true)
+}
+/** Out of a component with the keys: the line after (made when there is none) / the line before. */
+function compExit(view: EditorView, dom: HTMLElement, dir: 1 | -1): void {
+  const r = compAt(view, dom)
+  if (!r) return
+  const len = view.state.doc.length
+  if (dir === 1) {
+    if (r.to >= len) view.dispatch({ changes: { from: len, insert: '\n' }, selection: { anchor: len + 1 }, annotations: Transaction.userEvent.of('input.component') })
+    else view.dispatch({ selection: { anchor: r.to + 1 }, scrollIntoView: true })
+  } else if (r.from === 0) view.dispatch({ changes: { from: 0, insert: '\n' }, selection: { anchor: 0 }, annotations: Transaction.userEvent.of('input.component') })
+  else view.dispatch({ selection: { anchor: r.from - 1 }, scrollIntoView: true })
+  view.focus()
+}
+/**
+ * Typing at a component's edge goes onto a line of its own (not into the table's last row); Backspace / Delete
+ * that would glue a text line onto a component do nothing (an empty line still goes).
+ */
+const compGuard = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || tr.isUserEvent('input.component') || tr.isUserEvent('delete.component') || tr.isUserEvent('move.component') || !(tr.isUserEvent('input') || tr.isUserEvent('delete'))) return tr
+  const ranges = tr.startState.field(compField, false)?.ranges
+  if (!ranges?.length) return tr
+  const doc = tr.startState.doc
+  let fix: { from: number; insert: string } | undefined
+  let block = false
+  let count = 0
+  tr.changes.iterChanges((fA, tA, _fB, _tB, ins) => {
+    count++
+    const text = ins.toString()
+    for (const r of ranges) {
+      if (fA === tA && text) {
+        if (fA === r.to && !text.startsWith('\n')) fix = { from: fA, insert: `\n${text}` }
+        else if (fA === r.from && !text.endsWith('\n')) fix = { from: fA, insert: `${text}\n` }
+      } else if (!text) {
+        // the line break after / before a component, its neighbour line not empty
+        if (fA === r.to && tA === r.to + 1 && doc.lineAt(tA).length) block = true
+        if (tA === r.from && fA === r.from - 1 && doc.lineAt(fA).length) block = true
+      }
+    }
+  })
+  if (count !== 1) return tr
+  if (block) return []
+  if (fix) return { changes: fix, selection: { anchor: fix.from + fix.insert.length - (fix.insert.endsWith('\n') && !fix.insert.startsWith('\n') ? 1 : 0) }, userEvent: 'input', scrollIntoView: true }
+  return tr
+})
+
 // ---------- live preview ----------
+const EMOJI = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*/gu
+const EMOJI_LINE = /^\s*(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*\s*){1,3}$/u
 const WIKI = /\[\[([^\]\n]+)\]\]/g
 function decorate(v: EditorView): DecorationSet {
   const s = v.state
@@ -666,7 +969,11 @@ function decorate(v: EditorView): DecorationSet {
     if (cur) blocks.push({ open: cur.open, from: s.doc.line(cur.open).from, to: s.doc.length })
   }
   const inCode = (pos: number) => blocks.some((b) => pos >= b.from && pos <= b.to)
+  // the components draw themselves
+  const comps = s.field(compField, false)?.ranges ?? []
+  const inComp = (pos: number) => comps.some((c) => pos >= c.from && pos <= c.to)
   for (const b of blocks) {
+    if (inComp(b.from)) continue
     const last = b.close ?? s.doc.lineAt(b.to).number
     const vis = v.visibleRanges.some((r) => r.from <= b.to && r.to >= b.from)
     if (!vis) continue
@@ -695,6 +1002,7 @@ function decorate(v: EditorView): DecorationSet {
       from,
       to,
       enter: (n) => {
+        if (inComp(n.from)) return false
         // the parser's code (it may run past our block — an indented closing fence): plain text outside our blocks
         if (n.name === 'FencedCode' || n.name === 'CodeBlock') {
           for (let p = n.from; p <= n.to; ) {
@@ -797,7 +1105,7 @@ function decorate(v: EditorView): DecorationSet {
       const line = lineOf(pos)
       const m = line.text.match(AUDIO_EMBED)
       const im = line.text.match(IMAGE_EMBED)
-      if (inCode(line.from)) {
+      if (inCode(line.from) || inComp(line.from)) {
         // code — as it is
       } else if (im) {
         // the picture; with the cursor on its line — its text, and the picture under it
@@ -818,6 +1126,13 @@ function decorate(v: EditorView): DecorationSet {
             out.push(Decoration.mark({ class: 'cm-wiki', attributes: { 'data-wiki': w[1].split('|')[0] } }).range(label ? a + 2 + w[1].indexOf('|') + 1 : a + 2, b - 2))
             out.push(hide.range(b - 2, b))
           }
+        }
+        // emoji: a bit bigger than the text; up to three alone on a line — big
+        if (/\p{Extended_Pictographic}/u.test(line.text)) {
+          const big = EMOJI_LINE.test(line.text)
+          EMOJI.lastIndex = 0
+          let em: RegExpExecArray | null
+          while ((em = EMOJI.exec(line.text))) out.push(Decoration.mark({ class: big ? 'cm-emoji big' : 'cm-emoji' }).range(line.from + em.index, line.from + em.index + em[0].length))
         }
       }
       pos = line.to + 1
@@ -935,13 +1250,56 @@ watch(
     }, 220)
   },
 )
-type PickRow = { head: string; more?: number } | { ev: EventRef } | { jira: JiraIssue }
+type PickRow = { head: string; more?: number } | { cmd: NoteCmd } | { emojis: Emoji[] } | { board: string } | { ev: EventRef } | { jira: JiraIssue }
+/** Every board of the notebook (its path). */
+function allBoards(): string[] {
+  const out: string[] = []
+  const walk = (ns: typeof tree.value) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : n.board && out.push(n.path)))
+  walk(tree.value)
+  return out
+}
+const boardName = (p: string) => (p.split('/').pop() ?? p).replace(/\.qboard$/i, '')
+const boardDir = (p: string) => p.split('/').slice(0, -1).join(' / ')
+/** The boards a query names (all — for an empty one). */
+function boardsFor(q: string): string[] {
+  const w = q.toLowerCase().split(/\s+/).filter(Boolean)
+  return allBoards().filter((p) => w.every((x) => p.toLowerCase().includes(x)))
+}
+const stripIdx = ref(0)
+/** «@эмодзи …» / «@таблица»: the picker of emoji / of a table's size. */
+const mode = computed(() => (picker.value ? pickerMode(picker.value.query) : undefined))
 const pickRows = computed<PickRow[]>(() => {
   void eventsTick.value
   const p = picker.value
   if (!p) return []
-  const g = pickGroups(events.value, p.query, chipNow.value, todayKey.value)
   const out: PickRow[] = []
+  // «@доска …»: the boards only
+  if (mode.value?.mode === 'board') {
+    const bs = boardsFor(mode.value.q)
+    out.push({ head: bs.length ? 'Доски' : 'Досок не найдено' })
+    for (const board of bs.slice(0, 50)) out.push({ board })
+    return out
+  }
+  const g = pickGroups(events.value, p.query, chipNow.value, todayKey.value)
+  const cmds = matchCmds(p.query)
+  if (cmds.length) {
+    out.push({ head: 'Вставить' })
+    for (const cmd of cmds) out.push({ cmd })
+  }
+  // one search through everything: emoji and boards by name come right here too
+  const q = p.query.trim()
+  if (q.length >= 2) {
+    const em = searchEmoji(emojiAll.value, q, 12)
+    if (em.length) {
+      out.push({ head: 'Эмодзи' })
+      out.push({ emojis: em })
+    }
+    const bs = boardsFor(q).slice(0, 5)
+    if (bs.length) {
+      out.push({ head: 'Доски' })
+      for (const board of bs) out.push({ board })
+    }
+  }
   const group = (head: string, list: EventRef[], more?: number) => {
     if (!list.length) return
     out.push({ head, more })
@@ -962,17 +1320,137 @@ function pickAt(i: number): void {
   const r = pickable.value[i]
   const p = picker.value
   if (!r || !p || !view) return
+  if ('cmd' in r) return runCmd(r.cmd.id)
+  if ('emojis' in r) return pickEmoji(r.emojis[Math.min(stripIdx.value, r.emojis.length - 1)])
+  if ('board' in r) return insertComp(boardMd(r.board))
   const ins = 'ev' in r ? eventLink(r.ev) : 'jira' in r ? jiraLink(r.jira.key, r.jira.summary) : ''
   view.dispatch({ changes: { from: p.from, to: p.to, insert: `${ins} ` }, selection: { anchor: p.from + ins.length + 1 }, scrollIntoView: true })
   closePicker()
   view.focus()
 }
+/** «@…» replaced by a text (the picker stays when asked: a mode of its own). */
+function replaceAt(text: string, keep = false): void {
+  const p = picker.value
+  if (!p || !view) return
+  view.dispatch({ changes: { from: p.from, to: p.to, insert: text }, selection: { anchor: p.from + text.length }, scrollIntoView: true })
+  if (keep) checkPicker(view)
+  else closePicker()
+  view.focus()
+}
+/** A component put on lines of its own where «@» was (the text around it stays on its own lines). */
+function insertComp(md: string): void {
+  const p = picker.value
+  if (!p || !view) return
+  const line = view.state.doc.lineAt(p.from)
+  const before = view.state.sliceDoc(line.from, p.from)
+  const after = view.state.sliceDoc(p.to, line.to)
+  const from = before.trim() ? p.from : line.from
+  const to = after.trim() ? p.to : line.to
+  // a blank line before (other Markdown editors want a table / a fence apart from a paragraph) and a line
+  // after it, always — to write on after the component (the rest of the line goes there)
+  const prev = line.number > 1 ? view.state.doc.line(line.number - 1).text : ''
+  const ins = `${before.trim() ? '\n\n' : prev.trim() ? '\n' : ''}${md}\n`
+  focusSrc = md
+  view.dispatch({ changes: { from, to, insert: ins }, selection: { anchor: from + ins.length }, annotations: Transaction.userEvent.of('input.component'), scrollIntoView: true })
+  closePicker()
+}
+const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+function runCmd(id: CmdId): void {
+  const p = picker.value
+  if (!p || !view) return
+  const latin = /^[a-z]/i.test(p.query.trim())
+  if (id === 'audio') {
+    replaceAt('')
+    emit('record')
+  } else if (id === 'image') {
+    replaceAt('')
+    emit('pickImage')
+  } else if (id === 'emoji') replaceAt(latin ? '@emoji ' : '@эмодзи ', true)
+  else if (id === 'table') replaceAt(latin ? '@table ' : '@таблица ', true)
+  else if (id === 'chart') insertComp(chartMd(structuredClone(NEW_CHART)))
+  else if (id === 'mermaid') insertComp(mermaidMd(NEW_MERMAID))
+  else if (id === 'callout') insertComp(calloutMd({ type: 'info', title: '', body: '' }))
+  else if (id === 'toggle') insertComp(toggleMd({ title: '', body: '', open: true }))
+  else if (id === 'toc') insertComp(TOC_MD)
+  else if (id === 'work') insertComp(workMd({ period: 'today', view: 'table' }))
+  else if (id === 'board') replaceAt(latin ? '@board ' : '@доска ', true)
+  else if (id === 'todo') replaceAt('- [ ] ')
+  else if (id === 'divider') insertComp('---')
+  else if (id === 'date') {
+    const d = new Date()
+    replaceAt(`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} `)
+  } else if (id === 'code') {
+    replaceAt('```')
+    startCompletion(view)
+  }
+}
+// ---------- emoji ----------
+const emojiAll = shallowRef<Emoji[]>([])
+watch(
+  () => !!picker.value,
+  (on) => on && !emojiAll.value.length && void loadEmoji().then((l) => (emojiAll.value = l)),
+)
+watch(pickIdx, () => (stripIdx.value = 0))
+const emojiShown = computed(() => (mode.value?.mode === 'emoji' ? searchEmoji(emojiAll.value, mode.value.q, 400) : []))
+const emojiIdx = ref(0)
+watch(() => (mode.value?.mode === 'emoji' ? mode.value.q : undefined), () => (emojiIdx.value = 0))
+const EMOJI_COLS = 10
+function pickEmoji(e: Emoji | undefined): void {
+  if (!e) return
+  useEmoji(e.u)
+  replaceAt(e.u)
+}
+// ---------- a table's size ----------
+const size = ref({ c: 3, r: 3 })
+watch(
+  () => (mode.value?.mode === 'table' ? mode.value : undefined),
+  (m) => m && (size.value = { c: Math.min(10, Math.max(1, m.c ?? size.value.c)), r: Math.min(12, Math.max(2, m.r ?? size.value.r)) }),
+)
+function pickTable(): void {
+  insertComp(tableMd(newTable(size.value.c, size.value.r)))
+}
+/** The arrows in a grid (emoji / sizes); false — not in a grid. */
+function gridMove(dx: number, dy: number): boolean {
+  const m = mode.value?.mode
+  if (m === 'emoji') {
+    const n = emojiShown.value.length
+    if (!n) return true
+    emojiIdx.value = Math.min(n - 1, Math.max(0, emojiIdx.value + dx + dy * EMOJI_COLS))
+    void nextTick(() => pickEl.value?.querySelector('.em.on')?.scrollIntoView({ block: 'nearest' }))
+    return true
+  }
+  if (m === 'table') {
+    size.value = { c: Math.min(10, Math.max(1, size.value.c + dx)), r: Math.min(12, Math.max(2, size.value.r + dy)) }
+    return true
+  }
+  // the emoji row of the list: ← → move along it
+  const row = pickable.value[pickIdx.value]
+  if (dx && row && 'emojis' in row) {
+    stripIdx.value = Math.min(row.emojis.length - 1, Math.max(0, stripIdx.value + dx))
+    return true
+  }
+  return false
+}
+function gridEnter(): boolean {
+  const m = mode.value?.mode
+  if (m === 'emoji') {
+    pickEmoji(emojiShown.value[emojiIdx.value])
+    return true
+  }
+  if (m === 'table') {
+    pickTable()
+    return true
+  }
+  return false
+}
 const pickerKeys = Prec.highest(
   keymap.of([
-    { key: 'ArrowDown', run: () => (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value + 1) % pickable.value.length), scrollPick(), true) : false) },
-    { key: 'ArrowUp', run: () => (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value - 1 + pickable.value.length) % pickable.value.length), scrollPick(), true) : false) },
-    { key: 'Enter', run: () => (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
-    { key: 'Tab', run: () => (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
+    { key: 'ArrowLeft', run: () => !!picker.value && gridMove(-1, 0) },
+    { key: 'ArrowRight', run: () => !!picker.value && gridMove(1, 0) },
+    { key: 'ArrowDown', run: () => (picker.value && gridMove(0, 1)) || (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value + 1) % pickable.value.length), scrollPick(), true) : false) },
+    { key: 'ArrowUp', run: () => (picker.value && gridMove(0, -1)) || (picker.value && pickable.value.length ? ((pickIdx.value = (pickIdx.value - 1 + pickable.value.length) % pickable.value.length), scrollPick(), true) : false) },
+    { key: 'Enter', run: () => (picker.value && gridEnter()) || (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
+    { key: 'Tab', run: () => (picker.value && gridEnter()) || (picker.value && pickable.value.length ? (pickAt(pickIdx.value), true) : false) },
     {
       key: 'Escape',
       run: () => {
@@ -986,6 +1464,7 @@ const pickerKeys = Prec.highest(
 )
 const pickEl = ref<HTMLElement>()
 function scrollPick(): void {
+  if (pickIdx.value === 0 && pickEl.value) pickEl.value.scrollTop = 0
   void nextTick(() => pickEl.value?.querySelector('.pk.on')?.scrollIntoView({ block: 'nearest' }))
 }
 const rowIndex = (r: PickRow) => pickable.value.indexOf(r)
@@ -1167,6 +1646,9 @@ onMounted(() => {
         clicks,
         pictures,
         pickerKeys,
+        compField,
+        compGuard,
+        recField,
         contextMenu,
         placeholder('Пишите… # заголовок, **жирный**, - список, - [ ] задача, [[другая заметка]]'),
         keymap.of([
@@ -1221,6 +1703,27 @@ watch(
 
 defineExpose({
   focus: () => view?.focus(),
+  /** A recording starts: its place is shown under the cursor's line (where the recording will go). */
+  startRecMarker(): void {
+    if (!view) return
+    view.dispatch({ effects: setRec.of(view.state.doc.lineAt(view.state.selection.main.head).to) })
+  },
+  /** The recording's place (null — none), the mark taken away. */
+  takeRecMarker(): number | null {
+    if (!view) return null
+    const pos = view.state.field(recField)
+    view.dispatch({ effects: setRec.of(null) })
+    return pos
+  },
+  /** A recording's line put at a place: on its empty line, else on a line of its own after it. */
+  insertAudioAt(pos: number, text: string): void {
+    if (!view) return
+    const line = view.state.doc.lineAt(Math.min(pos, view.state.doc.length))
+    const last = line.number === view.state.doc.lines
+    const ins = line.length ? `\n${text}${last ? '\n' : ''}` : `${text}${last ? '\n' : ''}`
+    const at = line.length ? line.to : line.from
+    view.dispatch({ changes: { from: at, insert: ins }, selection: { anchor: at + ins.length }, annotations: Transaction.userEvent.of('input.component'), scrollIntoView: true })
+  },
   /**
    * A piece of the text («В событие») replaced by the event made from it — where it still is (the text may have
    * moved meanwhile), else after the cursor's line.
@@ -1273,9 +1776,45 @@ defineExpose({
 <template>
   <div ref="host" class="mde"></div>
   <Teleport to="body">
-    <div v-if="picker" ref="pickEl" class="mde-pick" :class="{ up: picker.up }" :style="{ left: `${picker.x}px`, [picker.up ? 'bottom' : 'top']: `${picker.y}px` }" @mousedown.prevent>
+    <div v-if="picker && mode?.mode === 'emoji'" ref="pickEl" class="mde-pick" :style="{ left: `${picker.x}px`, [picker.up ? 'bottom' : 'top']: `${picker.y}px` }" @mousedown.prevent>
+      <div class="pk-h">Эмодзи<span class="pk-more">{{ mode.q ? `по запросу «${mode.q}»` : 'пишите название — по-русски или по-английски' }}</span></div>
+      <div class="em-grid">
+        <button v-for="(e, i) in emojiShown" :key="e.u" class="em" :class="{ on: i === emojiIdx }" :title="`${e.ru} · ${e.en}`" @mouseenter="emojiIdx = i" @click="pickEmoji(e)">{{ e.u }}</button>
+      </div>
+      <p v-if="!emojiShown.length" class="pk-empty">{{ emojiAll.length ? 'Такого эмодзи нет' : 'Загружаю эмодзи…' }}</p>
+      <div class="pk-f">{{ emojiShown[emojiIdx] ? `${emojiShown[emojiIdx].u}  ${emojiShown[emojiIdx].ru} · ${emojiShown[emojiIdx].en}` : 'Стрелки — выбрать · Enter — вставить · Esc — закрыть' }}</div>
+    </div>
+    <div v-else-if="picker && mode?.mode === 'table'" ref="pickEl" class="mde-pick narrow" :style="{ left: `${picker.x}px`, [picker.up ? 'bottom' : 'top']: `${picker.y}px` }" @mousedown.prevent>
+      <div class="pk-h">Таблица<span class="pk-more">наведите или стрелки, Enter — вставить</span></div>
+      <div class="ts-grid">
+        <template v-for="r in 12" :key="r">
+          <span v-for="c in 10" :key="c" class="ts" :class="{ on: c <= size.c && r <= size.r }" @mouseenter="size = { c, r: Math.max(2, r) }" @click="pickTable"></span>
+        </template>
+      </div>
+      <div class="ts-n">{{ size.c }} × {{ size.r }}</div>
+    </div>
+    <div v-else-if="picker" ref="pickEl" class="mde-pick" :class="{ up: picker.up }" :style="{ left: `${picker.x}px`, [picker.up ? 'bottom' : 'top']: `${picker.y}px` }" @mousedown.prevent>
       <template v-for="(r, i) in pickRows" :key="i">
         <div v-if="'head' in r" class="pk-h">{{ r.head }}<span v-if="r.more" class="pk-more">ещё {{ r.more }} — уточните поиск</span></div>
+        <button v-else-if="'cmd' in r" class="pk cmd" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)" @click="pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon :name="r.cmd.icon" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.cmd.title }}</span>
+            <span class="pk-m">{{ r.cmd.hint }}</span>
+          </span>
+          <span></span>
+        </button>
+        <div v-else-if="'emojis' in r" class="pk strip" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)">
+          <button v-for="(e, ei) in r.emojis" :key="e.u" class="em" :class="{ on: rowIndex(r) === pickIdx && ei === stripIdx }" :title="`${e.ru} · ${e.en}`" @mouseenter="stripIdx = ei" @click="pickEmoji(e)">{{ e.u }}</button>
+        </div>
+        <button v-else-if="'board' in r" class="pk" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)" @click="pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon name="presentation" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ boardName(r.board) }}</span>
+            <span class="pk-m">Доска{{ boardDir(r.board) ? ` · ${boardDir(r.board)}` : '' }} — покажется в заметке вживую</span>
+          </span>
+          <span></span>
+        </button>
         <button v-else-if="'ev' in r" class="pk" :class="{ on: rowIndex(r) === pickIdx }" @mouseenter="pickIdx = rowIndex(r)" @click="pickAt(rowIndex(r))">
           <span class="pk-ic" :style="{ color: kindColor(r.ev.kind), background: `color-mix(in srgb, ${kindColor(r.ev.kind)} 16%, transparent)` }"><Icon :name="kindIcon(r.ev.kind)" :size="14" /></span>
           <span class="pk-b">
@@ -1318,6 +1857,8 @@ defineExpose({
 .mde-pick {
   position: fixed;
   z-index: 5000;
+  /* a row scrolled to keeps clear of the sticky hint at the bottom */
+  scroll-padding: 6px 0 40px;
   display: flex;
   flex-direction: column;
   width: 480px;
@@ -1417,6 +1958,61 @@ defineExpose({
   background: rgba(248, 113, 113, 0.14);
   color: var(--down-fg);
 }
+.mde-pick.narrow {
+  width: auto;
+}
+.mde-pick .pk.cmd {
+  min-height: 38px;
+}
+.mde-pick .pk-ic.cmd {
+  background: var(--panel-3);
+  color: var(--text-2);
+}
+.mde-pick .em-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 40px);
+  gap: 2px;
+  padding: 2px 4px 6px;
+}
+.mde-pick .em {
+  width: 40px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 22px;
+  line-height: 1;
+}
+.mde-pick .em.on {
+  background: rgb(var(--accent-rgb) / 0.2);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.6);
+}
+.mde-pick .ts-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 20px);
+  gap: 3px;
+  padding: 6px 10px 4px;
+}
+.mde-pick .ts {
+  width: 20px;
+  height: 18px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mde-pick .ts.on {
+  border-color: rgb(var(--accent-rgb) / 0.8);
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+.mde-pick .ts-n {
+  padding: 6px 0 8px;
+  color: var(--text-hi);
+  font-family: var(--font-data);
+  font-size: 13px;
+  text-align: center;
+}
 .mde-pick .pk-empty {
   margin: 0;
   padding: 14px 10px;
@@ -1432,6 +2028,30 @@ defineExpose({
   background: var(--pop);
   color: var(--dim);
   font-size: 11px;
+}
+.cm-comp-drop {
+  position: fixed;
+  z-index: 4000;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.25);
+  pointer-events: none;
+}
+.cm-comp-ghost {
+  position: fixed;
+  z-index: 4001;
+  padding: 3px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--pop);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.cm-comp-moving {
+  opacity: 0.45;
 }
 .qa-lightbox {
   position: fixed;
@@ -1510,6 +2130,24 @@ defineExpose({
   max-width: 820px;
   margin: 0 auto;
   min-height: 0;
+}
+.mde :deep(.cm-emoji) {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 1.3em;
+  line-height: 1;
+}
+.mde :deep(.cm-emoji.big) {
+  font-size: 2.6em;
+}
+.mde-pick .pk.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-height: 44px;
+  padding: 3px 6px;
+}
+.mde :deep(.cm-comp) {
+  padding: 2px 0;
 }
 .mde :deep(.cm-ev) {
   --ev: var(--accent);

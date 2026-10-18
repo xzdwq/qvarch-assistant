@@ -34,7 +34,7 @@ export class Vault {
   private pending = new Set<string>()
   private timer?: NodeJS.Timeout
   /** User marks of notes / folders (path → colour), in vault/.meta.json. */
-  private meta: { colors: Record<string, string>; pairs: Record<string, string> }
+  private meta: { colors: Record<string, string>; pairs: Record<string, string>; emojis: Record<string, string> }
 
   constructor(dataRoot: string, private onChange: (paths: string[]) => void) {
     this.root = join(dataRoot, 'vault')
@@ -42,9 +42,9 @@ export class Vault {
     mkdirSync(this.root, { recursive: true })
     if (fresh) writeFileSync(join(this.root, 'Начало.md'), WELCOME, 'utf8')
     try {
-      this.meta = { colors: {}, pairs: {}, ...JSON.parse(readFileSync(join(this.root, '.meta.json'), 'utf8')) }
+      this.meta = { colors: {}, pairs: {}, emojis: {}, ...JSON.parse(readFileSync(join(this.root, '.meta.json'), 'utf8')) }
     } catch {
-      this.meta = { colors: {}, pairs: {} }
+      this.meta = { colors: {}, pairs: {}, emojis: {} }
     }
   }
   private saveMeta(): void {
@@ -57,6 +57,13 @@ export class Vault {
     this.abs(rel)
     if (color) this.meta.colors[rel] = color
     else delete this.meta.colors[rel]
+    this.saveMeta()
+  }
+  /** An emoji mark (undefined — none); it can stand together with the colour. */
+  setEmoji(rel: string, emoji?: string): void {
+    this.abs(rel)
+    if (emoji) this.meta.emojis[rel] = emoji
+    else delete this.meta.emojis[rel]
     this.saveMeta()
   }
   /**
@@ -92,13 +99,14 @@ export class Vault {
       if (nk && nv) pairs[nk] = nv
     }
     this.meta.pairs = pairs
-    for (const k of Object.keys(this.meta.colors)) {
-      if (k !== from && !k.startsWith(from + '/')) continue
-      const v = this.meta.colors[k]
-      delete this.meta.colors[k]
-      if (to !== undefined) this.meta.colors[to + k.slice(from.length)] = v
-      changed = true
-    }
+    for (const map of [this.meta.colors, this.meta.emojis])
+      for (const k of Object.keys(map)) {
+        if (k !== from && !k.startsWith(from + '/')) continue
+        const v = map[k]
+        delete map[k]
+        if (to !== undefined) map[to + k.slice(from.length)] = v
+        changed = true
+      }
     if (changed) this.saveMeta()
   }
 
@@ -134,10 +142,11 @@ export class Vault {
         }
         const rel = this.rel(file)
         const color = this.meta.colors[rel]
+        const emoji = this.meta.emojis[rel]
         const ctime = st.birthtimeMs || st.ctimeMs
-        if (st.isDirectory()) out.push({ path: rel, name, dir: true, mtime: st.mtimeMs, ctime, color, children: walk(file) })
-        else if (extname(name).toLowerCase() === '.md') out.push({ path: rel, name: name.slice(0, -3), dir: false, mtime: st.mtimeMs, ctime, color, pair: this.meta.pairs[rel] })
-        else if (extname(name).toLowerCase() === BOARD_EXT) out.push({ path: rel, name: name.slice(0, -BOARD_EXT.length), dir: false, mtime: st.mtimeMs, ctime, color, board: true, pair: this.meta.pairs[rel] })
+        if (st.isDirectory()) out.push({ path: rel, name, dir: true, mtime: st.mtimeMs, ctime, color, emoji, children: walk(file) })
+        else if (extname(name).toLowerCase() === '.md') out.push({ path: rel, name: name.slice(0, -3), dir: false, mtime: st.mtimeMs, ctime, color, emoji, pair: this.meta.pairs[rel] })
+        else if (extname(name).toLowerCase() === BOARD_EXT) out.push({ path: rel, name: name.slice(0, -BOARD_EXT.length), dir: false, mtime: st.mtimeMs, ctime, color, emoji, board: true, pair: this.meta.pairs[rel] })
       }
       // folders first, then by name (numbers in natural order)
       return out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name, 'ru', { numeric: true })))
