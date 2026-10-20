@@ -26,7 +26,7 @@ import { Vault } from './vault'
 import { remindAt, shiftBy, type Remind, type RepeatRule } from '../shared/repeat'
 import { isWhisperModel, titleFromTranscript, VOICE_PENDING } from '../shared/voice'
 import { keyTotals } from '../shared/board'
-import type { MyTaskStatus } from '../shared/jira'
+import type { JiraListQuery, MyTaskStatus } from '../shared/jira'
 import { Store } from './store'
 import { Tracker } from './tracker'
 import { createMainWindow, fixShortcut, Island, TITLEBAR_HEIGHT } from './windows'
@@ -889,7 +889,15 @@ function registerIpc(): void {
       })
   })
   ipcMain.handle(IPC.jiraTracked, () => keyTotals(store.listDays().map(spentDay)))
-  ipcMain.handle(IPC.jiraFind, (_e, q: string, offset: number, limit: number, mode?: string) => jira.find(String(q ?? ''), Number(offset) || 0, Number(limit) || 50, mode === 'pick' ? 'pick' : 'list'))
+  /** Every block of every day linked to a task (the planned ones too) — when a task was / will be worked on. */
+  ipcMain.handle(IPC.jiraWorked, () => {
+    const out: Record<string, Array<{ day: string; id: string; start: number; end: number }>> = {}
+    for (const day of store.listDays()) for (const e of store.day(day).entries) if (e.task?.key) (out[e.task.key] ??= []).push({ day, id: e.id, start: e.start, end: e.end })
+    return out
+  })
+  ipcMain.handle(IPC.jiraFind, (_e, q: string, offset: number, limit: number, mode?: string, query?: JiraListQuery) =>
+    jira.find(String(q ?? ''), Number(offset) || 0, Number(limit) || 50, mode === 'pick' ? 'pick' : 'list', query && typeof query === 'object' ? query : undefined),
+  )
   ipcMain.handle(IPC.jiraIssue, (_e, key: string) => jira.issue(String(key)))
   ipcMain.handle(IPC.jiraVersions, (_e, q: string, offset: number, limit: number) => jira.findVersions(String(q ?? ''), Number(offset) || 0, Number(limit) || 40))
   ipcMain.handle(IPC.jiraVersionIssues, (_e, id: string) => jira.versionIssues(String(id)))

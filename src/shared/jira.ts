@@ -8,6 +8,8 @@ export interface JiraIssue {
   project: { key: string; name: string }
   type: string
   priority?: string
+  /** Jira's id of the priority — the standard ones: 1 highest … 5 lowest. */
+  priorityId?: string
   /** YYYY-MM-DD */
   due?: string
   /** Original estimate, seconds. */
@@ -56,6 +58,8 @@ export interface JiraState {
   syncing: boolean
   syncedAt?: number
   error?: string
+  /** When the error came. */
+  errorAt?: number
   issues: JiraIssue[]
   /** Tasks picked by hand from the whole list. */
   starred: string[]
@@ -88,8 +92,74 @@ export function pickableTasks(s: Pick<JiraState, 'issues' | 'starred' | 'myStatu
   // every task that is not done; mine and starred first, then by due date and the latest change
   const top = (i: JiraIssue) => (i.mine || s.starred.includes(i.key) ? 0 : 1)
   return s.issues
-    .filter((i) => i.category !== 'done' && s.myStatus[i.key] !== 'done')
+    .filter((i) => i.category !== 'done')
     .sort((a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated)
+}
+
+/** How the task list is filtered and sorted (several values of one filter — any of them). */
+export interface JiraListQuery {
+  sort?: 'created' | 'due' | 'priority' | 'status' | 'updated'
+  /** Newest / latest / highest first (the default). */
+  desc?: boolean
+  statuses?: string[]
+  assignee?: Array<'mine' | 'other'>
+  priorities?: string[]
+  due?: Array<'late' | 'week' | 'set' | 'none'>
+}
+/** What the filters can offer: the statuses and priorities the open tasks have. */
+export interface JiraFacets {
+  statuses: string[]
+  priorities: string[]
+}
+
+const PRIORITY_NAMES: Record<string, number> = {
+  highest: 1, наивысший: 1, blocker: 1, critical: 1, критический: 1,
+  high: 2, высокий: 2, major: 2,
+  medium: 3, средний: 3, normal: 3, обычный: 3,
+  low: 4, низкий: 4, minor: 4,
+  lowest: 5, 'самый низкий': 5, trivial: 5, незначительный: 5,
+}
+/** 1 — the highest … 5 — the lowest (by a standard priority's name, else by Jira's id); 6 — none / unknown. */
+export function priorityRank(i: Pick<JiraIssue, 'priority' | 'priorityId'>): number {
+  const byName = i.priority ? PRIORITY_NAMES[i.priority.trim().toLowerCase()] : undefined
+  if (byName) return byName
+  const n = Number(i.priorityId)
+  return n >= 1 && n <= 5 ? n : 6
+}
+
+/** The tasks the list shows, in its order: by project, the chosen sort inside each (empty values last either way). */
+export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string): JiraIssue[] {
+  const week = new Date(`${today}T12:00:00`)
+  week.setDate(week.getDate() + 7)
+  const weekEnd = week.toLocaleDateString('sv-SE')
+  const dueOk = (i: JiraIssue) =>
+    !q.due?.length ||
+    q.due.some((d) => (d === 'none' ? !i.due : d === 'set' ? !!i.due : d === 'late' ? !!i.due && i.due < today : !!i.due && i.due >= today && i.due <= weekEnd))
+  const list = issues.filter(
+    (i) =>
+      (!q.statuses?.length || q.statuses.includes(i.status)) &&
+      (!q.assignee?.length || q.assignee.includes(i.mine ? 'mine' : 'other')) &&
+      (!q.priorities?.length || q.priorities.includes(i.priority ?? '')) &&
+      dueOk(i),
+  )
+  const dir = q.desc === false ? 1 : -1
+  const CAT = { new: 0, indeterminate: 1, done: 2 } as const
+  const cmp = (a: number | string | undefined, b: number | string | undefined) =>
+    a === undefined ? (b === undefined ? 0 : 1) : b === undefined ? -1 : (a < b ? -1 : a > b ? 1 : 0) * dir
+  const by = q.sort ?? 'created'
+  const key = (i: JiraIssue): number | string | undefined =>
+    by === 'created'
+      ? i.created
+      : by === 'updated'
+        ? i.updated
+        : by === 'due'
+          ? i.due
+          : by === 'priority'
+            ? priorityRank(i) === 6
+              ? undefined
+              : -priorityRank(i)
+            : `${CAT[i.category]}${i.status}`
+  return list.sort((a, b) => a.project.key.localeCompare(b.project.key) || cmp(key(a), key(b)) || b.updated - a.updated)
 }
 
 /** Board URLs / keys → project keys ("…/projects/DOS/boards/98" → "DOS"). */

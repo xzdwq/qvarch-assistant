@@ -207,7 +207,8 @@ const feed = computed<Row[]>(() => {
     if (hi > t) push(t, hi)
   }
   if (today) rows.push({ t: 'now', key: 'now', at: n })
-  return rows.sort((a, b) => a.at - b.at || (a.t === 'now' ? -1 : b.t === 'now' ? 1 : 0))
+  rows.sort((a, b) => a.at - b.at || (a.t === 'now' ? -1 : b.t === 'now' ? 1 : 0))
+  return feedOrder.value === 'desc' ? rows.reverse() : rows
 })
 const flash = ref<string>()
 // the notes the events are mentioned in
@@ -314,6 +315,8 @@ const remembered = <T extends string>(key: string, values: T[], def: T) => {
 const top = remembered<'week' | 'timeline'>('qa.work.top', ['timeline', 'week'], 'timeline')
 /** The day's list, or Заполнение (the period's sheet). */
 const feedTab = remembered<'list' | 'sheet'>('qa.work.feedTab', ['list', 'sheet'], 'list')
+/** The day's records: newest first (the default) or oldest first. */
+const feedOrder = remembered<'desc' | 'asc'>('qa.work.feedOrder', ['desc', 'asc'], 'desc')
 // a day / a block opened from elsewhere (the island, a report, a reminder): that day, the block picked
 watch(
   () => props.focus?.n,
@@ -480,6 +483,7 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
           <span v-if="feedTab === 'list'">{{ isToday ? 'Сегодня' : 'День' }} · {{ cur.entries.length }} {{ plural(cur.entries.length, 'запись', 'записи', 'записей') }}<template v-if="overlaps.length"> · <em class="ovc">{{ overlaps.length }} {{ plural(overlaps.length, 'пересечение', 'пересечения', 'пересечений') }}</em></template></span>
           <span v-else>Заполнение · {{ weekTitle }}</span>
           <span class="ftabs">
+            <button v-if="feedTab === 'list'" class="fsort" :title="feedOrder === 'desc' ? 'Сначала новые · нажмите — сначала старые' : 'Сначала старые · нажмите — сначала новые'" @click="feedOrder = feedOrder === 'desc' ? 'asc' : 'desc'"><Icon :name="feedOrder === 'desc' ? 'sortDesc' : 'sortAsc'" :size="13" /></button>
             <button :class="{ on: feedTab === 'list' }" title="Записи выбранного дня" @click="feedTab = 'list'">Записи</button>
             <button :class="{ on: feedTab === 'sheet' }" title="Табель периода: часы по задачам и дням" @click="feedTab = 'sheet'">Заполнение</button>
           </span>
@@ -942,6 +946,11 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
   background: transparent;
   color: var(--muted);
   font-size: 11.5px;
+}
+.ftabs .fsort {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
 }
 .ftabs button.on {
   border-color: rgb(var(--accent-rgb) / 0.6);

@@ -34,7 +34,7 @@ interface State {
   group: GroupBy
   color: 'kind' | 'task'
   /** Only the productive kinds (no lunch, break…) — as the calendar's button. */
-  productive?: boolean
+  onlyProd?: boolean
 }
 interface Saved {
   name: string
@@ -58,7 +58,7 @@ function writeJson(key: string, v: unknown): void {
     // not remembered — fine
   }
 }
-const DEFAULT: State = { period: 'week', anchor: today(), from: shiftDay(today(), -6), to: today(), filter: {}, group: 'kind', color: 'kind' }
+const DEFAULT: State = { period: 'week', anchor: today(), from: shiftDay(today(), -6), to: today(), filter: {}, group: 'kind', color: 'kind', onlyProd: true }
 const st = ref<State>({ ...DEFAULT, ...readJson<Partial<State>>(KEY, {}), anchor: today() })
 watch(st, (v) => writeJson(KEY, { ...v, anchor: undefined }), { deep: true })
 onNewDay((prev, next) => {
@@ -170,7 +170,7 @@ const all = computed<ReportItem[]>(() => {
   const now = Date.now()
   return days.value.flatMap((d) => d.entries.filter((e) => e.start < now).map((e) => ({ day: d.day, e: e.end > now ? { ...e, end: now } : e })))
 })
-const shownKind = (e: Entry) => !st.value.productive || isProductive(kinds.value, e.kind)
+const shownKind = (e: Entry) => !st.value.onlyProd || isProductive(kinds.value, e.kind)
 const items = computed(() => all.value.filter((i) => shownKind(i.e) && matches(i.e, st.value.filter)))
 
 /** The same length of time right before — to compare with. */
@@ -220,7 +220,7 @@ function saveView(): void {
   const name = newName.value.trim()
   if (!name) return
   const s = st.value
-  const state = { period: s.period, filter: JSON.parse(JSON.stringify(s.filter)) as ReportFilter, group: s.group, color: s.color, productive: !!s.productive, ...(s.period === 'custom' ? { from: s.from, to: s.to } : {}) }
+  const state = { period: s.period, filter: JSON.parse(JSON.stringify(s.filter)) as ReportFilter, group: s.group, color: s.color, onlyProd: !!s.onlyProd, ...(s.period === 'custom' ? { from: s.from, to: s.to } : {}) }
   saved.value = [...saved.value.filter((x) => x.name !== name), { name, state }]
   newName.value = ''
 }
@@ -415,7 +415,7 @@ function exportCsv(): void {
       </div>
       <span class="sp"></span>
       <div class="filters">
-        <button class="tog" :class="{ on: st.productive }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.productive = !st.productive">Продуктивные</button>
+        <button class="tog" :class="{ on: st.onlyProd }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.onlyProd = !st.onlyProd">Продуктивные</button>
         <FilterMenu v-model="fKinds" label="Вид" icon="tag" :options="kindOpts" />
         <FilterMenu v-model="fTasks" label="Задачи" icon="jira" :options="taskOpts" />
         <FilterMenu v-model="fType" label="Тип" icon="checkSquare" :options="TYPE_OPTS" title="Jira / свои / без задачи" />

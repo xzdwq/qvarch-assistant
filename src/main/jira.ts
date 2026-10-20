@@ -1,10 +1,28 @@
-import { safeStorage, shell } from 'electron'
+import { net, safeStorage, shell } from 'electron'
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
-import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from '../shared/jira'
+import type { JiraFacets, JiraIssue, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from '../shared/jira'
+import { listTasks, priorityRank } from '../shared/jira'
 import { adfToMarkdown } from '../shared/adf'
+
+/** A network failure in words (Chromium's net::ERR_… or Node's cause code). */
+export function netReason(e: unknown): string {
+  const err = e as { message?: string; cause?: { code?: string; message?: string } }
+  const raw = `${err?.cause?.code ?? ''} ${err?.message ?? ''} ${err?.cause?.message ?? ''}`
+  const known: Array<[RegExp, string]> = [
+    [/INTERNET_DISCONNECTED|NETWORK_CHANGED|ENETUNREACH/, 'нет сети'],
+    [/NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/, 'адрес не найден (DNS, VPN?)'],
+    [/TIMED_OUT|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/, 'сервер не ответил вовремя'],
+    [/CONNECTION_REFUSED|ECONNREFUSED/, 'соединение отклонено'],
+    [/CONNECTION_RESET|CONNECTION_CLOSED|ECONNRESET|UND_ERR_SOCKET/, 'соединение оборвалось'],
+    [/PROXY|TUNNEL/, 'ошибка прокси'],
+    [/CERT|SSL|UNABLE_TO_VERIFY|SELF_SIGNED/, 'сертификат не принят'],
+  ]
+  for (const [re, text] of known) if (re.test(raw)) return text
+  return (err?.cause?.message ?? err?.message ?? String(e)).trim() || 'неизвестная ошибка сети'
+}
 
 /**
  * Jira Cloud over OAuth 2.0 (3LO) with the user's own Atlassian app: sign-in in the browser, a one-off
@@ -62,6 +80,8 @@ export class Jira {
   private secrets: Secrets
   private syncing = false
   private error?: string
+  /** When the last error came (the list shows it beside the last good sync). */
+  private errorAt?: number
   private timer?: NodeJS.Timeout
   private server?: Server
 
@@ -81,12 +101,14 @@ export class Jira {
     return {
       configured: !!cfg.clientId && !!this.secrets.clientSecret,
       hasSecret: !!this.secrets.clientSecret,
-      connected: !!this.secrets.refreshToken && !!this.cache.cloudId,
+      // (QA_SNAP_JIRA — the pictures of development: the cached tasks without signing in)
+      connected: (!!this.secrets.refreshToken || (!!process.env.QA_SNAP && process.env.QA_SNAP_JIRA === '1')) && !!this.cache.cloudId,
       account: this.cache.account,
       siteUrl: this.cache.siteUrl,
       syncing: this.syncing,
       syncedAt: this.cache.syncedAt,
       error: this.error,
+      errorAt: this.error ? this.errorAt : undefined,
       // the windows get the list without the descriptions (they are asked for one task at a time)
       issues: this.lite(),
       starred: this.cache.starred,
@@ -153,10 +175,9 @@ export class Jira {
    * A page of the open tasks that match a search (key, title, labels, components, status, people, the
    * description) — by project, then due date and state; without the descriptions.
    */
-  find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list'): { items: JiraIssue[]; total: number } {
+  find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list', query?: JiraListQuery): { items: JiraIssue[]; total: number; facets: JiraFacets } {
     const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
     const ORDER = { indeterminate: 0, new: 1, done: 2 } as const
-    const my = this.cache.myStatus
     // picking: mine and starred first
     const top = (i: JiraIssue) => (i.mine || this.cache.starred.includes(i.key) ? 0 : 1)
     const hit = (i: JiraIssue) => {
@@ -164,15 +185,23 @@ export class Jira {
       const hay = `${i.key} ${i.summary} ${(i.labels ?? []).join(' ')} ${(i.components ?? []).join(' ')} ${i.status} ${i.assignee ?? ''} ${i.parent?.key ?? ''} ${i.description ?? ''}`.toLowerCase()
       return words.every((w) => hay.includes(w))
     }
-    const list = this.cache.issues
-      .filter((i) => i.category !== 'done' && my[i.key] !== 'done' && hit(i))
-      .sort(
-        mode === 'pick'
-          ? (a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated
-          : (a, b) => a.project.key.localeCompare(b.project.key) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || ORDER[a.category] - ORDER[b.category] || b.updated - a.updated,
-      )
+    const openOnes = this.cache.issues.filter((i) => i.category !== 'done')
+    const found = openOnes.filter(hit)
+    // the list: its filters and sort; picking: mine and starred first, then by due date
+    const list = query
+      ? listTasks(found, query, new Date().toLocaleDateString('sv-SE'))
+      : found.sort(
+          mode === 'pick'
+            ? (a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated
+            : (a, b) => a.project.key.localeCompare(b.project.key) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || ORDER[a.category] - ORDER[b.category] || b.updated - a.updated,
+        )
     const page = list.slice(Math.max(0, offset), Math.max(0, offset) + Math.min(200, Math.max(1, limit)))
-    return { items: page.map(({ description: _d, ...i }) => i), total: list.length }
+    const uniq = (xs: Array<string | undefined>) => [...new Set(xs.filter((x): x is string => !!x))]
+    const facets: JiraFacets = {
+      statuses: uniq(openOnes.map((i) => i.status)).sort((a, b) => a.localeCompare(b, 'ru')),
+      priorities: uniq(openOnes.map((i) => i.priority)).sort((a, b) => priorityRank({ priority: a, priorityId: openOnes.find((i) => i.priority === a)?.priorityId }) - priorityRank({ priority: b, priorityId: openOnes.find((i) => i.priority === b)?.priorityId })),
+    }
+    return { items: page.map(({ description: _d, ...i }) => i), total: list.length, facets }
   }
 
   private changed(): void {
@@ -306,7 +335,7 @@ export class Jira {
 
   /** Token endpoint: code exchange or refresh (refresh tokens rotate — the new one is kept). */
   private async token(body: Record<string, string>): Promise<void> {
-    const res = await fetch(`${AUTH}/oauth/token`, {
+    const res = await this.request(`${AUTH}/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: this.config().clientId, client_secret: this.secrets.clientSecret, ...body }),
@@ -330,8 +359,26 @@ export class Jira {
     return `${API}/ex/jira/${this.cache.cloudId}${path}`
   }
 
+  /**
+   * A request through Chromium's network (the system proxy and certificates — as the browser; Node's fetch knows
+   * neither and says only «fetch failed»). A network failure is tried once more a moment later, then its reason is told.
+   */
+  private async request(url: string, init: RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await net.fetch(url, init)
+      } catch (e) {
+        if (attempt < 1) {
+          await new Promise((r) => setTimeout(r, 2000))
+          continue
+        }
+        throw new Error(`Нет связи с ${new URL(url).host}: ${netReason(e)}`)
+      }
+    }
+  }
+
   private async api<T>(url: string, body?: unknown): Promise<T | undefined> {
-    const res = await fetch(url, {
+    const res = await this.request(url, {
       method: body ? 'POST' : 'GET',
       headers: { Authorization: `Bearer ${await this.accessToken()}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
@@ -372,6 +419,7 @@ export class Jira {
       project: { key: f.project?.key ?? key.split('-')[0], name: f.project?.name ?? '' },
       type: f.issuetype?.name ?? '',
       priority: f.priority?.name,
+      priorityId: f.priority?.id ? String(f.priority.id) : undefined,
       due: f.duedate ?? undefined,
       estimateSec: f.timeoriginalestimate ?? undefined,
       spentSec: f.timespent ?? undefined,
@@ -408,6 +456,8 @@ export class Jira {
       this.writeCache()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
+      this.errorAt = Date.now()
+      console.warn('[jira] sync:', this.error)
     } finally {
       this.syncing = false
       this.changed()

@@ -24,7 +24,7 @@ type Kind = 'event' | 'meeting' | 'call' | 'note' | 'plan'
 const KEY = 'qa.work.list'
 const st = reactive(read())
 function read() {
-  const d = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, productive: false }
+  const d = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, onlyProd: true }
   try {
     return { ...d, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
   } catch {
@@ -117,7 +117,7 @@ const items = computed<Item[]>(() => {
   const s = st.q.trim().toLowerCase()
   const out: Item[] = []
   const typeOk = (t: Kind) => !st.types.length || st.types.includes(t)
-  const kindOk = (k: string) => (!st.productive || isProductive(kinds.value, k)) && (!st.kinds.length || st.kinds.includes(k))
+  const kindOk = (k: string) => (!st.onlyProd || isProductive(kinds.value, k)) && (!st.kinds.length || st.kinds.includes(k))
   const taskOk = (task?: { key: string }) => st.task === 'any' || (st.task === 'with' ? !!task : !task)
   const textOk = (...xs: Array<string | undefined>) => !s || xs.some((x) => x?.toLowerCase().includes(s))
   for (const d of days.value) {
@@ -197,7 +197,7 @@ function exportCsv(): void {
         <button v-if="!hasToday" class="today" title="К сегодняшнему дню (тот же вид периода)" @click="goToday">Сегодня</button>
       </span>
       <DateRangePicker v-if="rangeOpen" :from="from" :to="to" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (st.period = 'custom'), (rangeOpen = false))" @close="rangeOpen = false" />
-      <button class="tog" :class="{ on: st.productive }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.productive = !st.productive">Продуктивные</button>
+      <button class="tog" :class="{ on: st.onlyProd }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.onlyProd = !st.onlyProd">Продуктивные</button>
       <FilterMenu v-model="st.types" label="Тип" icon="layers" :options="TYPES" />
       <FilterMenu v-model="st.kinds" label="Вид" icon="tag" :options="kindOpts" />
       <span class="seg">

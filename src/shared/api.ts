@@ -4,7 +4,7 @@ import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
-import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from './jira'
+import type { JiraFacets, JiraIssue, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi } from './browser'
 import type { PwBrowser } from './runbook'
@@ -164,8 +164,11 @@ export interface QaApi {
   calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'notes' | 'plan' | 'dayTasks'>>>
   /** Time per task key (Jira or own) over every day. */
   jiraTracked(): Promise<Record<string, number>>
+  /** Per task key: its blocks on the timeline (any day, the planned ones too). */
+  jiraWorked(): Promise<Record<string, Array<{ day: string; id: string; start: number; end: number }>>>
   /** A page of the open Jira tasks matching a search (no descriptions). */
-  jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick'): Promise<{ items: JiraIssue[]; total: number }>
+  /** `query` — the task list's filters and sort (without it: the old order — by project and due date / for picking). */
+  jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick', query?: JiraListQuery): Promise<{ items: JiraIssue[]; total: number; facets: JiraFacets }>
   /** Терминал: shells that live until the app quits. */
   termCreate(cwd?: string): Promise<TermSession>
   termWrite(id: string, data: string): void
@@ -401,6 +404,7 @@ export const IPC = {
   jiraStar: 'qa:jiraStar',
   jiraSetMyStatus: 'qa:jiraSetMyStatus',
   jiraTracked: 'qa:jiraTracked',
+  jiraWorked: 'qa:jiraWorked',
   jiraFind: 'qa:jiraFind',
   jiraIssue: 'qa:jiraIssue',
   jiraVersions: 'qa:jiraVersions',

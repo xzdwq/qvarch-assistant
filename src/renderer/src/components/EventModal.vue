@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Entry } from '@shared/types'
+import type { TaskRef } from '@shared/jira'
 import { MINUTE } from '@shared/timeline'
 import { useDay } from '../lib/useDay'
 import { todayKey } from '../lib/today'
 import EntryEditor, { type AddPrefs, type Draft } from './EntryEditor.vue'
 import Icon from './Icon.vue'
 
-/** "В событие": a new block for today in a window over everything, its text filled in. */
-const props = defineProps<{ text: string }>()
+/** "В событие" / «В работу»: a new block in a window over everything, its text (or a Jira task) filled in; today unless another date is picked in it. */
+const props = defineProps<{ text: string; task?: TaskRef }>()
 const emit = defineEmits<{ close: []; created: [day: string, entry: Entry] }>()
 
 const today = todayKey
@@ -17,7 +18,7 @@ const add = ref<AddPrefs>({ from: 'now', back: false, min: 30 })
 const draft = computed<Draft>(() => {
   const b = Math.floor(now.value / MINUTE) * MINUTE
   const span = add.value.min * MINUTE
-  return { start: add.value.back ? b - span : b, end: add.value.back ? b : b + span, kind: 'task', label: props.text, source: 'manual', followsNow: add.value.back, startsNow: !add.value.back }
+  return { start: add.value.back ? b - span : b, end: add.value.back ? b : b + span, kind: 'task', label: props.text, source: 'manual', ...(props.task ? { task: { key: props.task.key, summary: props.task.summary } } : {}), followsNow: add.value.back, startsNow: !add.value.back }
 })
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close')
