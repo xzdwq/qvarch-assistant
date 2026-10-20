@@ -8,6 +8,8 @@ import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { onNewDay } from '../lib/today'
+import { isProductive } from '@shared/kinds'
+import type { Entry } from '@shared/types'
 import { dailyByKind, eventsOf, heatOf, type EventStat } from '@shared/analytics'
 import Spark from '../components/charts/Spark.vue'
 import Treemap, { type TreeItem } from '../components/charts/Treemap.vue'
@@ -31,6 +33,8 @@ interface State {
   filter: ReportFilter
   group: GroupBy
   color: 'kind' | 'task'
+  /** Only the productive kinds (no lunch, break…) — as the calendar's button. */
+  productive?: boolean
 }
 interface Saved {
   name: string
@@ -166,7 +170,8 @@ const all = computed<ReportItem[]>(() => {
   const now = Date.now()
   return days.value.flatMap((d) => d.entries.filter((e) => e.start < now).map((e) => ({ day: d.day, e: e.end > now ? { ...e, end: now } : e })))
 })
-const items = computed(() => all.value.filter((i) => matches(i.e, st.value.filter)))
+const shownKind = (e: Entry) => !st.value.productive || isProductive(kinds.value, e.kind)
+const items = computed(() => all.value.filter((i) => shownKind(i.e) && matches(i.e, st.value.filter)))
 
 /** The same length of time right before — to compare with. */
 const prevRange = computed<[string, string]>(() => {
@@ -178,7 +183,7 @@ watch(prevRange, async (r) => {
   const got = await window.qa.rangeDays(r[0], r[1])
   if (r === prevRange.value) prevDays.value = got
 }, { immediate: true })
-const prevItems = computed<ReportItem[]>(() => prevDays.value.flatMap((d) => d.entries.map((e) => ({ day: d.day, e }))).filter((i) => matches(i.e, st.value.filter)))
+const prevItems = computed<ReportItem[]>(() => prevDays.value.flatMap((d) => d.entries.map((e) => ({ day: d.day, e }))).filter((i) => shownKind(i.e) && matches(i.e, st.value.filter)))
 
 // ---------- filters ----------
 const kindOpts = computed(() => kinds.value.map((k) => ({ id: k.id, label: k.label, color: k.color })))
@@ -215,7 +220,7 @@ function saveView(): void {
   const name = newName.value.trim()
   if (!name) return
   const s = st.value
-  const state = { period: s.period, filter: JSON.parse(JSON.stringify(s.filter)) as ReportFilter, group: s.group, color: s.color, ...(s.period === 'custom' ? { from: s.from, to: s.to } : {}) }
+  const state = { period: s.period, filter: JSON.parse(JSON.stringify(s.filter)) as ReportFilter, group: s.group, color: s.color, productive: !!s.productive, ...(s.period === 'custom' ? { from: s.from, to: s.to } : {}) }
   saved.value = [...saved.value.filter((x) => x.name !== name), { name, state }]
   newName.value = ''
 }
@@ -410,6 +415,7 @@ function exportCsv(): void {
       </div>
       <span class="sp"></span>
       <div class="filters">
+        <button class="tog" :class="{ on: st.productive }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.productive = !st.productive">Продуктивные</button>
         <FilterMenu v-model="fKinds" label="Вид" icon="tag" :options="kindOpts" />
         <FilterMenu v-model="fTasks" label="Задачи" icon="jira" :options="taskOpts" />
         <FilterMenu v-model="fType" label="Тип" icon="checkSquare" :options="TYPE_OPTS" title="Jira / свои / без задачи" />
@@ -647,6 +653,22 @@ function exportCsv(): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+.tog {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r2);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tog.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--text);
 }
 .filters {
   gap: 5px;

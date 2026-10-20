@@ -167,7 +167,7 @@ function zoomHours(e: WheelEvent): void {
   if (!b || !e.deltaY) return
   // not in the middle of a drag: its maths uses the scale
   if (g.value && g.value.kind !== 'pending') return
-  const py = e.clientY - b.getBoundingClientRect().top
+  const py = (e.clientY - b.getBoundingClientRect().top) / zf()
   const top = wantTop ?? b.scrollTop
   const at = (top + py) / hourPx.value // the hour under the pointer stays under it
   const dy = Math.max(-120, Math.min(120, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY))
@@ -274,16 +274,21 @@ type Gesture =
 const g = ref<Gesture>()
 const SNAP = 5 * MINUTE
 const snapT = (t: number) => Math.round(t / SNAP) * SNAP
+/**
+ * The window's scale (CSS zoom on <main>): pointer coordinates and rects come scaled, the layout (hourPx, colW) does not —
+ * pointer distances are divided by it before they meet the layout.
+ */
+const zf = () => (canvas.value as (HTMLElement & { currentCSSZoom?: number }) | undefined)?.currentCSSZoom || 1
 function dayAt(clientX: number): number {
   const r = canvas.value!.getBoundingClientRect()
-  const x = clientX - r.left
+  const x = (clientX - r.left) / zf()
   for (const n of visibleNums.value) if (x >= xOf(n) && x < xOf(n) + widthOf(n)) return n
   return Math.floor(start.value + x / colW.value)
 }
 function timeAt(clientY: number, dayNum: number): number {
   const r = canvas.value!.getBoundingClientRect()
   const d = toKey(dayNum)
-  return Math.max(dayStart(d), Math.min(dayEnd(d), snapT(dayStart(d) + ((clientY - r.top) / hourPx.value) * HOUR)))
+  return Math.max(dayStart(d), Math.min(dayEnd(d), snapT(dayStart(d) + ((clientY - r.top) / zf() / hourPx.value) * HOUR)))
 }
 function onDown(e: PointerEvent): void {
   if (e.button !== 0) return
@@ -326,7 +331,7 @@ function onMove(e: PointerEvent): void {
     g.value = Math.abs(dx) > Math.abs(dy) ? { kind: 'pan', x0: x.x0, s0: x.s0 } : { kind: 'create', day: x.day, t0: x.t0, t1: timeAt(e.clientY, x.day) }
     return
   }
-  if (x.kind === 'pan') start.value = x.s0 - (e.clientX - x.x0) / colW.value
+  if (x.kind === 'pan') start.value = x.s0 - (e.clientX - x.x0) / zf() / colW.value
   else if (x.kind === 'create') x.t1 = timeAt(e.clientY, x.day)
   else if ((x.kind === 'move' || x.kind === 'resize') && x.orig.outlook) return
   else if (x.kind === 'move') {
@@ -335,7 +340,7 @@ function onMove(e: PointerEvent): void {
     const dur = x.orig.end - x.orig.start
     x.toDay = dayAt(e.clientX) - x.dayOff
     const d = toKey(x.toDay)
-    const shifted = snapT(x.orig.start - dayStart(x.from) + ((e.clientY - x.y0) / hourPx.value) * HOUR)
+    const shifted = snapT(x.orig.start - dayStart(x.from) + ((e.clientY - x.y0) / zf() / hourPx.value) * HOUR)
     x.start = Math.max(dayStart(d), Math.min(dayEnd(d) - dur, dayStart(d) + shifted))
   } else if (x.kind === 'resize') {
     x.moved = true
@@ -630,10 +635,16 @@ watch(
     if (d) reveal(d.day, d.start, d.end)
   },
 )
-async function onSaved(e: Entry): Promise<void> {
+async function onSaved(e: Entry, day: string): Promise<void> {
   const p = panel.value
-  if (p?.type === 'entry') panel.value = { type: 'entry', day: p.day, entry: e, key: e.id }
+  // the card follows the event (to its new day when its date was changed) — unless another one was opened meanwhile
+  if (p?.type === 'entry' && (!(p.entry as Partial<Entry>).id || (p.entry as Entry).id === e.id)) panel.value = { type: 'entry', day, entry: e, key: e.id }
   await reloadVisible()
+}
+/** A copy was made from the card: it opens (its times are what one adjusts next). */
+async function onCopied(e: Entry, day: string): Promise<void> {
+  await reloadVisible()
+  panel.value = { type: 'entry', day, entry: e, key: e.id }
 }
 async function onPanelClosed(): Promise<void> {
   panel.value = undefined
@@ -740,7 +751,7 @@ async function setPanelDay(day: string): Promise<void> {
     await reloadVisible()
     const f = findEntry(e.id)
     if (f) panel.value = { type: 'entry', day: f.day, entry: f.e, key: f.e.id }
-  } else panel.value = { ...p, day, entry: { ...p.entry, start: p.entry.start + shift, end: p.entry.end + shift }, key: `${p.key}d` }
+  } else panel.value = { ...p, day, entry: { ...p.entry, start: p.entry.start + shift, end: p.entry.end + shift } }
 }
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape' && panel.value && !(e.target as HTMLElement).closest('input, textarea')) panel.value = undefined
@@ -987,16 +998,12 @@ const isToday = (d: string) => d === today.value
               :notes="panelDay?.notes ?? []"
               textarea
               @saved="onSaved"
+              @copied="onCopied"
+              @day="setPanelDay"
               @deleted="onPanelClosed"
               @close="onPanelClosed"
               @range="onDraftRange"
             >
-              <template #date>
-              <div class="pdate-row">
-                <span v-if="dateLocked" class="pdate" title="Дата заметки"><Icon name="calendar" :size="13" />{{ cap(fmt(panel.day, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })) }}</span>
-                <DatePick v-else :model-value="panel.day" @update:model-value="(d) => d && setPanelDay(d)" />
-              </div>
-            </template>
             </EntryEditor>
             <div v-if="panelEntry && (panelEntry.task || panelEntry.outlook)" class="sinfo">
               <div v-if="panelEntry.task" class="srow">

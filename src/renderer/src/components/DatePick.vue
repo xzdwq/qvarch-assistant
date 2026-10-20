@@ -22,6 +22,8 @@ const props = withDefaults(
     /** Red when the date has passed (a due date). */
     late?: boolean
     title?: string
+    /** Day, month and year as separate parts: the wheel over each changes that part (the year is always shown). */
+    parts?: boolean
   }>(),
   { format: 'long', placeholder: 'Без даты' },
 )
@@ -47,6 +49,21 @@ const text = computed(() => {
   return s.charAt(0).toUpperCase() + s.slice(1)
 })
 
+/** The parts: «Ср, » + «21» + «октября» + «2026» — each its own wheel. */
+const segs = computed(() => {
+  const d = at(props.modelValue || todayKey.value)
+  const wd = d.toLocaleDateString('ru-RU', { weekday: 'short' })
+  const dm = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }).split(' ')
+  return { wd: wd.charAt(0).toUpperCase() + wd.slice(1), d: dm[0], m: dm.slice(1).join(' '), y: String(d.getFullYear()) }
+})
+/** The same day N months / years away (the 31st becomes the month's last day). */
+function shiftPart(day: string, part: 'm' | 'y', n: number): string {
+  const [y, m, dd] = day.split('-').map(Number)
+  const ny = part === 'y' ? y + n : y + Math.floor((m - 1 + n) / 12)
+  const nm = part === 'y' ? m : ((((m - 1 + n) % 12) + 12) % 12) + 1
+  const last = new Date(ny, nm, 0).getDate()
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(dd, last)).padStart(2, '0')}`
+}
 function set(d: string): void {
   if (d !== props.modelValue) emit('update:modelValue', d)
 }
@@ -60,7 +77,9 @@ function onWheel(e: WheelEvent): void {
   e.preventDefault()
   // up — the next day, down — the previous one (like the times)
   const dir = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1
-  set(shiftDay(props.modelValue || todayKey.value, dir))
+  const cur = props.modelValue || todayKey.value
+  const part = props.parts ? (e.target as HTMLElement).closest<HTMLElement>('[data-p]')?.dataset.p : undefined
+  set(part === 'm' || part === 'y' ? shiftPart(cur, part, dir) : shiftDay(cur, dir))
 }
 
 // ---------- the calendar ----------
@@ -116,8 +135,10 @@ onBeforeUnmount(() => {
 
 <template>
   <span ref="root" class="dp" :class="{ today: isToday, empty: !modelValue, late }" @wheel="onWheel">
-    <button class="dpb" :class="{ on: open }" :title="title ?? 'Выбрать дату · колесо — день'" @click="open = !open">
-      <Icon name="calendar" :size="13" /><span>{{ text }}</span>
+    <button class="dpb" :class="{ on: open }" :title="title ?? (parts ? 'Выбрать дату · колесо над днём, месяцем или годом меняет его' : 'Выбрать дату · колесо — день')" @click="open = !open">
+      <Icon name="calendar" :size="13" /><span v-if="parts && modelValue" class="parts"
+        ><i data-p="d">{{ segs.wd }},&nbsp;</i><i data-p="d" class="seg">{{ segs.d }}</i>&nbsp;<i data-p="m" class="seg">{{ segs.m }}</i>&nbsp;<i data-p="y" class="seg">{{ segs.y }}</i></span
+      ><span v-else>{{ text }}</span>
     </button>
     <button v-if="modelValue && !isToday" class="dpi" title="Сегодня" @click="set(todayKey)"><Icon name="calToday" :size="13" /></button>
     <button v-if="clearable && modelValue" class="dpi" title="Убрать дату" @click="set('')"><Icon name="x" :size="12" /></button>
@@ -181,6 +202,17 @@ onBeforeUnmount(() => {
 .dpb span {
   font-family: var(--font-data);
   font-size: 12px;
+}
+.parts i {
+  font-style: normal;
+}
+.parts .seg {
+  padding: 1px 2px;
+  border-radius: 3px;
+}
+.parts .seg:hover {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
 }
 .dpb.on {
   background: var(--accent-soft);

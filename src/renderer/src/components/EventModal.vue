@@ -45,7 +45,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           :add="add"
           textarea
           @update:add="(a) => (add = a)"
-          @saved="(e) => (emit('created', today, e), emit('close'))"
+          @saved="(e, d) => (emit('created', d, e), emit('close'))"
         />
       </div>
     </div>

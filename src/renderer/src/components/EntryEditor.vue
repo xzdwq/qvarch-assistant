@@ -19,6 +19,7 @@ import PopChip from './PopChip.vue'
 import { beforeLabel, REMIND_BEFORE, REPEAT_RULES, type Remind, type RepeatRule } from '@shared/repeat'
 import { askSeries } from '../lib/seriesAsk'
 import QuickField, { type QuickParsed } from './QuickField.vue'
+import DatePick from './DatePick.vue'
 import { dayStart } from '@shared/timeline'
 
 /** followsNow — the end is "now" (N minutes back); startsNow — the start is "now" (N minutes ahead). */
@@ -47,7 +48,12 @@ const props = defineProps<{
   manual?: boolean
 }>()
 const emit = defineEmits<{
-  saved: [e: Entry]
+  /** `day` — where it is now (another day when its date was changed). */
+  saved: [e: Entry, day: string]
+  /** A copy made on the picked date (the edited event stays). */
+  copied: [e: Entry, day: string]
+  /** A new event's date was changed — the host may move its marker there. */
+  day: [d: string]
   deleted: []
   close: []
   /** Draft times changed in the form → move the marker on the timeline. */
@@ -70,6 +76,22 @@ const quickEl = ref<InstanceType<typeof QuickField>>()
 /** What the quick line of a new event says (time, duration, day, kind, task). */
 const parsed = ref<QuickParsed>()
 const isNew = computed(() => !props.entry.id && !props.entry.outlook)
+/**
+ * The event's date. The times stay counted on `day` (the host's day) and are shifted when saved: a new event is
+ * added on this date, an existing one is moved here — once the card is left, not at each wheel step.
+ */
+const date = ref(props.day)
+const dayShift = () => dayStart(date.value) - dayStart(props.day)
+function setDate(d: string): void {
+  if (!d || d === date.value) return
+  date.value = d
+  if (isNew.value) {
+    // «until now» means today's now — not on another day
+    followsNow.value = false
+    startsNow.value = false
+    emit('day', d)
+  }
+}
 watch(() => parsed.value?.q.kind, (k) => k && isNew.value && (kind.value = k))
 /** A task picked with «@» joins the event's tasks. */
 function addTask(t: TaskRef): void {
@@ -134,7 +156,6 @@ function setAdd(p: Partial<AddPrefs>): void {
 
 // the autosave's state (declared before the watchers below use it)
 let savedKey = ''
-let autoTimer: ReturnType<typeof setTimeout> | undefined
 const saveState = ref<'idle' | 'pending' | 'saving' | 'saved'>('idle')
 /** A series asks once per editing: this one or all of them. */
 let seriesScope: 'one' | 'all' | undefined
@@ -157,50 +178,71 @@ watch(
     initRemind()
     repeatRule.value = ''
     seriesScope = undefined
+    date.value = props.day
     savedKey = formKey()
     saveState.value = 'idle'
   },
   { immediate: true },
 )
+/**
+ * What came from outside (a reload, a call extended by the tracker, the host moving the event) is taken in —
+ * but a part the user has changed and not saved yet is kept, and stays to be saved.
+ */
+function takeSaved(patch: (k: unknown[]) => void): void {
+  const k = JSON.parse(savedKey || '[]') as unknown[]
+  patch(k)
+  savedKey = JSON.stringify(k)
+}
 // times follow the entry/marker live (marker drags on the timeline)
 watch(
   () => [props.entry.start, props.entry.end, props.entry.followsNow, props.entry.startsNow] as const,
   ([s, e, f, n]) => {
     if (staleTimes && Date.now() < staleTimes.until && s === staleTimes.s && e === staleTimes.e && (start.value !== s || end.value !== e)) return
+    if (props.entry.id && savedKey) {
+      const k = JSON.parse(savedKey) as unknown[]
+      // the times were changed here and not saved yet: they win
+      if (k[0] !== start.value || k[1] !== end.value || k[2] !== followsNow.value) return
+    }
     start.value = s
     end.value = e
     followsNow.value = !!f
     startsNow.value = !!n
-    // came from outside (a reload, a call extended by the tracker) — nothing to save
-    savedKey = formKey()
+    if (savedKey) takeSaved((k) => ((k[0] = s), (k[1] = e), (k[2] = !!f)))
+    else savedKey = formKey()
   },
   { immediate: true },
 )
+// the host moved it to another day (or opened it there): the date follows unless it was changed here
+watch(
+  () => props.day,
+  (d, old) => {
+    if (date.value !== old) return
+    date.value = d
+    takeSaved((k) => (k[8] = d))
+  },
+)
 
-// ---------- an existing event saves itself: after the first change, a moment after the last one ----------
-/** The form as it is — what an autosave compares with the last saved state. */
+// ---------- an existing event saves itself when the card is left (not at each step: a date could take it away) ----------
+/** The form as it is — what the save compares with the last saved state. */
 function formKey(): string {
-  return JSON.stringify([start.value, end.value, followsNow.value, label.value, kind.value, tasks.value.map((t) => t.key), remindMode.value, remindTime.value])
+  return JSON.stringify([start.value, end.value, followsNow.value, label.value, kind.value, tasks.value.map((t) => t.key), remindMode.value, remindTime.value, date.value])
 }
 watch(
   () => formKey(),
   (k) => {
-    if (!props.entry.id || props.manual || k === savedKey) return
-    saveState.value = 'pending'
-    clearTimeout(autoTimer)
-    autoTimer = setTimeout(() => void autoSave(), 700)
+    if (!props.entry.id || props.manual) return
+    if (k !== savedKey) saveState.value = 'pending'
+    else if (saveState.value === 'pending') saveState.value = 'idle'
   },
 )
-async function autoSave(): Promise<void> {
-  autoTimer = undefined
-  if (!props.entry.id) return
+let again = false
+/** Saves what changed (nothing — nothing). */
+async function flush(): Promise<void> {
+  if (!props.entry.id || props.manual) return
   // one at a time: a change made during a save is saved right after it
-  if (busy.value) {
-    autoTimer = setTimeout(() => void autoSave(), 300)
-    return
-  }
+  if (busy.value) return void (again = true)
   const k = formKey()
-  if (k === savedKey) return void (saveState.value = 'saved')
+  if (k === savedKey) return
   saveState.value = 'saving'
   const before = { s: props.entry.start, e: props.entry.end }
   const ok = await save(undefined, true)
@@ -209,14 +251,32 @@ async function autoSave(): Promise<void> {
     if (before.s !== start.value || before.e !== end.value) staleTimes = { ...before, until: Date.now() + 4000 }
   }
   saveState.value = ok ? 'saved' : 'idle'
-}
-// leaving with a change not saved yet — save it now
-onBeforeUnmount(() => {
-  if (autoTimer && props.entry.id && !props.manual) {
-    clearTimeout(autoTimer)
-    void save(undefined, true)
+  if (again) {
+    again = false
+    void flush()
   }
+}
+// leaving the card: a press or the focus elsewhere in the app (its dropdowns float outside it, in <body> — those
+// are still the card), the window losing focus, the card closing
+const rootEl = ref<HTMLElement>()
+const appEl = () => document.getElementById('app')
+const isElsewhere = (t: EventTarget | null) => t instanceof Node && !rootEl.value?.contains(t) && !!appEl()?.contains(t)
+const onDocDown = (e: PointerEvent) => isElsewhere(e.target) && void flush()
+const onBlur = () => void flush()
+document.addEventListener('pointerdown', onDocDown, true)
+window.addEventListener('blur', onBlur)
+function onFocusOut(e: FocusEvent): void {
+  if (isElsewhere(e.relatedTarget)) void flush()
+}
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocDown, true)
+  window.removeEventListener('blur', onBlur)
+  void flush()
 })
+function close(): void {
+  void flush()
+  emit('close')
+}
 
 const effectiveEnd = computed(() => (followsNow.value && props.now ? props.now : end.value))
 
@@ -247,8 +307,15 @@ async function save(dict?: Dictation, auto = false): Promise<boolean> {
     // an Outlook meeting: only its reminder
     if (readonly.value && props.entry.id) {
       await window.qa.setRemind(props.day, props.entry.id, remind.value ?? null)
-      emit('saved', { ...(props.entry as Entry), remind: remind.value })
+      emit('saved', { ...(props.entry as Entry), remind: remind.value }, props.day)
       return true
+    }
+    /** An existing event whose date was changed: saved where it is, then moved to that date (the same times of day). */
+    const moveTo = async (e: Entry): Promise<Entry> => {
+      const shift = dayShift()
+      if (!shift) return e
+      await window.qa.moveEntry(props.day, date.value, e.id, e.start + shift, e.end + shift)
+      return { ...e, start: e.start + shift, end: e.end + shift }
     }
     // one of a series: this one, or all of them
     if (props.entry.id && props.entry.series) {
@@ -269,15 +336,17 @@ async function save(dict?: Dictation, auto = false): Promise<boolean> {
           remind: remind.value,
         }
         await window.qa.seriesSave(props.day, next)
-        emit('saved', next)
+        // the series is saved; only this one goes to the other date
+        emit('saved', await moveTo(next), date.value)
         return true
       }
     }
     const { followsNow: _f, startsNow: _n, ...base } = props.entry
     // a new event: what its quick line says wins over the form (time, duration, day, task; the title is the rest)
-    let day = props.day
-    let s0 = start.value
-    let e0 = endT
+    // a new event goes to its date at once; an existing one is saved on its day and moved after
+    let day = isNew.value ? date.value : props.day
+    let s0 = start.value + (isNew.value ? dayShift() : 0)
+    let e0 = endT + (isNew.value ? dayShift() : 0)
     let title = splitTitle(label.value).label
     const qp = isNew.value ? parsed.value : undefined
     const taskList = [...tasks.value]
@@ -293,8 +362,8 @@ async function save(dict?: Dictation, auto = false): Promise<boolean> {
           if (followsNow.value) s0 = e0 - q.dur
           else e0 = s0 + q.dur
         }
-        if (q.day !== props.day) {
-          const shift = dayStart(q.day) - dayStart(props.day)
+        if (q.day !== day) {
+          const shift = dayStart(q.day) - dayStart(day)
           s0 += shift
           e0 += shift
           day = q.day
@@ -331,11 +400,49 @@ async function save(dict?: Dictation, auto = false): Promise<boolean> {
     if (dict && saved) void saveRecording(day, { ...dict, at: s0 }, { entryId: saved.id })
     // a new block with a repeat: its copies every hour / day / week / year
     if (saved && !props.entry.id && repeatRule.value) await window.qa.repeatEntry(day, saved.id, repeatRule.value, repeatCount.value)
-    if (saved) emit('saved', saved)
+    if (saved && props.entry.id) {
+      saved = await moveTo(saved)
+      day = date.value
+    }
+    if (saved) emit('saved', saved, day)
     return !!saved
   } catch (e) {
     error.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
     return false
+  } finally {
+    busy.value = false
+  }
+}
+
+/**
+ * A copy of the event on the picked date — the event itself stays where it is (its date goes back). On its own
+ * day the copy follows it (done before lunch — again after), on another day it takes the same times.
+ */
+const copiedTo = ref('')
+const copyTitle = computed(() =>
+  date.value === props.day ? 'Копия сразу после этого события' : `Копия на ${new Date(`${date.value}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, в то же время; это событие остаётся`,
+)
+async function copyToDate(): Promise<void> {
+  if (!props.entry.id || busy.value) return
+  const target = date.value
+  const dur = effectiveEnd.value - start.value
+  const s = target === props.day ? effectiveEnd.value : start.value + dayShift()
+  const parts = splitTitle(label.value)
+  const t = tasks.value[0] ? plainTask(tasks.value[0]) : undefined
+  busy.value = true
+  error.value = ''
+  try {
+    const c = await window.qa.saveEntry(
+      target,
+      { start: s, end: s + dur, label: parts.label || (t ? `${t.key} ${t.summary}` : kindLabel(kind.value)), description: parts.description, task: t, kind: kind.value, source: 'manual' },
+      { overlap: true },
+    )
+    date.value = props.day
+    const hm = (x: Ms) => new Date(x).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    copiedTo.value = `${new Date(`${target}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })} ${hm(c.start)}–${hm(c.end)}`
+    emit('copied', c, target)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
   } finally {
     busy.value = false
   }
@@ -368,7 +475,7 @@ watch(
 </script>
 
 <template>
-  <div class="editor" @keydown.ctrl.enter="save()">
+  <div ref="rootEl" class="editor" @keydown.ctrl.enter="entry.id && !manual ? flush() : save()" @focusout="onFocusOut">
     <div class="head">
       <h3>{{ entry.id ? 'Событие' : 'Новое событие' }}</h3>
       <span v-if="entry.source === 'ai'" class="badge">AI</span>
@@ -378,12 +485,17 @@ watch(
       <span v-if="entry.series" class="badge rep" :title="`Повторяется ${seriesText} — изменения можно применить ко всей серии`"><Icon name="repeat" :size="11" />{{ seriesText }}</span>
       <button v-if="entry.id && !readonly" class="hbtn danger" title="Удалить событие" @click="remove"><Icon name="trash" :size="15" /></button>
       <!-- a new block's form is always there — nothing to close -->
-      <button v-if="entry.id" class="hbtn" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="16" /></button>
+      <button v-if="entry.id" class="hbtn" title="Закрыть (Esc)" @click="close"><Icon name="x" :size="16" /></button>
     </div>
     <div v-if="readonly" class="ro"><Icon name="outlook" :size="13" />Встреча из Outlook — время, название и вид меняет только Outlook. Здесь — напоминание.</div>
 
-    <!-- the host may put the date here (the task calendar) -->
-    <slot name="date" />
+    <!-- the date: a new event is added there; an existing one is moved there (once the card is left) or copied there -->
+    <div class="drow">
+      <span v-if="readonly" class="rodate"><Icon name="calendar" :size="13" />{{ new Date(`${day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) }}</span>
+      <DatePick v-else parts :model-value="date" @update:model-value="setDate" />
+      <span v-if="entry.id && !readonly && date !== day" class="moved">перенесётся</span>
+      <button v-if="entry.id && !readonly" class="copy" :disabled="busy" :title="copyTitle" @click="copyToDate"><Icon name="copy" :size="13" />Копия</button>
+    </div>
     <!-- when: one line; for a new block — quiet presets right under it -->
     <div v-if="readonly" class="when">
       <b class="rot">{{ new Date(start).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }} – {{ new Date(effectiveEnd).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</b>
@@ -426,7 +538,7 @@ watch(
       v-else-if="isNew"
       ref="quickEl"
       v-model="label"
-      :day="day"
+      :day="date"
       :enter-newline="textarea"
       :rows="textarea ? 3 : 1"
       @submit="save()"
@@ -490,6 +602,7 @@ watch(
       <Icon name="clock" :size="12" />{{ tasks[0].key }} · всего {{ formatDuration(taskTotals[tasks[0].key]) }}
     </div>
     <div v-if="copied" class="copied"><Icon name="link" :size="13" />Продолжение: {{ copied }}</div>
+    <div v-if="copiedTo" class="copied"><Icon name="copy" :size="13" />Копия создана: {{ copiedTo }}</div>
     <Transition name="fade"><div v-if="error" class="error">{{ error }}</div></Transition>
 
     <!-- an existing event saves itself — only its state shows; a new one is added by the button -->
@@ -500,7 +613,8 @@ watch(
     </div>
     <div v-else-if="entry.id" class="foot autos" :class="saveState">
       <Icon :name="saveState === 'saved' || saveState === 'idle' ? 'check' : 'clock'" :size="12" />
-      <span>{{ saveState === 'pending' ? 'Изменено…' : saveState === 'saving' ? 'Сохраняю…' : saveState === 'saved' ? 'Сохранено' : 'Изменения сохраняются сами' }}</span>
+      <span>{{ saveState === 'pending' ? 'Изменено — сохранится, когда уйдёте из карточки' : saveState === 'saving' ? 'Сохраняю…' : saveState === 'saved' ? 'Сохранено' : 'Изменения сохраняются при выходе из карточки' }}</span>
+      <button v-if="saveState === 'pending'" class="now" title="Ctrl+Enter" @click="flush">Сохранить</button>
     </div>
     <div v-else class="foot">
       <button class="primary" :disabled="busy" @click="save()">{{ repeatRule ? `Добавить ${repeatCount} раз` : 'Добавить' }}</button>
@@ -764,6 +878,37 @@ h3 {
 .foot.autos {
   gap: 6px;
   color: var(--muted);
+  font-size: 12px;
+}
+.foot.autos .now {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.drow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rodate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+.moved {
+  color: var(--warn-fg);
+  font-size: 12px;
+}
+.drow .copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 10px;
   font-size: 12px;
 }
 .foot.autos.saved {

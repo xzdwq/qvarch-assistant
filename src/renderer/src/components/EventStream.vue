@@ -125,7 +125,7 @@ watch(
           </button>
         </template>
         <div v-else-if="openId === r.e.id" class="ecard" :data-k="r.e.id" :style="{ '--c': kindColor(r.e.kind) }">
-          <EntryEditor :key="r.e.id" :day="g.day" :entry="r.e" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="emit('changed')" @deleted="(emit('open', undefined), emit('changed'))" @close="emit('open', undefined)" />
+          <EntryEditor :key="r.e.id" :day="g.day" :entry="r.e" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="emit('changed')" @copied="(c, d) => (emit('changed'), d === g.day && emit('open', c.id))" @deleted="(emit('open', undefined), emit('changed'))" @close="emit('open', undefined)" />
         </div>
         <button v-else class="erow" :data-k="r.e.id" :class="{ focus: focusId === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @click="emit('open', r.e.id)">
           <span class="num tm">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>

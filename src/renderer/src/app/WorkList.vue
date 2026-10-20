@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isProductive } from '@shared/kinds'
 import NoteLinks from '../components/NoteLinks.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
@@ -23,7 +24,7 @@ type Kind = 'event' | 'meeting' | 'call' | 'note' | 'plan'
 const KEY = 'qa.work.list'
 const st = reactive(read())
 function read() {
-  const d = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true }
+  const d = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, productive: false }
   try {
     return { ...d, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
   } catch {
@@ -116,7 +117,7 @@ const items = computed<Item[]>(() => {
   const s = st.q.trim().toLowerCase()
   const out: Item[] = []
   const typeOk = (t: Kind) => !st.types.length || st.types.includes(t)
-  const kindOk = (k: string) => !st.kinds.length || st.kinds.includes(k)
+  const kindOk = (k: string) => (!st.productive || isProductive(kinds.value, k)) && (!st.kinds.length || st.kinds.includes(k))
   const taskOk = (task?: { key: string }) => st.task === 'any' || (st.task === 'with' ? !!task : !task)
   const textOk = (...xs: Array<string | undefined>) => !s || xs.some((x) => x?.toLowerCase().includes(s))
   for (const d of days.value) {
@@ -196,6 +197,7 @@ function exportCsv(): void {
         <button v-if="!hasToday" class="today" title="К сегодняшнему дню (тот же вид периода)" @click="goToday">Сегодня</button>
       </span>
       <DateRangePicker v-if="rangeOpen" :from="from" :to="to" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (st.period = 'custom'), (rangeOpen = false))" @close="rangeOpen = false" />
+      <button class="tog" :class="{ on: st.productive }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.productive = !st.productive">Продуктивные</button>
       <FilterMenu v-model="st.types" label="Тип" icon="layers" :options="TYPES" />
       <FilterMenu v-model="st.kinds" label="Вид" icon="tag" :options="kindOpts" />
       <span class="seg">
@@ -350,6 +352,22 @@ function exportCsv(): void {
 .seg button.on {
   background: var(--accent-soft);
   color: var(--accent-fg);
+}
+.tog {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r2);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tog.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--text);
 }
 .search {
   display: inline-flex;
