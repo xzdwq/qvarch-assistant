@@ -3,12 +3,14 @@ import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import type { DayData, Entry } from '@shared/types'
 import { recentLabels } from '../lib/recent'
 import EntryEditor from './EntryEditor.vue'
+import { refreshMentions } from '../lib/mentions'
 
 /** An event in a window over everything: the usual form, saved by its button. */
 const props = defineProps<{ day: string; entry: Entry }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 const data = shallowRef<DayData>()
 void window.qa.getDay(props.day).then((d) => (data.value = d))
+refreshMentions()
 const title = new Date(`${props.day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close')
@@ -44,6 +46,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
+.em-notes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.em-notes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
 .em-back {
   position: fixed;
   inset: 0;

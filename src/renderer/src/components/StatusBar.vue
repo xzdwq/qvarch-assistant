@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const version = __APP_VERSION__
 import { computed } from 'vue'
 import { formatDuration } from '@shared/timeline'
 import { workDay } from '@shared/work'
@@ -49,10 +50,15 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
     <span class="sep"></span>
     <span class="it n opt">{{ date }}</span>
     <span class="it n clk">{{ clock }}</span>
+    <span class="sep"></span>
+    <span class="it n ver" :title="`Qvarch Assistant ${version}`">v{{ version }}</span>
   </footer>
 </template>
 
 <style scoped>
+.ver {
+  color: var(--muted);
+}
 .sb {
   flex: none;
   display: flex;

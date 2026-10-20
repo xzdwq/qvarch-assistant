@@ -21,7 +21,8 @@ import { placeFloat, useAnchor } from '../lib/floating'
  * `widget` — on the dashboard (or a tab of the timeline): a day by default, tighter. `store` — its remembered
  * view apart from the others; `day` — the day it follows (the timeline's).
  */
-const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: string; day?: string }>()
+/** `range` — embedded (Моя работа): these days, no bar of its own. */
+const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: string; day?: string; range?: { from: string; to: string } }>()
 const SUFFIX = props.store ? `.${props.store}` : props.widget ? '.widget' : ''
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
 
@@ -64,7 +65,9 @@ watch(
   { immediate: true },
 )
 const cols = computed(() =>
-  mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : mode.value === 'range' ? daysBetween(rangeFrom.value, rangeTo.value).slice(0, 62) : [anchor.value],
+  props.range
+    ? daysBetween(props.range.from, props.range.to).slice(0, 62)
+    : mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : mode.value === 'range' ? daysBetween(rangeFrom.value, rangeTo.value).slice(0, 62) : [anchor.value],
 )
 /** The calendar: one day → "день", Monday..Sunday → "неделя", anything else → that range. */
 const pickerOpen = ref(false)
@@ -423,7 +426,7 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 
 <template>
   <div class="sh" :class="{ widget }">
-    <div class="bar">
+    <div v-if="!range" class="bar">
       <div class="seg">
         <button :class="{ on: mode === 'week' }" @click="setMode('week')">Неделя</button>
         <button :class="{ on: mode === 'day' }" @click="setMode('day')">День</button>

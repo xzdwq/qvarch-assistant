@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import { audiosOf, IMAGE_REL, imagesOf, type VaultHit, type VaultNode } from '../shared/vault'
 import { BOARD_EXT } from '../shared/whiteboard'
+import { assetsOf, boardsOf, BUNDLE_FORMAT, rebind, type BundleDoc, type DocBundle } from '../shared/docBundle'
 
 const AUDIO_REL = /^\.audio\/[\w.-]+\.webm$/
 
@@ -89,7 +90,52 @@ export class Vault {
   }
 
   /** Marks (and links) follow a rename / move; a deleted thing loses its marks and links. */
+  // ---------- the runs of a runnable note (its context, its answers) — vault/.runs/<note>.json ----------
+  private runFile(rel: string): string {
+    this.abs(rel)
+    return join(this.root, '.runs', `${rel}.json`)
+  }
+  runRead(rel: string): string | undefined {
+    const f = this.runFile(rel)
+    try {
+      return existsSync(f) ? readFileSync(f, 'utf8') : undefined
+    } catch {
+      return undefined
+    }
+  }
+  runWrite(rel: string, json: string): void {
+    if (json.length > 16 * 1024 * 1024) throw new Error('Результаты больше 16 МБ — не сохраняются')
+    const f = this.runFile(rel)
+    mkdirSync(dirname(f), { recursive: true })
+    writeFileSync(`${f}.tmp`, json)
+    renameSync(`${f}.tmp`, f)
+  }
+  /** A block's files of its last run (screenshots, the trace…): vault/.runs/<note>/<block>/ (on disk). */
+  runDir(rel: string, key: string): string {
+    this.abs(rel)
+    const safe = String(key).replace(/[^\w.-]+/g, '_').slice(0, 80) || 'block'
+    return join(this.root, '.runs', rel, safe)
+  }
+  /** The folder all the runs' files are under (the trace viewer gives nothing else). */
+  get runsRoot(): string {
+    return join(this.root, '.runs')
+  }
   private remapMeta(from: string, to?: string): void {
+    // the runs go with their note / folder
+    const rf = join(this.root, '.runs', from)
+    for (const [p, ext] of [[`${rf}.json`, '.json'], [rf, '']] as const) {
+      if (!existsSync(p)) continue
+      try {
+        if (to === undefined) rmSync(p, { recursive: true, force: true })
+        else {
+          const t = join(this.root, '.runs', to) + ext
+          mkdirSync(dirname(t), { recursive: true })
+          renameSync(p, t)
+        }
+      } catch {
+        // a run kept or lost — the note itself is what matters
+      }
+    }
     let changed = false
     const pairs: Record<string, string> = {}
     for (const [k, v] of Object.entries(this.meta.pairs)) {
@@ -258,6 +304,32 @@ export class Vault {
 
   // ---------- search ----------
   /** All notes whose name or text has the query (any case); a few matching lines of each. */
+  /** Every event mentioned in the notes (qvarch://event/<day>/<id>): its id → the notes (paths). */
+  eventMentions(): Record<string, string[]> {
+    const out: Record<string, string[]> = {}
+    const walk = (ns: VaultNode[]) => {
+      for (const n of ns) {
+        if (n.dir) {
+          walk(n.children ?? [])
+          continue
+        }
+        if (n.board) continue
+        let text: string
+        try {
+          text = this.read(n.path)
+        } catch {
+          continue
+        }
+        if (!text.includes('qvarch://event/')) continue
+        for (const m of text.matchAll(/qvarch:\/\/event\/\d{4}-\d{2}-\d{2}\/([\w-]+)/g)) {
+          const list = (out[m[1]] ??= [])
+          if (!list.includes(n.path)) list.push(n.path)
+        }
+      }
+    }
+    walk(this.tree())
+    return out
+  }
   search(q: string, limit = 60): VaultHit[] {
     const needle = q.trim().toLowerCase()
     if (!needle) return []
@@ -418,6 +490,146 @@ export class Vault {
     if (existsSync(file)) return
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, bytes)
+  }
+
+  // ---------- a document packed into one file (.qvdoc) and back ----------
+  /** Whether the document (or what comes with it) has run results — to ask before packing them. */
+  hasRuns(rel: string): boolean {
+    return this.packList(rel).paths.some((p) => this.runRead(p) !== undefined)
+  }
+  /**
+   * What a bundle of `rel` holds: a document with what comes with it, or a whole folder — every note and board
+   * in it (and what they bring from outside), its subfolders.
+   */
+  private packList(rel: string): { paths: string[]; folder?: { root: string; dirs: string[] } } {
+    const file = this.abs(rel)
+    if (!existsSync(file)) throw new Error('Файл не найден')
+    if (!statSync(file).isDirectory()) return { paths: this.bundleDocs(rel) }
+    const inside: string[] = []
+    const dirs: string[] = []
+    const walk = (d: string) => {
+      for (const name of readdirSync(d)) {
+        if (name.startsWith('.')) continue
+        const p = join(d, name)
+        const st = statSync(p)
+        if (st.isDirectory()) {
+          dirs.push(relative(file, p).split(sep).join('/'))
+          walk(p)
+        } else if (/\.(md|qboard)$/i.test(name)) inside.push(this.rel(p))
+      }
+    }
+    walk(file)
+    const paths: string[] = []
+    for (const p of inside) for (const q of this.bundleDocs(p)) if (!paths.includes(q)) paths.push(q)
+    return { paths, folder: { root: basename(file), dirs } }
+  }
+  /** The document and what comes with it: the boards it shows, its linked board / note (each once). */
+  private bundleDocs(rel: string): string[] {
+    const out: string[] = []
+    const queue = [rel]
+    while (queue.length) {
+      const p = queue.shift()!
+      if (out.includes(p) || !existsSync(this.abs(p)) || statSync(this.abs(p)).isDirectory()) continue
+      out.push(p)
+      const pair = this.meta.pairs[p]
+      if (pair) queue.push(pair)
+      if (!p.toLowerCase().endsWith(BOARD_EXT)) queue.push(...boardsOf(this.read(p)).filter((b) => b.toLowerCase().endsWith(BOARD_EXT)))
+    }
+    return out
+  }
+  exportDoc(rel: string, withRuns: boolean, app?: string): { bundle: DocBundle; missing: string[] } {
+    const { paths, folder } = this.packList(rel)
+    const base = rel.replace(/\/+$/, '')
+    const files: Record<string, string> = {}
+    const missing: string[] = []
+    const docs: BundleDoc[] = paths.map((p) => {
+      const text = this.read(p)
+      for (const a of assetsOf(text)) {
+        if (files[a] !== undefined || missing.includes(a)) continue
+        const f = this.abs(a)
+        if (existsSync(f)) files[a] = readFileSync(f).toString('base64')
+        else missing.push(a)
+      }
+      const doc: BundleDoc = { key: p, kind: p.toLowerCase().endsWith(BOARD_EXT) ? 'board' : 'note', text }
+      const runs = withRuns ? this.runRead(p) : undefined
+      if (runs) {
+        try {
+          doc.runs = JSON.parse(runs)
+        } catch {
+          // a broken run file stays behind
+        }
+      }
+      if (this.meta.colors[p]) doc.color = this.meta.colors[p]
+      if (this.meta.emojis[p]) doc.emoji = this.meta.emojis[p]
+      // inside the folder: its place there
+      if (folder && p.startsWith(base + '/')) doc.dir = p.slice(base.length + 1).split('/').slice(0, -1).join('/')
+      return doc
+    })
+    // the boards it shows that are gone
+    for (const p of paths) for (const b of p.toLowerCase().endsWith(BOARD_EXT) ? [] : boardsOf(this.read(p))) if (!paths.includes(b) && !missing.includes(b)) missing.push(b)
+    const pairs: Array<[string, string]> = []
+    for (const p of paths) {
+      const o = this.meta.pairs[p]
+      if (o && paths.includes(o) && !pairs.some(([a, b]) => b === p && a === o)) pairs.push([p, o])
+    }
+    const main = folder ? (paths[0] ?? '') : rel
+    return { bundle: { format: BUNDLE_FORMAT, version: 1, exportedAt: new Date().toISOString(), app, main, ...(folder ? { root: folder.root, dirs: folder.dirs } : {}), docs, pairs, files }, missing }
+  }
+  /**
+   * A bundle unpacked into `dir`: its documents get free names there, its files go to .images / .audio (the same
+   * name when free or the same bytes, else a new one), the board paths and file names in the texts follow.
+   * Returns the main document's new path and all the new paths.
+   */
+  importDoc(b: DocBundle, dir: string): { main: string; paths: string[]; folder?: string } {
+    this.abs(dir)
+    // a folder's bundle: the folder (a free name) and its subfolders first
+    const top = b.root ? this.create(dir, 'folder', b.root) : undefined
+    if (top) for (const d of b.dirs ?? []) mkdirSync(this.abs(`${top}/${d}`), { recursive: true })
+    const placeOf = (d: BundleDoc) => (top ? (d.dir ? `${top}/${d.dir}` : top) : dir)
+    const renamed = new Map<string, string>()
+    for (const [a, data] of Object.entries(b.files)) {
+      const audio = AUDIO_REL.test(a)
+      if (!audio && !IMAGE_REL.test(a)) continue
+      const bytes = Buffer.from(String(data), 'base64')
+      const f = this.abs(a)
+      if (existsSync(f)) {
+        if (readFileSync(f).equals(bytes)) continue
+        renamed.set(a, audio ? this.saveAudio(bytes) : this.saveImage(bytes))
+      } else {
+        mkdirSync(dirname(f), { recursive: true })
+        writeFileSync(f, bytes)
+      }
+    }
+    // names first (boards before the notes that show them), then the texts with the new paths
+    const order = [...b.docs].sort((x, y) => Number(x.kind === 'note') - Number(y.kind === 'note'))
+    const moved = new Map<string, string>()
+    for (const d of order) {
+      const name = (d.key.split('/').pop() ?? '').replace(/\.(md|qboard)$/i, '') || undefined
+      moved.set(d.key, this.create(placeOf(d), d.kind, name, ''))
+    }
+    for (const d of order) {
+      const to = moved.get(d.key)!
+      this.write(to, rebind(d.text, moved, renamed))
+      if (d.runs !== undefined && d.kind === 'note') {
+        try {
+          this.runWrite(to, JSON.stringify(d.runs))
+        } catch {
+          // results too big — the note itself is what matters
+        }
+      }
+      if (typeof d.color === 'string' && /^#[0-9a-f]{6}$/i.test(d.color)) this.meta.colors[to] = d.color
+      if (typeof d.emoji === 'string' && d.emoji.length <= 16) this.meta.emojis[to] = d.emoji
+    }
+    for (const [x, y] of b.pairs) {
+      const a = moved.get(x)
+      const c = moved.get(y)
+      if (a && c) {
+        this.meta.pairs[a] = c
+        this.meta.pairs[c] = a
+      }
+    }
+    this.saveMeta()
+    return { main: moved.get(b.main) ?? top ?? '', paths: [...moved.values()], ...(top ? { folder: top } : {}) }
   }
 
   // ---------- changes made outside (another editor, Explorer) ----------

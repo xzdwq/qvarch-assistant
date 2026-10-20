@@ -24,6 +24,8 @@ export function startBrowser(): void {
       recState.value = r.state
       recItems.value = r.items
     } else if (type === 'bookmarks') bookmarks.value = p as Bookmark[]
+    // a tab the app opened (a recording, a link, a trace): shown in the current pane
+    else if (type === 'activate') placeTab(bLayout.cur, (p as { id: string }).id)
     for (const l of listeners) l(type, p)
   })
 }

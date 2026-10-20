@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { openUrl } from '../lib/links'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { JiraIssue, MyTaskStatus } from '@shared/jira'
 import { formatDuration } from '@shared/timeline'
 import Icon from '../components/Icon.vue'
@@ -22,7 +23,21 @@ watch(opened, async (k) => {
   openedIssue.value = undefined
   if (k) openedIssue.value = (await window.qa.jiraIssue(k)) ?? undefined
 })
-const { items, total, loading, onScroll } = useJiraFind(q, { page: 60 })
+const { items, total, loading, onScroll, more } = useJiraFind(q, { page: 60 })
+/**
+ * The list is filled to the bottom of the box: the next pages come by scrolling — but a short list (the projects
+ * folded, a first page of one project) has nothing to scroll, so they are asked for at once until it overflows.
+ */
+const listEl = ref<HTMLElement>()
+async function fill(): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await nextTick()
+    const el = listEl.value
+    if (!el || loading.value || items.value.length >= total.value) return
+    if (el.scrollHeight - el.clientHeight > 200) return
+    await more()
+  }
+}
 const tracked = ref<Record<string, number>>({})
 
 async function loadTracked(): Promise<void> {
@@ -43,10 +58,45 @@ const groups = computed(() => {
   return out
 })
 
+/** Projects folded (by key) — remembered. */
+const FOLD_KEY = 'qa.jira.folded'
+const folded = ref<Set<string>>(
+  (() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]') as string[])
+    } catch {
+      return new Set<string>()
+    }
+  })(),
+)
+function fold(key: string): void {
+  const n = new Set(folded.value)
+  if (n.has(key)) n.delete(key)
+  else n.add(key)
+  folded.value = n
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify([...n]))
+  } catch {
+    // fine
+  }
+}
+/** All folded / all open (the button over the list). */
+const allFolded = computed(() => groups.value.length > 0 && groups.value.every(([k]) => folded.value.has(k)))
+function foldAll(): void {
+  folded.value = allFolded.value ? new Set() : new Set(groups.value.map(([k]) => k))
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify([...folded.value]))
+  } catch {
+    // fine
+  }
+}
+
+watch([folded, () => items.value.length, loading], () => !loading.value && void fill())
+
 const today = new Date().toISOString().slice(0, 10)
 const fmtDue = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`
 function open(i: JiraIssue): void {
-  if (jira.value.siteUrl) window.qa.openExternal(`${jira.value.siteUrl}/browse/${i.key}`)
+  if (jira.value.siteUrl) openUrl(`${jira.value.siteUrl}/browse/${i.key}`)
 }
 const sync = () => void window.qa.jiraSync()
 const star = (i: JiraIssue) => window.qa.jiraStar(i.key, !jira.value.starred.includes(i.key))
@@ -57,7 +107,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 </script>
 
 <template>
-  <div class="tasks" @scroll.passive="onScroll">
+  <div ref="listEl" class="tasks" @scroll.passive="onScroll">
     <div class="topbar">
       <input v-model="q" class="search" placeholder="Поиск по задачам" spellcheck="false" />
 
@@ -78,12 +128,15 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
           <template v-else-if="jira.error"><span class="err">ошибка: {{ jira.error }}</span></template>
           <template v-else>синхр. {{ syncedText }} · каждые 10 мин</template>
         </span>
+        <button v-if="groups.length > 1" class="ico" :title="allFolded ? 'Развернуть все проекты' : 'Свернуть все проекты'" @click="foldAll"><Icon :name="allFolded ? 'chevronDown' : 'collapse'" :size="14" /></button>
         <button class="ico" title="Синхронизировать сейчас" :disabled="jira.syncing" @click="sync"><Icon name="refresh" :size="14" /></button>
       </div>
 
-      <section v-for="[key, g] in groups" :key="key" class="proj">
-        <h3>{{ g.name }} <span class="muted">{{ key }}</span></h3>
-        <template v-for="i in g.items" :key="i.key">
+      <section v-for="[key, g] in groups" :key="key" class="proj" :class="{ folded: folded.has(key) }">
+        <h3 :title="folded.has(key) ? 'Развернуть' : 'Свернуть'" @click="fold(key)">
+          <Icon name="chevronRight" :size="12" class="fchev" />{{ g.name }} <span class="muted">{{ key }}</span><span class="cnt">{{ g.items.length }}</span>
+        </h3>
+        <template v-for="i in folded.has(key) ? [] : g.items" :key="i.key">
         <div class="row" :class="{ done: isDone(i), open: opened === i.key }">
           <button class="chev" :title="opened === i.key ? 'Свернуть' : 'Описание и поля'" @click="opened = opened === i.key ? undefined : i.key"><Icon name="chevronRight" :size="13" /></button>
           <button class="star" :class="{ on: jira.starred.includes(i.key) }" :title="i.mine ? 'Назначена на вас' : jira.starred.includes(i.key) ? 'Убрать из выбранных' : 'Выбрать себе'" @click="star(i)">
@@ -201,6 +254,11 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
   padding: 10px 14px;
 }
 h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
   margin: 2px 0 8px;
   font-size: 11px;
   font-family: var(--font-data);
@@ -208,6 +266,25 @@ h3 {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-2);
+}
+.fchev {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+  color: var(--muted);
+}
+.proj.folded .fchev {
+  transform: none;
+}
+.proj.folded h3 {
+  margin-bottom: 2px;
+}
+h3 .cnt {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+  font-weight: 400;
 }
 h3 .muted {
   font-weight: 400;

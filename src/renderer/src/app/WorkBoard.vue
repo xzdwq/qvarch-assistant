@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { dayEnd, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges, shiftDay } from '@shared/timeline'
+import { dayEnd, dayStart, formatDuration, formatHM, MINUTE, overlapPairs, scheduleRanges, shiftDay } from '@shared/timeline'
 import type { Quick } from '@shared/quickadd'
-import type { TaskRef } from '@shared/jira'
-import type { Entry, Ms, Note, PlanBlock, PublicSettings } from '@shared/types'
+import type { JiraIssue, TaskRef } from '@shared/jira'
+import type { Entry, Ms, Note, PlanBlock, PublicSettings, Selection } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import DatePick from '../components/DatePick.vue'
 import QuickAdd, { type QuickDraft } from '../components/QuickAdd.vue'
 import TaskSearch from '../components/TaskSearch.vue'
 import EventStream from '../components/EventStream.vue'
+import Timeline from '../components/Timeline.vue'
+import DayStrip from '../components/DayStrip.vue'
+import SheetView from './SheetView.vue'
+import { refreshMentions } from '../lib/mentions'
+import NoteLinks from '../components/NoteLinks.vue'
+import JiraDetails from '../components/JiraDetails.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { entryIcon, kindColor, kindLabel } from '../lib/palette'
 import { todayKey } from '../lib/today'
-import { useNow } from '../lib/useDay'
+import { useDay, useNow } from '../lib/useDay'
 import { mondayOf, useRange, type RangeDay } from '../lib/useRange'
 import { recentLabels } from '../lib/recent'
 
@@ -20,10 +26,28 @@ import { recentLabels } from '../lib/recent'
  * «Моя работа» · Работа: the week at a glance (each day's done and planned time), one line to add anything,
  * the chosen day as a feed (done → now → plan, free gaps in between), and the tasks of the day / the week.
  */
-const props = defineProps<{ settings: PublicSettings }>()
+const props = defineProps<{ settings: PublicSettings; focus?: { day: string; entryId?: string; n: number } }>()
 const emit = defineEmits<{ openDay: [day: string, entryId?: string] }>()
 
-const day = ref(todayKey.value)
+/** The chosen day — remembered («today» as today: the next day it is the next day). */
+const DAY_KEY = 'qa.work.day'
+const day = ref(
+  (() => {
+    try {
+      const v = localStorage.getItem(DAY_KEY)
+      return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : todayKey.value
+    } catch {
+      return todayKey.value
+    }
+  })(),
+)
+watch(day, (d) => {
+  try {
+    localStorage.setItem(DAY_KEY, d === todayKey.value ? 'today' : d)
+  } catch {
+    // fine
+  }
+})
 watch(todayKey, (now, was) => {
   if (day.value === was) day.value = now
 })
@@ -186,6 +210,11 @@ const feed = computed<Row[]>(() => {
   return rows.sort((a, b) => a.at - b.at || (a.t === 'now' ? -1 : b.t === 'now' ? 1 : 0))
 })
 const flash = ref<string>()
+// the notes the events are mentioned in
+refreshMentions()
+/** Blocks of the day at the same time: under the later one — with which, when, how long. */
+const overlaps = computed(() => overlapPairs(cur.value.entries))
+const overlapsOf = (id: string) => overlaps.value.filter((o) => o.b.id === id)
 
 // ---------- quick add ----------
 const quick = ref<InstanceType<typeof QuickAdd>>()
@@ -260,6 +289,115 @@ async function planDrop(p: PlanBlock): Promise<void> {
   await reload()
 }
 
+/** Following the time on the timeline (the same switch as the Таймлайн section's — a setting). */
+const tlRef = ref<InstanceType<typeof Timeline>>()
+const following = computed(() => !!props.settings.ui.timeline.follow)
+const setFollow = (on: boolean) => void window.qa.updateSettings({ ui: { timeline: { follow: on } } })
+let navWheelAt = 0
+function onNavWheel(e: WheelEvent): void {
+  if (!e.deltaY || performance.now() - navWheelAt < 90) return
+  navWheelAt = performance.now()
+  shiftPeriod(e.deltaY < 0 ? 1 : -1)
+}
+// ---------- the top: the week, or the chosen day's timeline (remembered) ----------
+const remembered = <T extends string>(key: string, values: T[], def: T) => {
+  const r = ref<T>(values.includes(localStorage.getItem(key) as T) ? (localStorage.getItem(key) as T) : def)
+  watch(r, (v) => {
+    try {
+      localStorage.setItem(key, v)
+    } catch {
+      // fine
+    }
+  })
+  return r
+}
+const top = remembered<'week' | 'timeline'>('qa.work.top', ['timeline', 'week'], 'timeline')
+/** The day's list, or Заполнение (the period's sheet). */
+const feedTab = remembered<'list' | 'sheet'>('qa.work.feedTab', ['list', 'sheet'], 'list')
+// a day / a block opened from elsewhere (the island, a report, a reminder): that day, the block picked
+watch(
+  () => props.focus?.n,
+  () => {
+    const f = props.focus
+    if (!f) return
+    if (per.value.mode === 'range' && (f.day < per.value.from || f.day > per.value.to)) per.value = { mode: 'week' }
+    day.value = f.day
+    if (f.entryId) {
+      openId.value = f.entryId
+      flash.value = f.entryId
+      feedTab.value = 'list'
+      setTimeout(() => flash.value === f.entryId && (flash.value = undefined), 2500)
+    }
+  },
+  { immediate: true },
+)
+const { data: dayData, reload: reloadDay } = useDay(day)
+const sched = computed(() => scheduleRanges(day.value, props.settings.schedule))
+const tlBounds = computed<[Ms, Ms]>(() => [dayStart(day.value), dayEnd(day.value)])
+const tlInitial = computed<[Ms, Ms]>(() => {
+  const es = dayData.value.entries
+  const starts = es.map((e) => e.start)
+  const ends = [...es.map((e) => e.end), ...(isToday.value ? [now.value] : [])]
+  if (sched.value.work) {
+    starts.push(sched.value.work[0])
+    ends.push(sched.value.work[1])
+  }
+  const HOUR = 60 * MINUTE
+  const from = starts.length ? Math.min(...starts) : dayStart(day.value) + 9 * HOUR
+  const to = ends.length ? Math.max(...ends) : dayStart(day.value) + 18 * HOUR
+  return [Math.max(dayStart(day.value), Math.floor((from - 15 * MINUTE) / HOUR) * HOUR), Math.min(dayEnd(day.value), Math.ceil((to + 15 * MINUTE) / HOUR) * HOUR)]
+})
+const tlSel = ref<Selection | null>(null)
+watch(day, () => (tlSel.value = null))
+async function reloadAll(): Promise<void> {
+  await Promise.all([reload(), reloadDay()])
+}
+/** A span chosen on the timeline: the quick line gets its time. */
+function onTlSelection(sel: Selection | null, commit: boolean): void {
+  tlSel.value = sel
+  if (commit && sel?.end !== undefined) quick.value?.focus(`${formatHM(sel.start)}-${formatHM(sel.end)} `)
+}
+async function tlSave(id: string, patch: Partial<Entry>): Promise<void> {
+  const e = dayData.value.entries.find((x) => x.id === id)
+  if (!e) return
+  try {
+    await window.qa.saveEntry(day.value, { ...e, ...patch }, { overlap: true })
+  } catch (x) {
+    fail(x)
+  }
+  await reloadAll()
+}
+async function tlCut(kind: string): Promise<void> {
+  const m = tlSel.value
+  if (!m) return
+  await window.qa.saveEntry(day.value, { start: m.start, end: m.end ?? now.value, kind, label: kindLabel(kind), source: 'manual' }, { overlap: true })
+  tlSel.value = null
+  await reloadAll()
+}
+async function tlDelete(id: string): Promise<void> {
+  await window.qa.deleteEntry(day.value, id)
+  await reloadAll()
+}
+async function tlMerge(ids: string[]): Promise<void> {
+  await window.qa.mergeEntries(day.value, ids)
+  await reloadAll()
+}
+
+// ---------- a Jira task of an event, unfolded in the list ----------
+const jiraOpen = ref(new Set<string>())
+const issues = ref<Record<string, JiraIssue | null>>({})
+async function toggleJira(e: Entry): Promise<void> {
+  const s = new Set(jiraOpen.value)
+  if (s.has(e.id)) s.delete(e.id)
+  else s.add(e.id)
+  jiraOpen.value = s
+  const key = e.task?.key
+  if (key && !(key in issues.value)) {
+    const i = await window.qa.jiraIssue(key).catch(() => undefined)
+    issues.value = { ...issues.value, [key]: i ?? null }
+  }
+}
+
 /** 1 запись, 2 записи, 5 записей. */
 const plural = (n: number, one: string, few: string, many: string) => (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many)
 </script>
@@ -268,7 +406,7 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
   <div class="wb">
     <!-- the week -->
     <div class="whead">
-      <span class="wnav">
+      <span class="wnav" title="Колесо мыши — на неделю (период) вперёд или назад" @wheel.prevent="onNavWheel">
         <button class="ib" :title="per.mode === 'week' ? 'Предыдущая неделя' : 'Предыдущий период'" @click="shiftPeriod(-1)"><Icon name="chevronLeft" :size="14" /></button>
         <button ref="rangeEl" class="wt num" :class="{ on: rangeOpen, rng: per.mode === 'range' }" title="Выбрать период" @click="rangeOpen = !rangeOpen"><Icon name="calendar" :size="12" />{{ weekTitle }}</button>
         <button class="ib" :title="per.mode === 'week' ? 'Следующая неделя' : 'Следующий период'" @click="shiftPeriod(1)"><Icon name="chevronRight" :size="14" /></button>
@@ -276,6 +414,8 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
       <DateRangePicker v-if="rangeOpen" :from="weekStart" :to="weekEnd" :anchor="rangeEl" :max="62" @apply="applyRange" @close="rangeOpen = false" />
       <button v-if="per.mode === 'range'" class="toweek" title="Показывать неделю выбранного дня" @click="toWeek">Неделя</button>
       <DatePick v-model="day" />
+      <!-- always there (hidden when not for this day / the week): the bar never changes its size -->
+      <button class="follow" :style="{ visibility: top === 'timeline' && isToday ? 'visible' : 'hidden' }" :class="{ on: following }" :title="following ? 'Автопрокрутка включена: таймлайн следует за текущим временем' : 'Автопрокрутка: таймлайн следует за текущим временем'" @click="tlRef?.toggleFollow()"><Icon name="follow" :size="13" /></button>
       <span class="tots">
         <span>СДЕЛАНО <b>{{ formatDuration(totals.done) }}</b></span>
         <span class="o1">ЗАДАЧИ <b>{{ formatDuration(totals.tasks) }}</b></span>
@@ -283,7 +423,39 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
         <span class="o2">ПЛАН <b class="pl">{{ formatDuration(totals.plan) }}</b></span>
       </span>
     </div>
-    <div class="strip" :class="{ many: days.length > 10 }" :style="{ gridTemplateColumns: `repeat(${days.length || 7}, minmax(${days.length > 10 ? 76 : 0}px, 1fr))` }">
+    <div class="toprow">
+    <div class="topsw">
+      <button :class="{ on: top === 'timeline' }" title="Таймлайн выбранного дня" @click="top = 'timeline'"><Icon name="timeline" :size="14" /></button>
+      <button :class="{ on: top === 'week' }" title="Неделя: время по дням" @click="top = 'week'"><Icon name="calendar" :size="14" /></button>
+    </div>
+    <div v-if="top === 'timeline'" class="tlwrap">
+      <Timeline
+        ref="tlRef"
+        :data="dayData"
+        :follow="settings.ui.timeline"
+        @follow="setFollow"
+        :now="isToday ? now : undefined"
+        :cursor="isToday ? now : tlInitial[0]"
+        :schedule="sched"
+        :bounds="tlBounds"
+        :initial="tlInitial"
+        :selection="tlSel"
+        :selected-id="openId"
+        view-key="work"
+        @select="(id) => (openId = id)"
+        @selection="onTlSelection"
+        @resize="(c) => tlSave(c.id, { start: c.start, end: c.end })"
+        @move="(c) => tlSave(c.id, { start: c.start, end: c.end, lane: c.lane })"
+        @change-kind="(c) => tlSave(c.id, { kind: c.kind })"
+        @cut-as="tlCut"
+        @delete-entry="tlDelete"
+        @merge="tlMerge"
+        @plan-changed="reloadAll"
+      />
+      <!-- the day as a chain of events -->
+      <DayStrip class="wchain" :entries="dayData.entries" :now="now" :countdown="settings.ui.timeline.countdown" />
+    </div>
+    <div v-else class="strip" :class="{ many: days.length > 10 }" :style="{ gridTemplateColumns: `repeat(${days.length || 7}, minmax(${days.length > 10 ? 76 : 0}px, 1fr))` }">
       <button v-for="w in week" :key="w.day" class="dcell" :class="{ sel: w.day === day, today: w.day === todayKey, off: w.off }" @click="day = w.day">
         <span class="dtop"><span class="dwd">{{ w.wd }}</span><span class="dn num">{{ w.n }}</span></span>
         <span class="dsum num">{{ w.done ? formatDuration(w.done) : '—' }}<small v-if="w.plan">+{{ formatDuration(w.plan) }}</small></span>
@@ -296,6 +468,7 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
         <span class="dcnt">{{ w.count ? `${w.count} зап.` : '' }}<template v-if="w.notes"> · {{ w.notes }} зам.</template></span>
       </button>
     </div>
+    </div>
 
     <QuickAdd ref="quick" class="qadd" :day="day" :week-start="mondayOf(day)" :place="placeQ" @add="onQuick" />
     <p v-if="err" class="err">{{ err }}</p>
@@ -304,9 +477,15 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
       <!-- the day -->
       <section class="feed">
         <div class="cap fh">
-          <span>{{ isToday ? 'Сегодня' : 'День' }} · {{ cur.entries.length }} {{ plural(cur.entries.length, 'запись', 'записи', 'записей') }}</span>
-          <button class="lnk" title="Открыть день на таймлайне" @click="emit('openDay', day)"><Icon name="timeline" :size="12" />таймлайн</button>
+          <span v-if="feedTab === 'list'">{{ isToday ? 'Сегодня' : 'День' }} · {{ cur.entries.length }} {{ plural(cur.entries.length, 'запись', 'записи', 'записей') }}<template v-if="overlaps.length"> · <em class="ovc">{{ overlaps.length }} {{ plural(overlaps.length, 'пересечение', 'пересечения', 'пересечений') }}</em></template></span>
+          <span v-else>Заполнение · {{ weekTitle }}</span>
+          <span class="ftabs">
+            <button :class="{ on: feedTab === 'list' }" title="Записи выбранного дня" @click="feedTab = 'list'">Записи</button>
+            <button :class="{ on: feedTab === 'sheet' }" title="Табель периода: часы по задачам и дням" @click="feedTab = 'sheet'">Заполнение</button>
+          </span>
         </div>
+        <SheetView v-if="feedTab === 'sheet'" class="wsheet" :settings="settings" widget store="work" :range="{ from: weekStart, to: weekEnd }" @go="(_v, d, id) => d && ((day = d), (feedTab = 'list'), id && (openId = id))" />
+        <template v-else>
         <template v-for="r in feed" :key="r.key">
           <div v-if="r.t === 'now'" class="nowline"><span class="num">{{ formatHM(r.at) }}</span></div>
           <button v-else-if="r.t === 'gap'" class="gap" :class="{ plan: r.plan }" title="Заполнить это время" @click="fillGap(r)">
@@ -339,22 +518,38 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
             <span v-if="isLive(r.e)" class="lv"><i></i>идёт</span>
             <span v-if="r.e.outlook" class="badge">Outlook</span>
             <span v-if="r.plan && !isLive(r.e)" class="badge pl">план</span>
-            <span v-if="r.e.task" class="tchip" :title="r.e.task.summary" @click.stop>
-              {{ r.e.task.key }}<button title="Отвязать задачу" @click="giveTask(r.e, null)"><Icon name="x" :size="10" /></button>
+            <span v-if="r.e.task" class="tchip" :class="{ open: jiraOpen.has(r.e.id) }" :title="r.e.task.summary" @click.stop>
+              <button class="jx" :title="jiraOpen.has(r.e.id) ? 'Свернуть задачу Jira' : 'Показать задачу Jira здесь'" @click="toggleJira(r.e)">{{ r.e.task.key }}<Icon name="chevronDown" :size="10" /></button><button title="Отвязать задачу" @click="giveTask(r.e, null)"><Icon name="x" :size="10" /></button>
             </span>
             <span v-else @click.stop>
               <TaskSearch :marked="[]" placeholder="К какой задаче отнести это время?" @pick="(t) => giveTask(r.e, t)">
                 <button class="give" title="Отнести к задаче"><Icon name="plus" :size="10" />задача</button>
               </TaskSearch>
             </span>
+            <NoteLinks :id="r.e.id" />
             <span class="du num">{{ formatDuration(r.e.end - r.e.start) }}</span>
             <span class="acts" @click.stop>
-              <button title="На таймлайне" @click="emit('openDay', day, r.e.id)"><Icon name="timeline" :size="13" /></button>
+              <button title="Показать на таймлайне" @click="(top = 'timeline'), (openId = r.e.id)"><Icon name="timeline" :size="13" /></button>
               <button v-if="!r.e.outlook" title="Удалить" @click="removeEntry(r.e)"><Icon name="trash" :size="13" /></button>
             </span>
           </div>
+          <template v-if="r.t === 'e'">
+            <div v-for="o in overlapsOf(r.e.id)" :key="`o${o.a.id}${o.b.id}`" class="orow" :class="{ past: o.end <= now }" :title="`Одновременно с «${o.a.label}»`" @click="openId = o.a.id">
+              <Icon name="layers" :size="11" />
+              <span>пересечение с <b>{{ formatHM(o.a.start) }}–{{ formatHM(o.a.end) }}</b> {{ o.a.label || kindLabel(o.a.kind) }}</span>
+              <span class="grow"></span>
+              <span class="otime">{{ formatHM(o.start) }}–{{ formatHM(o.end) }}</span>
+              <b class="odur">{{ formatDuration(o.end - o.start) }}</b>
+            </div>
+          </template>
+          <div v-if="r.t === 'e' && r.e.task && jiraOpen.has(r.e.id)" class="jdet">
+            <JiraDetails v-if="issues[r.e.task.key]" :issue="issues[r.e.task.key]!" />
+            <p v-else-if="issues[r.e.task.key] === null" class="none">Задачи {{ r.e.task.key }} нет среди загруженных из Jira — откройте её в Jira или проверьте подключение.</p>
+            <p v-else class="none">Загружаю из Jira…</p>
+          </div>
         </template>
         <p v-if="!feed.some((r) => r.t !== 'now')" class="none">Пусто. Добавьте запись строкой выше — нажмите N.</p>
+        </template>
       </section>
 
       <!-- the side: the open block, or the tasks -->
@@ -367,6 +562,92 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
 </template>
 
 <style scoped>
+/* the week / the timeline, its switch on the left (two icons one over the other) */
+.toprow {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  min-width: 0;
+}
+.toprow > .strip,
+.toprow > .tlwrap {
+  flex: 1;
+  min-width: 0;
+}
+.topsw {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+}
+.topsw button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* the same size over the week and over the timeline */
+  width: 30px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+}
+.topsw button:hover {
+  color: var(--text);
+}
+.topsw button.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
+}
+.follow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+}
+.follow.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
+}
+.wchain {
+  border-top: 1px solid var(--border);
+}
+.tlwrap {
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.tchip .jx {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  padding: 0 2px;
+  color: inherit;
+  font: inherit;
+}
+.tchip.open {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}
+.jdet {
+  margin: -2px 0 6px 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #2684ff;
+  border-radius: var(--r2);
+  background: var(--panel);
+}
 .wb {
   display: flex;
   flex-direction: column;
@@ -615,6 +896,100 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
   background: var(--panel);
   padding-bottom: 6px;
 }
+.nlinks {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  max-width: 260px;
+  overflow: hidden;
+}
+.nlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 130px;
+  height: 20px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nlink:hover {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.nmore {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.ftabs {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.ftabs button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.ftabs button.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
+}
+.ovc {
+  color: var(--warn-fg);
+  font-style: normal;
+}
+.wsheet {
+  flex: 1;
+  min-height: 0;
+}
+.orow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 4px 38px;
+  padding: 3px 8px;
+  border-left: 2px solid rgba(255, 183, 77, 0.6);
+  border-radius: var(--r2);
+  background: rgba(255, 183, 77, 0.06);
+  color: var(--warn-fg);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.orow.past {
+  opacity: 0.75;
+}
+.orow > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orow .otime,
+.orow .odur {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.orow .otime {
+  color: var(--muted);
+}
+.orow .odur {
+  color: var(--warn);
+}
 .fh {
   display: flex;
   align-items: center;
@@ -624,21 +999,6 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
   padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
-}
-.lnk {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  text-transform: uppercase;
-}
-.lnk:hover {
-  color: var(--accent-fg);
 }
 .row {
   display: flex;

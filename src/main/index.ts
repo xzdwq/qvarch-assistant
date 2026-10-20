@@ -3,8 +3,14 @@ import { deleteProject, importVscodeProjects, readProjects, saveProject, setRele
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { Mcp, type McpTool } from './mcp'
+import { qvarchTools } from './mcpTools'
+import { netClear, netListen, setupNoteBrowser } from './noteBrowser'
+import { TraceServer } from './traceServer'
+import { PW_BROWSERS } from '../shared/runbook'
+import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../shared/docBundle'
 import { join } from 'node:path'
-import { IPC, type AppCommand } from '../shared/api'
+import { IPC, type AppCommand, type PwJob, type PwResult, type PwStep } from '../shared/api'
 import { clipEntries, dayEnd, dayKey, dayStart, shiftDay, firstFreeLane, mergeEntries, pinLanes, placeEntry, putEntry, scheduleRanges } from '../shared/timeline'
 import type { DayStateMessage, Entry, LocalTask, Note, PlanBlock, Selection, SettingsPatch } from '../shared/types'
 import { emptyCombo, pushKeys, type ComboState } from '../shared/combo'
@@ -68,8 +74,8 @@ function broadcast(): void {
   pending = true
   setTimeout(() => {
     pending = false
-    // a marker left on a previous day is stale
-    if (selection && selection.day !== dayKey(Date.now())) selection = null
+    // a marker following «now» left on a previous day is stale (a closed one on any day is a choice — kept)
+    if (selection && selection.end === undefined && selection.day !== dayKey(Date.now())) selection = null
     const msg: DayStateMessage = { day: store.day(dayKey(Date.now())), live: { ...tracker.live, now: Date.now() }, selection }
     for (const w of [mainWin, island?.win]) if (w && !w.isDestroyed()) w.webContents.send(IPC.dayState, msg)
   }, 250)
@@ -193,7 +199,11 @@ function tasksChanged(): void {
 
 // ---------- windows ----------
 
-type Nav = { day?: string; entryId?: string; view?: 'day' | 'settings' }
+/** Saving an entry (the IPC handler and the AI tools): set up with the store. */
+let saveEntryImpl: (day: string, input: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }) => Entry = () => {
+  throw new Error('not ready')
+}
+type Nav = { day?: string; entryId?: string; view?: 'day' | 'settings' | 'browser' }
 
 function showMain(nav?: Nav): void {
   if (!mainWin || mainWin.isDestroyed()) {
@@ -247,6 +257,8 @@ function runCommand(cmd: AppCommand): void {
   if (cmd === 'island-toggle') toggleIsland()
   else if (cmd === 'island-reset') resetIsland()
   else if (cmd === 'devtools') mainWin?.webContents.toggleDevTools()
+  // the window's page loaded anew (its own scripts, styles — what was changed by hand goes)
+  else if (cmd === 'reload') mainWin?.webContents.reloadIgnoringCache()
   else if (cmd === 'open-data-folder') void shell.openPath(store.root)
   else if (cmd === 'quit') {
     quitting = true
@@ -445,7 +457,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.getDay, (_e, day: string) => store.day(day))
   ipcMain.handle(IPC.getLive, () => ({ ...tracker.live, now: Date.now() }))
 
-  ipcMain.handle(IPC.saveEntry, (_e, day: string, input: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }) => {
+  saveEntryImpl = (day: string, input: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }): Entry => {
     if (!(input.end > input.start)) throw new Error('Конец записи должен быть позже начала')
     const d = store.day(day)
     const prev = input.id ? d.entries.find((e) => e.id === input.id) : undefined
@@ -462,7 +474,8 @@ function registerIpc(): void {
     store.flush()
     broadcast()
     return entry
-  })
+  }
+  ipcMain.handle(IPC.saveEntry, (_e, day: string, input: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }) => saveEntryImpl(day, input, opts))
 
   ipcMain.handle(IPC.mergeEntries, (_e, day: string, ids: string[]) => {
     const d = store.day(day)
@@ -969,6 +982,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultMove, (_e, from: string, toDir: string, name?: string) => vault.move(str(from), str(toDir), name === undefined ? undefined : str(name)))
   ipcMain.handle(IPC.vaultDelete, (_e, p: string) => vault.remove(str(p)))
   ipcMain.handle(IPC.vaultSearch, (_e, q: string) => vault.search(str(q)))
+  ipcMain.handle(IPC.eventMentions, () => vault.eventMentions())
   ipcMain.handle(IPC.vaultSaveAudio, (_e, audio: Uint8Array) => vault.saveAudio(audio))
   ipcMain.handle(IPC.vaultReadAudio, (_e, p: string) => vault.readAudio(str(p)))
   ipcMain.handle(IPC.vaultTranscribe, (_e, wav: Uint8Array, key?: string) => {
@@ -985,6 +999,306 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultDeleteAudio, (_e, p: string) => vault.deleteAudio(str(p)))
   ipcMain.handle(IPC.vaultRestoreAudio, (_e, p: string, audio: Uint8Array) => vault.restoreAudio(str(p), audio))
   ipcMain.handle(IPC.vaultSaveImage, (_e, bytes: Uint8Array) => vault.saveImage(bytes))
+  ipcMain.handle(IPC.runLoad, (_e, p: string) => vault.runRead(str(p)))
+  ipcMain.handle(IPC.runSave, (_e, p: string, json: string) => vault.runWrite(str(p), str(json)))
+  // a document into one file — and back (on another machine)
+  ipcMain.handle(IPC.docExport, async (_e, p: string) => {
+    const rel = str(p)
+    let withRuns = false
+    if (vault.hasRuns(rel)) {
+      const opts = {
+        type: 'question' as const,
+        title: 'Экспорт документа',
+        message: 'Включить результаты выполнения?',
+        detail: 'Контекст заметки и ответы HTTP-блоков. В них могут быть токены, пароли и личные данные — включайте, только если файл не уйдёт посторонним.',
+        buttons: ['Без результатов', 'С результатами', 'Отмена'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      }
+      const r = mainWin ? await dialog.showMessageBox(mainWin, opts) : await dialog.showMessageBox(opts)
+      if (r.response === 2) return undefined
+      withRuns = r.response === 1
+    }
+    const { bundle, missing } = vault.exportDoc(rel, withRuns, app.getVersion())
+    const name = (rel.replace(/\/+$/, '').split('/').pop() || 'Документ').replace(/\.(md|qboard)$/i, '')
+    const opts = { defaultPath: `${name}.${BUNDLE_EXT}`, filters: [{ name: 'Документ Qvarch', extensions: [BUNDLE_EXT] }] }
+    const r = mainWin ? await dialog.showSaveDialog(mainWin, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return undefined
+    writeFileSync(r.filePath, JSON.stringify(bundle))
+    return { file: r.filePath, docs: bundle.docs.length, files: Object.keys(bundle.files).length, missing }
+  })
+  ipcMain.handle(IPC.docImport, async (_e, dir: string) => {
+    const opts = { properties: ['openFile' as const], filters: [{ name: 'Документ Qvarch', extensions: [BUNDLE_EXT] }, { name: 'Все файлы', extensions: ['*'] }] }
+    const r = mainWin ? await dialog.showOpenDialog(mainWin, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return undefined
+    if (statSync(r.filePaths[0]).size > MAX_BUNDLE) throw new Error(`Файл больше ${MAX_BUNDLE / 1024 / 1024} МБ`)
+    return vault.importDoc(parseBundle(readFileSync(r.filePaths[0], 'utf8')), str(dir))
+  })
+  // a .qvdoc dropped on the notebook's side
+  ipcMain.handle(IPC.docImportFile, (_e, dir: string, file: string) => {
+    const p = str(file)
+    if (!p.toLowerCase().endsWith(`.${BUNDLE_EXT}`)) throw new Error('Это не документ Qvarch (.qvdoc)')
+    if (statSync(p).size > MAX_BUNDLE) throw new Error(`Файл больше ${MAX_BUNDLE / 1024 / 1024} МБ`)
+    return vault.importDoc(parseBundle(readFileSync(p, 'utf8')), str(dir))
+  })
+  // a code block of a note: a process of its own per run (stopped at once, its memory capped)
+  const codeRuns = new Map<string, { proc: UtilityProcess; done: (r: unknown) => void; timer: NodeJS.Timeout }>()
+  const endRun = (id: string, r: unknown) => {
+    const run = codeRuns.get(id)
+    if (!run) return
+    codeRuns.delete(id)
+    clearTimeout(run.timer)
+    try {
+      run.proc.kill()
+    } catch {
+      // gone
+    }
+    run.done(r)
+  }
+  ipcMain.handle(IPC.runCode, (_e, runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }) => {
+    const id = str(runId)
+    endRun(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
+    return new Promise((done) => {
+      const proc = utilityProcess.fork(join(__dirname, 'codeWorker.js'), [], { serviceName: 'Qvarch Code', execArgv: ['--max-old-space-size=512', '--disable-warning=ExperimentalWarning'] })
+      const sec = Math.min(3600, Math.max(1, Number(job.timeoutSec) || 30))
+      const timer = setTimeout(() => endRun(id, { ok: false, error: `Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`, logs: [], ms: sec * 1000 }), sec * 1000)
+      codeRuns.set(id, { proc, done, timer })
+      proc.on('message', (m: unknown) => endRun(id, m))
+      proc.on('exit', (code) => endRun(id, { ok: false, error: code ? `Процесс выполнения завершился (код ${code}) — возможно, не хватило памяти (предел 512 МБ)` : 'Процесс выполнения завершился', logs: [], ms: 0 }))
+      proc.postMessage({ code: str(job.code), ts: !!job.ts, libs: Array.isArray(job.libs) ? job.libs : [], ctx: job.ctx ?? {}, runs: job.runs ?? {} })
+    })
+  })
+  ipcMain.on(IPC.runCodeStop, (_e, runId: string) => endRun(str(runId), { ok: false, error: 'Остановлено', logs: [], ms: 0 }))
+  // a Playwright block: a process of its own per run; asked to stop first (it closes its browser), killed if it does not
+  const pwRuns = new Map<string, { proc: UtilityProcess; done: (r: PwResult) => void; timer: NodeJS.Timeout; kill?: NodeJS.Timeout; reason?: string }>()
+  const endPw = (id: string, r: PwResult) => {
+    const run = pwRuns.get(id)
+    if (!run) return
+    pwRuns.delete(id)
+    clearTimeout(run.timer)
+    clearTimeout(run.kill)
+    try {
+      run.proc.kill()
+    } catch {
+      // gone
+    }
+    run.done(run.reason && !r.ok ? { ...r, error: run.reason } : r)
+  }
+  const stopPw = (id: string, reason: string) => {
+    const run = pwRuns.get(id)
+    if (!run || run.reason) return
+    run.reason = reason
+    run.proc.postMessage({ type: 'stop' })
+    run.kill = setTimeout(() => endPw(id, { ok: false, error: reason, logs: [], ms: 0 }), 8000)
+  }
+  /** The Браузер section's cookies in Playwright's form (a host-only one goes by its address). */
+  const browserCookies = async (): Promise<Array<Record<string, unknown>>> => {
+    const list = await session.fromPartition('persist:qa-browser').cookies.get({})
+    const same = { strict: 'Strict', lax: 'Lax', no_restriction: 'None', unspecified: 'Lax' } as const
+    return list
+      .filter((c) => c.domain && c.name)
+      .map((c) => {
+        const host = c.domain!.replace(/^\./, '')
+        const sameSite = c.sameSite === 'no_restriction' && !c.secure ? 'Lax' : same[c.sameSite ?? 'unspecified']
+        const base = { name: c.name, value: c.value, httpOnly: !!c.httpOnly, secure: !!c.secure, sameSite, ...(c.expirationDate ? { expires: Math.floor(c.expirationDate) } : {}) }
+        return c.hostOnly ? { ...base, url: `${c.secure ? 'https' : 'http'}://${host}${c.path ?? '/'}` } : { ...base, domain: c.domain!, path: c.path ?? '/' }
+      })
+  }
+  /**
+   * The cookies a run left, back into the Браузер section: a site that renews its session on every visit
+   * (Directus' refresh token) would otherwise be signed out there — its old cookie no longer valid.
+   * Only the changed and the new ones (what the user did there meanwhile is not overwritten with the same).
+   */
+  const cookiesBack = async (sent: Array<Record<string, unknown>>, got: unknown): Promise<number> => {
+    if (!Array.isArray(got)) return 0
+    const key = (c: { name?: unknown; domain?: unknown; path?: unknown; url?: unknown }) => {
+      const host = typeof c.url === 'string' ? new URL(c.url).hostname : String(c.domain ?? '').replace(/^\./, '')
+      return `${String(c.name)}|${host}|${typeof c.url === 'string' ? new URL(c.url).pathname : String(c.path ?? '/')}`
+    }
+    const before = new Map(sent.map((c) => [key(c), String(c.value)]))
+    const ses = session.fromPartition('persist:qa-browser')
+    const same = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' } as const
+    let n = 0
+    for (const raw of got as Array<{ name: string; value: string; domain: string; path: string; expires: number; httpOnly: boolean; secure: boolean; sameSite: 'Strict' | 'Lax' | 'None' }>) {
+      if (!raw?.name || !raw.domain || before.get(key(raw)) === raw.value) continue
+      const host = raw.domain.replace(/^\./, '')
+      try {
+        await ses.cookies.set({
+          url: `${raw.secure ? 'https' : 'http'}://${host}${raw.path || '/'}`,
+          name: raw.name,
+          value: raw.value,
+          // a leading dot — for the subdomains too; none — this host only
+          ...(raw.domain.startsWith('.') ? { domain: raw.domain } : {}),
+          path: raw.path || '/',
+          secure: raw.secure,
+          httpOnly: raw.httpOnly,
+          sameSite: same[raw.sameSite] ?? 'lax',
+          ...(raw.expires > 0 ? { expirationDate: raw.expires } : {}),
+        })
+        n++
+      } catch {
+        // one refused — the rest still go
+      }
+    }
+    return n
+  }
+  ipcMain.handle(IPC.runPw, async (e, runId: string, job: PwJob) => {
+    const id = str(runId)
+    const cookies = job?.session ? await browserCookies().catch(() => []) : undefined
+    endPw(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
+    const note = str(job?.note)
+    const dir = vault.runDir(note, str(job?.key))
+    rmSync(dir, { recursive: true, force: true })
+    return new Promise<PwResult>((done) => {
+      const proc = utilityProcess.fork(join(__dirname, 'pwWorker.js'), [], { serviceName: 'Qvarch Playwright', execArgv: ['--max-old-space-size=1024', '--disable-warning=ExperimentalWarning'] })
+      const sec = Math.min(3600, Math.max(5, Number(job.timeoutSec) || 120))
+      const timer = setTimeout(() => stopPw(id, `Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`), sec * 1000)
+      pwRuns.set(id, { proc, done, timer })
+      proc.on('message', (m: { type: string; steps?: PwStep[]; result?: PwResult }) => {
+        if (m?.type === 'progress' && !e.sender.isDestroyed()) e.sender.send(IPC.pwProgress, id, m.steps ?? [])
+        else if (m?.type === 'done' && m.result) {
+          const r = m.result as PwResult & { cookies?: unknown }
+          const got = r.cookies
+          // the cookies never go further (not to the window, not into the saved runs)
+          delete r.cookies
+          if (cookies && got) {
+            void cookiesBack(cookies, got).then((n) => {
+              if (n) r.logs = [...r.logs, { level: 'info', text: `Вход сохранён в Браузер: обновлено cookie — ${n}` }]
+              endPw(id, r)
+            }, () => endPw(id, r))
+          } else endPw(id, r)
+        }
+      })
+      proc.on('exit', (code) => endPw(id, { ok: false, error: code ? `Процесс Playwright завершился (код ${code})` : 'Процесс Playwright завершился', logs: [], ms: 0 }))
+      const name = (note.split('/').pop() ?? note).replace(/\.md$/i, '')
+      proc.postMessage({
+        type: 'run',
+        job: {
+          code: str(job.code),
+          ts: !!job.ts,
+          libs: Array.isArray(job.libs) ? job.libs : [],
+          ctx: job.ctx ?? {},
+          runs: job.runs ?? {},
+          dir,
+          name: str(job.name) || 'Сценарий',
+          suite: name,
+          browser: (PW_BROWSERS as readonly string[]).includes(job.browser) ? job.browser : 'msedge',
+          headed: !!job.headed,
+          trace: job.trace !== false,
+          ignoreHTTPSErrors: br.settings().acceptBadCerts,
+          cookies,
+        },
+      })
+    })
+  })
+  ipcMain.on(IPC.runPwStop, (_e, runId: string) => stopPw(str(runId), 'Остановлено'))
+  ipcMain.handle(IPC.runFile, (_e, p: string, key: string, name: string) => {
+    const n = str(name)
+    if (!/^(final|failure)\.png$/.test(n)) throw new Error('Недопустимый файл')
+    return readFileSync(join(vault.runDir(str(p), str(key)), n))
+  })
+  const traces = new TraceServer(vault.runsRoot)
+  app.on('will-quit', () => (traces.stop(), br.hooks.stop()))
+  ipcMain.handle(IPC.pwTrace, async (_e, p: string, key: string) => {
+    const url = await traces.url(join(vault.runDir(str(p), str(key)), 'trace.zip'))
+    br.open(url)
+    showMain({ view: 'browser' })
+  })
+  // the notes' browser component
+  const nbEmit = (host: Electron.WebContents, type: string, payload: unknown) => !host.isDestroyed() && host.send(IPC.nbEv, type, payload)
+  setupNoteBrowser(nbEmit)
+  // ---------- AI assistants (MCP): the window does the notes' part ----------
+  const mcpPending = new Map<string, { ok: (v: unknown) => void; fail: (e: Error) => void; timer: NodeJS.Timeout }>()
+  ipcMain.on(IPC.mcpReply, (_e, id: string, ok: boolean, value: unknown) => {
+    const p = mcpPending.get(String(id))
+    if (!p) return
+    mcpPending.delete(String(id))
+    clearTimeout(p.timer)
+    if (ok) p.ok(value)
+    else p.fail(new Error(String(value)))
+  })
+  const mcpUi = <T>(op: string, args: Record<string, unknown>): Promise<T> =>
+    new Promise<T>((ok, fail) => {
+      const w = mainWin
+      if (!w || w.isDestroyed()) return fail(new Error('Окно Qvarch закрыто — откройте приложение'))
+      const id = randomUUID()
+      // a run may take long (tests); the rest — seconds
+      const timer = setTimeout(() => (mcpPending.delete(id), fail(new Error('Окно Qvarch не ответило'))), op === 'run' ? 30 * 60_000 : 60_000)
+      mcpPending.set(id, { ok: ok as (v: unknown) => void, fail, timer })
+      w.webContents.send(IPC.mcpCall, id, op, args)
+    })
+  const mcp: Mcp = new Mcp(
+    store.root,
+    (): McpTool[] =>
+      qvarchTools({
+        tree: () => vault.tree(),
+        mkdir: (dir, name) => vault.create(dir, 'folder', name),
+        issue: (key) => jira.issue(key),
+        findIssues: (q) => jira.find(q, 0, 20).items,
+        day: (d) => store.day(d),
+        saveEntry: (d, input, opts) => saveEntryImpl(d, input, opts),
+        openInBrowser: (url) => void br.open(url),
+        ui: mcpUi,
+        allow: (): string[] => mcp.cfg.allow,
+        confirmHosts: async (hosts, note) => {
+          const opts = {
+            type: 'warning' as const,
+            title: 'AI-ассистент: запуск против стенда',
+            message: `${note}: адреса не из разрешённого списка`,
+            detail: `${hosts.join('\n')}\n\nРазрешены без вопроса: ${mcp.cfg.allow.join(', ')}. Это может быть рабочий стенд — тесты могут менять данные. Разрешить на этот сеанс?`,
+            buttons: ['Запретить', 'Разрешить'],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          }
+          const r = mainWin && !mainWin.isDestroyed() && mainWin.isVisible() ? await dialog.showMessageBox(mainWin, opts) : await dialog.showMessageBox(opts)
+          return r.response === 1
+        },
+      }),
+    app.getVersion(),
+  )
+  void mcp.restart()
+  app.on('will-quit', () => mcp.stop())
+  ipcMain.handle(IPC.mcpInfo, () => mcp.info())
+  ipcMain.handle(IPC.mcpSet, (_e, patch: Parameters<Mcp['set']>[0]) => mcp.set(patch ?? {}))
+  ipcMain.handle(IPC.mcpInstall, async (_e, client: 'desktop' | 'code') => {
+    const i = mcp.info()
+    if (client === 'desktop') {
+      // Claude Desktop: its config gets the stdio bridge (the app's exe runs it as Node)
+      const file = join(app.getPath('appData'), 'Claude', 'claude_desktop_config.json')
+      let cfg: { mcpServers?: Record<string, unknown> } = {}
+      try {
+        if (existsSync(file)) cfg = JSON.parse(readFileSync(file, 'utf8')) as typeof cfg
+      } catch {
+        throw new Error(`Не удалось прочитать ${file} — поправьте его вручную`)
+      }
+      cfg.mcpServers = { ...(cfg.mcpServers ?? {}), qvarch: { command: i.exe, args: [i.bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } }
+      mkdirSync(join(file, '..'), { recursive: true })
+      writeFileSync(file, JSON.stringify(cfg, null, 2))
+      return `Готово: ${file}. Перезапустите Claude Desktop.`
+    }
+    // Claude Code (VS Code and the terminal share it): its own command, for the user
+    const args = ['mcp', 'add', '--transport', 'http', '--scope', 'user', 'qvarch', i.url, '--header', `Authorization: Bearer ${i.token}`]
+    const { execFile } = await import('node:child_process')
+    return new Promise<string>((ok, fail) =>
+      execFile('claude', args, { shell: true, timeout: 30_000, windowsHide: true }, (err, out, errOut) => {
+        if (err) fail(new Error(/not recognized|не является|ENOENT/i.test(String(errOut) + String(err)) ? 'Команда claude не найдена — выполните её вручную (скопируйте ниже)' : String(errOut || err.message).trim()))
+        else ok(String(out).trim() || 'Готово: qvarch добавлен в Claude Code')
+      }),
+    )
+  })
+  ipcMain.handle(IPC.nbNet, (e, id: number, on: boolean, preserve?: boolean) => netListen(e.sender, Number(id), !!on, !!preserve, nbEmit))
+  ipcMain.handle(IPC.nbNetClear, (e, id: number) => netClear(e.sender, Number(id)))
+  ipcMain.on(IPC.browserOpen, (_e, url: string) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
+    br.open(url)
+    showMain({ view: 'browser' })
+  })
+  ipcMain.on(IPC.pwAllure, (_e, p: string, key: string) => {
+    const dir = join(vault.runDir(str(p), str(key)), 'allure-results')
+    if (existsSync(dir)) void shell.openPath(dir)
+  })
   ipcMain.handle(IPC.vaultReadImage, (_e, p: string) => vault.readImage(str(p)))
   ipcMain.handle(IPC.vaultDeleteImage, (_e, p: string) => vault.deleteImage(str(p)))
   ipcMain.handle(IPC.vaultRestoreImage, (_e, p: string, bytes: Uint8Array) => vault.restoreImage(str(p), bytes))

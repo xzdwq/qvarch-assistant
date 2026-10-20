@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { shiftDay } from '@shared/timeline'
 import type { AppCommand } from '@shared/api'
 import type { PublicSettings } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
 import { setKinds } from '../lib/palette'
-import DayView from './DayView.vue'
 import SettingsView from './SettingsView.vue'
 import WorkView from './WorkView.vue'
 import NotebookView from './NotebookView.vue'
@@ -16,17 +14,27 @@ import HttpView from './HttpView.vue'
 import TerminalView from './TerminalView.vue'
 import BrowserView from './BrowserView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
-import DatePick from '../components/DatePick.vue'
 import StatusBar from '../components/StatusBar.vue'
-import { onNewDay, todayKey } from '../lib/today'
+import { todayKey } from '../lib/today'
+import { setupLinks } from '../lib/links'
+import { startBrowser } from '../lib/browser'
+import { watchPwRec } from '../lib/pwrec'
+import { startMcpBridge } from '../lib/mcpBridge'
+setupLinks()
+// the browser's news from the start (a tab the app opens is placed even before the section is first shown)
+startBrowser()
+watchPwRec()
+startMcpBridge()
 
 import { orderedViews, VIEWS, type View } from '../lib/views'
-const view = ref<View>('day')
-const day = ref(todayKey.value)
-onNewDay((prev, next) => {
-  if (day.value === prev) day.value = next
-})
-const focusEntry = ref<string>()
+const view = ref<View>('work')
+/** A day (and a block on it) to show — Моя работа opens it. */
+const focus = ref<{ day: string; entryId?: string; n: number }>()
+let focusN = 0
+const openDay = (day: string, entryId?: string) => {
+  focus.value = { day: day || todayKey.value, entryId, n: ++focusN }
+  view.value = 'work'
+}
 const settings = ref<PublicSettings>()
 const menuOpen = ref(false)
 
@@ -36,7 +44,7 @@ void window.qa.getSettings().then((s) => {
   settings.value = s
   setKinds(s.kinds)
   // the window opens on the first section of the user's menu
-  if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'day'
+  if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'work'
 })
 
 function onSettings(s: PublicSettings): void {
@@ -48,18 +56,15 @@ const offSettings = window.qa.onSettings(onSettings)
 onBeforeUnmount(offSettings)
 const off = window.qa.onNavigate((nav) => {
   navigated = true
-  view.value = (nav.view as View | undefined) ?? 'day'
-  if (nav.day) day.value = nav.day
-  focusEntry.value = nav.entryId
+  // (the old Таймлайн section: a day / a block is shown in Моя работа)
+  const v = nav.view as string | undefined
+  if (!v || v === 'day' || v === 'log') {
+    if (nav.day || nav.entryId) openDay(nav.day ?? todayKey.value, nav.entryId)
+    else view.value = 'work'
+  } else view.value = v as View
 })
 onBeforeUnmount(off)
 
-/** From a section: open another one (a day / a block on it). */
-function go(v: View, d?: string, entryId?: string): void {
-  if (d) day.value = d
-  focusEntry.value = entryId
-  view.value = v
-}
 function closeMenu(): void {
   menuOpen.value = false
 }
@@ -87,13 +92,40 @@ function openHttp(id: string): void {
   }
   view.value = 'http'
 }
+// a section asked for from inside one (the scenario recording: to the Браузер and back to the note)
+const onView = (e: Event) => {
+  const v = (e as CustomEvent<string>).detail
+  if (v === 'notebook' || v === 'browser' || v === 'work') view.value = v as View
+}
+onMounted(() => window.addEventListener('qa:view', onView))
+onBeforeUnmount(() => window.removeEventListener('qa:view', onView))
+// an event opened in Моя работа (from a note's event card)
+const onOpenDay = (e: Event) => {
+  const d = (e as CustomEvent<{ day: string; id?: string }>).detail
+  if (d?.day) openDay(d.day, d.id)
+}
+onMounted(() => window.addEventListener('qa:open-day', onOpenDay))
+onBeforeUnmount(() => window.removeEventListener('qa:open-day', onOpenDay))
 const menu = computed(() => orderedViews(settings.value?.ui.menu).filter((v) => v.id === view.value || !settings.value?.ui.menu.hidden.includes(v.id)))
 
 const sectionName = computed(() => (view.value === 'settings' ? 'Настройки' : (VIEWS.find((v) => v.id === view.value)?.label ?? '')))
-// an emptied date — back to today
-watch(day, (v) => {
-  if (!v) day.value = todayKey.value
-})
+
+/** The window reloaded (as F5 in a browser): the notes' typing is saved first. */
+const reloading = ref(false)
+async function reloadApp(): Promise<void> {
+  if (reloading.value) return
+  // a turn of the icon: something is happening
+  reloading.value = true
+  try {
+    const { saveAll } = await import('../lib/notebook')
+    await Promise.race([saveAll(), new Promise((r) => setTimeout(r, 1500))])
+  } catch {
+    // reload anyway
+  }
+  await new Promise((r) => setTimeout(r, 450))
+  // by the main process: the window itself never navigates (a guard against files dropped on it)
+  window.qa.command('reload')
+}
 
 // ---------- the whole window's scale (remembered) ----------
 // CSS zoom of the content only — Chromium's page zoom would be shared with the island (the same file:// origin), and a
@@ -133,16 +165,12 @@ function setAppZoom(z: number): void {
         </button>
       </nav>
 
-      <div v-if="view === 'day'" class="daynav nodrag">
-        <button class="ico" title="Предыдущий день" @click="day = shiftDay(day, -1)"><Icon name="chevronLeft" :size="15" /></button>
-        <DatePick v-model="day" class="tdate" />
-        <button class="ico" title="Следующий день" @click="day = shiftDay(day, 1)"><Icon name="chevronRight" :size="15" /></button>
-      </div>
       <span class="dragfill"></span>
       </div>
 
       <div class="tside r">
       <span class="dragfill"></span>
+      <button class="ico nodrag" :class="{ spin: reloading }" title="Обновить приложение (как обновление страницы) — несохранённое сохраняется" aria-label="Обновить приложение" @click="reloadApp"><Icon name="refresh" :size="15" /></button>
       <ZoomChip class="azoom" :model-value="appZoom" :min="50" :max="200" title="Масштаб окна · колесо — изменить, клик — 100%" @update:model-value="setAppZoom" />
       <button class="ico nodrag" :class="{ on: view === 'settings' }" title="Настройки" aria-label="Настройки" @click="view = 'settings'">
         <Icon name="settings" :size="16" />
@@ -167,9 +195,8 @@ function setAppZoom(z: number): void {
     <SeriesAsk />
     <main v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
-        <DayView v-if="view === 'day'" :day="day" :settings="settings" :focus-entry="focusEntry" @open-day="(d, id) => ((day = d), (focusEntry = id))" />
-        <NotebookView v-else-if="view === 'notebook'" />
-        <WorkView v-else-if="view === 'work'" :settings="settings" @go="go" @settings="view = 'settings'" @open-day="(d) => ((day = d), (view = 'day'))" />
+        <NotebookView v-if="view === 'notebook'" />
+        <WorkView v-else-if="view === 'work'" :settings="settings" :focus="focus" @settings="view = 'settings'" />
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
         <div v-else-if="view === 'terminal'" class="termslot"></div>
@@ -185,6 +212,14 @@ function setAppZoom(z: number): void {
 </template>
 
 <style scoped>
+.ico.spin :deep(svg) {
+  animation: qa-spin 0.6s linear infinite;
+}
+@keyframes qa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .shell {
   display: flex;
   flex-direction: column;
@@ -200,7 +235,6 @@ function setAppZoom(z: number): void {
   gap: 4px;
   padding: 0 140px 0 0; /* room for the native window controls */
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
   user-select: none;
   container-type: inline-size;
 }
@@ -344,12 +378,6 @@ function setAppZoom(z: number): void {
   .brand b {
     display: none;
   }
-}
-.daynav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 10px;
 }
 .date {
   position: relative;

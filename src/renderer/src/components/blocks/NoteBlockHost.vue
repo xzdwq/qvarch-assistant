@@ -12,6 +12,12 @@ import BlockWork from './BlockWork.vue'
 import BlockAudio from './BlockAudio.vue'
 import BlockImage from './BlockImage.vue'
 import BlockBoard from './BlockBoard.vue'
+import BlockHttp from './BlockHttp.vue'
+import BlockCode from './BlockCode.vue'
+import BlockPw from './BlockPw.vue'
+import BlockBrowser from './BlockBrowser.vue'
+import BlockData from './BlockData.vue'
+import BlockRef from './BlockRef.vue'
 
 /**
  * A component of a note as the editor shows it: the component itself and, on the left on hover, its handle —
@@ -22,6 +28,9 @@ const props = defineProps<{
   kind: BlockKind
   src: string
   headings: Array<{ level: number; text: string; pos: number }>
+  /** The note (its run context) and the block's first line (an unnamed block's key). */
+  path: string
+  line: number
   autofocus?: boolean
   onChange: (src: string) => void
   onRemove: () => void
@@ -32,7 +41,7 @@ const props = defineProps<{
   onTranscribe?: (rel: string) => void
   onDropAudio?: (rel: string) => void
 }>()
-const NAMES: Record<BlockKind, string> = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска' }
+const NAMES: Record<BlockKind, string> = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер' }
 const copied = ref(false)
 const menu = ref<{ x: number; y: number }>()
 const raw = ref<string>()
@@ -102,6 +111,12 @@ function applyRaw(): void {
     <BlockAudio v-else-if="kind === 'audio'" :src="src" :on-transcribe="onTranscribe" :on-drop-audio="onDropAudio" />
     <BlockImage v-else-if="kind === 'image'" :src="src" />
     <BlockBoard v-else-if="kind === 'board'" :src="src" :on-change="onChange" />
+    <BlockHttp v-else-if="kind === 'http'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockCode v-else-if="kind === 'code'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockPw v-else-if="kind === 'pw'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockBrowser v-else-if="kind === 'browser'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockData v-else-if="kind === 'data'" :src="src" :path="path" :on-change="onChange" />
+    <BlockRef v-else-if="kind === 'ref'" :src="src" :path="path" :on-change="onChange" />
     <BlockWork v-else-if="kind === 'work'" :src="src" :autofocus="autofocus" @change="onChange" />
     <BlockToc v-else :headings="headings" @go="onGo" />
     <Teleport to="body">

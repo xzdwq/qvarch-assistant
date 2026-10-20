@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteLinks from '../components/NoteLinks.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
 import type { Entry, Note, PlanBlock } from '@shared/types'
@@ -37,14 +38,53 @@ watch(st, (v) => {
   }
 })
 
-const range = computed<[string, string]>(() => {
+/** The last day of a month (YYYY-MM-DD of any day in it). */
+const monthEnd = (d: string) => shiftDay(`${shiftDay(`${d.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1)
+// the old presets (Сегодня, Неделя…) become their dates — the period is always dates now
+{
   const t = todayKey.value
-  if (st.period === 'today') return [t, t]
-  if (st.period === 'week') return [mondayOf(t), shiftDay(mondayOf(t), 6)]
-  if (st.period === 'month') return [`${t.slice(0, 7)}-01`, shiftDay(`${shiftDay(`${t.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1)]
-  if (st.period === 'd30') return [shiftDay(t, -29), t]
-  return [st.from || t, st.to || t]
-})
+  const old = st.period as Period
+  if (old !== 'custom' || !st.from || !st.to) {
+    const r: [string, string] =
+      old === 'today' ? [t, t] : old === 'month' ? [`${t.slice(0, 7)}-01`, monthEnd(t)] : old === 'd30' ? [shiftDay(t, -29), t] : old === 'custom' ? [st.from || t, st.to || t] : [mondayOf(t), shiftDay(mondayOf(t), 6)]
+    st.from = r[0]
+    st.to = r[1]
+    st.period = 'custom'
+  }
+}
+const range = computed<[string, string]>(() => [st.from || todayKey.value, st.to || todayKey.value])
+const spanDays = () => Math.round((new Date(`${st.to}T12:00:00`).getTime() - new Date(`${st.from}T12:00:00`).getTime()) / 86_400_000) + 1
+/** The period is a whole month (the 1st to its last day). */
+const wholeMonth = () => st.from.endsWith('-01') && st.to === monthEnd(st.from)
+/** ‹ › and the wheel: a day by a day, a month by a month, any range by its length. */
+function shift(dir: 1 | -1): void {
+  if (wholeMonth()) {
+    const d = new Date(`${st.from}T12:00:00`)
+    d.setMonth(d.getMonth() + dir)
+    const a = d.toLocaleDateString('sv-SE').slice(0, 7) + '-01'
+    st.from = a
+    st.to = monthEnd(a)
+    return
+  }
+  const n = spanDays() * dir
+  st.from = shiftDay(st.from, n)
+  st.to = shiftDay(st.to, n)
+}
+let wheelAt = 0
+function onWheel(e: WheelEvent): void {
+  if (!e.deltaY || performance.now() - wheelAt < 90) return
+  wheelAt = performance.now()
+  shift(e.deltaY < 0 ? 1 : -1)
+}
+const hasToday = computed(() => st.from <= todayKey.value && todayKey.value <= st.to)
+/** «Сегодня»: the same kind of period, around today (a day — today, a week — this week, a month — this month). */
+function goToday(): void {
+  const t = todayKey.value
+  const n = spanDays()
+  if (wholeMonth()) [st.from, st.to] = [`${t.slice(0, 7)}-01`, monthEnd(t)]
+  else if (n === 7 && new Date(`${st.from}T12:00:00`).getDay() === 1) [st.from, st.to] = [mondayOf(t), shiftDay(mondayOf(t), 6)]
+  else [st.from, st.to] = [shiftDay(t, -(n - 1)), t]
+}
 const from = computed(() => range.value[0])
 const to = computed(() => range.value[1])
 const { days, reload } = useRange(from, to)
@@ -52,13 +92,6 @@ const { days, reload } = useRange(from, to)
 const editing = ref<{ day: string; entry: Entry }>()
 const now = useNow(5_000)
 const isLive = (e: Entry) => e.start <= now.value && e.end >= now.value - 90_000 && (e.source === 'detected' || e.end > now.value)
-const PERIODS: Array<{ id: Period; label: string }> = [
-  { id: 'today', label: 'Сегодня' },
-  { id: 'week', label: 'Неделя' },
-  { id: 'month', label: 'Месяц' },
-  { id: 'd30', label: '30 дней' },
-  { id: 'custom', label: 'Период' },
-]
 const TYPES = [
   { id: 'event', label: 'События' },
   { id: 'meeting', label: 'Встречи' },
@@ -156,13 +189,13 @@ function exportCsv(): void {
 <template>
   <div class="wl">
     <div class="bar">
-      <span class="seg">
-        <button v-for="p in PERIODS.slice(0, 4)" :key="p.id" :class="{ on: st.period === p.id }" @click="st.period = p.id">{{ p.label }}</button>
-        <button ref="rangeEl" :class="{ on: st.period === 'custom' }" @click="st.period === 'custom' ? (rangeOpen = !rangeOpen) : ((st.period = 'custom'), (st.from = from), (st.to = to), (rangeOpen = true))">
-          <Icon name="calendar" :size="12" />{{ st.period === 'custom' ? rangeText : 'Период' }}
-        </button>
+      <span class="pnav" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
+        <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
+        <button ref="rangeEl" class="pl" :class="{ on: rangeOpen }" title="Выбрать день или период" @click="rangeOpen = !rangeOpen"><Icon name="calendar" :size="12" />{{ rangeText }}</button>
+        <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
+        <button v-if="!hasToday" class="today" title="К сегодняшнему дню (тот же вид периода)" @click="goToday">Сегодня</button>
       </span>
-      <DateRangePicker v-if="rangeOpen" :from="from" :to="to" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (rangeOpen = false))" @close="rangeOpen = false" />
+      <DateRangePicker v-if="rangeOpen" :from="from" :to="to" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (st.period = 'custom'), (rangeOpen = false))" @close="rangeOpen = false" />
       <FilterMenu v-model="st.types" label="Тип" icon="layers" :options="TYPES" />
       <FilterMenu v-model="st.kinds" label="Вид" icon="tag" :options="kindOpts" />
       <span class="seg">
@@ -213,6 +246,7 @@ function exportCsv(): void {
             </span>
             <span v-if="isLive(it.e)" class="lv"><i></i>идёт</span>
             <span v-if="it.e.task" class="tchip" :title="it.e.task.summary">{{ it.e.task.key }}</span>
+            <NoteLinks :id="it.e.id" />
             <span v-if="it.e.outlook" class="badge">Outlook</span>
             <span class="kl">{{ kindLabel(it.e.kind) }}</span>
             <span class="du num">{{ formatDuration(it.e.end - it.e.start) }}</span>
@@ -237,6 +271,51 @@ function exportCsv(): void {
 .num {
   font-family: var(--font-data);
   font-variant-numeric: tabular-nums;
+}
+.pnav {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.pnav .ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+}
+.pnav .ib:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.pnav .pl,
+.pnav .today {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.pnav .pl.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}
+.pnav .today {
+  margin-left: 4px;
+  color: var(--accent-fg);
+  font-family: inherit;
 }
 .bar {
   display: flex;

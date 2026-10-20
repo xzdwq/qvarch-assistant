@@ -188,6 +188,13 @@ function markManual(): void {
   stale = true
 }
 const userWheel = (e: WheelEvent) => {
+  // Ctrl + the wheel over «Работа» with more lanes than fit: scrolls them (the wheel alone zooms)
+  const ml = mainLane.value
+  if (e.ctrlKey && ml && ml.contains(e.target as Node) && ml.scrollHeight > ml.clientHeight + 1) {
+    ml.scrollTop += e.deltaY
+    laneScroll.value = ml.scrollTop
+    return
+  }
   markManual()
   vp.onWheel(e, canvas.value!)
 }
@@ -304,13 +311,18 @@ const movingId = computed(() => (drag.value?.type === 'move' || drag.value?.type
 const lanes = computed(() => layoutLanes(viewEntries.value, movingId.value))
 const laneOf = (id: string) => lanes.value.get(id)?.lane ?? 0
 const mainLane = ref<HTMLElement>()
-/** Parallel blocks get their own lanes: the "Работа" row grows up to 3 lanes, more lanes scroll. */
+/** Parallel blocks get their own lanes: the "Работа" row grows with them (up to MAX_LANES; more — Ctrl + the wheel). */
 const laneH = computed(() => 36)
 const LANE_GAP = 4
-/** Lanes in use + one empty lane below (a drop target); up to 3 visible, more scroll. */
+/** Lanes in use + one empty lane below (a drop target); up to MAX_LANES visible. */
+const MAX_LANES = 8
 const totalLanes = computed(() => Math.max(1, ...[...lanes.value.values()].map((l) => l.lanes)))
 const shownLanes = computed(() => totalLanes.value + 1)
-const mainH = computed(() => 10 + Math.min(shownLanes.value, 3) * (laneH.value + LANE_GAP) - LANE_GAP)
+const mainH = computed(() => 10 + Math.min(shownLanes.value, MAX_LANES) * (laneH.value + LANE_GAP) - LANE_GAP)
+/** More lanes than fit: how many are out of sight (below / above). */
+const laneScroll = ref(0)
+const hiddenBelow = computed(() => Math.max(0, Math.ceil((mainInnerH.value - mainH.value - laneScroll.value) / (laneH.value + LANE_GAP))))
+const hiddenAbove = computed(() => Math.floor(laneScroll.value / (laneH.value + LANE_GAP)))
 const mainInnerH = computed(() => 10 + shownLanes.value * (laneH.value + LANE_GAP) - LANE_GAP)
 function laneStyle(e: Entry): Record<string, string> {
   const l = lanes.value.get(e.id)
@@ -731,7 +743,9 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
         </div>
 
         <!-- main line -->
-        <div ref="mainLane" class="lane mainl" :style="{ height: `${mainH}px` }" @pointerdown="onLaneDown($event)">
+        <div ref="mainLane" class="lane mainl" :style="{ height: `${mainH}px` }" @pointerdown="onLaneDown($event)" @scroll="laneScroll = ($event.target as HTMLElement).scrollTop">
+          <span v-if="hiddenBelow" class="lmore dn" :style="{ top: `${laneScroll + mainH - 20}px` }" title="Ctrl + колесо мыши — прокрутить дорожки">ещё {{ hiddenBelow }} ↓ · Ctrl+колесо</span>
+          <span v-if="hiddenAbove" class="lmore up" :style="{ top: `${laneScroll + 2}px` }" title="Ctrl + колесо мыши — прокрутить дорожки">ещё {{ hiddenAbove }} ↑</span>
           <div class="lane-spacer" :style="{ height: `${mainInnerH}px` }"></div>
           <div v-for="l in shownLanes" :key="`lane${l}`" class="lane-bg" :style="{ top: `${5 + (l - 1) * (laneH + LANE_GAP)}px`, height: `${laneH}px` }"></div>
           <div
@@ -1013,11 +1027,20 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
   transition: height 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .mainl {
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* grows with its lanes; past the limit no scrollbar — Ctrl + the wheel scrolls */
+  overflow: hidden;
 }
-.mainl::-webkit-scrollbar {
-  width: 4px;
+.lmore {
+  right: 6px;
+  z-index: 6;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--pop, #1c2128);
+  box-shadow: 0 0 0 1px var(--border-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 17px;
+  pointer-events: none;
 }
 .lane-bg {
   left: 0;
@@ -1595,6 +1618,7 @@ const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - fr
   flex-wrap: wrap;
   gap: 4px 14px;
   margin-top: 8px;
+  padding: 0 8px;
   font-size: 12px;
 }
 .legend span {

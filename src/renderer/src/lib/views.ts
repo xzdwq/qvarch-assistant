@@ -1,9 +1,8 @@
 import type { UiPrefs } from '@shared/types'
 
 /** The sections of the main window, in the default menu order. */
-export type View = 'day' | 'work' | 'notebook' | 'release' | 'browser' | 'http' | 'terminal' | 'tools' | 'settings'
+export type View = 'work' | 'notebook' | 'release' | 'browser' | 'http' | 'terminal' | 'tools' | 'settings'
 export const VIEWS: Array<{ id: Exclude<View, 'settings'>; icon: string; label: string }> = [
-  { id: 'day', icon: 'timeline', label: 'Таймлайн' },
   { id: 'work', icon: 'checkSquare', label: 'Моя работа' },
   { id: 'notebook', icon: 'notebook', label: 'Блокнот' },
   { id: 'release', icon: 'branch', label: 'Релиз' },

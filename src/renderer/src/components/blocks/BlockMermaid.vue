@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../../lib/links'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { mermaidBody, mermaidMd } from '@shared/noteBlocks'
 import Icon from '../Icon.vue'
@@ -83,7 +84,7 @@ const HELP = 'https://mermaid.js.org/intro/syntax-reference.html'
 </template>
 
 <script lang="ts">
-const window_open = (u: string) => window.qa.openExternal(u)
+const window_open = (u: string) => openUrl(u)
 </script>
 
 <style scoped>

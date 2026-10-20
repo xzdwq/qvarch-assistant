@@ -37,12 +37,13 @@ export async function languageOf(kind: string): Promise<Extension> {
       return (await import('@codemirror/lang-html')).html()
     case 'css':
       return (await import('@codemirror/lang-css')).css()
+    case 'http':
     case 'xml':
     case 'yaml':
     case 'bash': {
       const { StreamLanguage, LanguageSupport } = await import('@codemirror/language')
       const mode =
-        kind === 'xml' ? (await import('@codemirror/legacy-modes/mode/xml')).xml : kind === 'yaml' ? (await import('@codemirror/legacy-modes/mode/yaml')).yaml : (await import('@codemirror/legacy-modes/mode/shell')).shell
+        kind === 'http' ? (await import('@codemirror/legacy-modes/mode/http')).http : kind === 'xml' ? (await import('@codemirror/legacy-modes/mode/xml')).xml : kind === 'yaml' ? (await import('@codemirror/legacy-modes/mode/yaml')).yaml : (await import('@codemirror/legacy-modes/mode/shell')).shell
       return new LanguageSupport(StreamLanguage.define(mode))
     }
     default:

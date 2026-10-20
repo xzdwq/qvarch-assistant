@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -15,7 +16,7 @@ function onClick(e: MouseEvent): void {
   const a = (e.target as HTMLElement).closest('a')
   if (!a) return
   e.preventDefault()
-  if (/^https?:\/\//i.test(a.href)) window.qa.openExternal(a.href)
+  if (/^https?:\/\//i.test(a.href)) openUrl(a.href)
 }
 </script>
 

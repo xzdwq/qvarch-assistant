@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NoteLinks from './NoteLinks.vue'
+import { openUrl } from '../lib/links'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { formatDuration, joinTitle, MINUTE, splitTitle } from '@shared/timeline'
 import type { Entry, EntryKind, Ms, Note } from '@shared/types'
@@ -136,6 +138,11 @@ let autoTimer: ReturnType<typeof setTimeout> | undefined
 const saveState = ref<'idle' | 'pending' | 'saving' | 'saved'>('idle')
 /** A series asks once per editing: this one or all of them. */
 let seriesScope: 'one' | 'all' | undefined
+/**
+ * Just saved: the times the event had before — a copy of the day read before the save may still come and must
+ * not put them back over what was just saved (a few seconds).
+ */
+let staleTimes: { s: Ms; e: Ms; until: number } | undefined
 
 // identity of the thing being edited: re-init the text fields only when it changes
 const identity = computed(() => props.entry.id ?? 'draft')
@@ -159,6 +166,7 @@ watch(
 watch(
   () => [props.entry.start, props.entry.end, props.entry.followsNow, props.entry.startsNow] as const,
   ([s, e, f, n]) => {
+    if (staleTimes && Date.now() < staleTimes.until && s === staleTimes.s && e === staleTimes.e && (start.value !== s || end.value !== e)) return
     start.value = s
     end.value = e
     followsNow.value = !!f
@@ -194,8 +202,12 @@ async function autoSave(): Promise<void> {
   const k = formKey()
   if (k === savedKey) return void (saveState.value = 'saved')
   saveState.value = 'saving'
+  const before = { s: props.entry.start, e: props.entry.end }
   const ok = await save(undefined, true)
-  if (ok) savedKey = k
+  if (ok) {
+    savedKey = k
+    if (before.s !== start.value || before.e !== end.value) staleTimes = { ...before, until: Date.now() + 4000 }
+  }
   saveState.value = ok ? 'saved' : 'idle'
 }
 // leaving with a change not saved yet — save it now
@@ -343,7 +355,7 @@ async function remove(): Promise<void> {
   emit('deleted')
 }
 const shown = computed(() => kinds.value.filter((x) => !x.hidden || x.id === kind.value))
-const openJoin = (url: string) => window.qa.openExternal(url)
+const openJoin = (url: string) => openUrl(url)
 /** Time already spent on the picked task (all days) — the same task taken again adds up. */
 const taskTotals = ref<Record<string, number>>({})
 watch(
@@ -445,6 +457,7 @@ watch(
 
     <!-- everything else — one row of equal chips; their choices open as lists (the card never jumps) -->
     <div class="bar">
+      <NoteLinks v-if="entry.id" :id="entry.id" />
       <TaskPicker v-if="!readonly" v-model="tasks" :single="!!entry.id" compact />
       <DictateButton v-if="!readonly" compact @recorded="(r) => save(r)" />
       <PopChip v-model:open="remindOpen" icon="bell" :label="remindShort" :active="remindMode !== 'off'" :title="remindMode === 'off' ? 'Напомнить — уведомление Windows' : `Напоминание: ${remindShort}`">

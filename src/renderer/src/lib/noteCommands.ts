@@ -2,7 +2,7 @@
  * What «@» offers in a note before the events: things to insert and do (as Notion's «/»). Each one is found by
  * the start of any of its words, Russian or English — «ауд», «aud», «запис» all find «Аудио».
  */
-export type CmdId = 'work' | 'board' | 'audio' | 'emoji' | 'table' | 'chart' | 'mermaid' | 'callout' | 'toggle' | 'toc' | 'image' | 'todo' | 'code' | 'divider' | 'date'
+export type CmdId = 'http' | 'pw' | 'browser' | 'js' | 'data' | 'ref' | 'work' | 'board' | 'audio' | 'emoji' | 'table' | 'chart' | 'mermaid' | 'callout' | 'toggle' | 'toc' | 'image' | 'todo' | 'code' | 'divider' | 'date'
 export interface NoteCmd {
   id: CmdId
   title: string
@@ -13,6 +13,12 @@ export interface NoteCmd {
 export const NOTE_CMDS: NoteCmd[] = [
   { id: 'audio', title: 'Аудио', hint: 'Записать голос в заметку — запись начнётся сразу', icon: 'mic', keys: ['аудио', 'audio', 'голос', 'voice', 'запись', 'record', 'диктовка'] },
   { id: 'emoji', title: 'Эмодзи', hint: 'Выбрать эмодзи — пишите название по-русски или по-английски', icon: 'sparkles', keys: ['эмодзи', 'эмоджи', 'emoji', 'смайл', 'smile', 'smiley'] },
+  { id: 'http', title: 'HTTP-запрос', hint: 'Выполняется здесь; ответ доступен дальше по имени — {{имя.body}}', icon: 'api', keys: ['http', 'запрос', 'request', 'api', 'rest', 'curl', 'get', 'post'] },
+  { id: 'pw', title: 'Playwright', hint: 'Сценарий в браузере (Edge / Chrome): шаги, скриншот, трассировка, Allure', icon: 'globe', keys: ['playwright', 'браузер', 'автотест', 'тест', 'e2e', 'сценарий', 'browser', 'test', 'ui'] },
+  { id: 'browser', title: 'Браузер', hint: 'Живые страницы во вкладках прямо в заметке; запросы и время загрузки', icon: 'browser', keys: ['браузер', 'browser', 'сайт', 'страница', 'web', 'вкладка', 'запросы', 'network', 'iframe'] },
+  { id: 'js', title: 'Код JS / TS', hint: 'Выполняется отдельно от приложения; переменные заметки — его переменные, return — результат', icon: 'code', keys: ['код', 'js', 'ts', 'javascript', 'typescript', 'скрипт', 'script', 'run', 'выполнить', 'функция'] },
+  { id: 'data', title: 'Данные JSON', hint: 'Набор данных с именем — для кода и запросов', icon: 'braces', keys: ['данные', 'data', 'json', 'yaml', 'массив', 'array', 'переменная', 'variable'] },
+  { id: 'ref', title: 'Значение переменной', hint: 'Показывает значение из контекста заметки — вживую', icon: 'eye', keys: ['значение', 'value', 'ref', 'вывод', 'output', 'показать'] },
   { id: 'work', title: 'Работа', hint: 'Вся работа за день или период: по дням, итог по видам и всего', icon: 'briefcase', keys: ['работа', 'work', 'отчёт', 'отчет', 'report', 'таймшит', 'timesheet', 'часы', 'hours'] },
   { id: 'board', title: 'Доска', hint: 'Показать доску из блокнота — всегда в актуальном виде; «Снимок» — картинкой', icon: 'presentation', keys: ['доска', 'board', 'whiteboard', 'рисунок', 'холст', 'canvas'] },
   { id: 'table', title: 'Таблица', hint: 'Таблица — выберите размер', icon: 'table', keys: ['таблица', 'table', 'grid', 'сетка'] },

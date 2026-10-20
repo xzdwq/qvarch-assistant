@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { parseWork, workMd, workRange, workReport, WORK_PERIODS, type WorkModel, type WorkPeriod, type WorkReport } from '@shared/noteBlocks'
 import { isProductive } from '@shared/kinds'
 import type { KindDef } from '@shared/types'
-import DatePick from '../DatePick.vue'
+import DateRangePicker from '../DateRangePicker.vue'
 import Icon from '../Icon.vue'
 
 /**
@@ -29,23 +29,71 @@ function save(): void {
   mine = md
   emit('change', md)
 }
-const setup = ref(!!props.autofocus)
-function setPeriod(p: WorkPeriod): void {
-  m.value.period = p
-  if (p === 'custom' && !m.value.from) {
-    const r = workRange({ period: 'this-week', view: 'table' })
-    m.value.from = r.from
-    m.value.to = r.to
-  }
+const range = computed(() => workRange(m.value, new Date(now.value)))
+
+// ---------- the period: ‹ dates ›, the wheel, «Сегодня» (as in Моя работа) ----------
+const pickOpen = ref(false)
+const pickEl = ref<HTMLElement>()
+const shiftDay = (d: string, n: number) => {
+  const x = new Date(`${d}T12:00:00`)
+  x.setDate(x.getDate() + n)
+  return x.toLocaleDateString('sv-SE')
+}
+const monthEnd = (d: string) => shiftDay(`${shiftDay(`${d.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1)
+const spanDays = () => Math.round((new Date(`${range.value.to}T12:00:00`).getTime() - new Date(`${range.value.from}T12:00:00`).getTime()) / 86_400_000) + 1
+const wholeMonth = () => range.value.from.endsWith('-01') && range.value.to === monthEnd(range.value.from)
+function setDates(from: string, to: string): void {
+  m.value.period = 'custom'
+  m.value.from = from
+  m.value.to = to
   save()
 }
-const range = computed(() => workRange(m.value, new Date(now.value)))
+function shift(dir: 1 | -1): void {
+  const r = range.value
+  if (wholeMonth()) {
+    const x = new Date(`${r.from}T12:00:00`)
+    x.setMonth(x.getMonth() + dir)
+    const a = `${x.toLocaleDateString('sv-SE').slice(0, 7)}-01`
+    return setDates(a, monthEnd(a))
+  }
+  const n = spanDays() * dir
+  setDates(shiftDay(r.from, n), shiftDay(r.to, n))
+}
+let wheelAt = 0
+function onWheel(e: WheelEvent): void {
+  if (!e.deltaY || performance.now() - wheelAt < 90) return
+  wheelAt = performance.now()
+  shift(e.deltaY < 0 ? 1 : -1)
+}
+const today = () => new Date().toLocaleDateString('sv-SE')
+const hasToday = computed(() => range.value.from <= today() && today() <= range.value.to)
+/** «Сегодня»: the living period of that kind — today, this week, this month (it moves with the calendar). */
+function goToday(): void {
+  const n = spanDays()
+  const p: WorkPeriod | undefined = wholeMonth() ? 'this-month' : n === 7 && new Date(`${range.value.from}T12:00:00`).getDay() === 1 ? 'this-week' : n === 1 ? 'today' : undefined
+  if (p) {
+    m.value.period = p
+    m.value.from = m.value.to = undefined
+    save()
+  } else setDates(shiftDay(today(), -(n - 1)), today())
+}
+// ---------- the kinds shown ----------
+const hidden = computed(() => new Set(m.value.hide ?? []))
+function toggleKind(k: string): void {
+  const h = new Set(hidden.value)
+  if (h.has(k)) h.delete(k)
+  else h.add(k)
+  m.value.hide = [...h]
+  save()
+}
 
 // ---------- the data ----------
 const kinds = shallowRef<KindDef[]>([])
 void window.qa.getSettings().then((s) => (kinds.value = s.kinds))
 const offSettings = window.qa.onSettings((s) => (kinds.value = s.kinds))
 const report = shallowRef<WorkReport>()
+/** The kinds of the period (before hiding), how many of each. */
+const kindCounts = shallowRef<Array<[string, number]>>([])
 const loading = ref(false)
 const now = ref(Date.now())
 let seq = 0
@@ -55,8 +103,11 @@ async function load(): Promise<void> {
   try {
     const days = await window.qa.rangeDays(range.value.from, range.value.to)
     if (my !== seq) return
+    const counts = new Map<string, number>()
+    for (const d of days) for (const e of d.entries) if (isProductive(kinds.value, e.kind)) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1)
+    kindCounts.value = [...counts].sort((a, b) => b[1] - a[1])
     report.value = workReport(
-      days.map((d) => ({ day: d.day, entries: d.entries.map((e) => ({ id: e.id, kind: e.kind, label: e.label, task: e.task ? `${e.task.key}` : undefined, start: e.start, end: e.end })) })),
+      days.map((d) => ({ day: d.day, entries: d.entries.filter((e) => !hidden.value.has(e.kind)).map((e) => ({ id: e.id, kind: e.kind, label: e.label, task: e.task ? `${e.task.key}` : undefined, start: e.start, end: e.end })) })),
       (k) => isProductive(kinds.value, k),
       Date.now(),
     )
@@ -64,7 +115,7 @@ async function load(): Promise<void> {
     if (my === seq) loading.value = false
   }
 }
-watch([() => range.value.from, () => range.value.to, kinds], () => void load(), { immediate: true })
+watch([() => range.value.from, () => range.value.to, kinds, () => (m.value.hide ?? []).join()], () => void load(), { immediate: true })
 // the period holds today: it follows the day (new events, the one going on)
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
 const offDay = window.qa.onDayState(() => {
@@ -106,23 +157,31 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
   <div class="wk">
     <div class="wk-h">
       <span class="wk-k"><Icon name="briefcase" :size="14" />Работа</span>
-      <b class="wk-p">{{ periodText }}</b>
-      <span v-if="report && !setup" class="wk-sum">{{ dur(report.total) }}</span>
+      <span class="wk-nav" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
+        <button class="ib" title="Назад" @mousedown.prevent @click="shift(-1)"><Icon name="chevronLeft" :size="13" /></button>
+        <button ref="pickEl" class="wk-p" :class="{ on: pickOpen }" title="Выбрать день или период" @mousedown.prevent @click="pickOpen = !pickOpen"><Icon name="calendar" :size="12" />{{ periodText }}</button>
+        <button class="ib" title="Вперёд" @mousedown.prevent @click="shift(1)"><Icon name="chevronRight" :size="13" /></button>
+        <button v-if="!hasToday" class="wk-today" title="К сегодняшнему: сегодня, эта неделя или этот месяц" @mousedown.prevent @click="goToday">Сегодня</button>
+      </span>
+      <DateRangePicker v-if="pickOpen" :from="range.from" :to="range.to" :anchor="pickEl" @apply="(a, b) => ((pickOpen = false), setDates(a, b))" @close="pickOpen = false" />
+      <span v-if="report" class="wk-sum">{{ dur(report.total) }}</span>
       <span class="grow"></span>
       <span class="wk-view">
         <button :class="{ on: m.view === 'table' }" @mousedown.prevent @click="((m.view = 'table'), save())"><Icon name="table" :size="12" />Таблица</button>
         <button :class="{ on: m.view === 'list' }" @mousedown.prevent @click="((m.view = 'list'), save())"><Icon name="list" :size="12" />Список</button>
       </span>
-      <button class="wk-set" :class="{ on: setup }" title="Период" @mousedown.prevent @click="setup = !setup"><Icon name="calendar" :size="13" />Период</button>
     </div>
-    <div v-if="setup" class="wk-setup">
-      <button v-for="p in WORK_PERIODS" :key="p.id" :class="{ on: m.period === p.id }" @mousedown.prevent @click="setPeriod(p.id)">{{ p.title }}</button>
-      <span v-if="m.period === 'custom'" class="wk-dates">
-        <DatePick :model-value="m.from ?? range.from" @update:model-value="(v: string) => ((m.from = v), save())" />
-        <span>—</span>
-        <DatePick :model-value="m.to ?? range.to" @update:model-value="(v: string) => ((m.to = v), save())" />
-      </span>
-      <button class="wk-done" @mousedown.prevent @click="setup = false">Готово</button>
+    <div v-if="kindCounts.length > 1 || hidden.size" class="wk-kinds">
+      <button
+        v-for="[k, n] in kindCounts"
+        :key="k"
+        class="wk-kc"
+        :class="{ off: hidden.has(k) }"
+        :style="{ '--c': kindOf(k)?.color ?? 'var(--muted)' }"
+        :title="hidden.has(k) ? 'Показать' : 'Скрыть'"
+        @mousedown.prevent
+        @click="toggleKind(k)"
+      ><i></i>{{ kindOf(k)?.label ?? k }} <small>{{ n }}</small></button>
     </div>
 
     <p v-if="!report && loading" class="wk-empty">Считаю…</p>
@@ -184,6 +243,85 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
 </template>
 
 <style scoped>
+.wk-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.wk-nav .ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+.wk-nav .ib:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.wk-nav .wk-p {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wk-nav .wk-p.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}
+.wk-today {
+  height: 26px;
+  margin-left: 4px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-fg);
+  font-size: 12px;
+}
+.wk-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 2px 0 8px;
+}
+.wk-kc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.wk-kc i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.wk-kc small {
+  color: var(--muted);
+}
+.wk-kc.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
 .wk {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { ipcRenderer } from 'electron'
+// recording a Playwright scenario (off until the app starts it for this tab)
+import './pwRecorder'
 
 /**
  * The browser's pages: sign-in forms only. A login sent (a form submitted, Enter in it, its button clicked) goes

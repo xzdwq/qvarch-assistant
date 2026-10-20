@@ -4,8 +4,9 @@
  * a GFM table, ```chart / ```mermaid / ```toc fences, `> [!info]` callouts (as in Obsidian), <details>.
  */
 import { AUDIO_EMBED, IMAGE_EMBED } from './vault'
+import { parseInfo, runKindOf } from './runbook'
 
-export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board'
+export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser'
 export interface NoteBlock {
   kind: BlockKind
   /** The first and the last line (1-based, inclusive). */
@@ -27,12 +28,15 @@ export function findBlocks(lines: string[]): NoteBlock[] {
   let i = 0
   while (i < lines.length) {
     const l = lines[i]
-    const fence = /^(`{3,}|~{3,})\s*([\w-]*)\s*$/.exec(l)
+    const fence = /^(`{3,}|~{3,})\s*([\w-]*)([^`]*)$/.exec(l)
     if (fence) {
       // find the closing fence
       let j = i + 1
       while (j < lines.length && !new RegExp(`^${fence[1][0]}{${fence[1].length},}\\s*$`).test(lines[j])) j++
-      if (j < lines.length && FENCE_KINDS.has(fence[2].toLowerCase())) out.push({ kind: fence[2].toLowerCase() as BlockKind, line0: i + 1, line1: j + 1, src: lines.slice(i, j + 1).join('\n') })
+      // a component by its language (chart, board…), or a runnable block by its info line (http, js run, json name=…)
+      const lang = fence[2].toLowerCase()
+      const kind: BlockKind | undefined = lang === 'browser' ? 'browser' : FENCE_KINDS.has(lang) && !fence[3].trim() ? (lang as BlockKind) : runKindOf(parseInfo(`${fence[2]} ${fence[3]}`))
+      if (j < lines.length && kind) out.push({ kind, line0: i + 1, line1: j + 1, src: lines.slice(i, j + 1).join('\n') })
       i = j < lines.length ? j + 1 : lines.length
       continue
     }
@@ -250,21 +254,25 @@ export interface WorkModel {
   from?: string
   to?: string
   view: 'table' | 'list'
+  /** Kinds not shown (calls, meetings…). */
+  hide?: string[]
 }
 export function parseWork(src: string): WorkModel {
   const m: WorkModel = { period: 'today', view: 'table' }
   for (const l of fenceBody(src)) {
-    const kv = /^\s*(period|from|to|view)\s*:\s*(.*?)\s*$/i.exec(l)
+    const kv = /^\s*(period|from|to|view|hide)\s*:\s*(.*?)\s*$/i.exec(l)
     if (!kv) continue
     const k = kv[1].toLowerCase()
     if (k === 'period' && WORK_PERIODS.some((p) => p.id === kv[2])) m.period = kv[2] as WorkPeriod
     else if ((k === 'from' || k === 'to') && /^\d{4}-\d{2}-\d{2}$/.test(kv[2])) m[k] = kv[2]
     else if (k === 'view' && (kv[2] === 'list' || kv[2] === 'table')) m.view = kv[2]
+    else if (k === 'hide') m.hide = kv[2].split(/[,\s]+/).filter(Boolean)
   }
   if (m.from && m.to && m.period !== 'custom') m.period = 'custom'
   return m
 }
-export const workMd = (m: WorkModel) => ['```work', `period: ${m.period}`, ...(m.period === 'custom' ? [`from: ${m.from ?? ''}`, `to: ${m.to ?? m.from ?? ''}`] : []), `view: ${m.view}`, '```'].join('\n')
+export const workMd = (m: WorkModel) =>
+  ['```work', `period: ${m.period}`, ...(m.period === 'custom' ? [`from: ${m.from ?? ''}`, `to: ${m.to ?? m.from ?? ''}`] : []), `view: ${m.view}`, ...(m.hide?.length ? [`hide: ${m.hide.join(', ')}`] : []), '```'].join('\n')
 const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 /** The days of a period (local), from — to inclusive. */
 export function workRange(m: WorkModel, now = new Date()): { from: string; to: string } {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteLinks from '../components/NoteLinks.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
 import { bars, daysBetween, groupItems, matches, sourceOf, taskType, unionOf, weekStart, type GroupBy, type RangeDay, type ReportFilter, type ReportItem } from '@shared/report'
@@ -87,6 +88,13 @@ const range = computed<[string, string]>(() => {
       return st.value.from <= st.value.to ? [st.value.from, st.value.to] : [st.value.to, st.value.from]
   }
 })
+/** The wheel over the dates: a period forward (up) / back (down) — one step per notch, a touchpad not racing. */
+let wheelAt = 0
+function onWheel(e: WheelEvent): void {
+  if (!e.deltaY || performance.now() - wheelAt < 90) return
+  wheelAt = performance.now()
+  shift(e.deltaY < 0 ? 1 : -1)
+}
 function shift(dir: 1 | -1): void {
   const s = st.value
   if (s.period === 'custom') {
@@ -390,7 +398,7 @@ function exportCsv(): void {
       <div class="seg">
         <button v-for="p in PERIODS" :key="p.id" :class="{ on: st.period === p.id }" @click="st.period = p.id">{{ p.label }}</button>
       </div>
-      <div class="nav">
+      <div class="nav" title="Колесо мыши — на период вперёд или назад" @wheel.prevent="onWheel">
         <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
         <span v-if="st.period !== 'custom'" class="pl">{{ periodLabel }}</span>
         <button v-else ref="rangeEl" class="rng" :class="{ on: rangeOpen }" title="Выбрать период" @click="rangeOpen = !rangeOpen">
@@ -570,6 +578,7 @@ function exportCsv(): void {
                     <span class="ed">{{ fmt(i.day, { day: 'numeric', month: 'short' }) }}</span>
                     <span class="et">{{ formatHM(i.e.start) }}–{{ formatHM(i.e.end) }}</span>
                     <span class="el">{{ i.e.label }}</span>
+                    <NoteLinks :id="i.e.id" />
                     <span class="eh">{{ formatDuration(i.e.end - i.e.start) }}</span>
                   </button>
                 </template>

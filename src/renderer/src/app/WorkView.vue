@@ -1,3 +1,8 @@
+<script lang="ts">
+/** The last outside ask handled (the section comes and goes; the ask must not come back with it). */
+let focusSeen = 0
+</script>
+
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { PublicSettings } from '@shared/types'
@@ -11,8 +16,8 @@ import WorkList from './WorkList.vue'
  * Моя работа: the week and the day in one place (Работа), everything as a filtered list (Список), Jira, the
  * calendar of the weeks (Календарь) and the analytics (Аналитика).
  */
-defineProps<{ settings: PublicSettings }>()
-const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string]; settings: []; openDay: [day: string] }>()
+const props = defineProps<{ settings: PublicSettings; focus?: { day: string; entryId?: string; n: number } }>()
+const emit = defineEmits<{ settings: [] }>()
 type Tab = 'work' | 'list' | 'jira' | 'calendar' | 'reports'
 const KEY = 'qa.work.tab'
 const read = (): Tab => {
@@ -38,8 +43,23 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'calendar', label: 'Календарь' },
   { id: 'jira', label: 'Jira' },
 ]
-/** A row / a day opened from here goes to the timeline (with the block in focus). */
-const open = (day: string, entryId?: string) => emit('go', 'day', day, entryId)
+/** A day (a block on it) opened from here or from outside: Работа shows it — the block picked on the timeline. */
+const boardFocus = ref<{ day: string; entryId?: string; n: number }>()
+let n = 0
+const open = (day: string, entryId?: string) => {
+  boardFocus.value = { day, entryId, n: ++n }
+  tab.value = 'work'
+}
+// a day asked for from outside — once: coming back to the section later keeps what was chosen here
+watch(
+  () => props.focus?.n,
+  (n) => {
+    if (!props.focus || !n || n <= focusSeen) return
+    focusSeen = n
+    open(props.focus.day, props.focus.entryId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -47,10 +67,10 @@ const open = (day: string, entryId?: string) => emit('go', 'day', day, entryId)
     <div class="wtabs">
       <button v-for="t in TABS" :key="t.id" :class="{ on: tab === t.id }" @click="tab = t.id">{{ t.label }}</button>
     </div>
-    <WorkBoard v-if="tab === 'work'" class="wbody" :settings="settings" @open-day="open" />
+    <WorkBoard v-if="tab === 'work'" class="wbody" :settings="settings" :focus="boardFocus" @open-day="open" />
     <WorkList v-else-if="tab === 'list'" class="wbody" @open-day="open" />
-    <TaskList v-else-if="tab === 'jira'" class="wbody" @settings="emit('settings')" @open-day="(d) => emit('openDay', d)" />
-    <TaskCalendar v-else-if="tab === 'calendar'" class="wbody" fill :work-days="settings.schedule.workDays" @open-day="(d) => emit('openDay', d)" />
+    <TaskList v-else-if="tab === 'jira'" class="wbody" @settings="emit('settings')" @open-day="(d) => open(d)" />
+    <TaskCalendar v-else-if="tab === 'calendar'" class="wbody" fill :work-days="settings.schedule.workDays" @open-day="(d) => open(d)" />
     <ReportsView v-else class="wbody rep-in" @go="(_v, d, id) => d && open(d, id)" />
   </div>
 </template>

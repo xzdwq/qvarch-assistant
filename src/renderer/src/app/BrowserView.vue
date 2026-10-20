@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { pwRec, stopPwRec } from '../lib/pwrec'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { readSpec, specToHttp, type ApiOp, type ApiSpec } from '@shared/openapi'
 import { load as yamlLoad } from 'js-yaml'
 import type { HttpNode } from '@shared/http'
-import { browserId, deviceFit, DEVICES, findLinks, recordingToHttp, RESPONSIVE, toUrl, UA_MOBILE, type Bookmark, type BrowserSettings, type DeviceMode, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecLink } from '@shared/browser'
+import { browserId, DEFAULT_BROWSER_SETTINGS, deviceFit, DEVICES, findLinks, recordingToHttp, RESPONSIVE, toUrl, UA_MOBILE, type Bookmark, type BrowserSettings, type DeviceMode, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecLink } from '@shared/browser'
 import { METHOD_COLOR } from '@shared/http'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
+import HooksPanel from '../components/HooksPanel.vue'
 import { bLayout, bookmarks, hostOf, moveTab, onBrowserEvent, placeTab, recItems, recState, splitWith, startBrowser, syncLayout, tabs, tabsLoaded, useOverlay } from '../lib/browser'
 
 /**
@@ -898,7 +900,13 @@ async function doTransfer(): Promise<void> {
 }
 const useText = (l: RecLink) => l.uses.map((u) => `№${u.to + 1} ${u.where === 'path' ? 'путь' : u.where === 'query' ? `параметр ${u.key}` : u.where === 'body' ? `тело ${u.key}` : `заголовок ${u.key}`}`).join(', ')
 // ---------- Swagger / OpenAPI ----------
-const panelMode = ref<'rec' | 'api'>('rec')
+const panelMode = ref<'rec' | 'api' | 'hooks'>('rec')
+/** The hooks' panel (the side, its own mode). */
+function openHooks(): void {
+  if (recOpen.value && panelMode.value === 'hooks') return void (recOpen.value = false)
+  recOpen.value = true
+  panelMode.value = 'hooks'
+}
 const api = shallowRef<{ url: string; spec: unknown; info: ApiSpec; origin: string }>()
 const apiBusy = ref(false)
 const apiError = ref('')
@@ -1050,7 +1058,7 @@ function resetSite(id: string): void {
 }
 
 // ---------- the history ----------
-const bSettings = ref<BrowserSettings>({ history: true, ua: '' })
+const bSettings = ref<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })
 void window.qa.browser('settings').then((v) => (bSettings.value = v))
 const histOpen = ref(false)
 const visits = shallowRef<Visit[]>([])
@@ -1198,8 +1206,19 @@ const BASE_VAR = '{{base_…}}'
 <template>
   <div class="bv" :style="{ gridTemplateColumns: recOpen ? `minmax(0, 1fr) ${recW}px` : 'minmax(0, 1fr)' }" @dragover="onDragOver" @drop="onDrop">
     <section class="bmain">
+      <!-- a Playwright scenario being recorded (inside the one root: the app positions and hides it) -->
+      <div v-if="pwRec" class="pwrecbar">
+        <i class="prd"></i><b>Запись сценария Playwright</b>
+        <span class="pmuted">в «{{ pwRec.note.split('/').pop()!.replace(/\.md$/i, '') }}» · строк: {{ pwRec.count }}</span>
+        <code v-if="pwRec.last" class="plast" :title="pwRec.last">{{ pwRec.last }}</code>
+        <span class="pgrow"></span>
+        <button title="Остановить и ничего не вставлять" @click="stopPwRec(true)">Отменить</button>
+        <button class="ppri" title="Остановить — записанное встанет в блок теста, заметка откроется" @click="stopPwRec()"><i class="psq"></i>Стоп — в заметку</button>
+      </div>
       <!-- bookmarks, the recording -->
       <div class="bbar" @contextmenu.self.prevent="onBmMenu(undefined, $event)">
+        <!-- the bookmarks take what is left and are cut there: the buttons on the right always whole -->
+        <span class="bms" @contextmenu.self.prevent="onBmMenu(undefined, $event)">
         <button
           v-for="b in bookmarks"
           :key="b.id"
@@ -1215,6 +1234,7 @@ const BASE_VAR = '{{base_…}}'
         </button>
         <span v-if="!bookmarks.length" class="bhint" @contextmenu.prevent="onBmMenu(undefined, $event)">Закладки: ☆ в строке адреса или Ctrl+D · правый клик здесь — новая папка</span>
         <span class="grow" @contextmenu.prevent="onBmMenu(undefined, $event)"></span>
+        </span>
         <span v-if="pwAsk" class="pwask">
           <Icon name="lock" :size="12" />{{ pwAsk.update ? 'Обновить пароль' : 'Сохранить пароль' }} для <b>{{ hostOf(pwAsk.origin) }}</b><template v-if="pwAsk.username"> ({{ pwAsk.username }})</template>?
           <button class="primary" @click="pwReply('save')">{{ pwAsk.update ? 'Обновить' : 'Сохранить' }}</button>
@@ -1227,6 +1247,7 @@ const BASE_VAR = '{{base_…}}'
           <button class="x" @click="download = undefined"><Icon name="x" :size="11" /></button>
         </span>
         <span class="pill">
+          <button class="hookb" :class="{ on: recOpen && panelMode === 'hooks' }" title="Хуки сайта: свой CSS / JS на страницах, поиск в ответах" @click="openHooks"><Icon name="zap" :size="12" /></button>
           <button class="recb ico" :class="{ on: recState.on }" :title="recState.on ? `Остановить запись запросов (записано: ${recItems.length})` : 'Записывать запросы страниц (XHR / fetch)'" @click="toggleRec"><i></i><b v-if="recItems.length">{{ recItems.length }}</b></button>
           <button class="swb" :class="{ on: recOpen && panelMode === 'api' }" title="Swagger / OpenAPI сайта: найти и взять его запросы" @click="openSwagger(true)"><b>{}</b></button>
         </span>
@@ -1246,9 +1267,9 @@ const BASE_VAR = '{{base_…}}'
                     v-for="id in p.tabs"
                     :key="id"
                     class="tab"
-                    :class="{ on: p.active === id, dragging: tabDrag?.id === id }"
+                    :class="{ on: p.active === id, dragging: tabDrag?.id === id, asleep: byId(id)?.asleep }"
                     :data-id="id"
-                    :title="byId(id)?.url"
+                    :title="byId(id)?.asleep ? `${byId(id)?.url}\nВкладка спит (память освобождена) — откроется при показе` : byId(id)?.url"
                     @pointerdown="onTabDown($event, pi, id)"
                     @click="onTabClick(pi, id)"
                     @mousedown.middle.prevent="closeTab(id)"
@@ -1384,10 +1405,12 @@ const BASE_VAR = '{{base_…}}'
       <div class="pmode">
         <button :class="{ on: panelMode === 'rec' }" @click="panelMode = 'rec'"><i class="rdot" :class="{ on: recState.on }"></i>Запись<b v-if="recItems.length">{{ recItems.length }}</b></button>
         <button :class="{ on: panelMode === 'api' }" @click="openSwagger(false)">Swagger<b v-if="api">{{ api.info.ops.length }}</b></button>
+        <button :class="{ on: panelMode === 'hooks' }" @click="panelMode = 'hooks'">Хуки</button>
         <span class="grow"></span>
         <button class="ib" title="Скрыть" @click="recOpen = false"><Icon name="x" :size="13" /></button>
       </div>
-      <template v-if="panelMode === 'api'">
+      <HooksPanel v-if="panelMode === 'hooks'" class="hpanel" :url="byId(curId)?.url" :tab-id="curId" />
+      <template v-else-if="panelMode === 'api'">
         <div class="rh">
           <button class="primary sm" :disabled="apiBusy || !pageShown(curId)" @click="findSwagger"><Icon name="search" :size="12" />{{ apiBusy ? 'Ищу…' : api ? 'Искать заново' : 'Найти на этом сайте' }}</button>
           <span class="grow"></span>
@@ -1663,6 +1686,71 @@ const BASE_VAR = '{{base_…}}'
 </template>
 
 <style scoped>
+.hpanel {
+  flex: 1;
+  min-height: 0;
+}
+.pwrecbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.prd {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: prblink 1.2s ease-in-out infinite;
+}
+@keyframes prblink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.pmuted {
+  color: var(--muted);
+}
+.plast {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+.pgrow {
+  flex: 1;
+}
+.pwrecbar button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+}
+.pwrecbar .ppri {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: #fff;
+}
+.psq {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #fff;
+}
 .bv {
   display: grid;
   height: 100%;
@@ -1678,6 +1766,18 @@ const BASE_VAR = '{{base_…}}'
   min-height: 0;
 }
 /* ---------- the top bar: bookmarks, the recording ---------- */
+.bms {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.bbar > :not(.bms) {
+  flex-shrink: 0;
+}
 .bbar {
   flex: none;
   display: flex;
@@ -1807,7 +1907,28 @@ const BASE_VAR = '{{base_…}}'
   display: inline-flex;
 }
 .pill .recb {
+  border-radius: 0;
+}
+/* the hooks: the first of the pill, the size of its neighbours */
+.hookb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-2);
+  border-right: 0;
   border-radius: var(--r2) 0 0 var(--r2);
+  background: transparent;
+  color: var(--text-2);
+}
+.hookb:hover {
+  color: var(--text);
+}
+.hookb.on {
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
 }
 .recb.ico {
   padding: 0 9px;
@@ -2519,6 +2640,11 @@ const BASE_VAR = '{{base_…}}'
   box-shadow:
     0 0 0 1px var(--border-2),
     0 8px 30px rgba(0, 0, 0, 0.45);
+}
+.tab.asleep .tname,
+.tab.asleep .fav,
+.tab.asleep .fav0 {
+  opacity: 0.55;
 }
 .shot {
   position: absolute;

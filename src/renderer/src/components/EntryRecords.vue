@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed, ref } from 'vue'
 import { formatDuration, formatHM, MINUTE, overlapPairs, unionMs } from '@shared/timeline'
 import type { DayData, Ms } from '@shared/types'
@@ -72,7 +73,7 @@ async function planDone(id: string): Promise<void> {
 const jiraState = useJira()
 const isJira = (key?: string) => !!key && !key.startsWith('Q-')
 function openJiraKey(key: string): void {
-  if (jiraState.value.siteUrl) window.qa.openExternal(`${jiraState.value.siteUrl}/browse/${key}`)
+  if (jiraState.value.siteUrl) openUrl(`${jiraState.value.siteUrl}/browse/${key}`)
 }
 const stripKey = (label: string, key?: string) => (key && label.startsWith(key) ? label.slice(key.length).trim() : label)
 const past = (end: Ms) => props.now !== undefined && end <= props.now
@@ -106,7 +107,7 @@ const going = (start: Ms, end: Ms) => props.now !== undefined && start <= props.
           </span>
           <span v-if="r.e.source === 'ai'" class="ai">AI</span>
           <span v-if="r.e.outlook" class="ol" title="Встреча из Outlook">Outlook</span>
-          <button v-if="isJira(r.e.task?.key) && jiraState.siteUrl" class="jl" :title="`Открыть ${r.e.task!.key} в Jira`" @click.stop="openJiraKey(r.e.task!.key)"><Icon name="external" :size="13" /></button>
+          <button v-if="isJira(r.e.task?.key) && jiraState.siteUrl" class="jl" data-link :title="`Открыть ${r.e.task!.key} в Jira`" @click.stop="openJiraKey(r.e.task!.key)"><Icon name="external" :size="13" /></button>
         </div>
         <div v-for="o in overlapsOf(r.e.id)" :key="`o${o.a.id}${o.b.id}`" class="orow" :class="{ past: past(o.end) }" :title="`Одновременно с «${o.a.label}»`">
           <Icon name="layers" :size="11" />

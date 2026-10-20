@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteLinks from './NoteLinks.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { formatDuration, formatHM, MINUTE, scheduleRanges } from '@shared/timeline'
 import type { Entry, Ms, WorkSchedule } from '@shared/types'
@@ -130,6 +131,7 @@ watch(
           <span class="num tm">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
           <Icon :name="entryIcon(r.e)" :size="13" class="ic" />
           <span class="tl">{{ r.e.label || kindLabel(r.e.kind) }}<small v-if="r.e.task"> · {{ r.e.task.key }}</small></span>
+          <NoteLinks :id="r.e.id" />
           <span class="num du">{{ formatDuration(r.e.end - r.e.start) }}</span>
         </button>
       </template>

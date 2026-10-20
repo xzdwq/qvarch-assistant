@@ -1,6 +1,6 @@
 {
   "name": "qvarch-assistant",
-  "version": "0.110.0",
+  "version": "0.127.0",
   "description": "Desktop work-time tracker with an always-on-top timeline island",
   "main": "./out/main/index.js",
   "scripts": {
@@ -60,6 +60,8 @@
   "private": true,
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.15",
-    "perfect-freehand": "^1.2.3"
+    "perfect-freehand": "^1.2.3",
+    "playwright": "1.63.0",
+    "playwright-core": "1.63.0"
   }
 }

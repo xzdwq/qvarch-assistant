@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed, createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type App } from 'vue'
 import ThinkingOrb from './ThinkingOrb.vue'
 import Icon, { iconSvg } from './Icon.vue'
@@ -21,6 +22,7 @@ import { codeFolding, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting
 import { CODE_LANGUAGES, FENCE_PICK, fenceLang, FORMATTABLE, formatCode, indentFold } from '../lib/codeblocks'
 import { autocompletion, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { looseFence } from '@shared/mdLooseFence'
 import { tags as t } from '@lezer/highlight'
 import { AUDIO_EMBED, IMAGE_EMBED, imageEmbed } from '@shared/vault'
 import { audioUrl, draggedImageUrl, fixDuration, hasImages, imageUrl, takeImages, transcribing } from '../lib/notebook'
@@ -28,6 +30,8 @@ import { durText, eventLink, jiraLink, parseNoteLink, periodText, pickGroups, st
 import type { JiraIssue } from '@shared/jira'
 import { eventOf, events, eventsNow, eventsTick, issueOf, jiraSite, kindOf } from '../lib/noteEvents'
 import { todayKey } from '../lib/today'
+import { ctxValues, noteRun, syncData } from '../lib/runbook'
+import { resolvePath, TEMPLATE } from '@shared/runbook'
 import { boardMd, workMd, calloutMd, chartMd, findBlocks, mermaidMd, NEW_CHART, NEW_MERMAID, newTable, tableMd, TOC_MD, toggleMd, type BlockKind } from '@shared/noteBlocks'
 import NoteBlockHost from './blocks/NoteBlockHost.vue'
 import BlockRecording from './blocks/BlockRecording.vue'
@@ -42,7 +46,7 @@ import { loadEmoji, searchEmoji, useEmoji, type Emoji } from '../lib/emoji'
  * A recording line is a player; [[a link]] opens that note.
  */
 /** `rec`: a recording into this note is going on (its place is shown in the text). */
-const props = defineProps<{ text: string; rec?: { sec: number; level: number } }>()
+const props = defineProps<{ text: string; rec?: { sec: number; level: number }; path?: string }>()
 const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string, at: { from: number; to: number }]; exitUp: []; warn: [text: string]; record: []; pickImage: []; stopRec: [] }>()
 
 const host = ref<HTMLElement>()
@@ -372,8 +376,11 @@ class EventChip extends WidgetType {
         const st = statusOf(e, now)
         box.append(part('cm-ev-t', e.label || this.text), part('cm-ev-p', `${periodText(e, now)} · ${durText(e.end - e.start)}`), part(`cm-ev-st ${st}`, statusText(e, now)))
         if (e.created) box.append(part('cm-ev-c', `созд. ${dmShort(e.created)}`, `Создано ${new Date(e.created).toLocaleString('ru-RU')}`))
-        box.title = `${k?.label ?? e.kind}${e.outlook ? ' · встреча Outlook' : ''}${e.task ? ` · ${e.task}` : ''} — клик: открыть на таймлайне`
-        box.onclick = () => window.qa.openMain(e.day, e.id)
+        box.title = `${k?.label ?? e.kind}${e.outlook ? ' · встреча Outlook' : ''}${e.task ? ` · ${e.task}` : ''} — клик: карточка события (прочитать, изменить, открыть в Моей работе)`
+        box.onclick = () => {
+          const r = box.getBoundingClientRect()
+          window.dispatchEvent(new CustomEvent('qa:event-card', { detail: { day: e.day, id: e.id, x: r.left, y: r.bottom } }))
+        }
       }
     } else {
       const is = issueOf(l.key)
@@ -382,7 +389,8 @@ class EventChip extends WidgetType {
       box.append(part('cm-ev-t', is ? `${is.key} ${is.summary}` : this.text))
       if (is) box.append(part(`cm-ev-st ${is.category === 'done' ? 'done' : is.category === 'indeterminate' ? 'now' : 'ahead'}`, is.status))
       box.title = 'Задача Jira — клик: открыть в браузере'
-      box.onclick = () => jiraSite.value && window.qa.openExternal(`${jiraSite.value.replace(/\/$/, '')}/browse/${l.key}`)
+      box.dataset.link = ''
+      box.onclick = () => jiraSite.value && openUrl(`${jiraSite.value.replace(/\/$/, '')}/browse/${l.key}`)
     }
     box.onmousedown = (ev) => ev.preventDefault()
     return box
@@ -666,26 +674,30 @@ class CompWidget extends WidgetType {
     readonly src: string,
     /** The contents' headings (JSON) — the only outside thing a component shows. */
     readonly extra: string,
+    /** Its first line (an unnamed runnable block is known by it). */
+    readonly line: number,
   ) {
     super()
   }
   eq(o: CompWidget): boolean {
-    return o.kind === this.kind && o.src === this.src && o.extra === this.extra
+    return o.kind === this.kind && o.src === this.src && o.extra === this.extra && o.line === this.line
   }
   get estimatedHeight(): number {
     const n = this.src.split('\n').length
-    return this.kind === 'audio' ? 48 : this.kind === 'image' ? 320 : this.kind === 'board' ? 440 : this.kind === 'table' ? 24 + n * 34 : this.kind === 'chart' ? 400 : this.kind === 'mermaid' ? 300 : this.kind === 'toc' ? 60 + n * 26 : 40 + n * 24
+    return this.kind === 'http' || this.kind === 'code' ? 140 + n * 20 : this.kind === 'pw' ? 180 + n * 20 : this.kind === 'browser' ? 110 + (Number(/height:\s*(\d+)/.exec(this.src)?.[1]) || 560) : this.kind === 'data' || this.kind === 'ref' ? 90 : this.kind === 'audio' ? 48 : this.kind === 'image' ? 320 : this.kind === 'board' ? 440 : this.kind === 'table' ? 24 + n * 34 : this.kind === 'chart' ? 400 : this.kind === 'mermaid' ? 300 : this.kind === 'toc' ? 60 + n * 26 : 40 + n * 24
   }
   toDOM(view: EditorView): HTMLElement {
     const dom = document.createElement('div')
     dom.className = 'cm-comp'
     const autofocus = !!focusSrc && focusSrc === this.src
     if (autofocus) focusSrc = ''
-    const props = reactive({
+    const hp = reactive({
       kind: this.kind,
       src: this.src,
       headings: this.extra ? (JSON.parse(this.extra) as Array<{ level: number; text: string; pos: number }>) : [],
       autofocus,
+      path: props.path ?? '',
+      line: this.line,
       onChange: (src: string) => compReplace(view, dom, src),
       onRemove: () => compRemove(view, dom),
       onGo: (pos: number) => {
@@ -698,12 +710,12 @@ class CompWidget extends WidgetType {
       onTranscribe: (rel: string) => emit('transcribe', rel),
       onDropAudio: (rel: string) => emit('dropAudio', rel),
     })
-    const app = createApp({ render: () => h(NoteBlockHost, props) })
+    const app = createApp({ render: () => h(NoteBlockHost, hp) })
     app.mount(dom)
     // a component grows (a row added, a picture drawn): the editor measures again
     const ro = new ResizeObserver(() => view.requestMeasure())
     ro.observe(dom)
-    ;(dom as CompDom)._qa = { app, props, ro }
+    ;(dom as CompDom)._qa = { app, props: hp, ro }
     return dom
   }
   updateDOM(dom: HTMLElement): boolean {
@@ -711,6 +723,7 @@ class CompWidget extends WidgetType {
     if (!q || q.props.kind !== this.kind) return false
     q.props.src = this.src
     q.props.headings = this.extra ? JSON.parse(this.extra) : []
+    ;(q.props as { line?: number }).line = this.line
     return true
   }
   destroy(dom: HTMLElement): void {
@@ -722,12 +735,12 @@ class CompWidget extends WidgetType {
     return true
   }
 }
-type CompDom = HTMLElement & { _qa?: { app: App; props: { kind: BlockKind; src: string; headings: unknown }; ro: ResizeObserver } }
+type CompDom = HTMLElement & { _qa?: { app: App; props: { kind: BlockKind; src: string; headings: unknown; line?: number }; ro: ResizeObserver } }
 function buildComps(state: EditorState): { ranges: CompRange[]; deco: DecorationSet } {
   const found = findBlocks(state.doc.toString().split('\n'))
   const heads = found.some((b) => b.kind === 'toc') ? JSON.stringify(headingsOf(state)) : ''
   const ranges = found.map((b) => ({ kind: b.kind, from: state.doc.line(b.line0).from, to: state.doc.line(b.line1).to, src: b.src }))
-  return { ranges, deco: Decoration.set(ranges.map((r) => Decoration.replace({ widget: new CompWidget(r.kind, r.src, r.kind === 'toc' ? heads : ''), block: true }).range(r.from, r.to))) }
+  return { ranges, deco: Decoration.set(ranges.map((r) => Decoration.replace({ widget: new CompWidget(r.kind, r.src, r.kind === 'toc' ? heads : '', state.doc.lineAt(r.from).number), block: true }).range(r.from, r.to))) }
 }
 const compField = StateField.define<{ ranges: CompRange[]; deco: DecorationSet }>({
   create: buildComps,
@@ -821,7 +834,7 @@ function compDrag(view: EditorView, dom: HTMLElement, e0: PointerEvent): void {
   document.body.append(line)
   const ghost = document.createElement('div')
   ghost.className = 'cm-comp-ghost'
-  ghost.textContent = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска' }[r.kind]
+  ghost.textContent = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер' }[r.kind]
   document.body.append(ghost)
   dom.classList.add('cm-comp-moving')
   let target: number | undefined
@@ -927,6 +940,31 @@ const compGuard = EditorState.transactionFilter.of((tr) => {
   return tr
 })
 
+// ---------- the run context's values in the text: {{ login.status }} ----------
+class ValueChip extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly shown: string,
+    readonly ok: boolean,
+  ) {
+    super()
+  }
+  eq(o: ValueChip): boolean {
+    return o.path === this.path && o.shown === this.shown && o.ok === this.ok
+  }
+  toDOM(): HTMLElement {
+    const s = document.createElement('span')
+    s.className = this.ok ? 'cm-val' : 'cm-val none'
+    s.textContent = this.shown
+    s.title = this.ok ? `{{ ${this.path} }}` : `{{ ${this.path} }} — нет значения: выполните блок, который его публикует`
+    return s
+  }
+}
+const valueText = (v: unknown) => {
+  const s = v === undefined || v === null ? String(v) : typeof v === 'object' ? JSON.stringify(v) : String(v)
+  return s.length > 120 ? `${s.slice(0, 120)}…` : s
+}
+
 // ---------- live preview ----------
 const EMOJI = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*/gu
 const EMOJI_LINE = /^\s*(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*\s*){1,3}$/u
@@ -1002,7 +1040,9 @@ function decorate(v: EditorView): DecorationSet {
       from,
       to,
       enter: (n) => {
-        if (inComp(n.from)) return false
+        // a node wholly inside a component (it draws itself); not one that only starts there — the document
+        // itself starts at 0, and a component on the first line must not hide everything after it
+        if (comps.some((c) => n.from >= c.from && n.to <= c.to)) return false
         // the parser's code (it may run past our block — an indented closing fence): plain text outside our blocks
         if (n.name === 'FencedCode' || n.name === 'CodeBlock') {
           for (let p = n.from; p <= n.to; ) {
@@ -1012,7 +1052,8 @@ function decorate(v: EditorView): DecorationSet {
           }
           return false
         }
-        if (inCode(n.from)) return false
+        // (wholly inside a code block — the document itself starts there when a block is on the first line)
+        if (blocks.some((b) => n.from >= b.from && n.to <= b.to)) return false
         switch (n.name) {
           case 'HeaderMark':
             if (n.node.parent?.name.startsWith('ATXHeading') && !lineActive(n.from)) out.push(hide.range(n.from, spaceAfter(n.to)))
@@ -1125,6 +1166,19 @@ function decorate(v: EditorView): DecorationSet {
             out.push(hide.range(a, label ? a + 2 + w[1].indexOf('|') + 1 : a + 2))
             out.push(Decoration.mark({ class: 'cm-wiki', attributes: { 'data-wiki': w[1].split('|')[0] } }).range(label ? a + 2 + w[1].indexOf('|') + 1 : a + 2, b - 2))
             out.push(hide.range(b - 2, b))
+          }
+        }
+        // {{ path }} — the run context's value (the raw text where the cursor is)
+        if (props.path && line.text.includes('{{')) {
+          const vals = ctxValues(props.path)
+          TEMPLATE.lastIndex = 0
+          let tm: RegExpExecArray | null
+          while ((tm = TEMPLATE.exec(line.text))) {
+            const a = line.from + tm.index
+            const b = a + tm[0].length
+            if (touched(a, b)) continue
+            const r = resolvePath(vals, tm[1])
+            out.push(Decoration.replace({ widget: new ValueChip(tm[1], r.ok ? valueText(r.value) : tm[1], r.ok) }).range(a, b))
           }
         }
         // emoji: a bit bigger than the text; up to three alone on a line — big
@@ -1354,6 +1408,14 @@ function insertComp(md: string): void {
   view.dispatch({ changes: { from, to, insert: ins }, selection: { anchor: from + ins.length }, annotations: Transaction.userEvent.of('input.component'), scrollIntoView: true })
   closePicker()
 }
+/** A block name not taken in this note: resp, resp2, resp3… */
+function freeName(base: string): string {
+  const text = view?.state.doc.toString() ?? ''
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : `${base}${n}`
+    if (!new RegExp(`name=${name}(\\s|$)`, 'm').test(text)) return name
+  }
+}
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 function runCmd(id: CmdId): void {
   const p = picker.value
@@ -1373,6 +1435,12 @@ function runCmd(id: CmdId): void {
   else if (id === 'toggle') insertComp(toggleMd({ title: '', body: '', open: true }))
   else if (id === 'toc') insertComp(TOC_MD)
   else if (id === 'work') insertComp(workMd({ period: 'today', view: 'table' }))
+  else if (id === 'http') insertComp(`\`\`\`http name=${freeName('resp')}\nGET https://\n\`\`\``)
+  else if (id === 'browser') insertComp(`\`\`\`browser name=${freeName('site')}\nurl: about:blank\nheight: 560\n\`\`\``)
+  else if (id === 'pw') insertComp(`\`\`\`ts playwright name=${freeName('scenario')}\nawait page.goto('https://example.com')\nawait expect(page).toHaveTitle(/Example/)\nreturn await page.title()\n\`\`\``)
+  else if (id === 'js') insertComp(`\`\`\`js run name=${freeName('result')}\n\n\`\`\``)
+  else if (id === 'data') insertComp(`\`\`\`json name=${freeName('data')}\n[]\n\`\`\``)
+  else if (id === 'ref') insertComp('```json ref=' + ((props.path && Object.keys(noteRun(props.path).ctx).pop()) || 'value') + '\n```')
   else if (id === 'board') replaceAt(latin ? '@board ' : '@доска ', true)
   else if (id === 'todo') replaceAt('- [ ] ')
   else if (id === 'divider') insertComp('---')
@@ -1485,9 +1553,9 @@ const clicks = EditorView.domEventHandlers({
   mousedown(e, v) {
     const el = e.target as HTMLElement
     const url = el.closest<HTMLElement>('.cm-lp-link')?.dataset.url
-    if (url) {
+    if (url && e.button !== 2) {
       e.preventDefault()
-      if (/^https?:\/\//i.test(url)) window.qa.openExternal(url)
+      openUrl(url, e.button === 1)
       return true
     }
     const wiki = el.closest<HTMLElement>('.cm-wiki')?.dataset.wiki
@@ -1631,7 +1699,7 @@ onMounted(() => {
         lineNumbers(),
         highlightActiveLineGutter(),
         EditorView.lineWrapping,
-        markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES, extensions: [{ remove: ['SetextHeading'] }] }),
+        markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES, extensions: [{ remove: ['SetextHeading'] }, looseFence] }),
         syntaxHighlighting(mdStyle),
         syntaxHighlighting(codeStyle),
         codeFolding({ placeholderText: '…' }),
@@ -1669,7 +1737,10 @@ onMounted(() => {
         ]),
         keymap.of([{ key: 'Mod-b', run: wrap('**') }, { key: 'Mod-i', run: wrap('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) emit('change', u.state.doc.toString())
+          if (u.docChanged) {
+            emit('change', u.state.doc.toString())
+            scheduleSync()
+          }
           if (u.focusChanged && !u.view.hasFocus) closePicker()
           else if (u.transactions.some((t) => t.isUserEvent('input') || t.isUserEvent('delete') || t.isUserEvent('select'))) checkPicker(u.view)
           else if (u.docChanged && picker.value) closePicker()
@@ -1679,6 +1750,17 @@ onMounted(() => {
   })
 })
 onMounted(() => props.text.includes('qvarch://') && void eventsNow())
+// the note's data blocks in its context (those off screen too); the {{ }} values redraw with the context
+let syncTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleSync(): void {
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => props.path && view && syncData(props.path, view.state.doc.toString()), 400)
+}
+onMounted(() => props.path && syncData(props.path, props.text))
+watch(
+  () => (props.path ? JSON.stringify(Object.keys(noteRun(props.path).ctx).map((k) => [k, noteRun(props.path!).ctx[k].at])) : ''),
+  () => view?.dispatch({}),
+)
 onBeforeUnmount(() => view?.destroy())
 
 // the same note changed elsewhere (another pane, a transcript, a reload): only the changed middle is replaced
@@ -2131,6 +2213,19 @@ defineExpose({
   margin: 0 auto;
   min-height: 0;
 }
+.mde :deep(.cm-val) {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+  font-family: var(--font-data);
+  font-size: 0.9em;
+}
+.mde :deep(.cm-val.none) {
+  background: transparent;
+  outline: 1px dashed rgba(251, 191, 36, 0.5);
+  color: var(--muted);
+}
 .mde :deep(.cm-emoji) {
   font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
   font-size: 1.3em;
@@ -2145,6 +2240,20 @@ defineExpose({
   gap: 2px;
   min-height: 44px;
   padding: 3px 6px;
+}
+/* the note editor's own look (its 40vh tail, paddings) must not reach the code fields inside components */
+.mde :deep(.cm-comp .cm-editor .cm-scroller) {
+  /* (the note's own scroller shows everything — a field inside scrolls within its max height) */
+  overflow: auto !important;
+  padding: 0 !important;
+  line-height: 1.5;
+}
+.mde :deep(.cm-comp .cm-editor .cm-content) {
+  padding: 4px 0 !important;
+}
+.mde :deep(.cm-comp .cm-editor .cm-gutters) {
+  padding-top: 0;
+  font-size: 0.85em;
 }
 .mde :deep(.cm-comp) {
   padding: 2px 0;

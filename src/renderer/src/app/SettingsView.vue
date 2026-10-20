@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import McpSettings from '../components/McpSettings.vue'
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import type { KindDef, PublicSettings, SettingsPatch, UiPrefs, VoiceState } from '@shared/types'
 import { DEFAULT_UI } from '@shared/ui'
@@ -49,7 +50,7 @@ const f = reactive({
 })
 
 /** Settings are split into sections (like System Settings): a sidebar, or tabs on top in a narrow window. */
-type Cat = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira' | 'browser'
+type Cat = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira' | 'browser' | 'ai'
 const CATS: Array<{ id: Cat; icon: string; label: string }> = [
   { id: 'general', icon: 'clock', label: 'Основное' },
   { id: 'kinds', icon: 'tag', label: 'Виды занятости' },
@@ -60,6 +61,7 @@ const CATS: Array<{ id: Cat; icon: string; label: string }> = [
   { id: 'outlook', icon: 'calendar', label: 'Outlook и Teams' },
   { id: 'jira', icon: 'jira', label: 'Jira' },
   { id: 'browser', icon: 'browser', label: 'Браузер' },
+  { id: 'ai', icon: 'sparkles', label: 'AI-ассистенты' },
 ]
 const cat = ref<Cat>(readCat())
 // ---------- the browser ----------
@@ -617,6 +619,20 @@ function toggleDay(id: number): void {
         <label class="switch"><input type="checkbox" :checked="brSet.history" @change="brPatch({ history: ($event.target as HTMLInputElement).checked })" /><span>Сохранять историю посещений</span></label>
       </div>
       <p class="muted small">Открытые страницы запоминаются по дням, со временем открытия: 90 дней, только на этом компьютере. По ним же — подсказки в строке адреса. Сама история — в разделе «Браузер»: кнопка с часами или Ctrl+H. Выключение не удаляет уже сохранённое.</p>
+      <div class="olopts">
+        <label class="switch"><input type="checkbox" :checked="brSet.acceptBadCerts" @change="brPatch({ acceptBadCerts: ($event.target as HTMLInputElement).checked })" /><span>Открывать сайты с недоверенным сертификатом</span></label>
+      </div>
+      <p class="muted small">Свой (самоподписанный), просроченный или выданный на другое имя — как у внутренних сайтов. Такой сайт открывается сразу, замок перед адресом становится красным: защищённость соединения тогда не гарантируется. Выключено — Qvarch спросит; а не загрузившаяся часть страницы (счётчик, реклама) больше не заменяет страницу ошибкой.</p>
+      <div class="grid">
+        <label>
+          Неактивная вкладка засыпает через
+          <select :value="brSet.sleepMin" @change="brPatch({ sleepMin: Number(($event.target as HTMLSelectElement).value) })">
+            <option :value="0">никогда</option>
+            <option v-for="m in [5, 15, 30, 60]" :key="m" :value="m">{{ m }} мин</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted small">Каждая вкладка браузера — отдельный процесс (сотни МБ памяти). Уснувшая вкладка остаётся в списке и загружается заново, когда вы её открываете. Не засыпают: показанные, с открытыми инструментами разработчика, в режиме устройства, со звуком и во время записи запросов.</p>
       <h3 class="mt">User-Agent</h3>
       <p class="muted small">Как браузер представляется сайтам. Действует сразу на все вкладки; уже открытые страницы увидят его после обновления (F5). У вкладки в режиме устройства — User-Agent этого устройства.</p>
       <div class="grid">
@@ -643,6 +659,11 @@ function toggleDay(id: number): void {
         </label>
       </div>
       <p v-if="uaPick === 'own'" class="muted small">Впишите строку и нажмите Enter (или щёлкните мимо). Пустая строка — встроенный User-Agent.</p>
+    </section>
+
+    <section v-show="cat === 'ai'">
+      <h3>AI-ассистенты (MCP)</h3>
+      <McpSettings class="mcpw" />
     </section>
 
     <section v-show="cat === 'jira'">
@@ -1423,5 +1444,77 @@ h3.mt {
 }
 .mrow-move {
   transition: transform 0.15s ease;
+}
+/* the AI assistants' section (a component of its own) looks as the others */
+.mcpw :deep(label) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mcpw :deep(.span2) {
+  grid-column: 1 / -1;
+}
+.mcpw :deep(.small) {
+  font-size: 12px;
+}
+.mcpw :deep(.olopts) {
+  display: flex;
+  flex-direction: column;
+  max-width: 420px;
+  margin-top: 10px;
+}
+.mcpw :deep(label.switch span) {
+  order: -1;
+}
+.mcpw :deep(.switch input) {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.mcpw :deep(.switch input)::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-hi);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.mcpw :deep(.switch input:checked) {
+  background: var(--accent);
+}
+.mcpw :deep(.switch input:checked)::after {
+  transform: translateX(14px);
+}
+.mcpw :deep(h3) {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.mcpw :deep(.small) {
+  font-size: 12px;
+}
+.mcpw :deep(.grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+.mcpw :deep(h3.mt) {
+  margin-top: 26px;
 }
 </style>

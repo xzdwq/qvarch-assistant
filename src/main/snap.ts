@@ -13,6 +13,8 @@ interface Step {
   js?: string
   /** Runs in the first visible browser page (a WebContentsView) — after js. */
   vjs?: string
+  /** Real (trusted) input into that page, in order: a click at the centre of a CSS selector, typed text, a key. */
+  vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; wait?: number }>
   /** A mouse moved across the window (x, y → x, y in n steps): every cursor change of the window and its pages is logged. */
   move?: [number, number, number, number, number]
   wait?: number
@@ -63,6 +65,41 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
         await sleep(200)
         offs.forEach((f) => f())
         log.push(`${s.name} cursors: ${seen.join(' ')}`)
+      }
+      if (s.vinput) {
+        const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())
+        const wc = v?.webContents
+        for (const a of s.vinput) {
+          if (!wc) break
+          if (a.dbl) {
+            const r = (await wc.executeJavaScript(`(() => { const e = document.querySelector(${JSON.stringify(a.dbl)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
+            if (r) {
+              const [x, y] = r.map(Math.round)
+              wc.sendInputEvent({ type: 'mouseMove', x, y })
+              for (const n of [1, 2]) {
+                wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: n })
+                wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: n })
+              }
+            } else log.push(`${s.name}: no ${a.dbl}`)
+          }
+          if (a.click) {
+            const r = (await wc.executeJavaScript(`(() => { const e = document.querySelector(${JSON.stringify(a.click)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
+            if (!r) log.push(`${s.name}: no ${a.click}`)
+            else {
+              const [x, y] = r.map(Math.round)
+              wc.sendInputEvent({ type: 'mouseMove', x, y })
+              wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+              wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+            }
+          }
+          if (a.type) for (const ch of a.type) wc.sendInputEvent({ type: 'char', keyCode: ch })
+          if (a.key) {
+            wc.sendInputEvent({ type: 'keyDown', keyCode: a.key })
+            if (a.key === 'Enter') wc.sendInputEvent({ type: 'char', keyCode: '\r' })
+            wc.sendInputEvent({ type: 'keyUp', keyCode: a.key })
+          }
+          await sleep(a.wait ?? 250)
+        }
       }
       if (s.vjs) {
         const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())

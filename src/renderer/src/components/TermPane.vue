@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -48,7 +49,7 @@ onMounted(async () => {
   })
   fit = new FitAddon()
   term.loadAddon(fit)
-  term.loadAddon(new WebLinksAddon((_e, uri) => window.qa.openExternal(uri)))
+  term.loadAddon(new WebLinksAddon((_e, uri) => openUrl(uri)))
   term.open(box.value!)
   // (the development pictures drive it: the snap steps reach the terminal through its box)
   ;(box.value as HTMLElement & { qaTerm?: Terminal }).qaTerm = term

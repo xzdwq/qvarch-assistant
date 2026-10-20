@@ -67,6 +67,8 @@ export async function save(path: string): Promise<void> {
   const before = d.saved
   try {
     await window.qa.vaultWrite(path, text)
+    // an event mentioned (or no more): its link to this note follows
+    if (text.includes('qvarch://event/') || before.includes('qvarch://event/')) void import('./mentions').then((m) => m.refreshMentions(true))
     d.saved = text
     d.error = undefined
     void syncAudio(before, text)

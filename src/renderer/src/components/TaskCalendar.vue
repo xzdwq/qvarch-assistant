@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { isProductive } from '@shared/kinds'
 import { visibleNotes } from '@shared/notes'
@@ -639,9 +640,8 @@ async function onPanelClosed(): Promise<void> {
   await reloadVisible()
 }
 function openJira(key: string): void {
-  if (jira.value.siteUrl) window.qa.openExternal(`${jira.value.siteUrl}/browse/${key}`)
+  if (jira.value.siteUrl) openUrl(`${jira.value.siteUrl}/browse/${key}`)
 }
-const openUrl = (url: string) => window.qa.openExternal(url)
 /** The events and notes around the open one, in time order (across the loaded days) — a click switches. */
 type Item = { key: string; t: number; day: string; text: string; time: string; color: string; icon: string; open: () => void }
 const allItems = computed<Item[]>(() => {

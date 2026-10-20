@@ -8,8 +8,12 @@ import BoardView from '../components/BoardView.vue'
 import { isBoard, serializeBoard } from '@shared/whiteboard'
 import { freshBoard } from '../lib/boardPrefs'
 import EventModal from '../components/EventModal.vue'
+import EventCard from '../components/EventCard.vue'
 import EmojiPick from '../components/EmojiPick.vue'
 import NodeMark from '../components/NodeMark.vue'
+import { clearCtx, flushRuns, noteReport, noteRun, runAll, stopRunAll } from '../lib/runbook'
+import { summary } from '@shared/runbook'
+import { useTablet } from '../lib/tablet'
 import { fmtSec, useRecorder } from '../lib/recorder'
 import {
   closeEverywhere,
@@ -240,7 +244,13 @@ function onDragStart(n: VaultNode, e: DragEvent): void {
   e.dataTransfer?.setData('text/plain', n.path)
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 }
-function onDragOver(n: VaultNode | undefined): void {
+function onDragOver(n: VaultNode | undefined, e?: DragEvent): void {
+  // a file from outside: the folder it would go into lights up
+  if (e && fileDrag(e)) {
+    pairTarget.value = undefined
+    dropDir.value = n ? (n.dir ? n.path : dirOf(n.path)) : ''
+    return
+  }
   if (!dragPath.value) return
   const from = findNode(dragPath.value)
   // a note over a board (or a board over a note): link them
@@ -252,7 +262,12 @@ function onDragOver(n: VaultNode | undefined): void {
   pairTarget.value = undefined
   dropDir.value = n ? (n.dir ? n.path : dirOf(n.path)) : ''
 }
-async function onDrop(): Promise<void> {
+async function onDrop(e?: DragEvent): Promise<void> {
+  if (e && fileDrag(e)) {
+    const dir = dropDir.value ?? ''
+    dropDir.value = undefined
+    return importDropped(e, dir)
+  }
   const from = dragPath.value
   const to = dropDir.value
   const link = pairTarget.value
@@ -276,6 +291,56 @@ function ctxRun(fn: (n?: VaultNode) => unknown): void {
   void fn(n)
 }
 const closeCtx = () => (ctx.value = undefined)
+
+// ---------- a document into one file (.qvdoc) and back ----------
+async function exportDoc(path: string): Promise<void> {
+  try {
+    await saveAll()
+    await flushRuns()
+    const r = await window.qa.docExport(path)
+    if (!r) return
+    const more = r.docs > 1 ? ` + ${r.docs - 1} связ.` : ''
+    say(`Экспортировано: ${r.file.split(/[\\/]/).pop()}${more}${r.files ? `, файлов: ${r.files}` : ''}${r.missing.length ? ` · не найдено: ${r.missing.length}` : ''}`)
+  } catch (e) {
+    say(`Не удалось экспортировать: ${errText(e)}`)
+  }
+}
+/** What came in: a folder — opened in the tree; a document — opened. */
+async function imported(r: { main: string; paths: string[]; folder?: string }): Promise<void> {
+  await loadTree()
+  if (r.folder) {
+    const open = new Set(layout.open)
+    for (let p = r.folder; p; p = dirOf(p)) open.add(p)
+    layout.open = [...open]
+    folder.value = r.folder
+    say(`Папка «${noteName(r.folder)}» импортирована · документов: ${r.paths.length}`)
+  } else {
+    openFile(r.main)
+    say(r.paths.length > 1 ? `Импортировано документов: ${r.paths.length}` : 'Документ импортирован')
+  }
+}
+async function importDoc(dir: string): Promise<void> {
+  try {
+    const r = await window.qa.docImport(dir)
+    if (r) await imported(r)
+  } catch (e) {
+    say(`Не удалось импортировать: ${errText(e)}`)
+  }
+}
+/** .qvdoc files dragged from Explorer onto the tree: into the folder under them (or the top). */
+const fileDrag = (e: DragEvent) => !dragPath.value && !!e.dataTransfer?.types.includes('Files')
+async function importDropped(e: DragEvent, dir: string): Promise<void> {
+  const list = [...(e.dataTransfer?.files ?? [])]
+  const docs = list.filter((x) => x.name.toLowerCase().endsWith('.qvdoc'))
+  if (!docs.length) return void (list.length && say('Импортируются только файлы .qvdoc (экспорт документа или папки)'))
+  for (const x of docs) {
+    try {
+      await imported(await window.qa.docImportFile(dir, window.qa.pathForFile(x)))
+    } catch (err) {
+      say(`«${x.name}» не импортирован: ${errText(err)}`)
+    }
+  }
+}
 onMounted(() => window.addEventListener('pointerdown', closeCtx))
 onBeforeUnmount(() => window.removeEventListener('pointerdown', closeCtx))
 
@@ -321,6 +386,15 @@ async function openHit(h: VaultHit, line?: VaultHit['lines'][number]): Promise<v
 const parts = (s: string, at: number, len: number) => ({ a: s.slice(0, at), m: s.slice(at, at + len), b: s.slice(at + len) })
 
 // ---------- panes ----------
+/**
+ * The tablet drawing on a board («Полотно Qvarch»): only the board takes the pen — the width handles next to it
+ * (the side's, the panes') are off, a stroke near the edge never grabs them.
+ */
+const { state: tabletState } = useTablet()
+const penOnly = computed(() => {
+  const t = tabletState.value
+  return t?.status.state === 'connected' && t.prefs.target.kind === 'canvas' && layout.panes.some((p) => !!p.active && isBoard(p.active))
+})
 const sideHidden = computed({
   get: () => !!layout.sideHidden,
   set: (v: boolean) => (layout.sideHidden = v),
@@ -333,6 +407,14 @@ function toEvent(p: Pane, text: string, at: { from: number; to: number }): void 
   eventAt = { key: `${p.id}:${p.active}`, ...at }
   eventText.value = text
 }
+// an event chip clicked in a note: its card
+const evCard = ref<{ day: string; id: string; x: number; y: number; path?: string }>()
+const onEvCard = (e: Event) => {
+  const d = (e as CustomEvent<{ day: string; id: string; x: number; y: number }>).detail
+  evCard.value = { ...d, path: curPane()?.active }
+}
+onMounted(() => window.addEventListener('qa:event-card', onEvCard))
+onBeforeUnmount(() => window.removeEventListener('qa:event-card', onEvCard))
 function onEventMade(day: string, e: { id: string; label: string }): void {
   const at = eventAt
   const text = eventText.value
@@ -527,6 +609,23 @@ async function setEmoji(n: VaultNode, emoji?: string): Promise<void> {
   await window.qa.vaultSetEmoji(n.path, emoji)
   await loadTree()
 }
+// ---------- a runnable note: «Выполнить всё», its context ----------
+const RUNNABLE = /^(`{3,}|~{3,})\s*(http|rest)\b|^(`{3,}|~{3,})\s*(js|ts|javascript|typescript)\b[^\n]*\b(run|lib|playwright|pw)\b|^(`{3,}|~{3,})\s*(json|yaml|browser)\b[^\n]*\bname=/m
+const runnable = (path?: string) => !!path && !isBoard(path) && RUNNABLE.test(docs.get(path)?.text ?? '')
+const ctxOpen = ref<{ path: string; x: number; y: number }>()
+function openCtxPanel(path: string, e: MouseEvent): void {
+  if (ctxOpen.value?.path === path) return void (ctxOpen.value = undefined)
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  ctxOpen.value = { path, x: Math.max(8, Math.min(r.right - 360, window.innerWidth - 370)), y: r.bottom + 6 }
+}
+const closeCtxPanel = (e: PointerEvent) => !(e.target as HTMLElement).closest('.nrun-ctx, .nrun-b') && (ctxOpen.value = undefined)
+onMounted(() => window.addEventListener('pointerdown', closeCtxPanel))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', closeCtxPanel))
+async function copyNoteReport(path: string): Promise<void> {
+  await navigator.clipboard.writeText(noteReport(path, docs.get(path)?.text ?? ''))
+  say('Отчёт скопирован — вставьте в чат, Jira или письмо')
+}
+const FROM: Record<string, string> = { http: 'HTTP', code: 'код', data: 'данные', set: 'set()', ref: '', pw: 'Playwright', browser: 'браузер' }
 /** The emoji offered right in the menu; «…» opens the whole list. */
 const QUICK_EMOJI = ['⭐', '🔥', '✅', '❗', '📌', '💡', '🚀', '🐞', '📊', '🎯']
 /** The whole emoji list for a node (its place: where its menu was). */
@@ -660,8 +759,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         v-if="layout.sideTab === 'files'"
         class="ntree"
         :class="{ drop: dropDir === '' }"
-        @dragover.prevent="onDragOver(undefined)"
-        @drop.prevent="onDrop"
+        @dragover.prevent="onDragOver(undefined, $event)"
+        @dragleave.self="dragPath || (dropDir = undefined)"
+        @drop.prevent="onDrop($event)"
         @dragend="(dragPath = undefined), (dropDir = undefined)"
         @contextmenu.prevent="openCtx($event)"
         @click.self="folder = undefined"
@@ -675,8 +775,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           :title="r.node.path"
           draggable="true"
           @dragstart="onDragStart(r.node, $event)"
-          @dragover.prevent.stop="onDragOver(r.node)"
-          @drop.prevent.stop="onDrop"
+          @dragover.prevent.stop="onDragOver(r.node, $event)"
+          @drop.prevent.stop="onDrop($event)"
           @click="clickRow(r.node, $event)"
           @dblclick="r.node.dir || startRename(r.node.path)"
           @contextmenu.prevent.stop="openCtx($event, r.node)"
@@ -732,15 +832,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="nfoot">
         <span>{{ noteCount }} {{ noteCount % 10 === 1 && noteCount % 100 !== 11 ? 'заметка' : [2, 3, 4].includes(noteCount % 10) && ![12, 13, 14].includes(noteCount % 100) ? 'заметки' : 'заметок' }}</span>
         <span class="grow"></span>
+        <button class="lnk" title="Импорт документа (.qvdoc) в открытый раздел" @click="importDoc(folder ?? '')"><Icon name="download" :size="12" />Импорт</button>
         <button class="lnk" title="Папка с файлами заметок" @click="reveal('')"><Icon name="external" :size="12" />Папка</button>
       </div>
     </aside>
-    <div v-if="!sideHidden" class="nresize" @pointerdown.prevent="onSideResize"></div>
+    <div v-if="!sideHidden" class="nresize" :class="{ locked: penOnly }" :title="penOnly ? 'Планшет рисует на доске — ширина панели не меняется' : undefined" @pointerdown.prevent="!penOnly && onSideResize($event)"></div>
 
     <!-- one or two panes of tabs -->
     <div ref="panesEl" class="npanes">
       <template v-for="(p, pi) in layout.panes" :key="p.id">
-        <div v-if="pi" class="psplit" title="Потяните — ширина" @pointerdown.prevent="onSplitResize"></div>
+        <div v-if="pi" class="psplit" :class="{ locked: penOnly }" :title="penOnly ? 'Планшет рисует на доске — ширина не меняется' : 'Потяните — ширина'" @pointerdown.prevent="!penOnly && onSplitResize($event)"></div>
         <section class="pane" :class="{ cur: layout.cur === pi && layout.panes.length > 1 }" :style="{ flex: layout.panes.length > 1 ? `${pi ? 1 - layout.split : layout.split} 1 0` : '1 1 0' }" @pointerdown.capture="layout.cur = pi">
           <div class="tabs">
             <button v-if="sideHidden && pi === 0" class="tb" title="Показать панель" @click="sideHidden = false"><Icon name="sidebar" :size="14" /></button>
@@ -788,6 +889,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <Icon :name="recInto?.pane === p.id ? 'stop' : 'mic'" :size="14" />
               </button>
               <button class="tb" title="Вставить изображение — или вставьте из буфера (Ctrl+V), или перетащите файл в заметку" @click="pickImages(p)"><Icon name="image" :size="14" /></button>
+              <template v-if="runnable(p.active)">
+                <button class="tb" title="Скопировать отчёт по заметке: итог, каждый блок, ошибки целиком — готовым текстом" @click="copyNoteReport(p.active!)"><Icon name="clipboard" :size="14" /></button>
+                <button class="tb nrun-b" :class="{ on: ctxOpen?.path === p.active }" title="Переменные заметки — что опубликовали её блоки" @click="openCtxPanel(p.active!, $event)"><Icon name="braces" :size="14" /></button>
+                <button v-if="noteRun(p.active!).all && !noteRun(p.active!).all!.error" class="tb nrun stop" title="Остановить выполнение" @click="stopRunAll(p.active!)"><Icon name="stop" :size="11" />{{ noteRun(p.active!).all!.done + 1 }}/{{ noteRun(p.active!).all!.total }}</button>
+                <button v-else class="tb nrun" title="Выполнить всё: блоки HTTP и кода сверху вниз (данные — сразу); первая ошибка останавливает" @click="runAll(p.active!, docs.get(p.active!)!.text)"><Icon name="play" :size="11" />Выполнить всё</button>
+              </template>
             </template>
             <button class="tb" :class="{ on: layout.panes.length > 1 }" :title="layout.panes.length > 1 ? 'Одна колонка (Ctrl+\\)' : 'Разделить'" @click="toggleSplit">
               <Icon name="columns" :size="14" />
@@ -841,6 +948,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   :key="`${p.id}:${p.active}`"
                   :ref="(el) => setEditor(`${p.id}:${p.active}`, el)"
                   :text="docs.get(p.active)!.text"
+                  :path="p.active"
                   @change="(t) => setText(p.active!, t)"
                   @wiki="(w) => openWiki(w)"
                   @transcribe="(a) => transcribeInto(p.active!, a)"
@@ -887,10 +995,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <Teleport to="body">
+      <div v-if="ctxOpen" class="nrun-ctx" :style="{ left: `${ctxOpen.x}px`, top: `${ctxOpen.y}px` }">
+        <div class="nrc-h"><b>Переменные заметки</b><span class="grow"></span><button title="Очистить контекст и результаты" @click="clearCtx(ctxOpen.path)"><Icon name="trash" :size="12" /></button></div>
+        <div v-for="(it, k) in noteRun(ctxOpen.path).ctx" :key="k" class="nrc-r" :title="`{{ ${k} }} — из блока «${it.block}» · ${new Date(it.at).toLocaleString('ru-RU')}`">
+          <code>{{ k }}</code><span class="nrc-f">{{ FROM[it.from] }}</span><span class="nrc-v">{{ summary(it.value) }}</span>
+        </div>
+        <p v-if="!Object.keys(noteRun(ctxOpen.path).ctx).length" class="nrc-e">Пока пусто: выполните блоки — их результаты появятся здесь. В тексте: {{ '{' }}{{ '{' }} имя.путь {{ '}' }}{{ '}' }}</p>
+        <p v-if="noteRun(ctxOpen.path).all?.error" class="nrc-err">Остановилось на «{{ noteRun(ctxOpen.path).all!.at }}»: {{ noteRun(ctxOpen.path).all!.error }}</p>
+      </div>
       <div v-if="emojiFor" class="nemo" :style="{ left: `${emojiFor.x}px`, top: `${emojiFor.y}px` }" @pointerdown.stop>
         <EmojiPick @pick="(u) => (setEmoji(emojiFor!.node, u), (emojiFor = undefined))" />
       </div>
     </Teleport>
+    <EventCard v-if="evCard" :key="evCard.id" :day="evCard.day" :id="evCard.id" :x="evCard.x" :y="evCard.y" :path="evCard.path" @close="evCard = undefined" />
     <EventModal v-if="eventText !== undefined" :text="eventText" @created="onEventMade" @close="eventText = undefined" />
     <Teleport to="body">
       <div v-if="ctx" class="nctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop>
@@ -898,6 +1015,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <button @click="ctxRun((n) => newNote(n?.path ?? ''))"><Icon name="filePlus" :size="13" />Новая заметка</button>
           <button @click="ctxRun((n) => newBoard(n?.path ?? ''))"><Icon name="presentation" :size="13" />Новая доска</button>
           <button @click="ctxRun((n) => newFolder(n?.path ?? ''))"><Icon name="folderPlus" :size="13" />Новый раздел</button>
+          <button @click="ctxRun((n) => importDoc(n?.path ?? ''))"><Icon name="download" :size="13" />Импорт документа…</button>
         </template>
         <template v-if="ctx.node && !ctx.node.dir">
           <button @click="ctxRun((n) => openFile(n!.path))"><Icon name="note" :size="13" />Открыть</button>
@@ -911,6 +1029,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <div class="csep"></div>
           <button @click="ctxRun((n) => startRename(n!.path))"><Icon name="pencil" :size="13" />Переименовать</button>
           <button @click="ctxRun((n) => reveal(n!.path))"><Icon name="external" :size="13" />Показать в проводнике</button>
+          <button :title="ctx.node.dir ? 'Вся папка одним файлом .qvdoc: подпапки, заметки, доски, картинки — откроется на другом компьютере' : 'Один файл .qvdoc: с картинками, аудио, досками — откроется на другом компьютере'" @click="ctxRun((n) => exportDoc(n!.path))"><Icon name="upload" :size="13" />{{ ctx.node.dir ? 'Экспорт папки в файл…' : 'Экспорт в файл…' }}</button>
           <div class="csep"></div>
           <div class="ccolors" title="Цветная метка">
             <button class="cnone" :class="{ on: !ctx.node.color }" title="Без цвета" @click="ctxRun((n) => setColor(n!))"><Icon name="x" :size="11" /></button>
@@ -1102,9 +1221,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   z-index: 2;
   transition: background-color 0.12s;
 }
-.nresize:hover,
-.psplit:hover {
+.nresize:hover:not(.locked),
+.psplit:hover:not(.locked) {
   background-color: rgb(var(--accent-rgb) / 0.85);
+}
+/* the tablet on a board: the handles do not reach over the board and take no pointer */
+.nresize.locked,
+.psplit.locked {
+  width: 1px;
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  pointer-events: none;
 }
 /* ---------- search ---------- */
 .nsearch {
@@ -1728,6 +1856,90 @@ mark {
 }
 .nctx .ccolors .cnone.on {
   border-color: var(--text-hi);
+}
+.tb.nrun {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  padding: 0 9px;
+  border-radius: var(--r2);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 12px;
+}
+.tb.nrun.stop {
+  background: #ef4444;
+  color: #fff;
+}
+.nrun-ctx {
+  position: fixed;
+  z-index: 5000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 360px;
+  max-height: 420px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r3);
+  background: var(--pop);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+.nrc-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px 6px;
+}
+.nrc-h button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.nrc-r {
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--r2);
+}
+.nrc-r:hover {
+  background: var(--hover);
+}
+.nrc-r code {
+  color: var(--accent-fg);
+  font-family: var(--font-data);
+}
+.nrc-f {
+  color: var(--dim);
+  font-size: 11px;
+}
+.nrc-v {
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nrc-e,
+.nrc-err {
+  margin: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.nrc-err {
+  color: var(--down-fg);
 }
 .nctx .cemo {
   gap: 2px;

@@ -20,6 +20,8 @@ export interface BrowserTab {
   ruler?: boolean
   /** The device mode: the page as on that device. */
   device?: DeviceMode
+  /** Asleep: not looked at for a while, its page unloaded (it loads again when shown). */
+  asleep?: boolean
   /** The page did not open (no network, a bad certificate…). */
   error?: { code: number; desc: string; url: string; cert?: boolean; host?: string }
 }
@@ -79,8 +81,15 @@ export interface BrowserSettings {
   history: boolean
   /** The User-Agent the pages see; '' — the built-in one (Chrome). */
   ua: string
+  /**
+   * Sites with a bad certificate (own / expired / for another name) open without asking — internal sites. The
+   * lock before the address turns red; the connection is not proven safe then.
+   */
+  acceptBadCerts: boolean
+  /** A tab not looked at for this many minutes falls asleep — its page process is freed (0 — never). */
+  sleepMin: number
 }
-export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '' }
+export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '', acceptBadCerts: true, sleepMin: 15 }
 
 /** The device a tab pretends to be (the developer's device mode). */
 export interface DeviceMode {
@@ -431,7 +440,30 @@ export function recordingToHttp(items: RecFull[], links: RecLink[], o: ToHttpOpt
 }
 
 /** What the window may ask the browser for (one IPC channel, the method's name first). */
+/** A Playwright scenario being recorded in a tab (for a note's block). */
+export interface PwRecState {
+  note: string
+  key: string
+  tabId: string
+  count: number
+  /** The last line written. */
+  last?: string
+}
 export interface BrowserApi {
+  /** Recording a scenario: a new tab at `url`; its clicks and typing become Playwright lines. */
+  pwRecStart(note: string, key: string, url: string): BrowserTab
+  /** Recording stopped: what was recorded (cancelled — nothing). */
+  pwRecStop(cancel?: boolean): Promise<{ note: string; key: string; url: string; lines: string[] } | undefined>
+  pwRecState(): PwRecState | undefined
+  hooksList(): import('./hooks').BrowserHook[]
+  hookPut(h: Partial<import('./hooks').BrowserHook>): import('./hooks').BrowserHook
+  hookRemove(id: string): void
+  hookHits(id: string): import('./hooks').HookHit[]
+  hookClearHits(id: string): void
+  hookSkip(): void
+  hookPause(on: boolean): import('./hooks').HookStatus
+  hookStatus(): import('./hooks').HookStatus
+  hookReapply(id: string): void
   list(): BrowserTab[]
   create(url?: string, opener?: string): BrowserTab
   close(id: string): void
@@ -479,4 +511,4 @@ export interface BrowserApi {
   viewSource(id: string): void
   swaggerFind(id: string): Promise<{ url: string; text: string } | { error: string; tried: string[] }>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource']

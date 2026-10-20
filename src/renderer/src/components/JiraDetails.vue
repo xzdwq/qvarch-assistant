@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed } from 'vue'
 import type { JiraIssue } from '@shared/jira'
 import { formatSec, useJira } from '../lib/jira'
@@ -9,7 +10,7 @@ import Markdown from './Markdown.vue'
 /** A Jira task opened up: its fields (status, due, components, labels, versions, parent…) and the description. */
 const props = defineProps<{ issue: JiraIssue }>()
 const jira = useJira()
-const open = () => jira.value.siteUrl && window.qa.openExternal(`${jira.value.siteUrl}/browse/${props.issue.key}`)
+const open = () => jira.value.siteUrl && openUrl(`${jira.value.siteUrl}/browse/${props.issue.key}`)
 const fmt = (d?: string | number) => (d ? new Date(typeof d === 'string' ? `${d}T12:00:00` : d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 const late = computed(() => !!props.issue.due && props.issue.due < todayKey.value && props.issue.category !== 'done')
 </script>
@@ -56,7 +57,7 @@ const late = computed(() => !!props.issue.due && props.issue.due < todayKey.valu
     </div>
     <div v-if="issue.description" class="jd-desc"><Markdown :text="issue.description" compact /></div>
     <p v-else class="jd-none">Описания нет<template v-if="!('labels' in issue)"> (появится после синхронизации)</template></p>
-    <button v-if="jira.siteUrl" class="jd-open" @click="open"><Icon name="external" :size="12" />Открыть в Jira</button>
+    <button v-if="jira.siteUrl" class="jd-open" data-link @click="open"><Icon name="external" :size="12" />Открыть в Jira</button>
   </div>
 </template>
 

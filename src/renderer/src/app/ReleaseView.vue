@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { BranchRef, CommitInfo, ConflictCause, ConflictSource, MainStatus, PlanItem, ProjectProfile } from '@shared/release'
 import Icon from '../components/Icon.vue'
@@ -36,7 +37,7 @@ function pickProject(id: string): void {
 }
 
 // ---------- helpers ----------
-const open = (url?: string | null) => url && window.qa.openExternal(url)
+const open = (url?: string | null) => url && openUrl(url)
 const short = (sha: string) => sha.slice(0, 8)
 function fmtDate(iso?: string | null): string {
   if (!iso) return ''

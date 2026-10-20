@@ -151,6 +151,7 @@ const api: QaApi = {
   vaultMove: (from, toDir, name) => ipcRenderer.invoke(IPC.vaultMove, from, toDir, name),
   vaultDelete: (path) => ipcRenderer.invoke(IPC.vaultDelete, path),
   vaultSearch: (q) => ipcRenderer.invoke(IPC.vaultSearch, q),
+  eventMentions: () => ipcRenderer.invoke(IPC.eventMentions),
   vaultSaveAudio: (audio) => ipcRenderer.invoke(IPC.vaultSaveAudio, audio),
   vaultReadAudio: (path) => ipcRenderer.invoke(IPC.vaultReadAudio, path),
   vaultTranscribe: (wav, key) => ipcRenderer.invoke(IPC.vaultTranscribe, wav, key),
@@ -162,6 +163,40 @@ const api: QaApi = {
   vaultDeleteAudio: (path) => ipcRenderer.invoke(IPC.vaultDeleteAudio, path),
   vaultRestoreAudio: (path, audio) => ipcRenderer.invoke(IPC.vaultRestoreAudio, path, audio),
   vaultSaveImage: (bytes) => ipcRenderer.invoke(IPC.vaultSaveImage, bytes),
+  runLoad: (path) => ipcRenderer.invoke(IPC.runLoad, path),
+  runSave: (path, json) => ipcRenderer.invoke(IPC.runSave, path, json),
+  docExport: (path) => ipcRenderer.invoke(IPC.docExport, path),
+  runPw: (runId, job) => ipcRenderer.invoke(IPC.runPw, runId, job),
+  runPwStop: (runId) => ipcRenderer.send(IPC.runPwStop, runId),
+  onPwProgress: (cb) => {
+    const h = (_e: unknown, runId: string, steps: Parameters<Parameters<QaApi['onPwProgress']>[0]>[1]) => cb(runId, steps)
+    ipcRenderer.on(IPC.pwProgress, h)
+    return () => void ipcRenderer.off(IPC.pwProgress, h)
+  },
+  runFile: (path, key, name) => ipcRenderer.invoke(IPC.runFile, path, key, name),
+  pwTrace: (path, key) => ipcRenderer.invoke(IPC.pwTrace, path, key),
+  pwAllure: (path, key) => ipcRenderer.send(IPC.pwAllure, path, key),
+  nbNet: (id, on, preserve) => ipcRenderer.invoke(IPC.nbNet, id, on, preserve),
+  nbNetClear: (id) => ipcRenderer.invoke(IPC.nbNetClear, id),
+  onNoteBrowser: (cb) => {
+    const h = (_e: unknown, type: string, payload: unknown) => cb(type, payload)
+    ipcRenderer.on(IPC.nbEv, h)
+    return () => void ipcRenderer.off(IPC.nbEv, h)
+  },
+  browserOpen: (url) => ipcRenderer.send(IPC.browserOpen, url),
+  mcpInfo: () => ipcRenderer.invoke(IPC.mcpInfo),
+  mcpSet: (patch) => ipcRenderer.invoke(IPC.mcpSet, patch),
+  mcpInstall: (client) => ipcRenderer.invoke(IPC.mcpInstall, client),
+  onMcpCall: (cb) => {
+    const h = (_e: unknown, id: string, op: string, args: Record<string, unknown>) => cb(id, op, args)
+    ipcRenderer.on(IPC.mcpCall, h)
+    return () => void ipcRenderer.off(IPC.mcpCall, h)
+  },
+  mcpReply: (id, ok, value) => ipcRenderer.send(IPC.mcpReply, id, ok, value),
+  docImport: (dir) => ipcRenderer.invoke(IPC.docImport, dir),
+  docImportFile: (dir, file) => ipcRenderer.invoke(IPC.docImportFile, dir, file),
+  runCode: (runId, job) => ipcRenderer.invoke(IPC.runCode, runId, job),
+  runCodeStop: (runId) => ipcRenderer.send(IPC.runCodeStop, runId),
   vaultReadImage: (path) => ipcRenderer.invoke(IPC.vaultReadImage, path),
   vaultDeleteImage: (path) => ipcRenderer.invoke(IPC.vaultDeleteImage, path),
   vaultRestoreImage: (path, bytes) => ipcRenderer.invoke(IPC.vaultRestoreImage, path, bytes),

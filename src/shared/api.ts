@@ -7,6 +7,7 @@ import type { PulsePoint } from './pulse'
 import type { JiraIssue, JiraState, JiraVersion, MyTaskStatus } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi } from './browser'
+import type { PwBrowser } from './runbook'
 import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
@@ -23,7 +24,7 @@ export interface IslandLayout {
   offset?: number
 }
 
-export type AppCommand = 'island-toggle' | 'island-reset' | 'quit' | 'devtools' | 'open-data-folder'
+export type AppCommand = 'island-toggle' | 'island-reset' | 'quit' | 'devtools' | 'open-data-folder' | 'reload'
 
 /** Everything a renderer can ask the main process for. Exposed as `window.qa`. */
 export interface QaApi {
@@ -134,7 +135,7 @@ export interface QaApi {
   command(cmd: AppCommand): void
 
   onDayState(cb: (msg: DayStateMessage) => void): () => void
-  onNavigate(cb: (nav: { day?: string; entryId?: string; view?: 'day' | 'log' | 'settings' }) => void): () => void
+  onNavigate(cb: (nav: { day?: string; entryId?: string; view?: 'day' | 'log' | 'settings' | 'browser' }) => void): () => void
   /** Global hotkey: expand the island and focus the label input. */
   onIslandHotkey(cb: () => void): () => void
   /** From main: a native drag has ended (`moved`), or the cursor went far away (`leave`, a safety net). */
@@ -240,6 +241,8 @@ export interface QaApi {
   /** To the recycle bin. */
   vaultDelete(path: string): Promise<void>
   vaultSearch(q: string): Promise<VaultHit[]>
+  /** The events mentioned in the notes: event id → the notes' paths. */
+  eventMentions(): Promise<Record<string, string[]>>
   /** A recording for a note; its vault path (.audio/…). */
   vaultSaveAudio(audio: Uint8Array): Promise<string>
   vaultReadAudio(path: string): Promise<Uint8Array>
@@ -259,6 +262,43 @@ export interface QaApi {
   vaultRestoreAudio(path: string, audio: Uint8Array): Promise<void>
   /** A picture for a note / a board (its type by its bytes); its vault path (.images/…). */
   vaultSaveImage(bytes: Uint8Array): Promise<string>
+  /** A runnable note's saved runs (JSON), or undefined. */
+  runLoad(path: string): Promise<string | undefined>
+  runSave(path: string, json: string): Promise<void>
+  /** A code block run in a process of its own (killed by runCodeStop / its time limit). */
+  runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number }>
+  runCodeStop(runId: string): void
+  /** A Playwright block run in a process of its own; its files go to the note's runs (vault/.runs/<note>/<key>). */
+  runPw(runId: string, job: PwJob): Promise<PwResult>
+  runPwStop(runId: string): void
+  /** The steps of a Playwright run going on. */
+  onPwProgress(cb: (runId: string, steps: PwStep[]) => void): () => void
+  /** A file of a block's last run (a screenshot). */
+  runFile(path: string, key: string, name: string): Promise<Uint8Array>
+  /** The block's trace opened in Trace Viewer (the app's browser). */
+  pwTrace(path: string, key: string): Promise<void>
+  /** The block's Allure results folder shown in Explorer. */
+  pwAllure(path: string, key: string): void
+  /** A note's browser tab (a webview, by its webContents id): its requests listened to, or no more. */
+  nbNet(id: number, on: boolean, preserve?: boolean): Promise<void>
+  nbNetClear(id: number): Promise<void>
+  /** A note's browser news: open (a page asked for a new window), net (a tab's requests). */
+  onNoteBrowser(cb: (type: string, payload: unknown) => void): () => void
+  /** A page opened in the Браузер section (shown). */
+  browserOpen(url: string): void
+  /** The AI assistants' server (MCP): its settings, the clients set up. */
+  mcpInfo(): Promise<McpInfoView>
+  mcpSet(patch: { on?: boolean; port?: number; allow?: string[]; newToken?: boolean }): Promise<McpInfoView>
+  mcpInstall(client: 'desktop' | 'code'): Promise<string>
+  /** The main process asks the window to do something with the notes (for an AI tool). */
+  onMcpCall(cb: (id: string, op: string, args: Record<string, unknown>) => void): () => void
+  mcpReply(id: string, ok: boolean, value: unknown): void
+  /** The document (with its pictures, boards, results if chosen) into one .qvdoc file; undefined — cancelled. */
+  docExport(path: string): Promise<{ file: string; docs: number; files: number; missing: string[] } | undefined>
+  /** A .qvdoc file unpacked into a folder of the vault; undefined — cancelled. */
+  docImport(dir: string): Promise<{ main: string; paths: string[]; folder?: string } | undefined>
+  /** A .qvdoc file (its path on disk — dropped) unpacked into a folder of the vault. */
+  docImportFile(dir: string, file: string): Promise<{ main: string; paths: string[]; folder?: string }>
   vaultReadImage(path: string): Promise<Uint8Array>
   /** Deletes a picture from the disk if no note / board has it any more; true if deleted. */
   vaultDeleteImage(path: string): Promise<boolean>
@@ -407,6 +447,7 @@ export const IPC = {
   vaultMove: 'qa:vaultMove',
   vaultDelete: 'qa:vaultDelete',
   vaultSearch: 'qa:vaultSearch',
+  eventMentions: 'qa:eventMentions',
   vaultSaveAudio: 'qa:vaultSaveAudio',
   vaultReadAudio: 'qa:vaultReadAudio',
   vaultTranscribe: 'qa:vaultTranscribe',
@@ -418,6 +459,28 @@ export const IPC = {
   vaultDeleteAudio: 'qa:vaultDeleteAudio',
   vaultRestoreAudio: 'qa:vaultRestoreAudio',
   vaultSaveImage: 'qa:vaultSaveImage',
+  runLoad: 'qa:runLoad',
+  runSave: 'qa:runSave',
+  runCode: 'qa:runCode',
+  runCodeStop: 'qa:runCodeStop',
+  runPw: 'qa:runPw',
+  runPwStop: 'qa:runPwStop',
+  pwProgress: 'qa:pwProgress',
+  runFile: 'qa:runFile',
+  pwTrace: 'qa:pwTrace',
+  pwAllure: 'qa:pwAllure',
+  nbNet: 'qa:nbNet',
+  nbNetClear: 'qa:nbNetClear',
+  nbEv: 'qa:nbEv',
+  browserOpen: 'qa:browserOpen',
+  mcpInfo: 'qa:mcpInfo',
+  mcpSet: 'qa:mcpSet',
+  mcpInstall: 'qa:mcpInstall',
+  mcpCall: 'qa:mcpCall',
+  mcpReply: 'qa:mcpReply',
+  docExport: 'qa:docExport',
+  docImport: 'qa:docImport',
+  docImportFile: 'qa:docImportFile',
   vaultReadImage: 'qa:vaultReadImage',
   vaultDeleteImage: 'qa:vaultDeleteImage',
   vaultRestoreImage: 'qa:vaultRestoreImage',
@@ -429,3 +492,56 @@ export const IPC = {
   setRemind: 'qa:setRemind',
   vault: 'qa:vault',
 } as const
+
+// ---------- a notebook's Playwright block ----------
+export interface PwStep {
+  name: string
+  depth: number
+  start: number
+  ms?: number
+  state: 'run' | 'ok' | 'error'
+  error?: string
+}
+export interface PwJob {
+  code: string
+  ts: boolean
+  libs: Array<{ code: string; ts: boolean }>
+  ctx: Record<string, unknown>
+  /** The note's other blocks as they went (state, time, error, steps) — `runs` in the code. */
+  runs?: Record<string, unknown>
+  /** The note and the block (where its files go). */
+  note: string
+  key: string
+  name: string
+  browser: PwBrowser
+  headed: boolean
+  trace: boolean
+  /** With the Браузер section's cookies (its sign-ins). */
+  session?: boolean
+  timeoutSec?: number
+}
+export interface PwResult {
+  ok: boolean
+  value?: unknown
+  hasValue?: boolean
+  sets?: Record<string, unknown>
+  logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>
+  steps?: PwStep[]
+  error?: string
+  ms: number
+  /** What the run left: final.png / failure.png, trace.zip, allure-results. */
+  files?: string[]
+  browser?: string
+}
+
+export interface McpInfoView {
+  on: boolean
+  port: number
+  token: string
+  allow: string[]
+  url: string
+  listening: boolean
+  error?: string
+  bridge: string
+  exe: string
+}

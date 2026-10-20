@@ -34,7 +34,8 @@ export function createMainWindow(): BrowserWindow {
     backgroundColor: '#0d1117',
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#0d1117', symbolColor: '#adb7c6', height: TITLEBAR_HEIGHT },
-    webPreferences: common(),
+    // the notes' browser component is a <webview> (held to the browser's profile — see noteBrowser.ts)
+    webPreferences: { ...common(), webviewTag: true },
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
