@@ -17,6 +17,11 @@ interface Step {
   vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; wait?: number }>
   /** A mouse moved across the window (x, y → x, y in n steps): every cursor change of the window and its pages is logged. */
   move?: [number, number, number, number, number]
+  /**
+   * Real strokes drawn with the mouse on the window (after js): the points around the centre of `sel`; held still
+   * `hold` ms at the end before the button goes up.
+   */
+  strokes?: Array<{ sel: string; pts: Array<[number, number]>; hold?: number }>
   wait?: number
   w?: number
   h?: number
@@ -65,6 +70,23 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
         await sleep(200)
         offs.forEach((f) => f())
         log.push(`${s.name} cursors: ${seen.join(' ')}`)
+      }
+      for (const st of s.strokes ?? []) {
+        const c = (await w.webContents.executeJavaScript(`(() => { const e = [...document.querySelectorAll(${JSON.stringify(st.sel)})].pop(); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
+        if (!c) {
+          log.push(`${s.name}: no ${st.sel}`)
+          continue
+        }
+        const at = (p: [number, number]) => ({ x: Math.round(c[0] + p[0]), y: Math.round(c[1] + p[1]) })
+        w.webContents.sendInputEvent({ type: 'mouseMove', ...at(st.pts[0]) })
+        w.webContents.sendInputEvent({ type: 'mouseDown', ...at(st.pts[0]), button: 'left', clickCount: 1 })
+        for (const p of st.pts.slice(1)) {
+          w.webContents.sendInputEvent({ type: 'mouseMove', ...at(p), modifiers: ['leftbuttondown'] })
+          await sleep(8)
+        }
+        await sleep(st.hold ?? 0)
+        w.webContents.sendInputEvent({ type: 'mouseUp', ...at(st.pts[st.pts.length - 1]), button: 'left', clickCount: 1 })
+        await sleep(300)
       }
       if (s.vinput) {
         const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())

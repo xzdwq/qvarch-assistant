@@ -60,18 +60,20 @@ const DUE = [
   { id: 'none', label: 'Без срока' },
 ]
 /** A filter's list as the menu's model (an empty one — off). */
-const fq = <K extends 'statuses' | 'assignee' | 'priorities' | 'due'>(k: K) =>
+const fq = <K extends 'statuses' | 'assignee' | 'priorities' | 'due' | 'labels'>(k: K) =>
   computed<string[]>({ get: () => (query.value[k] ?? []) as string[], set: (v) => (query.value = { ...query.value, [k]: v.length ? v : undefined }) })
 const fStatus = fq('statuses')
 const fAssignee = fq('assignee')
 const fPriority = fq('priorities')
 const fDue = fq('due')
-const anyFilter = computed(() => !!(query.value.statuses?.length || query.value.assignee?.length || query.value.priorities?.length || query.value.due?.length))
+const fLabels = fq('labels')
+const anyFilter = computed(() => !!(query.value.statuses?.length || query.value.assignee?.length || query.value.priorities?.length || query.value.due?.length || query.value.labels?.length))
 const resetFilters = () => (query.value = { sort: query.value.sort, desc: query.value.desc })
 
 const { items, total, facets, loading, onScroll, more } = useJiraFind(q, { page: 60, query })
 const statusOpts = computed(() => facets.value.statuses.map((x) => ({ id: x, label: x })))
 const priorityOpts = computed(() => facets.value.priorities.map((x) => ({ id: x, label: x })))
+const labelOpts = computed(() => (facets.value.labels ?? []).map((x) => ({ id: x, label: x })))
 
 // ---------- opened up: one by one, or all at once (the fields and the description, asked for in full) ----------
 const openSet = ref(new Set<string>())
@@ -227,6 +229,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
         <FilterMenu v-model="fAssignee" label="Исполнитель" icon="users" :options="ASSIGNEE" />
         <FilterMenu v-model="fPriority" label="Приоритет" icon="flag" :options="priorityOpts" />
         <FilterMenu v-model="fDue" label="Срок" icon="calendar" :options="DUE" />
+        <FilterMenu v-model="fLabels" label="Метки" icon="tag" :options="labelOpts" />
         <button v-if="anyFilter" class="ico" title="Сбросить фильтры" @click="resetFilters"><Icon name="x" :size="13" /></button>
         <span class="spacer"></span>
         <span class="sortbox">

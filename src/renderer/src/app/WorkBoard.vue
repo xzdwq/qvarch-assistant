@@ -317,6 +317,10 @@ const top = remembered<'week' | 'timeline'>('qa.work.top', ['timeline', 'week'],
 const feedTab = remembered<'list' | 'sheet'>('qa.work.feedTab', ['list', 'sheet'], 'list')
 /** The day's records: newest first (the default) or oldest first. */
 const feedOrder = remembered<'desc' | 'asc'>('qa.work.feedOrder', ['desc', 'asc'], 'desc')
+/** Лента: its order follows the records' (on) or is its own — the earliest first (off, the default). */
+const streamLinked = remembered<'on' | 'off'>('qa.work.streamLinked', ['off', 'on'], 'off')
+/** Лента: the record under the pointer on the left is lit and scrolled to in it (off by default). */
+const streamFollow = remembered<'on' | 'off'>('qa.work.streamFollow', ['off', 'on'], 'off')
 // a day / a block opened from elsewhere (the island, a report, a reminder): that day, the block picked
 watch(
   () => props.focus?.n,
@@ -558,8 +562,19 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
 
       <!-- the side: the open block, or the tasks -->
       <aside class="side">
-        <div class="cap fh"><span>Лента · {{ weekTitle }}</span><span class="cm">наведите на запись слева · клик — править</span></div>
-        <EventStream class="stream" :days="days" :schedule="settings.schedule" :recent="recent" :now="now" :focus-id="hoverId" :open-id="openId" @open="(id) => (openId = id)" @changed="reload" />
+        <div class="cap fh"><span>Лента · {{ weekTitle }}</span><span class="sbtns">
+            <button
+              :class="{ on: streamLinked === 'on' }"
+              :title="streamLinked === 'on' ? 'Порядок связан с записями слева (сейчас — ' + (feedOrder === 'desc' ? 'сначала новые' : 'сначала старые') + '). Нажмите — свой порядок: сначала старые' : 'Свой порядок: сначала старые. Нажмите — как в записях слева'"
+              @click="streamLinked = streamLinked === 'on' ? 'off' : 'on'"
+            ><Icon name="link" :size="13" /></button>
+            <button
+              :class="{ on: streamFollow === 'on' }"
+              :title="streamFollow === 'on' ? 'Подсветка включена: запись под указателем слева выделяется в ленте. Нажмите — выключить' : 'Подсветка выключена. Нажмите — выделять в ленте запись под указателем слева'"
+              @click="streamFollow = streamFollow === 'on' ? 'off' : 'on'"
+            ><Icon name="eye" :size="13" /></button>
+          </span></div>
+        <EventStream class="stream" :days="days" :schedule="settings.schedule" :recent="recent" :now="now" :focus-id="streamFollow === 'on' ? hoverId : undefined" :open-id="openId" :order="streamLinked === 'on' ? feedOrder : 'asc'" @open="(id) => (openId = id)" @changed="reload" />
       </aside>
     </div>
   </div>
@@ -875,6 +890,25 @@ const plural = (n: number, one: string, few: string, many: string) => (n % 10 ==
 .stream {
   flex: 1;
   min-height: 0;
+}
+.sbtns {
+  display: inline-flex;
+  gap: 2px;
+}
+.sbtns button {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+}
+.sbtns button.on {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--accent-fg);
 }
 .cm {
   color: var(--dim);

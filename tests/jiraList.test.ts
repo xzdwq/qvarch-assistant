@@ -37,6 +37,8 @@ describe('the Jira task list', () => {
     expect(keys(listTasks(list, { due: ['late', 'week'] }, TODAY))).toEqual(['A-3', 'A-1'])
     expect(keys(listTasks(list, { due: ['none'], statuses: ['В работе'] }, TODAY))).toEqual(['A-2'])
     expect(keys(listTasks(list, { priorities: ['Low', 'Medium'] }, TODAY))).toEqual(['A-3', 'A-1'])
+    const tagged = [T('A-5', { labels: ['front', 'urgent'] }), T('A-6', { labels: ['back'] }), T('A-7')]
+    expect(keys(listTasks(tagged, { labels: ['urgent', 'back'] }, TODAY)).sort()).toEqual(['A-5', 'A-6'])
   })
   it('a priority by its name (in Russian too), else by the standard id', () => {
     expect(priorityRank({ priority: 'Высокий' })).toBe(2)

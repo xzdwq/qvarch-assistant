@@ -11,7 +11,7 @@ export function useJiraFind(q: Ref<string>, opts: { page?: number; active?: Ref<
   const items = shallowRef<JiraIssue[]>([])
   const total = ref(0)
   const loading = ref(false)
-  const facets = shallowRef<JiraFacets>({ statuses: [], priorities: [] })
+  const facets = shallowRef<JiraFacets>({ statuses: [], priorities: [], labels: [] })
   const jira = useJira()
   let seq = 0
   async function load(reset: boolean): Promise<void> {

@@ -15,13 +15,14 @@ import Icon from './Icon.vue'
  * (a click — a new event there, with that time), the open one edited right in the stream. `focusId` — scroll
  * smoothly to that event (the list next to it is hovered), `openId` — edit it.
  */
-const props = defineProps<{ days: RangeDay[]; schedule: WorkSchedule; recent: Recent[]; now: Ms; focusId?: string; openId?: string }>()
+/** `order` — 'desc': the latest day and event first (the default — the earliest first). */
+const props = defineProps<{ days: RangeDay[]; schedule: WorkSchedule; recent: Recent[]; now: Ms; focusId?: string; openId?: string; order?: 'asc' | 'desc' }>()
 const emit = defineEmits<{ open: [id: string | undefined]; changed: [] }>()
 
 const GAP_MIN = 15 * MINUTE
 type Row = { t: 'e'; key: string; e: Entry; at: Ms } | { t: 'gap'; key: string; start: Ms; end: Ms; at: Ms; past: boolean }
-const groups = computed(() =>
-  props.days.map((d) => {
+const groups = computed(() => {
+  const list = props.days.map((d) => {
     const rows: Row[] = d.entries.map((e) => ({ t: 'e' as const, key: e.id, e, at: e.start }))
     const busy = [...d.entries].sort((a, b) => a.start - b.start)
     const work = scheduleRanges(d.day, props.schedule).work
@@ -37,6 +38,7 @@ const groups = computed(() =>
       if (hi > t) push(t, hi)
     }
     rows.sort((a, b) => a.at - b.at)
+    if (props.order === 'desc') rows.reverse()
     const total = (() => {
       let sum = 0
       let ce = -Infinity
@@ -50,8 +52,9 @@ const groups = computed(() =>
     const date = new Date(`${d.day}T12:00:00`)
     const title = date.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
     return { day: d.day, data: d, rows, total, title: title.charAt(0).toUpperCase() + title.slice(1), off: !props.schedule.workDays.includes(date.getDay()) }
-  }),
-)
+  })
+  return props.order === 'desc' ? list.reverse() : list
+})
 
 // ---------- the open event / a new one in a free gap ----------
 const draft = ref<{ day: string; entry: Draft }>()

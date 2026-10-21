@@ -199,6 +199,7 @@ export class Jira {
     const uniq = (xs: Array<string | undefined>) => [...new Set(xs.filter((x): x is string => !!x))]
     const facets: JiraFacets = {
       statuses: uniq(openOnes.map((i) => i.status)).sort((a, b) => a.localeCompare(b, 'ru')),
+      labels: uniq(openOnes.flatMap((i) => i.labels ?? [])).sort((a, b) => a.localeCompare(b, 'ru')),
       priorities: uniq(openOnes.map((i) => i.priority)).sort((a, b) => priorityRank({ priority: a, priorityId: openOnes.find((i) => i.priority === a)?.priorityId }) - priorityRank({ priority: b, priorityId: openOnes.find((i) => i.priority === b)?.priorityId })),
     }
     return { items: page.map(({ description: _d, ...i }) => i), total: list.length, facets }

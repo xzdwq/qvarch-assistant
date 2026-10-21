@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
-import { parseTable, tableMd, type Align, type TableModel } from '@shared/noteBlocks'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { columnSum, coveredBy, deleteColAt, deleteRowAt, fmtSum, insertColAt, insertRowAt, mergeAt, mergeCells, parseTable, tableMd, unmergeCell, type Align, type TableModel } from '@shared/noteBlocks'
 import Icon from '../Icon.vue'
 
 /**
@@ -8,7 +8,8 @@ import Icon from '../Icon.vue'
  * one below, Shift+Enter — a new line inside the cell); a «+» on the border between two columns / two rows puts
  * one there; a column's right edge is dragged for its width (double click — back to «by the content»); a
  * column's ▾ — insert, align, sort, delete; a row's handle — insert, delete. The file keeps a GFM table, its
- * columns lined up (the widths — in a comment over it).
+ * columns lined up (the widths, the sums, the merged cells — in a comment over it). Cells dragged over (or
+ * Shift+click) — merged by the button under the table; a column's ▾ — its sum under it.
  */
 const props = defineProps<{ src: string; autofocus?: boolean }>()
 const emit = defineEmits<{ change: [src: string]; exit: [dir: 1 | -1] }>()
@@ -88,19 +89,19 @@ const setCell = (r: number, c: number, v: string) => {
 }
 // ---------- rows and columns ----------
 function addRow(at: number): void {
-  t.value.rows.splice(at, 0, Array(cols()).fill(''))
+  insertRowAt(t.value, at)
   save(true)
 }
 function delRow(at: number): void {
   if (!t.value.rows.length) return
-  t.value.rows.splice(at, 1)
+  deleteRowAt(t.value, at)
   save(true)
 }
 function addCol(at: number): void {
   t.value.head.splice(at, 0, `Столбец ${cols() + 1}`)
   t.value.align.splice(at, 0, undefined)
   t.value.widths?.splice(at, 0, 0)
-  for (const r of t.value.rows) r.splice(at, 0, '')
+  insertColAt(t.value, at)
   save(true)
 }
 function delCol(at: number): void {
@@ -108,14 +109,100 @@ function delCol(at: number): void {
   t.value.head.splice(at, 1)
   t.value.align.splice(at, 1)
   t.value.widths?.splice(at, 1)
-  for (const r of t.value.rows) r.splice(at, 1)
+  deleteColAt(t.value, at)
   save(true)
+}
+// ---------- a column's sum ----------
+function toggleSum(c: number): void {
+  const s = new Set(t.value.sums ?? [])
+  if (s.has(c)) s.delete(c)
+  else s.add(c)
+  t.value.sums = s.size ? [...s].sort((a, b) => a - b) : undefined
+  save(true)
+}
+const sums = computed(() => (t.value.sums ?? []).map((c) => [c, columnSum(t.value, c)] as const))
+const sumOf = (c: number) => sums.value.find(([x]) => x === c)?.[1]
+const sumTitle = (c: number) => {
+  const x = sumOf(c)
+  return x ? `Сумма чисел: ${x.count}${x.skipped ? ` · пропущено нечисловых: ${x.skipped}` : ''}` : ''
+}
+
+// ---------- choosing cells (a drag over them, or Shift+click) and merging them ----------
+type Sel = { r0: number; c0: number; r1: number; c1: number }
+const sel = ref<Sel>()
+let downAt: { r: number; c: number } | undefined
+/** The cell typed in last — Shift+click chooses from it. */
+let lastCell: { r: number; c: number } | undefined
+const inSel = (r: number, c: number) => {
+  const x = sel.value
+  return !!x && r >= Math.min(x.r0, x.r1) && r <= Math.max(x.r0, x.r1) && c >= Math.min(x.c0, x.c1) && c <= Math.max(x.c0, x.c1)
+}
+function cellDown(e: PointerEvent, r: number, c: number): void {
+  if (e.button !== 0) return
+  if (e.shiftKey && lastCell && lastCell.r >= 0) {
+    e.preventDefault()
+    sel.value = { r0: lastCell.r, c0: lastCell.c, r1: r, c1: c }
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    return
+  }
+  sel.value = undefined
+  downAt = { r, c }
+  window.addEventListener('pointerup', cellUp, { once: true })
+}
+function cellEnter(r: number, c: number): void {
+  if (!downAt || (downAt.r === r && downAt.c === c && !sel.value)) return
+  sel.value = { r0: downAt.r, c0: downAt.c, r1: r, c1: c }
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  getSelection()?.removeAllRanges()
+}
+function cellUp(): void {
+  downAt = undefined
+}
+const selCells = computed(() => (sel.value ? (Math.abs(sel.value.r1 - sel.value.r0) + 1) * (Math.abs(sel.value.c1 - sel.value.c0) + 1) : 0))
+function doMerge(): void {
+  const x = sel.value
+  if (!x) return
+  mergeCells(t.value, x.r0, x.c0, x.r1, x.c1)
+  sel.value = undefined
+  save(true)
+  void focusCell(Math.min(x.r0, x.r1), Math.min(x.c0, x.c1))
+}
+/** The merged cell being typed in (its button «Разъединить»). */
+const curMerge = ref<{ r: number; c: number }>()
+function doUnmerge(): void {
+  if (!curMerge.value) return
+  unmergeCell(t.value, curMerge.value.r, curMerge.value.c)
+  curMerge.value = undefined
+  save(true)
+}
+function onFocusCell(r: number, c: number): void {
+  lastCell = { r, c }
+  curMerge.value = r >= 0 && mergeAt(t.value, r, c) ? { r, c } : undefined
+}
+const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && sel.value && (sel.value = undefined)
+const onAway = (e: PointerEvent) => {
+  if (!root.value?.contains(e.target as Node)) {
+    sel.value = undefined
+    curMerge.value = undefined
+  }
+}
+window.addEventListener('keydown', onEsc)
+window.addEventListener('pointerdown', onAway, true)
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onEsc)
+  window.removeEventListener('pointerdown', onAway, true)
+})
+const span = (r: number, c: number) => {
+  const m = mergeAt(t.value, r, c)
+  return m ? { rowspan: m.rs, colspan: m.cs } : {}
 }
 function setAlign(c: number, a: Align): void {
   t.value.align[c] = a
   save(true)
 }
 function sortBy(c: number, dir: 1 | -1): void {
+  // merged cells hold rows together — no sorting then
+  if (t.value.merges?.length) return
   const n = (s: string) => Number(s.replace(/\s/g, '').replace(',', '.'))
   t.value.rows.sort((a, b) => {
     const x = n(a[c])
@@ -172,6 +259,11 @@ function autoWidth(c: number): void {
   }
   save(true)
 }
+/** A row's first cell drawn (the others before it are under a merge from above) — the row's handles are there. */
+const firstShown = (r: number) => {
+  for (let c = 0; c < cols(); c++) if (!coveredBy(t.value, r, c)) return c
+  return -1
+}
 const colStyle = (c: number) => (fixed() ? { width: `${t.value.widths![c] || 160}px` } : {})
 onMounted(() => props.autofocus && void focusCell(-1, 0))
 defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.value.rows.length - 1, 0) })
@@ -187,23 +279,37 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
             <th v-for="(h, c) in t.head" :key="c" :style="{ textAlign: t.align[c] ?? 'left' }">
               <button class="bt-plus col" title="Вставить столбец здесь" @mousedown.prevent @click="(addCol(c + 1), focusCell(-1, c + 1))"><Icon name="plus" :size="11" /></button>
               <span class="bt-rz" title="Потяните — ширина столбца · двойной клик — по содержимому" @pointerdown="dragWidth(c, $event)" @dblclick="autoWidth(c)"></span>
-              <textarea :data-rc="`-1:${c}`" :value="h" rows="1" spellcheck="false" :style="{ textAlign: t.align[c] ?? 'left' }" @input="setCell(-1, c, ($event.target as HTMLTextAreaElement).value)" @keydown="onKey($event, -1, c)" @blur="save(true)"></textarea>
+              <textarea :data-rc="`-1:${c}`" :value="h" rows="1" spellcheck="false" :style="{ textAlign: t.align[c] ?? 'left' }" @input="setCell(-1, c, ($event.target as HTMLTextAreaElement).value)" @keydown="onKey($event, -1, c)" @focus="onFocusCell(-1, c)" @blur="save(true)"></textarea>
               <button class="bt-cm" title="Столбец: вставить, выровнять, сортировать, удалить" @mousedown.prevent @click="openMenu('col', c, $event)"><Icon name="chevronDown" :size="12" /></button>
             </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, r) in t.rows" :key="r">
-            <td v-for="(cell, c) in row" :key="c">
-              <template v-if="c === 0">
+            <template v-for="(cell, c) in row" :key="c">
+            <td v-if="!coveredBy(t, r, c)" v-bind="span(r, c)" :class="{ sel: inSel(r, c), tolast: (mergeAt(t, r, c)?.rs ?? 1) + r === t.rows.length, lastcol: c + (mergeAt(t, r, c)?.cs ?? 1) === t.head.length, merged: !!mergeAt(t, r, c) }" @pointerdown="cellDown($event, r, c)" @pointerenter="cellEnter(r, c)">
+              <template v-if="c === firstShown(r)">
                 <button class="bt-rh" title="Строка: вставить, удалить" @mousedown.prevent @click="openMenu('row', r, $event)"><Icon name="grip" :size="12" /></button>
                 <button class="bt-plus row" title="Вставить строку здесь" @mousedown.prevent @click="(addRow(r + 1), focusCell(r + 1, 0))"><Icon name="plus" :size="11" /></button>
               </template>
-              <textarea :data-rc="`${r}:${c}`" :value="cell" rows="1" spellcheck="false" :style="{ textAlign: t.align[c] ?? 'left' }" @input="setCell(r, c, ($event.target as HTMLTextAreaElement).value)" @keydown="onKey($event, r, c)" @blur="save(true)"></textarea>
+              <textarea :data-rc="`${r}:${c}`" :value="cell" rows="1" spellcheck="false" :style="{ textAlign: mergeAt(t, r, c) ? 'center' : (t.align[c] ?? 'left') }" @input="setCell(r, c, ($event.target as HTMLTextAreaElement).value)" @keydown="onKey($event, r, c)" @focus="onFocusCell(r, c)" @blur="save(true)"></textarea>
             </td>
+            </template>
           </tr>
         </tbody>
+        <tfoot v-if="sums.length">
+          <tr>
+            <td v-for="(_, c) in t.head" :key="c" :style="{ textAlign: t.align[c] ?? 'left' }">
+              <span v-if="sumOf(c)" class="bt-sum" :title="sumTitle(c)">Σ {{ fmtSum(sumOf(c)!.sum) }}</span>
+            </td>
+          </tr>
+        </tfoot>
       </table>
+    </div>
+    <div v-if="selCells > 1 || curMerge" class="bt-bar" @mousedown.prevent>
+      <button v-if="selCells > 1" @click="doMerge"><Icon name="layers" :size="13" />Объединить ячейки ({{ selCells }})</button>
+      <button v-else-if="curMerge" @click="doUnmerge"><Icon name="layers" :size="13" />Разъединить</button>
+      <span v-if="selCells > 1" class="hint">Esc — отменить выбор</span>
     </div>
     <Teleport to="body">
       <div v-if="menu" class="bt-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
@@ -217,8 +323,9 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
             <button :class="{ on: t.align[menu.i] === 'center' }" title="По центру" @click="act(() => setAlign(menu!.i, 'center'))">↔</button>
             <button :class="{ on: t.align[menu.i] === 'right' }" title="По правому краю" @click="act(() => setAlign(menu!.i, 'right'))">⇥</button>
           </div>
-          <button @click="act(() => sortBy(menu!.i, 1))"><Icon name="sort" :size="13" />Сортировать по возрастанию</button>
-          <button @click="act(() => sortBy(menu!.i, -1))"><Icon name="sort" :size="13" />Сортировать по убыванию</button>
+          <button :disabled="!!t.merges?.length" :title="t.merges?.length ? 'В таблице есть объединённые ячейки' : ''" @click="act(() => sortBy(menu!.i, 1))"><Icon name="sort" :size="13" />Сортировать по возрастанию</button>
+          <button :disabled="!!t.merges?.length" :title="t.merges?.length ? 'В таблице есть объединённые ячейки' : ''" @click="act(() => sortBy(menu!.i, -1))"><Icon name="sort" :size="13" />Сортировать по убыванию</button>
+          <button :class="{ on: t.sums?.includes(menu.i) }" @click="act(() => toggleSum(menu!.i))"><span class="bt-sig">Σ</span>{{ t.sums?.includes(menu.i) ? 'Убрать сумму' : 'Сумма по столбцу' }}</button>
           <hr />
           <button class="danger" :disabled="t.head.length <= 1" @click="act(() => delCol(menu!.i))"><Icon name="trash" :size="13" />Удалить столбец</button>
         </template>
@@ -266,10 +373,59 @@ thead th:last-child {
   border-top-right-radius: 7px;
 }
 th,
-td {
+tbody tr {
   position: relative;
+}
+th,
+td {
   min-width: 90px;
   max-width: 420px;
+}
+td.sel {
+  background: rgb(var(--accent-rgb) / 0.16);
+}
+td.sel textarea {
+  user-select: none;
+}
+tfoot td {
+  border-top: 1px solid var(--border-2);
+  border-bottom: 0;
+  background: var(--panel-2);
+}
+.bt-sum {
+  display: block;
+  padding: 5px 10px;
+  color: var(--accent-fg);
+  font-family: var(--font-data);
+  font-size: 0.95em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.bt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.bt-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.bt-bar .hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.bt-sig {
+  width: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.bt-menu button.on {
+  color: var(--accent-fg);
 }
 table.fixed th,
 table.fixed td {
@@ -284,10 +440,19 @@ td {
   vertical-align: top;
 }
 th:last-child,
-td:last-child {
+td.lastcol,
+tfoot td:last-child {
   border-right: 0;
 }
+/* a merged cell: its text in the middle (as Excel's «merge and centre») */
+td.merged {
+  vertical-align: middle;
+}
 tbody tr:last-child td {
+  border-bottom: 0;
+}
+/* a cell merged down to the last row: no line under it (the table's border is there) */
+tbody td.tolast {
   border-bottom: 0;
 }
 th {

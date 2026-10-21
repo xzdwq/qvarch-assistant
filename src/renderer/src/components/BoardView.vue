@@ -40,6 +40,7 @@ import { rememberBg } from '../lib/boardPrefs'
 import { penNow, useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { placeFloat, useAnchor } from '../lib/floating'
 import { historyOf } from '../lib/boardHistory'
+import { recognize, type Recognized } from '@shared/shapeRecognize'
 import { draggedImageUrl, hasImages, imageUrl, takeImages } from '../lib/notebook'
 
 /**
@@ -159,6 +160,8 @@ interface ToolPrefs {
   /** The ink pen's nib: its width and its angle (degrees; a tablet's tilt turns it). */
   nibSize: number
   nibAngle: number
+  /** A stroke held still at its end becomes the shape it means (a circle, a rectangle, a line…). */
+  snapShapes: boolean
 }
 function readTools(): ToolPrefs {
   const d: ToolPrefs = {
@@ -182,6 +185,7 @@ function readTools(): ToolPrefs {
     shapeDash: false,
     nibSize: 6,
     nibAngle: 40,
+    snapShapes: true,
   }
   try {
     return { ...d, ...(JSON.parse(localStorage.getItem(LS) ?? '{}') as Partial<ToolPrefs>) }
@@ -845,6 +849,92 @@ let live: { pts: number[][]; style: ReturnType<typeof inkStyle>; pen: boolean } 
 let altFrom: number | undefined
 /** The shape being drawn (the shape tool). */
 let drawing: ShapeItem | undefined
+
+// ---------- a stroke held still at its end: the shape it means ----------
+const HOLD_MS = 500
+let holdTimer: ReturnType<typeof setTimeout> | undefined
+/** Where the pointer rests (screen) — a move farther than a few pixels starts the wait again. */
+let holdAt: [number, number] | undefined
+/** The stroke became a shape (drawn instead of it) or straight pieces; the drawn points are kept to go back. */
+let snapped: { shape?: ShapeItem; orig: number[][]; at: [number, number] } | undefined
+const SNAP_NAMES = { ellipse: 'Круг / эллипс', rect: 'Прямоугольник', diamond: 'Ромб' } as const
+function holdStart(sx: number, sy: number): void {
+  clearTimeout(holdTimer)
+  holdAt = [sx, sy]
+  if (tp.value.snapShapes) holdTimer = setTimeout(trySnap, HOLD_MS)
+}
+function holdStop(): void {
+  clearTimeout(holdTimer)
+  holdTimer = undefined
+  holdAt = undefined
+}
+function trySnap(): void {
+  if (drag?.kind !== 'ink' || !live || snapped || altFrom !== undefined) return
+  const z = view.value?.z ?? 1
+  const rec: Recognized | undefined = recognize(live.pts.map((p) => [p[0], p[1]]), 14 / z)
+  if (!rec) return
+  const st = live.style
+  const orig = live.pts
+  const width = Math.max(1, Math.round(st.size * 0.7 * 10) / 10)
+  const base = { id: itemId(), type: 'shape' as const, color: snapColor(st, orig), width }
+  if (rec.type === 'shape') {
+    const shape: ShapeItem = { ...base, kind: rec.kind, x: rec.cx - rec.w / 2, y: rec.cy - rec.h / 2, w: rec.w, h: rec.h, ...(rec.rot ? { rot: Math.round(rec.rot * 10) / 10 } : {}) }
+    snapped = { shape, orig, at: holdAt ?? [0, 0] }
+    drawing = shape
+    flashHint(rec.kind === 'ellipse' && rec.w === rec.h ? 'Круг' : rec.kind === 'rect' && rec.w === rec.h ? 'Квадрат' : SNAP_NAMES[rec.kind])
+  } else if (rec.type === 'line') {
+    const shape: ShapeItem = { ...base, kind: 'line', x: rec.x0, y: rec.y0, w: rec.x1 - rec.x0, h: rec.y1 - rec.y0 }
+    snapped = { shape, orig, at: holdAt ?? [0, 0] }
+    drawing = shape
+    flashHint('Линия')
+  } else {
+    // straight pieces through the corners, in the pen's own line (an even pressure — an even width)
+    const p = orig.reduce((a, q) => a + (q[2] ?? 0.5), 0) / orig.length
+    const cs = rec.closed ? [...rec.pts, rec.pts[0]] : rec.pts
+    const out: number[][] = []
+    const step = 2 / z
+    for (let k = 0; k + 1 < cs.length; k++) {
+      const [a, b] = [cs[k], cs[k + 1]]
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step))
+      for (let j = 0; j < n; j++) out.push([a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n, p])
+    }
+    out.push([cs[cs.length - 1][0], cs[cs.length - 1][1], p])
+    snapped = { orig, at: holdAt ?? [0, 0] }
+    live.pts = out
+    flashHint(rec.closed ? (rec.pts.length === 3 ? 'Треугольник' : `Многоугольник · ${rec.pts.length}`) : 'Ломаная')
+  }
+  paintLive()
+}
+/** The colour the stroke was drawn in (a gradient: at its mean pressure; the opacity as an alpha), #rrggbb[aa]. */
+function snapColor(st: ReturnType<typeof inkStyle>, pts: number[][]): string {
+  const hex = (c: string) => {
+    const m = /^#?([0-9a-f]{6})/i.exec(c)
+    const v = m ? parseInt(m[1], 16) : 0
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255]
+  }
+  let rgb = hex(st.color)
+  if (st.gradient) {
+    const p = Math.min(1, Math.max(0, pts.reduce((a, q) => a + (q[2] ?? 0.5), 0) / Math.max(1, pts.length)))
+    const b = hex(st.gradient)
+    rgb = rgb.map((v, k) => Math.round(v + (b[k] - v) * p))
+  }
+  const a = st.opacity < 1 ? Math.round(Math.max(0, st.opacity) * 255).toString(16).padStart(2, '0') : ''
+  return `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}${a}`
+}
+/** Moved on after the shape came: the stroke goes on as drawn. */
+function unsnap(): void {
+  if (!snapped || !live) return
+  live.pts = snapped.orig
+  drawing = undefined
+  snapped = undefined
+  sizeHint.value = ''
+}
+onBeforeUnmount(holdStop)
+function flashHint(text: string): void {
+  sizeHint.value = text
+  clearTimeout(hintTimer)
+  hintTimer = setTimeout(() => (sizeHint.value = ''), 1100)
+}
 let hover: [number, number] | undefined
 /** The size just changed by the wheel — shown for a moment. */
 const sizeHint = ref('')
@@ -857,7 +947,7 @@ function paintLive(): void {
   const k = devicePixelRatio
   g.setTransform(1, 0, 0, 1, 0, 0)
   g.clearRect(0, 0, c.width, c.height)
-  if (live) {
+  if (live && !snapped?.shape) {
     g.setTransform(k * v.z, 0, 0, k * v.z, -v.x * v.z * k, -v.y * v.z * k)
     g.globalAlpha = live.style.opacity
     if (live.style.nib !== undefined && live.style.gradient) drawNibGradient(g, live.pts, live.style, live.style.nib, live.style.gradient, false)
@@ -1126,7 +1216,9 @@ function onDown(e: PointerEvent): void {
   const pen = style.marker ? true : !!penNow() || e.pointerType === 'pen'
   live = { pts: [[wx, wy, style.marker ? 0.5 : pressureOf(e)]], style, pen }
   altFrom = undefined
+  snapped = undefined
   drag = { kind: 'ink' }
+  holdStart(sx, sy)
   paintLive()
 }
 function onMove(e: PointerEvent): void {
@@ -1188,6 +1280,13 @@ function onMove(e: PointerEvent): void {
     return
   }
   if (live) {
+    const [hx, hy] = local(e)
+    if (snapped) {
+      // resting on the shape; a real move — back to the stroke as drawn
+      if (Math.hypot(hx - snapped.at[0], hy - snapped.at[1]) < 10) return
+      unsnap()
+    }
+    if (!holdAt || Math.hypot(hx - holdAt[0], hy - holdAt[1]) > 4) holdStart(hx, hy)
     if (e.altKey) {
       // Alt held: a straight line from where Alt was pressed to the pointer (the brush's own width / pressure)
       altFrom ??= live.pts.length - 1
@@ -1262,6 +1361,15 @@ function eraseAt(sx: number, sy: number): void {
 function onUp(): void {
   const d = drag
   drag = undefined
+  holdStop()
+  if (d?.kind === 'ink' && snapped?.shape) {
+    const sh = snapped.shape
+    snapped = undefined
+    drawing = undefined
+    live = undefined
+    commit({ ...board.value, items: [...board.value.items, sh] })
+    return
+  }
   panning.value = false
   frameRect = undefined
   selXf = undefined
@@ -1290,10 +1398,13 @@ function onUp(): void {
       smoothing: s.smoothing,
       thinning: s.thinning,
       pen: live.pen,
+      // straightened pieces: sharp corners, an even width
+      ...(snapped ? { pen: true, streamline: 0, smoothing: 0 } : {}),
       ...(s.gradient ? { gradient: s.gradient } : {}),
       ...(s.nib !== undefined ? { nib: s.nib } : {}),
     }
     live = undefined
+    snapped = undefined
     commit({ ...board.value, items: [...board.value.items, item] })
     return
   }
@@ -1558,6 +1669,11 @@ const cursor = computed(() => {
         <button :class="{ on: tp.tool === 'pen' }" title="Перо (P)" @click="tp.tool = 'pen'"><Icon name="pencil" :size="15" /></button>
         <button :class="{ on: tp.tool === 'nib' }" title="Перо для туши (B): ширина — от направления штриха и наклона пера; Alt — прямая" @click="tp.tool = 'nib'"><Icon name="penTool" :size="15" /></button>
         <button :class="{ on: tp.tool === 'marker' }" title="Маркер (M)" @click="tp.tool = 'marker'"><Icon name="highlighter" :size="15" /></button>
+        <button
+          :class="{ on: tp.snapShapes }"
+          :title="tp.snapShapes ? 'Дорисовка фигур включена: нарисуйте круг, прямоугольник, ромб, треугольник или линию и задержите перо в конце — фигура станет ровной (двиньте дальше — линия останется как есть). Нажмите — выключить' : 'Дорисовка фигур выключена — нажмите, чтобы включить'"
+          @click="tp.snapShapes = !tp.snapShapes"
+        ><Icon name="sparkles" :size="15" /></button>
         <button :class="{ on: tp.tool === 'eraser' }" title="Ластик (E): стирает то, чего касается" @click="tp.tool = 'eraser'"><Icon name="eraser" :size="15" /></button>
         <button :class="{ on: tp.tool === 'text' }" title="Текст (T): клик — новый, клик по тексту — править, тянуть — двигать" @click="tp.tool = 'text'"><span class="tt">T</span></button>
         <button ref="shapeBtn" class="shb" :class="{ on: tp.tool === 'shape' }" :title="`Фигуры (S): ${SHAPES.find((s) => s.kind === tp.shapeKind)?.label}. Тянуть — размер, Shift — ровно`" @click="pickShapes">

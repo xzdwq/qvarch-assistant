@@ -105,11 +105,14 @@ export interface JiraListQuery {
   assignee?: Array<'mine' | 'other'>
   priorities?: string[]
   due?: Array<'late' | 'week' | 'set' | 'none'>
+  /** Jira labels: a task with any of them. */
+  labels?: string[]
 }
 /** What the filters can offer: the statuses and priorities the open tasks have. */
 export interface JiraFacets {
   statuses: string[]
   priorities: string[]
+  labels: string[]
 }
 
 const PRIORITY_NAMES: Record<string, number> = {
@@ -140,6 +143,7 @@ export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string):
       (!q.statuses?.length || q.statuses.includes(i.status)) &&
       (!q.assignee?.length || q.assignee.includes(i.mine ? 'mine' : 'other')) &&
       (!q.priorities?.length || q.priorities.includes(i.priority ?? '')) &&
+      (!q.labels?.length || (i.labels ?? []).some((l) => q.labels!.includes(l))) &&
       dueOk(i),
   )
   const dir = q.desc === false ? 1 : -1
