@@ -16,6 +16,7 @@ import { registerRunnersIpc } from './ipc/runnersIpc'
 import { registerTabletIpc } from './ipc/tabletIpc'
 import { registerToolsIpc } from './ipc/toolsIpc'
 import { registerTrackerIpc } from './ipc/trackerIpc'
+import { Recording } from './tracker/recording'
 import { registerVoiceIpc } from './ipc/voiceIpc'
 import { Jira } from './jira'
 import { Outlook } from './outlook'
@@ -95,6 +96,7 @@ app.whenReady().then(() => {
 function makeServices(): Activity {
   const store = (ctx.store = new Store())
   ctx.tracker = new Tracker(store, () => ctx.broadcast())
+  ctx.recording = new Recording(ctx)
   const activity = new Activity(ctx)
   ctx.probe = new Probe(
     store.cfg.sampleIntervalMs,
@@ -156,6 +158,8 @@ app.on('before-quit', () => {
   globalShortcut.unregisterAll()
   ctx.probe?.stop()
   ctx.tablet?.stop()
+  // a recording: its event ends now (it is not taken up again after a restart)
+  ctx.recording?.stop()
   ctx.tracker?.stop()
   ctx.jira?.stop()
   ctx.outlook?.stop()

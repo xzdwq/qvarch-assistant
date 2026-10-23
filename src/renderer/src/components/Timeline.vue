@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { labelWithoutKey } from '@shared/jira'
 import { formatDuration, formatHM, sortByStart } from '@shared/timeline'
-import type { DayData, Ms, Note, Selection, UiPrefs } from '@shared/types'
+import { afterEvent } from '@shared/tracker/entryCopy'
+import type { DayData, Entry, Ms, Note, Selection, UiPrefs } from '@shared/types'
+import EntryCopyMenu from '../tracker/entry/EntryCopyMenu.vue'
 import { entryIcon, kindColor, kindLabel } from '../lib/palette'
 import Icon from './Icon.vue'
 import ActivityWave from './ActivityWave.vue'
@@ -13,7 +15,7 @@ import { noteIcon } from '@shared/tracker/constants'
 import { hiddenSides } from '@shared/tracker/timelineRanges'
 import { useTimelineScale } from '../tracker/timeline/useTimelineScale'
 import { useTimelineFollow } from '../tracker/timeline/useTimelineFollow'
-import { useTimelineDrag } from '../tracker/timeline/useTimelineDrag'
+import { COPY_ID, useTimelineDrag } from '../tracker/timeline/useTimelineDrag'
 import { LANE_GAP } from '../tracker/timeline/useTimelineLanes'
 import { PLAN_ROW, useTimelinePlanLane } from '../tracker/timeline/useTimelinePlanLane'
 import { useTimelineMenu } from '../tracker/timeline/useTimelineMenu'
@@ -63,6 +65,10 @@ const emit = defineEmits<{
   deleteEntry: [id: string]
   /** a block dragged to another time (overlaps go parallel) */
   move: [change: { id: string; start: Ms; end: Ms; lane: number }]
+  /** a copy of a block wanted there (Ctrl + drag, «Копия сразу после»; no lane — the first free one) */
+  copy: [change: { id: string; start: Ms; end: Ms; lane?: number }]
+  /** a copy of a block made on the date and times picked (its menu) */
+  copied: [e: Entry, day: string]
   /** Ctrl-selected blocks merged into one */
   merge: [ids: string[]]
   /** a note pin clicked (open it / close it again) */
@@ -77,7 +83,7 @@ const emit = defineEmits<{
 const scale = useTimelineScale(props)
 const { vp, from, to, canvas, width, box, pct, selEnd } = scale
 const { markManual, toggleFollow } = useTimelineFollow(props, scale, (on) => emit('follow', on))
-const { drag, hoverT, multi, pinT, preview, wide, lanes, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey } = useTimelineDrag(props, scale, emit, markManual)
+const { drag, hoverT, multi, pinT, preview, wide, lanes, shownEntries, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey } = useTimelineDrag(props, scale, emit, markManual)
 const { laneH, shownLanes, mainH, mainInnerH, laneScroll, hiddenBelow, hiddenAbove, laneStyle } = lanes
 const { plan, showPlan, planDrag, planShown, planRowOf, planH, onPlanDown, planTimeAt } = useTimelinePlanLane(props, scale.rawTimeAt, emit)
 const { menu, planDoneIds, openPlanMenu, planMenu, onContext, onMenuDelete, onMenuMerge, onMenuPick } = useTimelineMenu(props, scale, multi, emit)
@@ -102,7 +108,24 @@ function revealSide(side: 'left' | 'right'): void {
   if (side === 'left') vp.panBy(hidden.value.first - pad - from.value)
   else vp.panBy(hidden.value.last + pad - to.value)
 }
-const main = computed(() => visible(sortByStart(props.data.entries), from.value, to.value))
+const main = computed(() => visible(sortByStart(shownEntries.value), from.value, to.value))
+
+// ---------- a block's copy from its menu: right after it, or on the date and times picked ----------
+const copyMenu = ref<InstanceType<typeof EntryCopyMenu>>()
+const copyOf = ref<Entry>()
+function copyAfterBlock(): void {
+  const e = props.data.entries.find((x) => x.id === menu.value?.entryId)
+  menu.value = undefined
+  if (e) emit('copy', { id: e.id, ...afterEvent(e) })
+}
+async function copyBlockTo(): Promise<void> {
+  const id = menu.value?.entryId
+  menu.value = undefined
+  copyOf.value = props.data.entries.find((x) => x.id === id)
+  const el = canvas.value?.querySelector<HTMLElement>(`[data-entry="${id}"]`)
+  await nextTick()
+  if (el && copyOf.value) copyMenu.value?.show(el)
+}
 const calls = computed(() => visible(props.data.calls, from.value, to.value))
 const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind))] }))
 </script>
@@ -213,9 +236,9 @@ const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind
           <div
             v-for="e in main"
             :key="e.id"
-            class="seg tw:group/seg tw:absolute tw:[background:var(--c)] tw:text-text-hi tw:text-[12px] tw:[transition:filter_0.15s,box-shadow_0.15s] tw:hover:filter-[brightness(1.12)] tw:cursor-grab tw:[&.moving]:cursor-grabbing tw:[&.moving]:not-[&.selected]:z-4 tw:[&.moving]:not-[&.multi]:not-[&.selected]:[box-shadow:0_6px_18px_rgba(0,0,0,0.5)] tw:[&.multi]:not-[&.selected]:[box-shadow:0_0_0_2px_var(--warn),0_0_10px_color-mix(in_srgb,var(--warn)_35%,transparent)] tw:[&.selected]:[box-shadow:0_0_0_2px_var(--text-hi),0_4px_14px_rgba(0,0,0,0.45)] tw:[&.selected]:z-3 tw:[&.ai]:bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.13)_0_5px,transparent_5px_10px)]"
+            class="seg tw:group/seg tw:absolute tw:[background:var(--c)] tw:text-text-hi tw:text-[12px] tw:[transition:filter_0.15s,box-shadow_0.15s] tw:hover:filter-[brightness(1.12)] tw:cursor-grab tw:[&.moving]:cursor-grabbing tw:[&.moving]:not-[&.selected]:z-4 tw:[&.moving]:not-[&.multi]:not-[&.selected]:[box-shadow:0_6px_18px_rgba(0,0,0,0.5)] tw:[&.multi]:not-[&.selected]:[box-shadow:0_0_0_2px_var(--warn),0_0_10px_color-mix(in_srgb,var(--warn)_35%,transparent)] tw:[&.selected]:[box-shadow:0_0_0_2px_var(--text-hi),0_4px_14px_rgba(0,0,0,0.45)] tw:[&.selected]:z-3 tw:[&.ai]:bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.13)_0_5px,transparent_5px_10px)] tw:[&.ghost]:z-4 tw:[&.ghost]:opacity-85 tw:[&.ghost]:pointer-events-none tw:[&.ghost]:[outline:1.5px_dashed_var(--text-hi)] tw:[&.ghost]:[box-shadow:0_6px_18px_rgba(0,0,0,0.5)]"
             :data-entry="e.id"
-            :class="{ selected: e.id === selectedId, ai: e.source === 'ai', multi: multi.has(e.id), moving: drag?.type === 'move' && drag.id === e.id && drag.moved }"
+            :class="{ selected: e.id === selectedId, ai: e.source === 'ai', multi: multi.has(e.id), moving: drag?.type === 'move' && !drag.copy && drag.id === e.id && drag.moved, ghost: e.id === COPY_ID }"
             :style="{ ...box(preview(e).start, preview(e).end), '--c': kindColor(e.kind), ...laneStyle(e) }"
           >
             <span v-if="wide(e)" class="rh l tw:absolute tw:top-0 tw:bottom-0 tw:z-1 tw:w-6 tw:cursor-ew-resize tw:[transition:background_0.15s] tw:left-0 tw:rounded-[var(--r2)_0_0_var(--r2)] tw:group-hover/seg:not-group-[.selected]/seg:bg-white/35 tw:group-[.selected]/seg:bg-white/35" @pointerdown="onResizeDown($event, e, 'start')"></span>
@@ -294,9 +317,12 @@ const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind
     </template>
     <template v-else-if="menu.entryId">
       <div class="msep tw:h-1 tw:m-4 tw:bg-border"></div>
+      <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Или перетащите блок с зажатым Ctrl" @click="copyAfterBlock"><Icon name="copy" :size="14" />Копия сразу после</button>
+      <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" @click="copyBlockTo"><Icon name="calendar" :size="14" />Копия в дату и время…</button>
       <button class="mdel tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:text-down-fg tw:hover:bg-down/15 tw:hover:enabled:border-border-3" @click="onMenuDelete"><Icon name="trash" :size="14" />Удалить отрезок</button>
     </template>
   </KindMenu>
+  <EntryCopyMenu v-if="copyOf" ref="copyMenu" no-button :day="data.day" :source="copyOf" @copied="(c, d) => emit('copied', c, d)" />
   </div>
 </template>
 

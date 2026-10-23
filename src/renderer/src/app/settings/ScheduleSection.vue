@@ -37,5 +37,9 @@ function toggleDay(id: number): void {
           {{ d.label }}
         </button>
       </div>
+      <label class="tw:flex tw:items-center tw:gap-8 tw:mt-12 tw:text-[12.5px]" title="Запись, начатая до конца рабочего дня, останавливается в его конце; начатая после — идёт, пока её не остановят">
+        <input type="checkbox" :checked="f.schedule.stopRecordingAtEnd !== false" @change="f.schedule.stopRecordingAtEnd = ($event.target as HTMLInputElement).checked" />
+        «Запись» останавливается в конце рабочего дня
+      </label>
     </section>
 </template>

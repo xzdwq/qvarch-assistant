@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellNumber, columnSum, deleteColAt, deleteRowAt, insertRowAt, mergeCells, parseTable, tableMd, type TableModel } from '../src/notebook/blocks/table/model'
+import { cellNumber, columnSum, columnTotal, deleteColAt, deleteRowAt, insertRowAt, mergeCells, parseTable, tableMd, type TableModel, type TotalKind } from '../src/notebook/blocks/table/model'
 
 const table = (rows: string[][]): TableModel => ({ head: rows[0].map((_, i) => `C${i}`), rows, align: rows[0].map(() => undefined) })
 
@@ -41,16 +41,40 @@ describe('a column sum', () => {
   })
 })
 
+describe('a column\'s totals', () => {
+  const t = () => table([['1,5'], ['текст'], [''], ['3'], ['-2']])
+  const text = (x: TableModel, kind: TotalKind) => columnTotal(x, { c: 0, kind })?.text
+  it('average, least, greatest — of the numbers; filled cells and their part — of all', () => {
+    expect(text(t(), 'avg')).toBe('x̄ 0,833')
+    expect(text(t(), 'min')).toBe('min -2')
+    expect(text(t(), 'max')).toBe('max 3')
+    expect(text(t(), 'count')).toBe('N 4')
+    expect(text(t(), 'filled')).toBe('80 %')
+  })
+  it('no numbers — no average (nothing shown); no rows — no part', () => {
+    expect(columnTotal(table([['a'], ['']]), { c: 0, kind: 'avg' })).toBeUndefined()
+    expect(columnTotal({ head: ['A'], rows: [], align: [undefined] }, { c: 0, kind: 'filled' })).toBeUndefined()
+  })
+  it('kept in the comment: a sum — its column alone (as before), the rest named; unknown ones left out', () => {
+    const x = parseTable('<!-- qa:table sums=0,1:avg,2:nope,1:max -->\n| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |')
+    expect(x.totals).toEqual([
+      { c: 0, kind: 'sum' },
+      { c: 1, kind: 'avg' },
+    ])
+    expect(tableMd(x).split('\n')[0]).toBe('<!-- qa:table sums=0,1:avg -->')
+  })
+})
+
 describe('merged cells', () => {
   it('kept in the comment over the table and read back', () => {
     const t = table([['a', 'b'], ['c', 'd']])
     mergeCells(t, 0, 0, 1, 0)
-    t.sums = [1]
+    t.totals = [{ c: 1, kind: 'sum' }]
     const md = tableMd(t)
     expect(md.split('\n')[0]).toBe('<!-- qa:table sums=1 merge=0.0.2.1 -->')
     const back = parseTable(md)
     expect(back.merges).toEqual([{ r: 0, c: 0, rs: 2, cs: 1 }])
-    expect(back.sums).toEqual([1])
+    expect(back.totals).toEqual([{ c: 1, kind: 'sum' }])
     expect(back.rows[0][0]).toBe('a')
   })
   it('the old comment with widths only still reads', () => {

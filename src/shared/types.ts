@@ -171,6 +171,8 @@ export interface WorkSchedule {
   lunchEnd: string
   /** 0 = Sunday … 6 = Saturday */
   workDays: number[]
+  /** «Запись» stops by itself at the end of the work day (one started after it goes on); none — it does. */
+  stopRecordingAtEnd?: boolean
 }
 
 export interface IslandPrefs {
@@ -253,6 +255,13 @@ export interface LiveStatus {
   now: Ms
   inCall: boolean
   callApp?: string
+  /** «Запись» going on (an event whose end follows the clock). */
+  recording?: RecordingState
+}
+/** A recording going on: its event and the day it is on (shared/tracker/recording). */
+export interface RecordingState {
+  day: string
+  entryId: string
 }
 
 /**

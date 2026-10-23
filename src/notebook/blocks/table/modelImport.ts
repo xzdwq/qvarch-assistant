@@ -4,6 +4,7 @@
  */
 import { rectangular, type CellGrid, type GridMerge } from '../../../shared/tableData'
 import { type Merge, type TableModel } from './model'
+import { totalsFitted } from './modelTotals'
 
 /** A generated column name (as a new table and a new column have). */
 const columnName = (i: number) => `Столбец ${i + 1}`
@@ -57,12 +58,11 @@ export function tableShape(grid: CellGrid, headRow: boolean): Pick<TableModel, '
   return { head, rows: rows.length ? rows : [head.map(() => '')], merges: merges.length ? merges : undefined }
 }
 
-/** The columns' own settings fitted to `n` columns (alignment and widths kept for the ones still there, sums inside). */
+/** The columns' own settings fitted to `n` columns (alignment and widths kept for the ones still there, totals inside). */
 function fitColumns(t: TableModel, n: number): void {
   t.align = Array.from({ length: n }, (_, i) => t.align[i])
   if (t.widths) t.widths = Array.from({ length: n }, (_, i) => t.widths?.[i] ?? 0)
-  t.sums = t.sums?.filter((c) => c < n)
-  if (!t.sums?.length) t.sums = undefined
+  totalsFitted(t, n)
 }
 
 /**

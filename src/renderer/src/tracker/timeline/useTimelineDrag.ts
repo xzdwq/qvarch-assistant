@@ -20,6 +20,8 @@ export interface TimelineDragEmit {
   (e: 'selection', sel: Selection | null, commit: boolean): void
   (e: 'select', id: string): void
   (e: 'move', change: { id: string; start: Ms; end: Ms; lane: number }): void
+  /** Ctrl + drag of a block: a copy of it put there (the block itself stays). */
+  (e: 'copy', change: { id: string; start: Ms; end: Ms; lane?: number }): void
   (e: 'resize', change: { id: string; start: Ms; end: Ms }): void
   (e: 'pin', t: Ms | undefined): void
 }
@@ -29,10 +31,12 @@ type Drag =
   | { type: 'create'; x0: number; t0: Ms; t1: Ms; moved: boolean; hitId?: string; ctrl: boolean }
   | { type: 'sel'; edge: 'start' | 'end' }
   | { type: 'resize'; id: string; edge: 'start' | 'end'; start: Ms; end: Ms; x0: number; moved: boolean }
-  | { type: 'move'; id: string; x0: number; y0: number; t0: Ms; offset: Ms; dur: Ms; start: Ms; lane: number; moved: boolean }
+  | { type: 'move'; id: string; x0: number; y0: number; t0: Ms; offset: Ms; dur: Ms; start: Ms; lane: number; moved: boolean; copy: boolean }
   | { type: 'pin'; x0: number; t0: Ms; moved: boolean }
   | { type: 'pan'; x0: number; from0: Ms; span: number; moved: boolean; middle?: boolean }
 
+/** The copy a Ctrl + drag carries (shown as a block of its own; the original stays). */
+export const COPY_ID = '__copy'
 /** How long a released drag keeps its geometry on screen while the saved state comes back. */
 const PENDING_MS = 2000
 /** ← / → move the selection's edge a step back / forward. */
@@ -40,7 +44,8 @@ const SEL_KEYS: Partial<Record<string, 1 | -1>> = { ArrowLeft: -1, ArrowRight: 1
 
 /**
  * The timeline's pointer: click → divider; press + drag on empty space (or Shift + drag anywhere) → range;
- * drag a block → move it (vertically into a free lane); its edge → resize; Ctrl + click → multi-select;
+ * drag a block → move it (vertically into a free lane), Ctrl + drag → a copy of it; its edge → resize; Ctrl + click
+ * → multi-select;
  * the axis or the middle button → pan. Pointer capture keeps the gesture on the canvas.
  */
 export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, emit: TimelineDragEmit, markManual: () => void) {
@@ -63,16 +68,27 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     },
   )
 
+  /** The block being dragged (a copy — the copy, not its original). */
+  const draggedId = (d: Extract<Drag, { type: 'move' }>) => (d.copy ? COPY_ID : d.id)
+  /** The copy a Ctrl + drag carries: the original's look at the dragged place. */
+  const ghost = computed<Entry | undefined>(() => {
+    const d = drag.value
+    if (d?.type !== 'move' || !d.copy || !d.moved) return undefined
+    const src = props.data.entries.find((x) => x.id === d.id)
+    return src && { ...src, id: COPY_ID, start: d.start, end: d.start + d.dur, lane: d.lane, outlook: undefined, series: undefined }
+  })
+  /** The day's blocks as drawn (with the copy being dragged). */
+  const shownEntries = computed(() => (ghost.value ? [...props.data.entries, ghost.value] : props.data.entries))
   /** A block's geometry with the drag in progress (or the pending one) applied. */
   function preview(e: Entry): BlockView | Entry {
     const d = drag.value
     if (d?.type === 'resize' && d.id === e.id && d.moved) return { start: d.start, end: d.end }
-    if (d?.type === 'move' && d.id === e.id && d.moved) return { start: d.start, end: d.start + d.dur, lane: d.lane }
+    if (d?.type === 'move' && draggedId(d) === e.id && d.moved) return { start: d.start, end: d.start + d.dur, lane: d.lane }
     const p = pending.value
     return p && p.id === e.id ? { start: p.start, end: p.end, lane: p.lane ?? e.lane } : e
   }
-  const movingId = computed(() => (drag.value?.type === 'move' || drag.value?.type === 'resize' ? drag.value.id : pending.value?.id))
-  const lanes = useTimelineLanes(() => props.data.entries, preview, () => movingId.value)
+  const movingId = computed(() => (drag.value?.type === 'move' ? draggedId(drag.value) : drag.value?.type === 'resize' ? drag.value.id : pending.value?.id))
+  const lanes = useTimelineLanes(() => shownEntries.value, preview, () => movingId.value)
   /** Resize handles only where there is room — otherwise the whole block is a click target. */
   const wide = (e: Entry) => ((preview(e).end - preview(e).start) / (to.value - from.value)) * width.value >= 26
 
@@ -80,15 +96,18 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     canvas.value?.setPointerCapture(e.pointerId)
   }
 
-  /** Press on a lane: a block starts a move (not Outlook's, not with Shift / Ctrl), elsewhere a range. */
+  /**
+   * Press on a lane: a block starts a move (not Outlook's, not with Shift) — with Ctrl, a copy's (a Ctrl + click
+   * without moving still picks it for several); elsewhere a range.
+   */
   function onLaneDown(e: PointerEvent): void {
     if (e.button !== 0) return
     const t = timeAt(e.clientX)
     const id = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-entry]')?.dataset.entry
     const hit = id ? props.data.entries.find((x) => x.id === id) : undefined
-    if (hit && !hit.outlook && !e.shiftKey && !e.ctrlKey) {
+    if (hit && !hit.outlook && !e.shiftKey) {
       const raw = rawTimeAt(e.clientX)
-      drag.value = { type: 'move', id: hit.id, x0: e.clientX, y0: e.clientY, t0: raw, offset: raw - hit.start, dur: hit.end - hit.start, start: hit.start, lane: lanes.laneOf(hit.id), moved: false }
+      drag.value = { type: 'move', id: hit.id, x0: e.clientX, y0: e.clientY, t0: raw, offset: raw - hit.start, dur: hit.end - hit.start, start: hit.start, lane: lanes.laneOf(hit.id), moved: false, copy: e.ctrlKey }
     } else drag.value = { type: 'create', x0: e.clientX, t0: t, t1: t, moved: false, hitId: hit?.id, ctrl: e.ctrlKey }
     capture(e)
   }
@@ -151,7 +170,8 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     const r = el.getBoundingClientRect()
     if (e.clientY < r.top || e.clientY > r.bottom) return
     const want = laneAtOffset(e.clientY - r.top + el.scrollTop - 5, lanes.laneH.value, LANE_GAP, lanes.totalLanes.value)
-    if (want !== d.lane && laneIsFree(props.data.entries, want, d.start, d.start + d.dur, d.id)) d.lane = want
+    // (a copy's original keeps its place — it is not the one moving)
+    if (want !== d.lane && laneIsFree(props.data.entries, want, d.start, d.start + d.dur, d.copy ? undefined : d.id)) d.lane = want
   }
 
   function onMove(e: PointerEvent): void {
@@ -206,7 +226,7 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
   function onUp(): void {
     const d = drag.value
     // the lane a moved block is shown on comes from the live preview — read it before the drag is cleared
-    const dropLane = d?.type === 'move' ? lanes.laneOf(d.id) : 0
+    const dropLane = d?.type === 'move' ? lanes.laneOf(draggedId(d)) : 0
     drag.value = undefined
     if (!d) return
     switch (d.type) {
@@ -216,8 +236,9 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
         if (props.selection) emit('selection', props.selection, true)
         return
       case 'move': {
-        if (!d.moved) return clickBlock(d.id, d.t0)
+        if (!d.moved) return d.copy ? toggleMulti(d.id) : clickBlock(d.id, d.t0)
         const change = { id: d.id, start: d.start, end: d.start + d.dur, lane: dropLane } // the lane it is shown on is the lane it keeps
+        if (d.copy) return emit('copy', change)
         hold({ ...change })
         return emit('move', change)
       }
@@ -284,5 +305,5 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     else emit('selection', makeSel(s.start, Math.min(Math.max(selEnd.value + delta, s.start + MINUTE), props.bounds[1])), true)
   }
 
-  return { drag, hoverT, hoverX, multi, pinT, preview, wide, lanes, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey }
+  return { drag, hoverT, hoverX, multi, pinT, preview, wide, lanes, shownEntries, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey }
 }

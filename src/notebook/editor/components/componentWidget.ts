@@ -1,13 +1,16 @@
 import { createApp, h, reactive, type App } from 'vue'
 import { StateEffect, StateField } from '@codemirror/state'
-import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { BLOCK_SPECS } from '@nb/blocks/specs'
 import type { BlockKind } from '@nb/domain/blockSpec'
 import NoteBlockHost from '../../ui/NoteBlockHost.vue'
 import { editorHost } from '../editorHost'
 import { setLoopBand } from '../loopBands'
 import { componentRangesField, type ComponentRange, type Heading } from './componentField'
-import { duplicateComponent, exitComponent, removeComponent, replaceComponent } from './componentOps'
+import type { BlockActionId } from '@nb/commands/blockActions'
+import { runBlockAction, targetCaps } from './blockActionRun'
+import { blockSel, blockSelection, blockSelField, selectBlock, type BlockSelectHow } from './blockSelection'
+import { componentAt, exitComponent, replaceComponent } from './componentOps'
 import { dragComponent } from './dragDrop'
 
 /**
@@ -25,8 +28,8 @@ const pendingFocusField = StateField.define<{ src: string }>({
   },
 })
 
-/** The host's props kept by a widget's DOM (updated in place when the text changes). */
-type HostState = { kind: BlockKind; src: string; headings: Heading[]; line: number; loop?: string }
+/** The host's props kept by a widget's DOM (updated in place when the text changes / the blocks chosen change). */
+type HostState = { kind: BlockKind; src: string; headings: Heading[]; line: number; loop?: string; selected: boolean }
 type ComponentDom = HTMLElement & { _qa?: { app: App; props: HostState; ro: ResizeObserver } }
 
 class ComponentWidget extends WidgetType {
@@ -59,14 +62,16 @@ class ComponentWidget extends WidgetType {
       line: r.line,
       loop: r.loop || undefined,
       onChange: (src: string) => replaceComponent(view, dom, src),
-      onRemove: () => removeComponent(view, dom),
+      selected: blockSel(view).includes(r.from),
+      onSelect: (how: BlockSelectHow) => selectBlock(view, dom, how),
+      onAction: (id: Exclude<BlockActionId, 'raw'>) => runBlockAction(view, dom, id),
+      targetCaps: () => targetCaps(view, dom),
       onGo: (pos: number) => {
         view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 60 }) })
         view.focus()
       },
       onExit: (dir: 1 | -1) => exitComponent(view, dom, dir),
       onDrag: (e: PointerEvent) => dragComponent(view, dom, e),
-      onDuplicate: () => duplicateComponent(view, dom),
       onTranscribe: (rel: string) => host.transcribe(rel),
       onDropAudio: (rel: string) => host.dropAudio(rel),
     })
@@ -105,5 +110,19 @@ const componentDecorationsField = StateField.define<DecorationSet>({
   provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f))],
 })
 
-/** The components as an extension: their ranges, their widgets (atomic for the cursor), the focus of a new one. */
-export const noteComponents = [componentRangesField, componentDecorationsField, pendingFocusField]
+/** The blocks drawn as chosen while the choice is what it is (their widgets stay — only a prop changes). */
+const chosenMarks = ViewPlugin.fromClass(
+  class {
+    update(u: ViewUpdate): void {
+      if (u.startState.field(blockSelField, false) === u.state.field(blockSelField, false) && !u.docChanged) return
+      const sel = blockSel(u.view)
+      for (const dom of u.view.dom.querySelectorAll<ComponentDom>('.cm-comp')) {
+        const q = dom._qa
+        if (q) q.props.selected = sel.includes(componentAt(u.view, dom)?.from ?? -1)
+      }
+    }
+  },
+)
+
+/** The components as an extension: their ranges, their widgets (atomic for the cursor), the focus of a new one, the ones chosen. */
+export const noteComponents = [componentRangesField, componentDecorationsField, pendingFocusField, blockSelection, chosenMarks]

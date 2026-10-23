@@ -20,6 +20,7 @@ import type { AddPlacement, EntryDraft } from '../tracker/entry/entryTypes'
 import { useEntryForm } from '../tracker/entry/useEntryForm'
 import { useEntryReminder } from '../tracker/entry/useEntryReminder'
 import { useEntryActions } from '../tracker/entry/useEntryActions'
+import EntryCopyMenu from '../tracker/entry/EntryCopyMenu.vue'
 import { useEntryAutosave } from '../tracker/entry/useEntryAutosave'
 
 /**
@@ -66,7 +67,7 @@ const { start, followsNow, startsNow, label, kind, tasks, error, busy, copied, p
 const reminder = useEntryReminder(props, start)
 const { remindMode, remindTime, repeatRule, repeatCount, remindOpen, repeatOpen, remindShort, repeatShort, seriesText } = reminder
 const actions = useEntryActions(props, emit, form, reminder)
-const { save, copyToDate, copiedTo, copyTitle, remove } = actions
+const { save, copySource, copiedTo, onCopied, remove } = actions
 const rootEl = ref<HTMLElement>()
 const { saveState, flush, onFocusOut, close } = useEntryAutosave(props, emit, form, reminder, actions, rootEl)
 
@@ -115,12 +116,12 @@ watch(
     </div>
     <div v-if="readonly" class="ro tw:flex tw:items-center tw:gap-6 tw:-mt-4 tw:py-6 tw:px-9 tw:rounded-[4px] tw:bg-info/14 tw:text-info-fg tw:text-[12px]"><Icon name="outlook" :size="13" />Встреча из Outlook — время, название и вид меняет только Outlook. Здесь — напоминание.</div>
 
-    <!-- the date: a new event is added there; an existing one is moved there (once the card is left) or copied there -->
+    <!-- the date: a new event is added there; an existing one is moved there (once the card is left); «Копия» — its own place -->
     <div class="drow tw:flex tw:items-center tw:gap-8">
       <span v-if="readonly" class="rodate tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:font-data tw:text-[12px]"><Icon name="calendar" :size="13" />{{ new Date(`${day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) }}</span>
       <DatePick v-else parts :model-value="date" @update:model-value="setDate" />
       <span v-if="entry.id && !readonly && date !== day" class="moved tw:text-warn-fg tw:text-[12px]">перенесётся</span>
-      <button v-if="entry.id && !readonly" class="copy tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:ml-auto tw:py-0 tw:px-10 tw:text-[12px]" :disabled="busy" :title="copyTitle" @click="copyToDate"><Icon name="copy" :size="13" />Копия</button>
+      <EntryCopyMenu v-if="entry.id && !readonly" class="tw:ml-auto" :day="day" :source="copySource" label="Копия" :disabled="busy" @copied="onCopied" />
     </div>
     <!-- when: one line; for a new block — quiet presets right under it -->
     <div v-if="readonly" class="when tw:flex tw:items-center tw:gap-8 tw:flex-wrap">

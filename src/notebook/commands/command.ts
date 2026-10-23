@@ -33,13 +33,24 @@ export type CommandEffect =
   /** «@…» removed and the app asked to do something (record a voice note, pick a picture). */
   | { kind: 'request'; action: 'record' | 'pickImage' }
 
+/** A command typed together with what it is about («@get https://…», «@select * from t»): inserted with it filled in. */
+export interface CommandWithArg {
+  /** The whole query after «@» (its groups — what the command takes). */
+  pattern: RegExp
+  /** The menu's line for it: what will be inserted. */
+  title(m: RegExpExecArray): string
+  run(ctx: CommandContext, m: RegExpExecArray): CommandEffect
+}
+
 export interface NoteCommand {
   id: string
   title: string
   hint: string
   /** An icon name of the Icon component. */
   icon: string
-  /** Words it is found by (Russian and English): any word's start matches. */
+  /** Words it is found by (Russian and English, synonyms — «curl», «get» for HTTP): a whole word first, then a word's start, then a part. */
   keys: string[]
   run(ctx: CommandContext): CommandEffect
+  /** Typed with its argument — offered first, filled in. */
+  withArg?: CommandWithArg
 }

@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import type { DayStateMessage, Selection } from '../../shared/types'
+import type { DayStateMessage, LiveStatus, Selection } from '../../shared/types'
 import type { EventArgs, EventMethod } from '../../shared/ipc/routes'
 import { dayKey } from '../../shared/timeline'
 import { emit } from '../ipc/router'
@@ -15,6 +15,7 @@ import type { TabletService } from '../tablet'
 import type { Terminals } from '../terminal'
 import { TestFiles } from '../testFiles'
 import type { Tracker } from '../tracker'
+import type { Recording } from '../tracker/recording'
 import type { Vault } from '../vault'
 import type { Voice } from '../voice'
 import { AppWindows } from './appWindows'
@@ -26,6 +27,7 @@ import { AppWindows } from './appWindows'
 export class AppContext {
   store!: Store
   tracker!: Tracker
+  recording!: Recording
   probe!: Probe
   jira!: Jira
   outlook!: Outlook
@@ -60,9 +62,13 @@ export class AppContext {
       this.broadcastPending = false
       // a marker following «now» left on a previous day is stale (a closed one on any day is a choice — kept)
       if (this.selection && this.selection.end === undefined && this.selection.day !== dayKey(Date.now())) this.selection = null
-      const msg: DayStateMessage = { day: this.store.day(dayKey(Date.now())), live: { ...this.tracker.live, now: Date.now() }, selection: this.selection }
+      const msg: DayStateMessage = { day: this.store.day(dayKey(Date.now())), live: this.live(), selection: this.selection }
       this.emitToAll('onDayState', msg)
     }, 250)
+  }
+  /** What goes on now: the clock, a call, a recording. */
+  live(): LiveStatus {
+    return { ...this.tracker.live, now: Date.now(), recording: this.recording?.state }
   }
   /** An event to the main window and the island. */
   emitToAll<K extends EventMethod>(name: K, ...args: EventArgs<K>): void {

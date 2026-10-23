@@ -4,6 +4,7 @@
  * moves, grows or shrinks them here.
  */
 import type { Merge, TableModel } from './model'
+import { totalsColumnDeleted, totalsColumnPut } from './modelTotals'
 
 /** A cell's text: row -1 — the head. */
 export const cellAt = (t: TableModel, r: number, c: number) => (r < 0 ? t.head[c] : (t.rows[r]?.[c] ?? ''))
@@ -74,15 +75,15 @@ export function deleteRowAt(t: TableModel, at: number): void {
   t.rows.splice(at, 1)
   t.merges = out.length ? out : undefined
 }
-/** A column put at `at`: the merges right of it move, the ones across grow, the sums follow their columns. */
+/** A column put at `at`: the merges right of it move, the ones across grow, the totals follow their columns. */
 export function insertColAt(t: TableModel, at: number): void {
   for (const r of t.rows) r.splice(at, 0, '')
   t.merges = t.merges?.map((m) => (m.c >= at ? { ...m, c: m.c + 1 } : m.c + m.cs > at ? { ...m, cs: m.cs + 1 } : m))
-  t.sums = t.sums?.map((s) => (s >= at ? s + 1 : s))
+  totalsColumnPut(t, at)
 }
 /**
  * The column `at` deleted from the body (the head is the caller's — after this): the merges across shrink (a merge's
- * first column deleted — its text goes to the next one, the head's too), its sum goes.
+ * first column deleted — its text goes to the next one, the head's too), its total goes.
  */
 export function deleteColAt(t: TableModel, at: number): void {
   const out: Merge[] = []
@@ -97,6 +98,5 @@ export function deleteColAt(t: TableModel, at: number): void {
   }
   for (const r of t.rows) r.splice(at, 1)
   t.merges = out.length ? out : undefined
-  t.sums = t.sums?.filter((s) => s !== at).map((s) => (s > at ? s - 1 : s))
-  if (!t.sums?.length) t.sums = undefined
+  totalsColumnDeleted(t, at)
 }

@@ -30,8 +30,10 @@ const props = defineProps<{
   weekStart: string
   /** Where a line without an exact time goes. */
   place: (q: Quick) => { start: Ms; end: Ms }
+  /** «Запись» goes on (the button stops it). */
+  recording?: boolean
 }>()
-const emit = defineEmits<{ add: [d: QuickDraft] }>()
+const emit = defineEmits<{ add: [d: QuickDraft]; record: [r: { kind: string; label: string }]; stopRecord: [] }>()
 
 const text = ref('')
 const inp = ref<HTMLInputElement>()
@@ -135,6 +137,14 @@ function submit(): void {
   sug.value = undefined
 }
 
+/** «Запись»: begun with the line's kind and text (the line cleared) — or stopped. */
+function toggleRecord(): void {
+  if (props.recording) return emit('stopRecord')
+  emit('record', { kind: kind.value, label: label.value })
+  text.value = ''
+  attached.value = undefined
+}
+
 // ---------- the line's keys (the «@» / «#» list first, while it is open) ----------
 const fieldEl = ref<HTMLElement>()
 /** Enter adds; Esc clears the line, an empty one is left. */
@@ -197,6 +207,7 @@ defineExpose({ focus })
       <TaskSearch :marked="attached ? [attached.key] : []" placeholder="Задача для этой записи" @pick="(t) => (attached = t)">
         <button class="qb tw:inline-flex tw:items-center tw:justify-center tw:w-34 tw:h-34 tw:p-0 tw:text-text-2" title="Задача Jira или своя"><Icon name="jira" :size="14" /></button>
       </TaskSearch>
+      <button class="qb qrec tw:inline-flex tw:items-center tw:justify-center tw:w-34 tw:h-34 tw:p-0 tw:text-text-2 tw:[&.on]:border-down tw:[&.on]:bg-down/16 tw:[&.on]:text-down-fg" :class="{ on: recording }" :title="recording ? 'Остановить запись' : `Запись: событие «${kindLabel(kind)}» начнётся сейчас и будет идти, пока не остановите (продлевается само; в конце рабочего дня останавливается — см. «Рабочий график»)`" @mousedown.prevent @click="toggleRecord"><Icon :name="recording ? 'stop' : 'rec'" :size="14" /></button>
       <button class="primary qgo tw:h-34 tw:py-0 tw:px-14" :disabled="!ready" @mousedown.prevent @click="submit">Добавить</button>
     </div>
     <div class="qprev tw:flex tw:items-center tw:gap-8 tw:min-h-28 tw:pt-0 tw:pr-10 tw:pb-7 tw:pl-10 tw:overflow-hidden tw:whitespace-nowrap tw:text-[12px]">

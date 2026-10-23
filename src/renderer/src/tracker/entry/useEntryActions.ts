@@ -7,11 +7,12 @@ import { kindLabel } from '../../lib/palette'
 import { saveRecording } from '../../lib/recorder'
 import { askSeries } from '../../lib/seriesAsk'
 import { blockLabel, errorText, placeByQuickLine } from '@shared/tracker/entryForm'
+import type { CopySource } from '@shared/tracker/entryCopy'
 import type { Dictation, EntryEditorEmit, EntryEditorProps } from './entryTypes'
 import type { EntryForm } from './useEntryForm'
 import type { EntryReminder } from './useEntryReminder'
 
-/** What the card does with the event: save (a series asks this one / all), copy to the picked date, delete. */
+/** What the card does with the event: save (a series asks this one / all), copy (what of it, where it went), delete. */
 export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, form: EntryForm, rem: EntryReminder) {
   const { start, label, kind, tasks, error, busy, isNew, readonly, date, dayShift, effectiveEnd, followsNow, parsed } = form
   /** A series asks once per editing: this one or all of them. */
@@ -125,38 +126,18 @@ export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, 
     }
   }
 
-  /**
-   * A copy of the event on the picked date — the event itself stays where it is (its date goes back). On its own
-   * day the copy follows it (done before lunch — again after), on another day it takes the same times.
-   */
-  const copiedTo = ref('')
-  const copyTitle = computed(() =>
-    date.value === props.day ? 'Копия сразу после этого события' : `Копия на ${new Date(`${date.value}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, в то же время; это событие остаётся`,
-  )
-  async function copyToDate(): Promise<void> {
-    if (!props.entry.id || busy.value) return
-    const target = date.value
-    const dur = effectiveEnd.value - start.value
-    const s = target === props.day ? effectiveEnd.value : start.value + dayShift()
+  /** What a copy is made of: the event as the card shows it now (edited, maybe not saved yet). */
+  const copySource = computed<CopySource>(() => {
     const parts = splitTitle(label.value)
     const t = tasks.value[0] ? plainTask(tasks.value[0]) : undefined
-    busy.value = true
-    error.value = ''
-    try {
-      const c = await window.qa.saveEntry(
-        target,
-        { start: s, end: s + dur, label: blockLabel(parts.label, t, kindLabel(kind.value)), description: parts.description, task: t, kind: kind.value, source: 'manual' },
-        { overlap: true },
-      )
-      date.value = props.day
-      const hm = (x: Ms) => new Date(x).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-      copiedTo.value = `${new Date(`${target}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })} ${hm(c.start)}–${hm(c.end)}`
-      emit('copied', c, target)
-    } catch (e) {
-      error.value = errorText(e)
-    } finally {
-      busy.value = false
-    }
+    return { start: start.value, end: effectiveEnd.value, label: blockLabel(parts.label, t, kindLabel(kind.value)), description: parts.description, task: t, kind: kind.value }
+  })
+  /** A copy made (right after, or on the date and times picked in «Копия»): said where; the event itself stays. */
+  const copiedTo = ref('')
+  function onCopied(c: Entry, day: string): void {
+    const hm = (x: Ms) => new Date(x).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    copiedTo.value = `${new Date(`${day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })} ${hm(c.start)}–${hm(c.end)}`
+    emit('copied', c, day)
   }
 
   /** Deletes the event (a series asks: this one or all). A draft just closes. */
@@ -174,5 +155,5 @@ export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, 
     emit('deleted')
   }
 
-  return { save, copyToDate, copiedTo, copyTitle, remove, forgetSeriesScope }
+  return { save, copySource, copiedTo, onCopied, remove, forgetSeriesScope }
 }

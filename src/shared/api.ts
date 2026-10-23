@@ -40,6 +40,10 @@ export interface QaApi {
    * with `overlap` (moving a block) they are left alone and the overlap is shown in parallel.
    */
   saveEntry(day: string, entry: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }): Promise<Entry>
+  /** «Запись» begun now: an event of this kind whose end follows the clock until `recordStop` (one going on stops first). */
+  recordStart(kind: string, label: string): Promise<Entry>
+  /** The recording stopped: its event ends now. */
+  recordStop(): Promise<void>
   /** Merge entries into the earliest one (spanning all); entries in between go parallel. */
   mergeEntries(day: string, ids: string[]): Promise<Entry | undefined>
   /** History calendar: per-day summaries for a month (YYYY-MM). */

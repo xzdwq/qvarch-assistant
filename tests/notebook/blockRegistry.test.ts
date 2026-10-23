@@ -81,6 +81,23 @@ describe('«@» commands', () => {
     expect(pickerMode('эмодзи сердце')).toEqual({ mode: 'emoji', q: 'сердце' })
     expect(pickerMode('доска')).toEqual({ mode: 'board', q: '' })
   })
+  it('a whole word above a word\'s start above a part of a word; synonyms; the menu\'s order between equals', () => {
+    expect(matchCommands('curl')[0].id).toBe('http')
+    expect(matchCommands('query')[0].id).toBe('sql')
+    // «запрос» is HTTP's and the query's whole word — both, in the menu's order, before the ones it only starts
+    expect(matchCommands('запрос').map((c) => c.id).slice(0, 3)).toEqual(['http', 'sql', 'fuzz'])
+    // a part of a word — from three letters, after the starts
+    expect(matchCommands('лиц').map((c) => c.id)).toEqual(['table'])
+    expect(matchCommands('ли').map((c) => c.id)).not.toContain('table')
+  })
+  it('typed with what it is about: offered first, inserted filled in', () => {
+    const [get] = matchCommands('get https://x.test/a')
+    expect(get.title).toBe('HTTP: GET https://x.test/a')
+    expect(get.run(ctx())).toEqual({ kind: 'insertBlock', markdown: '```http name=resp2\nGET https://x.test/a\n```' })
+    const [sel] = matchCommands('select * from t')
+    expect(sel.run(ctx())).toEqual({ kind: 'insertBlock', markdown: '```sql db=main name=rows2\nselect * from t\n```' })
+    expect(pickerMode('table3x4')).toEqual({ mode: 'table', c: 3, r: 4 })
+  })
   it('inserts what the editor inserted before', () => {
     expect(run('audio')).toEqual({ kind: 'request', action: 'record' })
     expect(run('image')).toEqual({ kind: 'request', action: 'pickImage' })

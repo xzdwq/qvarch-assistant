@@ -10,6 +10,7 @@ import { todayKey } from '../../lib/today'
 import { useDay } from '../../lib/useDay'
 import { dayCell, timelineWindow } from '@shared/tracker/boardTime'
 import { useWorkBoard, type TimelineInstance } from './useWorkBoard'
+import { saveCopy } from '../entry/copyEntry'
 
 /** The board's top: the chosen day's timeline (with its chain of events) or the period's day cells. */
 const { settings, day, days, reload, now, isToday, top, openId, quick, fail, tlRef } = useWorkBoard()
@@ -43,6 +44,22 @@ async function tlSave(id: string, patch: Partial<Entry>): Promise<void> {
     fail(x)
   }
   await reloadAll()
+}
+/** A copy of a block put where it was dragged with Ctrl / right after it; the copy opened. */
+async function tlCopy(c: { id: string; start: Ms; end: Ms; lane?: number }): Promise<void> {
+  const e = dayData.value.entries.find((x) => x.id === c.id)
+  if (!e) return
+  try {
+    onCopied(await saveCopy(day.value, e, c), day.value)
+  } catch (x) {
+    fail(x)
+  }
+}
+/** A copy made: its day shown, the copy opened. */
+async function onCopied(c: Entry, d: string): Promise<void> {
+  day.value = d
+  await reloadAll()
+  openId.value = c.id
 }
 async function tlCut(kind: string): Promise<void> {
   const m = tlSel.value
@@ -85,6 +102,8 @@ async function tlMerge(ids: string[]): Promise<void> {
       @selection="onTlSelection"
       @resize="(c) => tlSave(c.id, { start: c.start, end: c.end })"
       @move="(c) => tlSave(c.id, { start: c.start, end: c.end, lane: c.lane })"
+      @copy="tlCopy"
+      @copied="(c, d) => onCopied(c, d)"
       @change-kind="(c) => tlSave(c.id, { kind: c.kind })"
       @cut-as="tlCut"
       @delete-entry="tlDelete"

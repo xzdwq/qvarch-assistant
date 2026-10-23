@@ -8,14 +8,17 @@ import { blockRunKey } from '@nb/domain/noteBlocks'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { besidePlace } from '@renderer/lib/usePopover'
+import { blockActionsFor, type BlockActionId, type BlockCaps } from '@nb/commands/blockActions'
+import type { BlockSelectHow } from '@nb/editor/components/blockSelection'
 import LoopOut from './LoopOut.vue'
 import { BLOCK_VIEWS } from './blockViews'
 import { pickHostProps } from './blockView'
 
 /**
  * A component of a note as the editor shows it: the kind's view (from the registry) and, on the left on hover, its
- * handle — dragged, it moves the component in the note; clicked — copy, duplicate, the Markdown it keeps (to see /
- * edit as text), delete. (The hover area takes the handle in: the mouse on its way there does not lose it.)
+ * handle — dragged, it moves the component in the note; clicked — its menu (what the block can do: run, copy,
+ * duplicate, the Markdown it keeps, delete); Ctrl / Shift + click — chosen with others, the menu then acts on all of
+ * them. (The hover area takes the handle in: the mouse on its way there does not lose it.)
  */
 const props = defineProps<{
   kind: BlockKind
@@ -26,11 +29,16 @@ const props = defineProps<{
   line: number
   autofocus?: boolean
   onChange: (src: string) => void
-  onRemove: () => void
   onGo: (pos: number) => void
   onExit: (dir: 1 | -1) => void
   onDrag: (e: PointerEvent) => void
-  onDuplicate: () => void
+  /** Chosen with others (Ctrl / Shift + click on the handles): the menu acts on all of them. */
+  selected: boolean
+  onSelect: (how: BlockSelectHow) => void
+  /** An action of the menu done by the editor (on this block, or on all the chosen ones). */
+  onAction: (id: Exclude<BlockActionId, 'raw'>) => void
+  /** What the blocks the menu acts on can do together (asked when it opens). */
+  targetCaps: () => BlockCaps
   onTranscribe?: (rel: string) => void
   onDropAudio?: (rel: string) => void
   /** The loop it is in (its key): its results over the passes shown under it. */
@@ -58,7 +66,7 @@ const copied = ref(false)
 /** The handle's menu: a popover by the handle it opened from. */
 const menu = ref(false)
 const menuAnchor = ref<HTMLElement>()
-const menuPlace = besidePlace(230, 200)
+const menuPlace = besidePlace(260, 220)
 const raw = ref<string>()
 /** The handle: a click opens the menu, a drag moves the component. */
 function onHandleDown(e: PointerEvent): void {
@@ -75,10 +83,14 @@ function onHandleDown(e: PointerEvent): void {
     menu.value = false
     props.onDrag(ev)
   }
-  const up = () => {
+  const up = (ev: PointerEvent) => {
     cleanup()
     if (dragging) return
+    // Ctrl — one more / one less chosen, Shift — all from the last chosen; a plain click — this block's menu
+    if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return props.onSelect(ev.shiftKey ? 'range' : 'toggle')
+    if (!props.selected) props.onSelect('clear')
     menuAnchor.value = btn
+    actions.value = blockActionsFor(props.targetCaps(), spec.value.title)
     menu.value = !menu.value
   }
   const cleanup = () => {
@@ -88,23 +100,16 @@ function onHandleDown(e: PointerEvent): void {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
 }
-/** The handle menu's actions. */
-const HANDLE_ACTIONS = {
-  raw: () => {
-    raw.value = props.src
-  },
-  copy: () => {
-    // as Markdown: pasted into a note it is the same component again
-    void navigator.clipboard.writeText(`${props.src}\n`)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1400)
-  },
-  dup: () => props.onDuplicate(),
-  del: () => props.onRemove(),
-} satisfies Record<string, () => void>
-function act(what: keyof typeof HANDLE_ACTIONS): void {
+/** The menu's lines: what the blocks it acts on allow (made when it opens). */
+const actions = ref<ReturnType<typeof blockActionsFor>>([])
+/** An action of the menu: «as Markdown» — here; the rest — by the editor (copied — said so). */
+function act(id: BlockActionId): void {
   menu.value = false
-  HANDLE_ACTIONS[what]()
+  if (id === 'raw') return void (raw.value = props.src)
+  props.onAction(id)
+  if (id !== 'copy') return
+  copied.value = true
+  setTimeout(() => (copied.value = false), 1400)
 }
 /** A runnable block in a loop: its kind and key (the bar of its passes under it). */
 const inLoop = computed(() => {
@@ -125,7 +130,7 @@ function applyRaw(): void {
 </script>
 
 <template>
-  <div class="nb tw:group/nb tw:contain-[inline-size] tw:min-w-0 tw:relative tw:mt-4 tw:mr-0 tw:mb-4 tw:-ml-30 tw:pl-32 tw:text-[0.95em] tw:leading-[1.5] tw:whitespace-normal tw:cursor-auto" :class="`k-${kind}`">
+  <div class="nb tw:group/nb tw:contain-[inline-size] tw:min-w-0 tw:relative tw:mt-4 tw:mr-0 tw:mb-4 tw:-ml-30 tw:pl-32 tw:text-[0.95em] tw:leading-[1.5] tw:whitespace-normal tw:cursor-auto tw:rounded-[8px] tw:[&.sel]:bg-accent/8 tw:[&.sel]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.45)]" :class="[`k-${kind}`, { sel: selected }]">
     <button class="nb-h tw:absolute tw:top-4 tw:left-4 tw:touch-none tw:z-250 tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-24 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:opacity-40 tw:cursor-grab tw:[transition:opacity_0.12s] tw:group-hover/nb:not-group-focus-within/nb:opacity-100 tw:group-focus-within/nb:opacity-100 tw:[&.on]:not-group-hover/nb:not-group-focus-within/nb:not-hover:not-active:opacity-100 tw:hover:not-group-hover/nb:not-group-focus-within/nb:not-active:opacity-100 tw:active:not-group-hover/nb:not-group-focus-within/nb:opacity-100 tw:hover:not-active:bg-hover tw:active:bg-hover tw:hover:not-active:text-text tw:active:text-text tw:hover:enabled:border-border-3" :class="{ on: menu }" :title="`${spec.title}: потяните — переместить, клик — меню`" @pointerdown="onHandleDown"><Icon name="grip" :size="14" /></button>
     <span v-if="copied" class="nb-ok tw:absolute tw:z-4 tw:-top-18 tw:left-32 tw:text-up-fg tw:text-[11.5px]">Скопировано — вставьте в любую заметку</span>
     <div v-if="raw !== undefined" class="nb-raw tw:flex tw:flex-col tw:gap-6 tw:p-8 tw:border tw:border-accent/50 tw:rounded-[8px] tw:bg-panel">
@@ -134,12 +139,12 @@ function applyRaw(): void {
     </div>
     <component :is="view.component" v-else v-bind="viewProps" />
     <LoopOut v-if="inLoop && raw === undefined" :path="path" :loop-key="loop!" :kind="inLoop.kind" :block-key="inLoop.key" :name="inLoop.name" :out="inLoop.out" :on-mode="setOut" />
-    <Popover v-model:open="menu" :anchor="menuAnchor" :place="menuPlace" class="nb-menu tw:fixed tw:z-5000 tw:flex tw:flex-col tw:w-230 tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
-        <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-hover" @click="act('copy')"><Icon name="copy" :size="13" />Копировать</button>
-        <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-hover" @click="act('dup')"><Icon name="layers" :size="13" />Дублировать</button>
-        <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-hover" v-if="spec.rawEditable" @click="act('raw')"><Icon name="code" :size="13" />Изменить как Markdown</button>
-        <hr class="tw:my-4 tw:mx-0 tw:border-0 tw:[&&]:border-t tw:[&&]:border-t-border" />
-        <button class="danger tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-[12.5px] tw:text-left tw:hover:bg-hover tw:text-down-fg" @click="act('del')"><Icon name="trash" :size="13" />Удалить {{ spec.title.toLowerCase() }}</button>
+    <Popover v-model:open="menu" :anchor="menuAnchor" :place="menuPlace" class="nb-menu tw:fixed tw:z-5000 tw:flex tw:flex-col tw:w-260 tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+        <template v-for="a in actions" :key="a.id">
+          <hr v-if="a.danger" class="tw:my-4 tw:mx-0 tw:border-0 tw:[&&]:border-t tw:[&&]:border-t-border" />
+          <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:bg-hover tw:[&.danger]:text-down-fg" :class="{ danger: a.danger }" @click="act(a.id)"><Icon :name="a.icon" :size="13" />{{ a.label }}</button>
+        </template>
+        <p class="tw:m-0 tw:pt-4 tw:px-8 tw:pb-2 tw:text-muted tw:text-[11px]">Ctrl / Shift + клик по ручке — выбрать несколько</p>
     </Popover>
   </div>
 </template>

@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { besidePlace, openWhile } from '@renderer/lib/usePopover'
-import type { Align, TableModel } from './model'
+import { TOTAL_DEFS, TOTAL_KINDS, totalAt, type Align, type TableModel, type TotalKind } from './model'
 
 /**
- * A column's ▾ menu (insert, align, sort, sum, delete) and a row's handle menu (insert, delete): over everything,
+ * A column's ▾ menu (insert, align, sort, its total — a sum, an average…, delete) and a row's handle menu (insert, delete): over everything,
  * kept by the button it opened from (the page scrolled), closed when that is out of sight or on a click elsewhere.
  */
 defineProps<{ table: TableModel }>()
@@ -17,7 +17,7 @@ const emit = defineEmits<{
   delRow: [at: number]
   align: [c: number, a: Align]
   sort: [c: number, dir: 1 | -1]
-  sum: [c: number]
+  total: [c: number, kind: TotalKind]
 }>()
 
 const menu = ref<{ kind: 'col' | 'row'; i: number }>()
@@ -54,7 +54,10 @@ defineExpose({ open })
         </div>
         <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:opacity-40" :disabled="!!table.merges?.length" :title="table.merges?.length ? 'В таблице есть объединённые ячейки' : ''" @click="act(() => emit('sort', menu!.i, 1))"><Icon name="sort" :size="13" />Сортировать по возрастанию</button>
         <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:opacity-40" :disabled="!!table.merges?.length" :title="table.merges?.length ? 'В таблице есть объединённые ячейки' : ''" @click="act(() => emit('sort', menu!.i, -1))"><Icon name="sort" :size="13" />Сортировать по убыванию</button>
-        <button class="tw:[&.on]:text-accent-fg tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:opacity-40" :class="{ on: table.sums?.includes(menu.i) }" @click="act(() => emit('sum', menu!.i))"><span class="bt-sig tw:w-13 tw:font-bold tw:text-center">Σ</span>{{ table.sums?.includes(menu.i) ? 'Убрать сумму' : 'Сумма по столбцу' }}</button>
+        <div class="bt-tot tw:flex tw:items-center tw:gap-2 tw:py-2 tw:px-8 tw:text-text-2 tw:text-[12px]" title="Итог под столбцом: нажмите ещё раз — убрать">
+          <span class="tw:flex-1">Итог</span>
+          <button v-for="k in TOTAL_KINDS" :key="k" class="tw:flex tw:items-center tw:justify-center tw:min-w-28 tw:h-26 tw:py-0 tw:px-4 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:font-data tw:text-[11.5px] tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: totalAt(table, menu.i)?.kind === k }" :title="TOTAL_DEFS[k].label" @click="act(() => emit('total', menu!.i, k))">{{ TOTAL_DEFS[k].sign }}</button>
+        </div>
         <hr class="tw:my-4 tw:mx-0 tw:border-0 tw:[&&]:border-t tw:[&&]:border-t-border" />
         <button class="danger tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:text-down-fg tw:disabled:opacity-40" :disabled="table.head.length <= 1" @click="act(() => emit('delCol', menu!.i))"><Icon name="trash" :size="13" />Удалить столбец</button>
       </template>

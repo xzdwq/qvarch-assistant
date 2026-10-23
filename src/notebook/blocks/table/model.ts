@@ -1,14 +1,16 @@
 /**
  * The table component's model: a GFM table in the note, its own settings in a comment over it (invisible in other
- * Markdown viewers) — column widths, summed columns, merged cells, the value it is filled from:
- * `<!-- qa:table widths=120,0 sums=1 merge=0.1.2.1;3.0.1.2 -->`.
- * Below: what the table block does to it (columns, sums, order, chosen cells, filling from a value).
+ * Markdown viewers) — column widths, the columns' totals, merged cells, the value it is filled from:
+ * `<!-- qa:table widths=120,0 sums=1,2:avg merge=0.1.2.1;3.0.1.2 -->`.
+ * Below: what the table block does to it (columns, order, chosen cells, filling from a value).
  */
 import { rangeBounds, tsvRows, type CellRange } from '../../../shared/gridRange'
 import { isName } from '../../domain/blockInfo'
-import { cellAt, coveredBy, deleteColAt, hasBodyMerges, insertColAt, overlaps } from './modelMerges'
+import { cellAt, deleteColAt, hasBodyMerges, insertColAt, overlaps } from './modelMerges'
+import { parseTotals, totalsFitted, totalsMd, type ColumnTotal } from './modelTotals'
 
 export * from './modelMerges'
+export * from './modelTotals'
 export * from './modelValue'
 
 /** The settings comment over a table. */
@@ -45,8 +47,8 @@ export interface TableModel {
   align: Align[]
   /** Column widths, px (0 — by the content); none — all by the content. */
   widths?: number[]
-  /** The columns with a sum under them. */
-  sums?: number[]
+  /** The columns with a total under them (a sum, an average…), by column. */
+  totals?: ColumnTotal[]
   /** Merged cells of the body: from row r, column c — rs rows, cs columns (the text is the first cell's). */
   merges?: Merge[]
   /** «Из переменной»: the value it is filled from (a path into the note's context — rows, resp.body.data). */
@@ -102,10 +104,7 @@ export function parseTable(src: string): TableModel {
       const ws = kv.widths.split(',').map((x) => Math.max(0, Math.round(Number(x.trim()) || 0)))
       if (ws.some((x) => x > 0)) t.widths = [...ws, ...Array(Math.max(0, n - ws.length)).fill(0)].slice(0, n)
     }
-    if (kv.sums) {
-      const ss = [...new Set(kv.sums.split(',').map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x < n))]
-      if (ss.length) t.sums = ss.sort((a, b) => a - b)
-    }
+    if (kv.sums) t.totals = parseTotals(kv.sums, n)
     if (kv.name && isName(kv.name)) t.name = kv.name
     if (kv.var && /^[A-Za-z_$][\w$.[\]"'-]*$/.test(kv.var)) t.from = kv.var
     if (kv.fill) t.filled = kv.fill
@@ -128,53 +127,6 @@ export function parseTable(src: string): TableModel {
   return t
 }
 
-// ---------- a table's numbers ----------
-/**
- * A cell as a number, or undefined when it is not one (letters, two numbers…) — such a cell is skipped, never
- * an error. «1 234,5», «1234.5», «-12», «1,234.50» (both marks: the last one is the fraction's).
- */
-export function cellNumber(s: string): number | undefined {
-  const tr = s.trim()
-  // spaces inside — only between thousands («1 234 567,5»); «10 5» is two numbers, not 105
-  if (/\d[\s  ]+\d/.test(tr) && !/^[+-]?\d{1,3}([\s  ]\d{3})+([.,]\d+)?$/.test(tr)) return undefined
-  let x = tr.replace(/[\s  ]/g, '')
-  if (!x) return undefined
-  const dot = x.lastIndexOf('.')
-  const comma = x.lastIndexOf(',')
-  if (dot >= 0 && comma >= 0) x = dot > comma ? x.replace(/,/g, '') : x.replace(/\./g, '').replace(',', '.')
-  else if (comma >= 0) x = (x.match(/,/g)!.length > 1 ? x.replace(/,/g, '') : x.replace(',', '.'))
-  else if ((x.match(/\./g)?.length ?? 0) > 1) x = x.replace(/\./g, '')
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(x)) return undefined
-  const v = Number(x)
-  return Number.isFinite(v) ? v : undefined
-}
-/**
- * A column's sum: the numbers of its cells — a merged cell counts in every column it spans, once in each (not
- * once per row it spans). `skipped` — the cells with something else than a number.
- */
-export function columnSum(t: TableModel, c: number): { sum: number; count: number; skipped: number } {
-  let sum = 0
-  let count = 0
-  let skipped = 0
-  let digits = 0
-  t.rows.forEach((row, r) => {
-    const m = coveredBy(t, r, c)
-    // under a merge: its value, at its first row only
-    if (m && r !== m.r) return
-    const s = (m ? t.rows[m.r][m.c] : row[c]) ?? ''
-    if (!s.trim()) return
-    const v = cellNumber(s)
-    if (v === undefined) return void skipped++
-    sum += v
-    count++
-    digits = Math.max(digits, (String(v).split('.')[1] ?? '').length)
-  })
-  // 0.1 + 0.2 — not 0.30000000000000004
-  return { sum: Number(sum.toFixed(Math.min(10, digits))), count, skipped }
-}
-/** A sum as people write it: «1 234,5». */
-export const fmtSum = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 10 })
-
 const cellText = (c: string) => c.replace(/\r\n?/g, '\n').replace(/\|/g, '\\|').replace(/\n/g, '<br>').trim()
 /** A cell as it comes back from the file (its edges trimmed, its line breaks — \n): what a filled table's hash is of. */
 export const normCell = (c: string) => c.replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n').trim()
@@ -189,7 +141,7 @@ export function tableMd(t: TableModel): string {
   const meta = [
     ...(t.name ? [`name=${t.name}`] : []),
     ...(t.widths?.some((x) => x > 0) ? [`widths=${t.widths.slice(0, n).map((x) => Math.round(x)).join(',')}`] : []),
-    ...(t.sums?.length ? [`sums=${t.sums.filter((s) => s < n).join(',')}`] : []),
+    ...(t.totals?.some((x) => x.c < n) ? [`sums=${totalsMd(t.totals, n)}`] : []),
     ...(t.merges?.length ? [`merge=${t.merges.map((m) => `${m.r}.${m.c}.${m.rs}.${m.cs}`).join(';')}`] : []),
     ...(t.wrap ? ['wrap=1'] : []),
     ...(t.from ? [`var=${t.from}`, ...(t.filled ? [`fill=${t.filled}`] : []), ...(t.srcHash ? [`src=${t.srcHash}`] : [])] : []),
@@ -239,9 +191,9 @@ export const newTable = (cols: number, rows: number): TableModel => ({
   align: Array(cols).fill(undefined),
 })
 
-// ---------- what the table block does to it: columns, sums, order, chosen cells, filling from a value ----------
+// ---------- what the table block does to it: columns, order, chosen cells, filling from a value ----------
 
-/** A column put at `at` (its name «Столбец N»), the widths / sums / merges following. */
+/** A column put at `at` (its name «Столбец N»), the widths / totals / merges following. */
 export function addColumn(t: TableModel, at: number): void {
   t.head.splice(at, 0, `Столбец ${t.head.length + 1}`)
   t.align.splice(at, 0, undefined)
@@ -257,13 +209,6 @@ export function removeColumn(t: TableModel, at: number): boolean {
   t.align.splice(at, 1)
   t.widths?.splice(at, 1)
   return true
-}
-/** A column's sum under it shown / taken away. */
-export function toggleColumnSum(t: TableModel, c: number): void {
-  const s = new Set(t.sums ?? [])
-  if (s.has(c)) s.delete(c)
-  else s.add(c)
-  t.sums = s.size ? [...s].sort((a, b) => a - b) : undefined
 }
 /** The rows sorted by a column: numbers as numbers, the rest as text; merged cells hold rows together — false, not sorted. */
 export function sortRowsBy(t: TableModel, c: number, dir: 1 | -1): boolean {
@@ -301,7 +246,7 @@ export function clearRange(t: TableModel, x: CellRange): void {
 }
 /**
  * Filled from a value («Из переменной»): its columns and rows; the alignment and widths kept while the columns are
- * as many; sums beyond the columns, merges dropped; what was filled (and the value's key) remembered.
+ * as many; totals beyond the columns, merges dropped; what was filled (and the value's key) remembered.
  */
 export function fillFromValue(t: TableModel, value: unknown, sourceKey: string | undefined): void {
   const vt = valueTable(value)
@@ -310,8 +255,7 @@ export function fillFromValue(t: TableModel, value: unknown, sourceKey: string |
   t.rows = vt.rows.length ? vt.rows : [vt.head.map(() => '')]
   t.align = same ? t.align : vt.head.map(() => undefined)
   if (!same) t.widths = undefined
-  t.sums = t.sums?.filter((c) => c < vt.head.length)
-  if (!t.sums?.length) t.sums = undefined
+  totalsFitted(t, vt.head.length)
   t.merges = undefined
   t.filled = tableHash(t)
   t.srcHash = sourceKey === undefined ? undefined : textHash(sourceKey)

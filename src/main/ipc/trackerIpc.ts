@@ -18,8 +18,13 @@ export function registerTrackerIpc(app: AppContext, series: Series): void {
   }
 
   handle('getDay', (_e, day) => store.day(day))
-  handle('getLive', () => ({ ...app.tracker.live, now: Date.now() }))
-  handle('saveEntry', (_e, day, input, opts) => saveEntry(app, day, input, opts))
+  handle('getLive', () => app.live())
+  // the recording's event: edited as any, its end stays the recording's
+  handle('saveEntry', (_e, day, input, opts) => saveEntry(app, day, app.recording.owns(input.id) ? { ...input, end: app.recording.currentEnd() ?? input.end } : input, opts))
+
+  // ---------- «Запись»: an event whose end follows the clock ----------
+  handle('recordStart', (_e, kind, label) => app.recording.start(kind, label))
+  handle('recordStop', () => app.recording.stop())
   handle('mergeEntries', (_e, day, ids) => {
     const d = store.day(day)
     if (d.entries.some((e) => ids.includes(e.id) && e.outlook)) throw new Error(OUTLOOK_RO)

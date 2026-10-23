@@ -54,22 +54,11 @@ export function wholeComponent(view: EditorView, r: ComponentRange): ComponentRa
   const to = view.state.doc.line(l.end).to
   return { ...r, to, src: view.state.sliceDoc(r.from, to) }
 }
-/** A component deleted (a loop: its start and its end go — the blocks it held stay where they are). */
-export function removeComponent(view: EditorView, dom: HTMLElement): void {
-  const r = componentAt(view, dom)
-  if (!r) return
+/** What goes when a component is deleted (a loop: its start and its end — the blocks it held stay where they are). */
+export function cutPartsOf(view: EditorView, r: ComponentRange): Array<{ from: number; to: number }> {
   const l = loopOfComponent(view, r)
   const doc = view.state.doc
-  const parts = l && l.end !== undefined ? [cutRangeOf(view, { from: doc.line(l.line0).from, to: doc.line(l.headEnd).to }), cutRangeOf(view, { from: doc.line(l.end).from, to: doc.line(l.end).to })] : [cutRangeOf(view, r)]
-  view.dispatch({ changes: parts, selection: { anchor: parts[0].from }, annotations: Transaction.userEvent.of(COMPONENT_DELETE) })
-  view.focus()
-}
-/** A component duplicated right under it (a loop — with all it holds). */
-export function duplicateComponent(view: EditorView, dom: HTMLElement): void {
-  const at = componentAt(view, dom)
-  if (!at) return
-  const r = wholeComponent(view, at)
-  view.dispatch({ changes: { from: r.to, insert: `\n\n${r.src}` }, annotations: Transaction.userEvent.of(COMPONENT_INPUT) })
+  return l && l.end !== undefined ? [cutRangeOf(view, { from: doc.line(l.line0).from, to: doc.line(l.headEnd).to }), cutRangeOf(view, { from: doc.line(l.end).from, to: doc.line(l.end).to })] : [cutRangeOf(view, r)]
 }
 /** Out of a component with the keys: the line after (made when there is none) / the line before. */
 export function exitComponent(view: EditorView, dom: HTMLElement, dir: 1 | -1): void {

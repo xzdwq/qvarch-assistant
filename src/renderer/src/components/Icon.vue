@@ -85,6 +85,7 @@ const ICONS = {
   check: '<path d="M20 6 9 17l-5-5"/>',
   mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
+  rec: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/>',
   jira: '<path d="M21.6 11.4 12.6 2.4 12 1.8 2.4 11.4a.9.9 0 0 0 0 1.2l6.2 6.2L12 22.2l9.6-9.6a.9.9 0 0 0 0-1.2Z" fill="currentColor" stroke="none" opacity=".35"/><path d="M12 8.2 15.8 12 12 15.8 8.2 12Z" fill="currentColor" stroke="none"/>',
   grip: '<circle cx="9" cy="5.5" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="18.5" r="1.3" fill="currentColor"/><circle cx="15" cy="5.5" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="18.5" r="1.3" fill="currentColor"/>',
   qlogo: '<circle cx="11.5" cy="11" r="7.2"/><path d="m14.3 14.3 5.6 6.2"/>',

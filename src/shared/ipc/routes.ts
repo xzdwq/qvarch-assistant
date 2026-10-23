@@ -26,6 +26,8 @@ export const QA_ROUTES = {
   getDay: invoke('qa:getDay'),
   getLive: invoke('qa:getLive'),
   saveEntry: invoke('qa:saveEntry'),
+  recordStart: invoke('qa:recordStart'),
+  recordStop: invoke('qa:recordStop'),
   mergeEntries: invoke('qa:mergeEntries'),
   rangeDays: invoke('qa:rangeDays'),
   eventsIndex: invoke('qa:eventsIndex'),

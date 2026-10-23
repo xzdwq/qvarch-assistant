@@ -1,10 +1,10 @@
 import { nextTick, ref, type Ref } from 'vue'
-import { addColumn, deleteRowAt, insertRowAt, removeColumn, sortRowsBy, toggleColumnSum, type Align, type TableModel } from './model'
+import { addColumn, deleteRowAt, insertRowAt, removeColumn, setColumnTotal, sortRowsBy, type Align, type TableModel, type TotalKind } from './model'
 
 /**
  * Typing in the table: only the cell being typed in is a field — the others are their text (a table of hundreds of
  * cells stays light). Tab — the next cell, Enter — the one below (a new row at the end), ↑ / ↓ across lines and out
- * of the table, Esc — out. And what changes its shape: rows, columns, alignment, order, sums.
+ * of the table, Esc — out. And what changes its shape: rows, columns, alignment, order, totals.
  */
 export function useTableEditing(t: Ref<TableModel>, save: (now?: boolean) => void, root: Ref<HTMLElement | undefined>, exit: (dir: 1 | -1) => void) {
   const cols = () => t.value.head.length
@@ -89,8 +89,9 @@ export function useTableEditing(t: Ref<TableModel>, save: (now?: boolean) => voi
   function delCol(at: number): void {
     if (removeColumn(t.value, at)) save(true)
   }
-  function toggleSum(c: number): void {
-    toggleColumnSum(t.value, c)
+  /** The total under a column set (the same one again — taken away). */
+  function setTotal(c: number, kind: TotalKind | undefined): void {
+    setColumnTotal(t.value, c, kind)
     save(true)
   }
   function setAlign(c: number, a: Align): void {
@@ -100,5 +101,5 @@ export function useTableEditing(t: Ref<TableModel>, save: (now?: boolean) => voi
   function sortBy(c: number, dir: 1 | -1): void {
     if (sortRowsBy(t.value, c, dir)) save(true)
   }
-  return { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, toggleSum, setAlign, sortBy }
+  return { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, setTotal, setAlign, sortBy }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { columnSum, coveredBy, fmtSum, mergeAt, tableValue } from './model'
+import { columnTotal, coveredBy, mergeAt, tableValue } from './model'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
 import ContextMenu from '@renderer/components/ContextMenu.vue'
@@ -37,20 +37,16 @@ const save = (now?: boolean) => {
 const root = ref<HTMLElement>()
 const tableEl = ref<HTMLTableElement>()
 const menuRef = ref<InstanceType<typeof TableMenu>>()
-const { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, toggleSum, setAlign, sortBy } = useTableEditing(t, save, root, (dir) => emit('exit', dir))
+const { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, setTotal, setAlign, sortBy } = useTableEditing(t, save, root, (dir) => emit('exit', dir))
 const { sel, inSel, selCells, cellDown, cellEnter, doMerge, curMerge, doUnmerge, onFocusCell, cellMenu, onCellMenu, cellItems } = useTableSelection(t, save, root, { isEdit, focusCell })
 // ---------- cells from outside: a file / the clipboard imported, a spreadsheet's block pasted ----------
 const imp = useTableImport(t, save)
 useTablePaste(t, save, root, { sel, edit }, imp.offerGrid)
 const { fixed, dragWidth, autoWidth, colStyle } = useColumnWidths(t, save, tableEl)
 
-// ---------- a column's sum ----------
-const sums = computed(() => (t.value.sums ?? []).map((c) => [c, columnSum(t.value, c)] as const))
-const sumOf = (c: number) => sums.value.find(([x]) => x === c)?.[1]
-const sumTitle = (c: number) => {
-  const x = sumOf(c)
-  return x ? `Сумма чисел: ${x.count}${x.skipped ? ` · пропущено нечисловых: ${x.skipped}` : ''}` : ''
-}
+// ---------- the columns' totals (a sum, an average…) ----------
+const totals = computed(() => new Map((t.value.totals ?? []).map((x) => [x.c, columnTotal(t.value, x)] as const)))
+const totalOf = (c: number) => totals.value.get(c)
 // ---------- merged cells ----------
 const span = (r: number, c: number) => {
   const m = mergeAt(t.value, r, c)
@@ -107,10 +103,10 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
             </template>
           </tr>
         </tbody>
-        <tfoot v-if="sums.length">
+        <tfoot v-if="totals.size">
           <tr class="tw:group/g35">
             <td class="tw:min-w-90 tw:max-w-420 tw:border-t tw:border-t-border-2 tw:border-b-0 tw:bg-panel-2 tw:group-[.fixed-cols]/g33:min-w-0 tw:group-[.fixed-cols]/g33:max-w-none tw:p-0 tw:border-r tw:border-r-border tw:align-top tw:last:border-r-0" v-for="(_, c) in t.head" :key="c" :style="{ textAlign: t.align[c] ?? 'left' }">
-              <span v-if="sumOf(c)" class="bt-sum tw:block tw:py-5 tw:px-10 tw:text-accent-fg tw:font-data tw:text-[0.95em] tw:tabular-nums tw:font-semibold" :title="sumTitle(c)">Σ {{ fmtSum(sumOf(c)!.sum) }}</span>
+              <span v-if="totalOf(c)" class="bt-sum tw:block tw:py-5 tw:px-10 tw:text-accent-fg tw:font-data tw:text-[0.95em] tw:tabular-nums tw:font-semibold" :title="totalOf(c)!.title">{{ totalOf(c)!.text }}</span>
             </td>
           </tr>
         </tfoot>
@@ -122,7 +118,7 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
       <span v-if="selCells > 1" class="hint tw:text-muted tw:text-[11.5px]">Esc — отменить выбор</span>
     </div>
     <ContextMenu v-if="cellMenu" :x="cellMenu.x" :y="cellMenu.y" :items="cellItems" @close="cellMenu = undefined" />
-    <TableMenu ref="menuRef" :table="t" @add-col="addCol" @del-col="delCol" @add-row="addRow" @del-row="delRow" @align="setAlign" @sort="sortBy" @sum="toggleSum" />
+    <TableMenu ref="menuRef" :table="t" @add-col="addCol" @del-col="delCol" @add-row="addRow" @del-row="delRow" @align="setAlign" @sort="sortBy" @total="setTotal" />
   </div>
 </template>
 
