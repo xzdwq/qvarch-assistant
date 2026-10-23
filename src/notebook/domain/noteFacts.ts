@@ -24,6 +24,6 @@ export function notesCount(n: number): string {
 const RUNNABLE = /^(`{3,}|~{3,})\s*(http|rest)\b|^(`{3,}|~{3,})\s*(js|ts|javascript|typescript)\b[^\n]*\b(run|lib|playwright|pw)\b|^(`{3,}|~{3,})\s*(json|yaml|browser)\b[^\n]*\bname=|^(`{3,}|~{3,})\s*sql\b[^\n]*\bdb=/m
 export const isRunnableText = (text: string) => RUNNABLE.test(text)
 /** Where a note's published value came from, as the variables panel names it. */
-export const VALUE_FROM: Record<string, string> = { http: 'HTTP', code: 'код', data: 'данные', set: 'set()', ref: '', pw: 'Playwright', browser: 'браузер' }
+export const VALUE_FROM: Record<string, string> = { http: 'HTTP', code: 'код', data: 'данные', set: 'set()', ref: '', pw: 'Playwright', browser: 'браузер', table: 'таблица' }
 /** The emoji offered right in the tree's menu; «…» opens the whole list. */
 export const QUICK_EMOJI = ['⭐', '🔥', '✅', '❗', '📌', '💡', '🚀', '🐞', '📊', '🎯']

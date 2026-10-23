@@ -7,6 +7,7 @@ import { eventLink, jiraLink, pickGroups, type EventRef } from '@shared/noteEven
 import type { JiraIssue } from '@shared/jira'
 import { boardMd } from '@nb/blocks/board/model'
 import { newTable, tableMd } from '@nb/blocks/table/model'
+import { TABLE_VAR_BASE } from '@nb/domain/tableVars'
 import type { CommandEffect, NoteCommand } from '@nb/commands/command'
 import { matchCommands, pickerMode } from '@nb/commands/registry'
 import { events, eventsNow, eventsTick } from '@renderer/lib/noteEvents'
@@ -265,8 +266,11 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     useEmoji(e.u)
     replaceQuery(e.u)
   }
+  /** A new table, named at once (its variable in the note). */
   function pickTable(): void {
-    insertBlock(tableMd(newTable(size.value.c, size.value.r)))
+    const v = getView()
+    const name = v ? commandContext(v, v.state.facet(editorHost).notePath(), '').freeName(TABLE_VAR_BASE) : undefined
+    insertBlock(tableMd({ ...newTable(size.value.c, size.value.r), name }))
   }
 
   // ---------- keys ----------

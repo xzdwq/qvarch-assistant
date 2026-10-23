@@ -1,5 +1,5 @@
 import { summary } from '@nb/domain/values'
-import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncDataBlocks, type RunItem } from '@nb/engine'
+import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData, type RunItem } from '@nb/engine'
 import { doc, docs, loadTree, openFile, save, setText } from './notebook'
 
 /**
@@ -63,7 +63,7 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     const text = await textOf(path)
     await runsLoaded(path)
     openFile(path)
-    syncDataBlocks(path, text)
+    syncNoteData(path, text)
     const want = typeof a.block === 'string' && a.block ? a.block : undefined
     if (!want) {
       await runAll(path, text)

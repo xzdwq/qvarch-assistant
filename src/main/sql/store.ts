@@ -1,10 +1,9 @@
-import { app, BrowserWindow, dialog, safeStorage } from 'electron'
+import { safeStorage } from 'electron'
 import { ProcessSupervisor } from '../process/processSupervisor'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DB_DEFAULTS, connName, rowsCsv, sqlTemplates, type DbConn, type DbSchema, type SqlColumn, type SqlExport, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
+import { DB_DEFAULTS, connName, sqlTemplates, type DbConn, type DbSchema, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
 import type { Vault } from '../vault'
-import { rowsXlsx } from './export'
 
 /**
  * «Базы данных»: the connections (data/databases.json; a password encrypted by Windows, never in a note, never back
@@ -14,11 +13,6 @@ import { rowsXlsx } from './export'
 type Stored = Omit<DbConn, 'password' | 'hasPassword'> & { enc?: string; plain?: string }
 /** Queries at once against one connection, at most (a note's «Выполнить всё» and a click — not a flood). */
 const PER_CONN = 3
-/** The files rows are saved as: the extension, the dialog's filter name, the content. */
-const ROW_FILES: Record<SqlExport['format'], { ext: string; title: string; content: (columns: SqlColumn[], rows: unknown[][]) => string | Promise<Buffer> }> = {
-  xlsx: { ext: 'xlsx', title: 'Excel', content: rowsXlsx },
-  csv: { ext: 'csv', title: 'CSV', content: rowsCsv },
-}
 
 export class SqlStore {
   private file: string
@@ -112,19 +106,6 @@ export class SqlStore {
     if (!out.ok || !sc) return { error: out.error ?? 'Схему не прочитать' }
     this.schemas.set(s.id, sc)
     return sc
-  }
-  /** The rows saved as an Excel workbook or a CSV file where the person says. */
-  async exportRows(x: SqlExport): Promise<string | undefined> {
-    // (an unknown format from the page — CSV, its name and its content alike)
-    const file = Object.hasOwn(ROW_FILES, x.format) ? ROW_FILES[x.format] : ROW_FILES.csv
-    const name = `${String(x.name || 'Результат').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80)}.${file.ext}`
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    const r = await dialog.showSaveDialog(win, { defaultPath: join(app.getPath('downloads'), name), filters: [{ name: file.title, extensions: [file.ext] }] })
-    if (r.canceled || !r.filePath) return undefined
-    const columns = Array.isArray(x.columns) ? x.columns : []
-    const rows = Array.isArray(x.rows) ? x.rows : []
-    writeFileSync(r.filePath, await file.content(columns, rows))
-    return r.filePath
   }
   private exec(runId: string, connRef: string, sql: string, values: unknown[], mode: SqlMode, schema: boolean): Promise<SqlRunOut> {
     const s = this.read().find((x) => x.name === connRef || x.id === connRef)

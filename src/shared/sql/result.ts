@@ -37,15 +37,6 @@ export interface DbSchema {
   tables: Array<{ schema?: string; name: string; columns: Array<{ name: string; type?: string }> }>
   at: number
 }
-/** Rows from a query's result as one table: the page sends them, the file is written where the person says. */
-export interface SqlExport {
-  format: 'xlsx' | 'csv'
-  /** The file's name offered (without its extension). */
-  name: string
-  columns: SqlColumn[]
-  rows: unknown[][]
-}
-
 /** A value as it can be shown and published (bytes, big numbers, dates — as text). */
 export function plainValue(v: unknown): unknown {
   if (v === null || v === undefined) return null
@@ -66,12 +57,4 @@ export function rowsAsObjects(r: Pick<SqlResult, 'columns' | 'rows'>): Array<Rec
     names.push(n)
   }
   return r.rows.map((row) => Object.fromEntries(names.map((n, i) => [n, row[i]])))
-}
-/** The rows as CSV (RFC 4180: «,», quoted when needed; a BOM — Excel reads it as UTF-8). */
-export function rowsCsv(columns: SqlColumn[], rows: unknown[][]): string {
-  const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
-    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  return `﻿${[columns.map((c) => esc(c.name)).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\r\n')}\r\n`
 }

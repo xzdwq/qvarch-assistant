@@ -4,17 +4,19 @@ import type { RunnableKind } from '../blocks/specs'
 import type { BlockInfo, ValueSource } from '../domain/blockInfo'
 import { findLoops } from '../domain/loop'
 import { blockRunKey, fencedBlocksOf } from '../domain/noteBlocks'
+import { tableVars } from '../domain/tableVars'
+import { tableValue } from '../blocks/table/model'
 import { interpolate } from '../domain/values'
 import { errorText } from './runApi'
 import { envAtLine, NoteEnv, type RunEnv } from './runEnv'
 import { runItem, stopItem } from './runItem'
 import { itemError, itemIsSoft, itemName, runItemsIn, type BlockItem, type RunItem } from './runItems'
 import { stopLoopRun } from './runLoop'
-import { noteRun, noteValues, publishToNote } from './runStore'
+import { noteRun, noteValues, publishToNote, saveRunsSoon } from './runStore'
 
 /**
  * A note's runs as the app asks for them: «Выполнить всё», one block or loop run where it stands (in the pass shown
- * when it is in a loop), stopped; the data blocks and templates kept published.
+ * when it is in a loop), stopped; the data blocks, tables and templates kept published.
  */
 
 /** «Выполнить всё» going on: the note → the item being run and its env (what «Стоп» stops). */
@@ -25,7 +27,7 @@ const stopAllAsked = new Set<string>()
 /** Everything from the top, in order (a loop — with all its passes); the first failing one (not soft) stops it. */
 export async function runAll(path: string, text: string): Promise<void> {
   const n = noteRun(path)
-  syncDataBlocks(path, text)
+  syncNoteData(path, text)
   const list = runItemsIn(text)
   const env = new NoteEnv(path)
   stopAllAsked.delete(path)
@@ -120,9 +122,28 @@ export function publishData(path: string, name: string, lang: string, body: stri
 export function publishValue(path: string, name: string, value: unknown, from: ValueSource, block: string): void {
   publishToNote(path, name, value, from, block)
 }
-/** Every data block of the text published (the ones not on screen too). */
-export function syncDataBlocks(path: string, text: string): void {
+/** The note's data published (the blocks not on screen too): its data blocks, its tables. */
+export function syncNoteData(path: string, text: string): void {
   for (const b of fencedBlocksOf(text)) if (b.kind === 'data' && b.info.name) publishData(path, b.info.name, b.info.lang, b.body)
+  syncTables(path, text)
+}
+/**
+ * Every table published under its variable (its rows as objects) when its content changed; a variable a table gave
+ * that no table gives now (renamed, deleted) taken away — the values of other blocks are never touched.
+ */
+function syncTables(path: string, text: string): void {
+  const ctx = noteRun(path).ctx
+  const live = new Set<string>()
+  for (const v of tableVars(text)) {
+    if (v.clash) continue
+    live.add(v.name)
+    const value = tableValue(v.table)
+    const cur = ctx[v.name]
+    if (!cur || cur.from !== 'table' || JSON.stringify(cur.value) !== JSON.stringify(value)) publishToNote(path, v.name, value, 'table', v.name)
+  }
+  const gone = Object.keys(ctx).filter((k) => ctx[k].from === 'table' && !live.has(k))
+  for (const k of gone) delete ctx[k]
+  if (gone.length) saveRunsSoon(path)
 }
 /**
  * The note's templates (not in a loop) published under their names whenever they can be filled — the ones not on

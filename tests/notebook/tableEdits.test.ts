@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addColumn, clearRange, fillFromValue, mergeCells, rangeText, removeColumn, sortRowsBy, tableHash, tableObjects, tableText, textHash, toggleColumnSum, type TableModel } from '../../src/notebook/blocks/table/model'
+import { addColumn, clearRange, fillFromValue, mergeCells, rangeText, removeColumn, sortRowsBy, tableHash, tableText, tableValue, textHash, toggleColumnSum, type TableModel } from '../../src/notebook/blocks/table/model'
 
 const table = (): TableModel => ({ head: ['A', 'B'], rows: [['10', 'x'], ['2', 'y\tz'], ['', 'w']], align: [undefined, 'right'] })
 
@@ -51,7 +51,7 @@ describe('the table block: chosen cells', () => {
     expect(t.rows[0]).toEqual(['10', ''])
   })
   it('the rows as objects: an empty name — «Столбец N»', () => {
-    expect(tableObjects({ head: ['', 'b'], rows: [['1', '2']], align: [] })).toEqual([{ 'Столбец 1': '1', b: '2' }])
+    expect(tableValue({ head: ['', 'b'], rows: [['1', '2']], align: [] })).toEqual([{ 'Столбец 1': '1', b: '2' }])
   })
 })
 

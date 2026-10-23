@@ -134,6 +134,7 @@ export const QA_ROUTES = {
   browser: invoke('qa:browser'),
   files: invoke('qa:files'),
   sql: invoke('qa:sql'),
+  tableFile: invoke('qa:tableFile'),
   clipGet: invoke('qa:clipGet'),
   clipSet: invoke('qa:clipSet'),
   clipRemove: invoke('qa:clipRemove'),

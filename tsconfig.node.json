@@ -13,5 +13,5 @@
     "outDir": "out/tsc-node",
     "noEmit": true
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/notebook/domain/**/*", "src/notebook/commands/**/*", "src/notebook/engine/**/*", "src/notebook/blocks/*.ts", "src/notebook/blocks/*/spec.ts", "src/notebook/blocks/*/model.ts", "src/notebook/blocks/*/run.ts", "src/notebook/blocks/*/httpText.ts", "src/notebook/editor/components/componentField.ts", "tests/**/*"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/notebook/domain/**/*", "src/notebook/commands/**/*", "src/notebook/engine/**/*", "src/notebook/blocks/*.ts", "src/notebook/blocks/*/spec.ts", "src/notebook/blocks/*/model*.ts", "src/notebook/blocks/*/run.ts", "src/notebook/blocks/*/httpText.ts", "src/notebook/editor/components/componentField.ts", "tests/**/*"]
 }

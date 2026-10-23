@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue'
 import type { MenuItem } from '../components/MenuButton.vue'
 import type { GridData } from '@shared/gridData'
 import { rangeHas, rangeSize, tsvCell as esc } from '@shared/gridRange'
+import type { TableFileFormat } from '@shared/tableData'
 export { asGrid, type GridData } from '@shared/gridData'
 
 /**
@@ -14,7 +15,7 @@ export type Grid = ReturnType<typeof useGrid>
 
 export const cellText = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
 /** The rows' export menu of every table: copied for Excel, saved as Excel or CSV. */
-export const rowsExportItems = (copy: () => unknown, save: (format: 'xlsx' | 'csv') => unknown): MenuItem[] => [
+export const rowsExportItems = (copy: () => unknown, save: (format: TableFileFormat) => unknown): MenuItem[] => [
   { label: 'Копировать', icon: 'copy', title: 'В буфер — вставляется в Excel по столбцам', run: copy },
   { label: 'Сохранить в Excel (.xlsx)', icon: 'table', run: () => save('xlsx') },
   { label: 'Сохранить в CSV (UTF-8)', icon: 'list', run: () => save('csv') },
@@ -185,11 +186,11 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
 
   // ---------- all the rows: copied, saved as a file ----------
   const exported = ref('')
-  async function exportAs(format: 'xlsx' | 'csv'): Promise<void> {
+  async function exportAs(format: TableFileFormat): Promise<void> {
     const t = data.value
     if (!t) return
     exported.value = ''
-    const file = await window.qa.sql('exportRows', { format, name: fileName() || 'Результат', columns: JSON.parse(JSON.stringify(t.columns)), rows: JSON.parse(JSON.stringify(t.rows)) })
+    const file = await window.qa.tableFile('exportRows', { format, name: fileName() || 'Результат', columns: JSON.parse(JSON.stringify(t.columns)), rows: JSON.parse(JSON.stringify(t.rows)) })
     if (file) exported.value = `Сохранено: ${file}`
   }
   /** The rows as tab-separated text (pasted into Excel — columns as they are). */

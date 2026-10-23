@@ -6,7 +6,7 @@ export type { BlockRun, CtxItem, Log, LoopRun, NoteRun, PassRun, RunState } from
 export { clearNoteRuns, flushRuns, forgetRuns, moveRuns, noteRun, noteValues, saveRunsSoon } from './runStore'
 export { envAtLine, envResolver, NoteEnv, PassEnv, RunEnv } from './runEnv'
 export { pickPass } from './runLoop'
-export { publishData, publishValue, runAll, runBlockAt, runBlockInNote, runItemNamed, runItemWhereItStands, runLoopAt, stopBlockAt, stopBlockInNote, stopLoopAt, stopRunAll, syncDataBlocks, syncTemplates, type BlockAtLine } from './runNote'
+export { publishData, publishValue, runAll, runBlockAt, runBlockInNote, runItemNamed, runItemWhereItStands, runLoopAt, stopBlockAt, stopBlockInNote, stopLoopAt, stopRunAll, syncNoteData, syncTemplates, type BlockAtLine } from './runNote'
 export { loopHasPw, type RunItem } from './runItems'
 export { blockReport, loopReport, noteReport, passTitle } from './reports'
 export { accGrid, accText, passValue } from './loopResults'

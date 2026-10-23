@@ -12,7 +12,7 @@
  */
 
 /** Where a value of the note's context came from (a block kind, set() of code, the browser component). */
-export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser'
+export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser' | 'table'
 
 /** The browsers a Playwright block can drive (installed ones; Chromium — if it was downloaded). */
 export const PW_BROWSERS = ['msedge', 'chrome', 'chromium'] as const

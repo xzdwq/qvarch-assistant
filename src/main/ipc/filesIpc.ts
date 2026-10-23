@@ -2,14 +2,19 @@ import { clipboard as sysClipboard, ClipboardItem, dialog, nativeImage, shell } 
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { TABLE_FILE_METHODS } from '../../shared/tableData'
 import type { AppContext } from '../app/appContext'
-import { handle, listen } from './router'
+import { TableFiles } from '../tableFiles/tableFiles'
+import { handle, handleDispatch, listen } from './router'
 
 /**
  * Files the person saves and keeps: the PDF signing's drawings (data/signatures, PNG), «save as» of a picture / a PDF
- * / any bytes, hashes, a picture into the clipboard, web links opened in the system browser.
+ * / any bytes, table files (rows as Excel / CSV, a table file read back), hashes, a picture into the clipboard, web
+ * links opened in the system browser.
  */
 export function registerFilesIpc(app: AppContext): void {
+  const tableFiles = new TableFiles()
+  handleDispatch('tableFile', TABLE_FILE_METHODS, () => tableFiles)
   /** A «save as» dialog over the main window: the path picked, or undefined. */
   const saveAs = async (opts: Electron.SaveDialogOptions): Promise<string | undefined> => {
     const main = app.windows.main

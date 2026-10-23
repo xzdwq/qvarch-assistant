@@ -9,12 +9,14 @@ import { fillFromValue, tableHash, textHash, type TableModel } from './model'
  * edited as any table; while not edited — filled again when the value changes, edited — the person decides
  * («Обновить»); «Отделить» — a table of its own.
  */
-export function useTableSource(t: Ref<TableModel>, save: (now?: boolean) => void, at: () => { path?: string; line?: number }) {
+export function useTableSource(t: Ref<TableModel>, save: (now?: boolean) => void, at: () => { path?: string; line?: number }, ownName: () => string) {
+  /** The path reads the table's own variable (it would fill itself from itself). */
+  const isOwn = (path: string) => /^[A-Za-z_$][\w$]*/.exec(path)?.[0] === ownName()
   /** The value the table is filled from (the note's — in a loop, the pass shown). */
   const source = computed(() => {
     const from = t.value.from
     const { path, line } = at()
-    if (!from || !path) return undefined
+    if (!from || !path || isOwn(from)) return undefined
     // (the env's values are read through Vue: the table follows them and the pass picked)
     return resolvePath(envAtLine(path, line ?? 0, doc(path).text).values(), from)
   })
@@ -49,7 +51,7 @@ export function useTableSource(t: Ref<TableModel>, save: (now?: boolean) => void
   function setFrom(path: string): void {
     const v = path.trim()
     asking.value = false
-    if (!v) return
+    if (!v || isOwn(v)) return
     t.value.from = v
     t.value.filled = undefined
     save(true)
@@ -63,12 +65,14 @@ export function useTableSource(t: Ref<TableModel>, save: (now?: boolean) => void
     asking.value = false
     save(true)
   }
-  /** The note's values to choose from (lists first — what a table most likely shows). */
+  /** The note's values to choose from (lists first — what a table most likely shows; not its own). */
   const varNames = computed(() => {
     const { path } = at()
     if (!path) return []
     const ctx = noteRun(path).ctx
-    return Object.keys(ctx).sort((a, b) => Number(Array.isArray(ctx[b].value)) - Number(Array.isArray(ctx[a].value)) || ctx[b].at - ctx[a].at)
+    return Object.keys(ctx)
+      .filter((k) => k !== ownName())
+      .sort((a, b) => Number(Array.isArray(ctx[b].value)) - Number(Array.isArray(ctx[a].value)) || ctx[b].at - ctx[a].at)
   })
   return { source, edited, stale, fill, asking, fromDraft, setFrom, detach, varNames }
 }

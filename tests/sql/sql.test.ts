@@ -5,9 +5,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readSchema, runSql } from '../../src/main/sql/engine'
 import ExcelJS from 'exceljs'
-import { rowsXlsx } from '../../src/main/sql/export'
+import { rowsXlsx } from '../../src/main/tableFiles/xlsx'
+import { rowsCsv } from '../../src/shared/tableData'
 import { formatCode } from '../../src/shared/codeformat'
-import { bindSql, guardSql, rowsAsObjects, rowsCsv, sqlTemplates, sqlTitle, withTitle } from '../../src/shared/sql'
+import { bindSql, guardSql, rowsAsObjects, sqlTemplates, sqlTitle, withTitle } from '../../src/shared/sql'
 
 describe('what may be sent: one reading statement', () => {
   const ok = (s: string, kind: 'pg' | 'mysql' | 'sqlite' = 'pg') => guardSql(s, kind).ok

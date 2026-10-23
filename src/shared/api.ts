@@ -9,6 +9,7 @@ import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './
 import type { BrowserApi } from './browser'
 import type { TestFilesApi } from './testFiles'
 import type { SqlApi } from './sql'
+import type { TableFileApi } from './tableData'
 import type { PwBrowser } from '../notebook/domain/blockInfo'
 import type { LoopJob, LoopResult, PassResult } from '../notebook/domain/loop'
 import type { ClipState } from './clip'
@@ -223,6 +224,8 @@ export interface QaApi {
   files<K extends keyof TestFilesApi>(m: K, ...a: Parameters<TestFilesApi[K]>): Promise<Awaited<ReturnType<TestFilesApi[K]>>>
   /** «Базы данных»: the connections, a query run / explained / stopped, the notebook's queries (see SqlApi). */
   sql<K extends keyof SqlApi>(m: K, ...a: Parameters<SqlApi[K]>): Promise<Awaited<ReturnType<SqlApi[K]>>>
+  /** Table files: rows saved as Excel / CSV, a table file read as a grid, the clipboard's table (see TableFileApi). */
+  tableFile<K extends keyof TableFileApi>(m: K, ...a: Parameters<TableFileApi[K]>): Promise<Awaited<ReturnType<TableFileApi[K]>>>
   /** Where the visible pages go (sent often — no answer). */
   browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number }; scale?: number }>): void
   /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */

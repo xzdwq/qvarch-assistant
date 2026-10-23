@@ -5,6 +5,11 @@
  * Below: what the table block does to it (columns, sums, order, chosen cells, filling from a value).
  */
 import { rangeBounds, tsvRows, type CellRange } from '../../../shared/gridRange'
+import { isName } from '../../domain/blockInfo'
+import { cellAt, coveredBy, deleteColAt, hasBodyMerges, insertColAt, overlaps } from './modelMerges'
+
+export * from './modelMerges'
+export * from './modelValue'
 
 /** The settings comment over a table. */
 export const TABLE_META = /^<!--\s*qa:table\s+([^>]*?)\s*-->\s*$/
@@ -33,6 +38,8 @@ const alignRule = (a: Align): AlignRule => (a ? ALIGN_RULES[a] : NO_ALIGN)
 /** A separator cell's alignment. */
 const alignOf = (cell: string): Align => ALIGN_NAMES.find((a) => ALIGN_RULES[a].mark.test(cell))
 export interface TableModel {
+  /** The note's variable it is published under (its rows as objects); none yet — one is given (tableVars). */
+  name?: string
   head: string[]
   rows: string[][]
   align: Align[]
@@ -99,6 +106,7 @@ export function parseTable(src: string): TableModel {
       const ss = [...new Set(kv.sums.split(',').map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x < n))]
       if (ss.length) t.sums = ss.sort((a, b) => a - b)
     }
+    if (kv.name && isName(kv.name)) t.name = kv.name
     if (kv.var && /^[A-Za-z_$][\w$.[\]"'-]*$/.test(kv.var)) t.from = kv.var
     if (kv.fill) t.filled = kv.fill
     if (kv.src) t.srcHash = kv.src
@@ -107,9 +115,10 @@ export function parseTable(src: string): TableModel {
       const ms = kv.merge
         .split(';')
         .map((x) => x.split('.').map(Number))
-        .filter((m) => m.length === 4 && m.every((v) => Number.isInteger(v) && v >= 0))
+        .filter((m) => m.length === 4 && m.every((v) => Number.isInteger(v) && v >= -1) && m[1] >= 0)
         .map(([r, c, rs, cs]) => ({ r, c, rs: Math.max(1, rs), cs: Math.max(1, cs) }))
-        .filter((m) => m.r + m.rs <= rows.length && m.c + m.cs <= n && m.rs * m.cs > 1)
+        // (row -1 — the head: its merges span columns only)
+        .filter((m) => (m.r >= 0 || m.rs === 1) && m.r + m.rs <= rows.length && m.c + m.cs <= n && m.rs * m.cs > 1)
       // overlapping ones (an edited file): the first one wins
       const ok: Merge[] = []
       for (const m of ms) if (!ok.some((o) => overlaps(o, m))) ok.push(m)
@@ -118,7 +127,6 @@ export function parseTable(src: string): TableModel {
   }
   return t
 }
-const overlaps = (a: Merge, b: Merge) => a.r < b.r + b.rs && b.r < a.r + a.rs && a.c < b.c + b.cs && b.c < a.c + a.cs
 
 // ---------- a table's numbers ----------
 /**
@@ -140,12 +148,6 @@ export function cellNumber(s: string): number | undefined {
   const v = Number(x)
   return Number.isFinite(v) ? v : undefined
 }
-/** The cell at (r, c) is hidden under another one's merge. */
-export function coveredBy(t: TableModel, r: number, c: number): Merge | undefined {
-  return t.merges?.find((m) => r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs && !(r === m.r && c === m.c))
-}
-/** The merge whose first cell is (r, c). */
-export const mergeAt = (t: TableModel, r: number, c: number) => t.merges?.find((m) => m.r === r && m.c === c)
 /**
  * A column's sum: the numbers of its cells — a merged cell counts in every column it spans, once in each (not
  * once per row it spans). `skipped` — the cells with something else than a number.
@@ -173,80 +175,6 @@ export function columnSum(t: TableModel, c: number): { sum: number; count: numbe
 /** A sum as people write it: «1 234,5». */
 export const fmtSum = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 10 })
 
-// ---------- merging ----------
-/** Merges the rectangle (the cells inside other merges join it); as in Excel, only the first value stays (the first non-empty one, row by row). */
-export function mergeCells(t: TableModel, r0: number, c0: number, r1: number, c1: number): void {
-  let m: Merge = { r: Math.min(r0, r1), c: Math.min(c0, c1), rs: Math.abs(r1 - r0) + 1, cs: Math.abs(c1 - c0) + 1 }
-  // grow over the merges it touches (a rectangle never cuts one)
-  for (let grown = true; grown; ) {
-    grown = false
-    for (const o of t.merges ?? [])
-      if (overlaps(o, m)) {
-        const r = Math.min(m.r, o.r)
-        const c = Math.min(m.c, o.c)
-        const n: Merge = { r, c, rs: Math.max(m.r + m.rs, o.r + o.rs) - r, cs: Math.max(m.c + m.cs, o.c + o.cs) - c }
-        if (n.r !== m.r || n.c !== m.c || n.rs !== m.rs || n.cs !== m.cs) ((m = n), (grown = true))
-      }
-  }
-  if (m.rs * m.cs < 2) return
-  const texts: string[] = []
-  for (let r = m.r; r < m.r + m.rs; r++)
-    for (let c = m.c; c < m.c + m.cs; c++) {
-      const v = t.rows[r][c]?.trim()
-      if (v) texts.push(v)
-      t.rows[r][c] = ''
-    }
-  t.rows[m.r][m.c] = texts[0] ?? ''
-  t.merges = [...(t.merges ?? []).filter((o) => !overlaps(o, m)), m]
-}
-/** The merge starting at (r, c) undone (its cells keep their text). */
-export function unmergeCell(t: TableModel, r: number, c: number): void {
-  t.merges = t.merges?.filter((m) => !(m.r === r && m.c === c))
-  if (!t.merges?.length) t.merges = undefined
-}
-/** A row put at `at` (0 — the first of the body): the merges below move, the ones across grow. */
-export function insertRowAt(t: TableModel, at: number): void {
-  t.rows.splice(at, 0, Array(t.head.length).fill(''))
-  t.merges = t.merges?.map((m) => (m.r >= at ? { ...m, r: m.r + 1 } : m.r + m.rs > at ? { ...m, rs: m.rs + 1 } : m))
-}
-/** The row `at` deleted: the merges across shrink (a merge's first row deleted — its text goes to the next one). */
-export function deleteRowAt(t: TableModel, at: number): void {
-  const out: Merge[] = []
-  for (const m of t.merges ?? []) {
-    if (m.r > at) out.push({ ...m, r: m.r - 1 })
-    else if (m.r + m.rs <= at) out.push(m)
-    else {
-      if (m.r === at && m.rs > 1) t.rows[at + 1][m.c] = t.rows[at][m.c]
-      const n = { ...m, rs: m.rs - 1 }
-      if (n.rs * n.cs > 1) out.push(n)
-    }
-  }
-  t.rows.splice(at, 1)
-  t.merges = out.length ? out : undefined
-}
-/** A column put at `at`: the merges right of it move, the ones across grow, the sums follow their columns. */
-export function insertColAt(t: TableModel, at: number): void {
-  for (const r of t.rows) r.splice(at, 0, '')
-  t.merges = t.merges?.map((m) => (m.c >= at ? { ...m, c: m.c + 1 } : m.c + m.cs > at ? { ...m, cs: m.cs + 1 } : m))
-  t.sums = t.sums?.map((s) => (s >= at ? s + 1 : s))
-}
-/** The column `at` deleted: the merges across shrink, its sum goes. */
-export function deleteColAt(t: TableModel, at: number): void {
-  const out: Merge[] = []
-  for (const m of t.merges ?? []) {
-    if (m.c > at) out.push({ ...m, c: m.c - 1 })
-    else if (m.c + m.cs <= at) out.push(m)
-    else {
-      if (m.c === at && m.cs > 1) t.rows[m.r][at + 1] = t.rows[m.r][at]
-      const n = { ...m, cs: m.cs - 1 }
-      if (n.rs * n.cs > 1) out.push(n)
-    }
-  }
-  for (const r of t.rows) r.splice(at, 1)
-  t.merges = out.length ? out : undefined
-  t.sums = t.sums?.filter((s) => s !== at).map((s) => (s > at ? s - 1 : s))
-  if (!t.sums?.length) t.sums = undefined
-}
 const cellText = (c: string) => c.replace(/\r\n?/g, '\n').replace(/\|/g, '\\|').replace(/\n/g, '<br>').trim()
 /** A cell as it comes back from the file (its edges trimmed, its line breaks — \n): what a filled table's hash is of. */
 export const normCell = (c: string) => c.replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n').trim()
@@ -259,6 +187,7 @@ export function tableMd(t: TableModel): string {
   const row = (r: string[]) => `| ${r.map((c, i) => pad(c ?? '', i)).join(' | ')} |`
   const sep = `| ${w.map((x, i) => alignRule(t.align[i]).rule(x)).join(' | ')} |`
   const meta = [
+    ...(t.name ? [`name=${t.name}`] : []),
     ...(t.widths?.some((x) => x > 0) ? [`widths=${t.widths.slice(0, n).map((x) => Math.round(x)).join(',')}`] : []),
     ...(t.sums?.length ? [`sums=${t.sums.filter((s) => s < n).join(',')}`] : []),
     ...(t.merges?.length ? [`merge=${t.merges.map((m) => `${m.r}.${m.c}.${m.rs}.${m.cs}`).join(';')}`] : []),
@@ -322,10 +251,11 @@ export function addColumn(t: TableModel, at: number): void {
 /** The column `at` deleted (the last one stays); false — nothing done. */
 export function removeColumn(t: TableModel, at: number): boolean {
   if (t.head.length <= 1) return false
+  // (the merges first: a head merge starting here hands its text to the next column before the head loses it)
+  deleteColAt(t, at)
   t.head.splice(at, 1)
   t.align.splice(at, 1)
   t.widths?.splice(at, 1)
-  deleteColAt(t, at)
   return true
 }
 /** A column's sum under it shown / taken away. */
@@ -337,7 +267,7 @@ export function toggleColumnSum(t: TableModel, c: number): void {
 }
 /** The rows sorted by a column: numbers as numbers, the rest as text; merged cells hold rows together — false, not sorted. */
 export function sortRowsBy(t: TableModel, c: number, dir: 1 | -1): boolean {
-  if (t.merges?.length) return false
+  if (hasBodyMerges(t)) return false
   const n = (s: string) => Number(s.replace(/\s/g, '').replace(',', '.'))
   t.rows.sort((a, b) => {
     const x = n(a[c])
@@ -347,8 +277,6 @@ export function sortRowsBy(t: TableModel, c: number, dir: 1 | -1): boolean {
   return true
 }
 
-/** A cell's text: row -1 — the head. */
-const cellAt = (t: TableModel, r: number, c: number) => (r < 0 ? t.head[c] : (t.rows[r]?.[c] ?? ''))
 /** The chosen cells as Excel takes them. */
 export function rangeText(t: TableModel, x: CellRange): string {
   const b = rangeBounds(x)
@@ -371,9 +299,6 @@ export function clearRange(t: TableModel, x: CellRange): void {
       else if (t.rows[r]) t.rows[r][c] = ''
     }
 }
-/** The rows as objects (the head — their keys; an empty name — «Столбец N»): the table seen as JSON. */
-export const tableObjects = (t: TableModel) => t.rows.map((r) => Object.fromEntries(t.head.map((h, i) => [h || `Столбец ${i + 1}`, r[i] ?? ''])))
-
 /**
  * Filled from a value («Из переменной»): its columns and rows; the alignment and widths kept while the columns are
  * as many; sums beyond the columns, merges dropped; what was filled (and the value's key) remembered.

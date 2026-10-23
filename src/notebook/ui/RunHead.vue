@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { isName } from '@nb/domain/blockInfo'
 import type { BlockRun } from '@nb/engine'
 import Icon from '@renderer/components/Icon.vue'
+import VarNameField from './VarNameField.vue'
 
 /**
  * The head of a runnable block: what it is, its name (what it publishes into the note's context — {{name}}),
@@ -42,9 +43,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 <template>
   <div class="rh tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
     <span class="rk tw:inline-flex tw:items-center tw:gap-6 tw:text-muted"><Icon :name="icon" :size="13" />{{ kind }}</span>
-    <label class="rn tw:inline-flex tw:items-center tw:h-24 tw:py-0 tw:px-6 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg tw:text-dim tw:font-data tw:[&.bad]:border-down" :class="{ bad }" :title="bad ? 'Имя — латиница, цифры, _ ; не с цифры' : 'Имя: под ним результат доступен другим блокам и тексту — {{ имя }}'">
-      <span>{{ '{' }}{{ '{' }}</span><input class="tw:w-110 tw:h-22 tw:py-0 tw:px-3 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:outline-none" v-model="draft" spellcheck="false" :placeholder="namePlaceholder ?? 'имя'" @blur="commit" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" /><span>{{ '}' }}{{ '}' }}</span>
-    </label>
+    <VarNameField v-model="draft" :bad="bad" :placeholder="namePlaceholder" :title="bad ? 'Имя — латиница, цифры, _ ; не с цифры' : 'Имя: под ним результат доступен другим блокам и тексту — {{ имя }}'" @commit="commit" @cancel="((draft = name ?? ''), (bad = false))" />
     <slot />
     <span class="grow tw:flex-1"></span>
     <span v-if="run?.state === 'run'" class="rs run tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-accent-fg"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-accent tw:animate-[RunHead-pulse_0.9s_infinite]"></i>выполняется…</span>

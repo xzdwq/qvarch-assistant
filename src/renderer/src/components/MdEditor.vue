@@ -8,7 +8,7 @@ import { codeFolding, foldGutter, foldKeymap } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { looseFence } from '@shared/mdLooseFence'
 import { eventLink, type EventRef } from '@shared/noteEvents'
-import { noteRun, syncDataBlocks, syncTemplates } from '@nb/engine'
+import { noteRun, syncNoteData, syncTemplates } from '@nb/engine'
 import { editorHost, refreshDecorations, COMPONENT_INPUT } from '@nb/editor/editorHost'
 import { editorHighlighting, editorLook } from '@nb/editor/theme'
 import { livePreview } from '@nb/editor/livePreview'
@@ -139,13 +139,13 @@ function scheduleSync(): void {
   syncTimer = setTimeout(() => {
     if (!props.path || !view) return
     const text = view.state.doc.toString()
-    syncDataBlocks(props.path, text)
+    syncNoteData(props.path, text)
     syncTemplates(props.path, text)
   }, 400)
 }
 onMounted(() => {
   if (!props.path) return
-  syncDataBlocks(props.path, props.text)
+  syncNoteData(props.path, props.text)
   syncTemplates(props.path, props.text)
 })
 // the note's values changed: {{ }} redrawn, templates filled again (the ones off screen too)

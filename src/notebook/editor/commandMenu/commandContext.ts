@@ -1,6 +1,7 @@
 import type { EditorView } from '@codemirror/view'
 import type { CommandContext } from '@nb/commands/command'
 import { noteRun } from '@nb/engine'
+import { noteVarNames } from '@nb/domain/tableVars'
 import { apiMapHosts, tabs as browserTabs } from '@renderer/lib/browser'
 import { dbConns, loadConns } from '@renderer/lib/sqlDb'
 
@@ -12,9 +13,11 @@ export function commandContext(view: EditorView, notePath: string, query: string
     notePath,
     freeName(base) {
       const text = view.state.doc.toString()
+      // (the blocks' and tables' names — the ones given to tables not named yet too; any `name=` in the text)
+      const taken = noteVarNames(text)
       for (let n = 1; ; n++) {
         const name = n === 1 ? base : `${base}${n}`
-        if (!new RegExp(`name=${name}(\\s|$)`, 'm').test(text)) return name
+        if (!taken.has(name) && !new RegExp(`name=${name}(\\s|$)`, 'm').test(text)) return name
       }
     },
     newestListName() {
