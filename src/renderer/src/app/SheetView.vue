@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { atTime, formatDuration, scheduleRanges, shiftDay, unionMs } from '@shared/timeline'
-import { daysBetween, formatHours, parseHours, placeTime, rowKeyOf, rowOf, takeTime, weekStart, type RangeDay, type SheetRow } from '@shared/report'
-import type { Entry, PublicSettings } from '@shared/types'
+import { computed, ref } from 'vue'
+import { formatDuration, shiftDay, unionMs } from '@shared/timeline'
+import { formatHours, rowOf, type SheetRow } from '@shared/report'
+import type { PublicSettings } from '@shared/types'
 import type { TaskRef } from '@shared/jira'
 import { kindColor, kindLabel, kinds, entryIcon } from '../lib/palette'
 import Icon from '../components/Icon.vue'
 import TaskPicker from '../components/TaskPicker.vue'
-import { onNewDay } from '../lib/today'
 import FilterMenu from '../components/FilterMenu.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
-import { placeFloat, useAnchor } from '../lib/floating'
+import Popover from '../components/Popover.vue'
+import { buildSheetRows, copyFromPrevious, kindTotals, type SheetGridRow } from '@shared/tracker/sheetRows'
+import { fmtDay as fmt, sheetToday as today, useSheetPeriod } from '../tracker/sheet/useSheetPeriod'
+import { useSheetColumns } from '../tracker/sheet/useSheetColumns'
+import { useSheetDays } from '../tracker/sheet/useSheetDays'
+import { useSheetHours } from '../tracker/sheet/useSheetHours'
+import { readStored, storedRef } from '../tracker/sheet/sheetStorage'
 
 /**
  * Заполнение — the week (or a day) as a table: a row per task (or kind + text), a column per day. Typing
  * hours into a cell makes real blocks on the timeline (into free working time) or takes time away from
- * the row's blocks; Outlook meetings are never changed.
+ * the row's blocks; Outlook meetings are never changed. The pieces live in tracker/sheet.
  */
 /**
  * `widget` — on the dashboard (or a tab of the timeline): a day by default, tighter. `store` — its remembered
@@ -26,388 +31,67 @@ const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: 
 const SUFFIX = props.store ? `.${props.store}` : props.widget ? '.widget' : ''
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
 
-const today = () => new Date().toLocaleDateString('sv-SE')
-/**
- * The period: a day, a week or any range picked on the calendar — remembered (the dashboard's apart);
- * "today" is remembered as today, so the next day it shows the new day.
- */
-type Mode = 'week' | 'day' | 'range'
-const VIEW_KEY = `qa.sheet.view${SUFFIX}`
-const saved = (() => {
-  try {
-    return (JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null') as { mode?: Mode; anchor?: string; from?: string; to?: string } | null) ?? {}
-  } catch {
-    return {}
-  }
-})()
-const mode = ref<Mode>(saved.mode ?? (props.widget ? 'day' : 'week'))
-const anchor = ref(!saved.anchor || saved.anchor === 'today' ? today() : saved.anchor)
-const rangeFrom = ref(saved.from ?? today())
-const rangeTo = ref(saved.to ?? today())
-watch([mode, anchor, rangeFrom, rangeTo], () => {
-  try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: mode.value, anchor: anchor.value === today() ? 'today' : anchor.value, from: rangeFrom.value, to: rangeTo.value }))
-  } catch {
-    // not remembered — fine
-  }
-})
-onNewDay((prev, next) => {
-  if (anchor.value === prev) anchor.value = next
-})
-// the timeline's day: the period moves to it (a day or the week holding it)
-watch(
-  () => props.day,
-  (d) => {
-    if (!d) return
-    if (mode.value === 'range') mode.value = 'day'
-    anchor.value = d
-  },
-  { immediate: true },
-)
-const cols = computed(() =>
-  props.range
-    ? daysBetween(props.range.from, props.range.to).slice(0, 62)
-    : mode.value === 'week' ? daysBetween(weekStart(anchor.value), shiftDay(weekStart(anchor.value), 6)) : mode.value === 'range' ? daysBetween(rangeFrom.value, rangeTo.value).slice(0, 62) : [anchor.value],
-)
-/** The calendar: one day → "день", Monday..Sunday → "неделя", anything else → that range. */
-const pickerOpen = ref(false)
+const { mode, cols, key: periodKey, pickerOpen, applyRange, setMode, goToday, shift, onWheel, label, isCurrent } = useSheetPeriod(props, SUFFIX)
 const plEl = ref<HTMLElement>()
-function applyRange(from: string, to: string): void {
-  pickerOpen.value = false
-  if (from === to) {
-    mode.value = 'day'
-    anchor.value = from
-  } else if (weekStart(from) === from && shiftDay(from, 6) === to) {
-    mode.value = 'week'
-    anchor.value = from
-  } else {
-    mode.value = 'range'
-    rangeFrom.value = from
-    rangeTo.value = to
-  }
-}
-function setMode(m: 'day' | 'week'): void {
-  if (mode.value === 'range') anchor.value = cols.value.includes(today()) ? today() : cols.value[0]
-  mode.value = m
-}
-function goToday(): void {
-  if (mode.value === 'range') mode.value = props.widget ? 'day' : 'week'
-  anchor.value = today()
-}
-const fmt = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', o)
-const label = computed(() => {
-  const a = cols.value[0]
-  const b = cols.value[cols.value.length - 1]
-  return cols.value.length === 1 ? fmt(a, { weekday: 'short', day: 'numeric', month: 'short' }) : `${fmt(a, { day: 'numeric', month: a.slice(5, 7) === b.slice(5, 7) ? undefined : 'short' })} – ${fmt(b, { day: 'numeric', month: 'short' })}`
-})
-const isCurrent = computed(() => cols.value.includes(today()))
-/** The wheel over the period: up — later, down — earlier (as every date field). */
-function onWheel(e: WheelEvent): void {
-  if (e.deltaY) shift(e.deltaY < 0 ? 1 : -1)
-}
-function shift(dir: 1 | -1): void {
-  if (mode.value === 'range') {
-    const n = cols.value.length
-    rangeFrom.value = shiftDay(rangeFrom.value, dir * n)
-    rangeTo.value = shiftDay(rangeTo.value, dir * n)
-  } else anchor.value = shiftDay(anchor.value, dir * (mode.value === 'week' ? 7 : 1))
-}
+const { colW, tableW, startColResize } = useSheetColumns(SUFFIX, props.widget, cols)
+const { days, busy, load, dayOf, kindFilter, kindOpts, shownKind, entriesOf, kindOrder } = useSheetDays(cols, SUFFIX)
 
-// ---------- the columns' widths (dragged by their edge; remembered, the dashboard's apart) ----------
-const COLS_KEY = `qa.sheet.cols${SUFFIX}`
-type ColW = { rl: number; dc: number; tc: number }
-const colW = ref<ColW>(
-  (() => {
-    try {
-      return { rl: props.widget ? 190 : 300, dc: 76, tc: 76, ...(JSON.parse(localStorage.getItem(COLS_KEY) ?? '{}') as Partial<ColW>) }
-    } catch {
-      return { rl: props.widget ? 190 : 300, dc: 76, tc: 76 }
-    }
-  })(),
-)
-const tableW = computed(() => colW.value.rl + cols.value.length * colW.value.dc + (cols.value.length > 1 ? colW.value.tc : 0))
-function startColResize(e: PointerEvent, key: keyof ColW): void {
-  const x0 = e.clientX
-  const w0 = colW.value[key]
-  const min = key === 'rl' ? 110 : 44
-  const move = (ev: PointerEvent) => (colW.value = { ...colW.value, [key]: Math.max(min, Math.min(700, Math.round(w0 + ev.clientX - x0))) })
-  const up = () => {
-    window.removeEventListener('pointermove', move)
-    try {
-      localStorage.setItem(COLS_KEY, JSON.stringify(colW.value))
-    } catch {
-      // not remembered — fine
-    }
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up, { once: true })
-}
-
-// ---------- the data ----------
-const days = ref<RangeDay[]>([])
-const busy = ref(false)
-async function load(): Promise<void> {
-  const from = cols.value[0]
-  const r = await window.qa.rangeDays(from, cols.value[cols.value.length - 1])
-  if (from === cols.value[0]) days.value = r
-}
-watch(cols, () => void load(), { immediate: true })
-const onFocus = () => void load()
-onMounted(() => window.addEventListener('focus', onFocus))
-onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
-// today's blocks come live (the island, a call, another window) — shown at once, no reload
-const offDay = window.qa.onDayState((msg) => {
-  const d = msg.day
-  if (!cols.value.includes(d.day)) return
-  const cur = dayOf(d.day)
-  if (cur && cur.entries === d.entries) return
-  const next = { day: d.day, entries: d.entries }
-  days.value = cur ? days.value.map((x) => (x.day === d.day ? next : x)) : [...days.value, next]
-})
-onBeforeUnmount(offDay)
-
-// ---------- the kind filter (remembered; the dashboard's apart) ----------
-const KINDS_KEY = `qa.sheet.kinds${SUFFIX}`
-function readKinds(): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(KINDS_KEY) ?? '[]') as unknown
-    return Array.isArray(v) ? (v as string[]) : []
-  } catch {
-    return []
-  }
-}
-const kindFilter = ref<string[]>(readKinds())
-watch(kindFilter, (v) => {
-  try {
-    localStorage.setItem(KINDS_KEY, JSON.stringify(v))
-  } catch {
-    // not remembered — fine
-  }
-})
-const kindOpts = computed(() => kinds.value.map((k) => ({ id: k.id, label: k.label, color: k.color })))
-const shownKind = (k: string) => !kindFilter.value.length || kindFilter.value.includes(k)
-const entriesOf = (d: RangeDay | undefined) => (d?.entries ?? []).filter((e) => shownKind(e.kind))
-const dayOf = (d: string) => days.value.find((x) => x.day === d)
-
-// ---------- rows: from the blocks + the ones added by hand (remembered per week) ----------
-const ROWS_KEY = 'qa.sheet.rows'
-function readRows(): Record<string, SheetRow[]> {
-  try {
-    return (JSON.parse(localStorage.getItem(ROWS_KEY) ?? 'null') as Record<string, SheetRow[]> | null) ?? {}
-  } catch {
-    return {}
-  }
-}
-const added = ref<Record<string, SheetRow[]>>(readRows())
-watch(
-  added,
-  (v) => {
-    try {
-      localStorage.setItem(ROWS_KEY, JSON.stringify(v))
-    } catch {
-      // not remembered — fine
-    }
-  },
-  { deep: true },
-)
-const periodKey = computed(() => (mode.value === 'week' ? weekStart(anchor.value) : mode.value === 'range' ? `${rangeFrom.value}_${rangeTo.value}` : anchor.value))
-const kindOrder = (k: string) => {
-  const i = kinds.value.findIndex((x) => x.id === k)
-  return i < 0 ? 99 : i
-}
-interface Row extends SheetRow {
-  cells: Map<string, { ms: number; blocks: Entry[] }>
-  total: number
-  /** Only Outlook meetings — nothing to change here. */
-  locked: boolean
-  manual: boolean
-}
-const rows = computed<Row[]>(() => {
-  const m = new Map<string, Row>()
-  const ensure = (r: SheetRow, manual: boolean): Row => {
-    let row = m.get(r.key)
-    if (!row) m.set(r.key, (row = { ...r, cells: new Map(), total: 0, locked: false, manual }))
-    return row
-  }
-  for (const d of days.value)
-    for (const e of entriesOf(d)) {
-      const row = ensure(rowOf(e), false)
-      const c = row.cells.get(d.day) ?? { ms: 0, blocks: [] }
-      c.blocks.push(e)
-      row.cells.set(d.day, c)
-    }
-  for (const r of added.value[periodKey.value] ?? []) if (shownKind(r.kind)) ensure(r, true)
-  for (const row of m.values()) {
-    for (const c of row.cells.values()) c.ms = unionMs(c.blocks)
-    row.total = unionMs([...row.cells.values()].flatMap((c) => c.blocks))
-    const blocks = [...row.cells.values()].flatMap((c) => c.blocks)
-    row.locked = blocks.length > 0 && blocks.every((b) => b.outlook)
-  }
-  return [...m.values()].sort((a, b) => Number(!a.task) - Number(!b.task) || kindOrder(a.kind) - kindOrder(b.kind) || (a.task?.key ?? a.label).localeCompare(b.task?.key ?? b.label))
-})
+// ---------- rows: from the blocks + the ones added by hand (remembered per period) ----------
+const added = storedRef<Record<string, SheetRow[]>>('qa.sheet.rows', readStored<Record<string, SheetRow[]>>('qa.sheet.rows', {}), true)
+const rows = computed<SheetGridRow[]>(() => buildSheetRows(days.value, added.value[periodKey.value] ?? [], shownKind, kindOrder))
 const dayTotal = (d: string) => unionMs(entriesOf(dayOf(d)))
 /** Time per kind (tasks, meetings, calls…): per day and for the period — a kind's own overlaps counted once. */
-const kindRows = computed(() => {
-  const present = new Set(cols.value.flatMap((d) => entriesOf(dayOf(d)).map((e) => e.kind)))
-  return kinds.value
-    .filter((k) => present.has(k.id))
-    .map((k) => {
-      const per = new Map(cols.value.map((d) => [d, unionMs(entriesOf(dayOf(d)).filter((e) => e.kind === k.id))]))
-      return { kind: k.id, per, total: [...per.values()].reduce((a, b) => a + b, 0) }
-    })
-    .concat(
-      // a kind removed from the settings but still on old blocks
-      [...present].filter((id) => !kinds.value.some((k) => k.id === id)).map((id) => {
-        const per = new Map(cols.value.map((d) => [d, unionMs(entriesOf(dayOf(d)).filter((e) => e.kind === id))]))
-        return { kind: id, per, total: [...per.values()].reduce((a, b) => a + b, 0) }
-      }),
-    )
-})
+const kindRows = computed(() => kindTotals(cols.value, (d) => entriesOf(dayOf(d)), kinds.value.map((k) => k.id)))
 const grand = computed(() => cols.value.reduce((s, d) => s + dayTotal(d), 0))
 const isOff = (d: string) => !props.settings.schedule.workDays.includes(new Date(`${d}T12:00:00`).getDay())
 
-// ---------- typing hours ----------
-const editing = ref<string>()
-const draft = ref('')
-const bad = ref<string>()
-const cellId = (r: Row, d: string) => `${r.key}|${d}`
-function startEdit(r: Row, d: string): void {
-  if (r.locked) return
-  editing.value = cellId(r, d)
-  draft.value = formatHours(r.cells.get(d)?.ms ?? 0)
+const { editing, draft, bad, cellId, startEdit, setHours, commit, onCellKey, vFocus } = useSheetHours({ settings: () => props.settings, rows, cols, dayOf, load, busy })
+
+/** Rows not yet in the period (by key) join the hand-added ones. */
+function addRows(list: SheetRow[]): void {
+  const cur = added.value[periodKey.value] ?? []
+  const fresh: SheetRow[] = []
+  for (const r of list) if (![...cur, ...fresh].some((x) => x.key === r.key) && !rows.value.some((x) => x.key === r.key)) fresh.push(r)
+  if (fresh.length) added.value = { ...added.value, [periodKey.value]: [...cur, ...fresh] }
 }
-/** The working hours of a day (the schedule's, also on a day off — that is where hand-typed time goes). */
-function workOf(d: string): { work: [number, number]; lunch?: [number, number] } {
-  const s = scheduleRanges(d, props.settings.schedule)
-  const sch = props.settings.schedule
-  return { work: s.work ?? [atTime(d, sch.start), atTime(d, sch.end)], lunch: s.lunch ?? (sch.lunchStart && sch.lunchEnd ? [atTime(d, sch.lunchStart), atTime(d, sch.lunchEnd)] : undefined) }
-}
-async function setHours(r: SheetRow & { cells?: Row['cells'] }, d: string, want: number): Promise<void> {
-  const cell = r.cells?.get(d)
-  const cur = cell?.ms ?? 0
-  const diff = want - cur
-  if (Math.abs(diff) < 60_000) return
-  if (diff > 0) {
-    const { work, lunch } = workOf(d)
-    for (const [start, end] of placeTime(dayOf(d)?.entries ?? [], diff, work, lunch))
-      await window.qa.saveEntry(d, { start, end, kind: r.kind, label: r.label, task: r.task ? { ...r.task } : undefined, source: 'manual' }, { overlap: true })
-  } else {
-    for (const op of takeTime(cell?.blocks ?? [], -diff)) {
-      const e = cell!.blocks.find((b) => b.id === op.id)!
-      if (op.drop) await window.qa.deleteEntry(d, e.id)
-      else await window.qa.saveEntry(d, { ...e, task: e.task ? { ...e.task } : undefined, end: op.end! }, { overlap: true })
-    }
-  }
-}
-async function commit(r: Row, d: string, move?: 'down' | 'up' | 'right'): Promise<void> {
-  if (editing.value !== cellId(r, d)) return
-  const ms = parseHours(draft.value)
-  if (ms === undefined) {
-    bad.value = cellId(r, d)
-    setTimeout(() => (bad.value = undefined), 900)
-    return
-  }
-  editing.value = undefined
-  if (Math.abs(ms - (r.cells.get(d)?.ms ?? 0)) >= 60_000) {
-    busy.value = true
-    try {
-      await setHours(r, d, ms)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err))
-    } finally {
-      await load()
-      busy.value = false
-    }
-  }
-  if (move) focusNext(r, d, move)
-}
-function cancel(): void {
-  editing.value = undefined
-}
-async function focusNext(r: Row, d: string, move: 'down' | 'up' | 'right'): Promise<void> {
-  const ri = rows.value.findIndex((x) => x.key === r.key)
-  const ci = cols.value.indexOf(d)
-  const nr = move === 'down' ? rows.value[ri + 1] : move === 'up' ? rows.value[ri - 1] : r
-  const nd = move === 'right' ? cols.value[ci + 1] : d
-  if (!nr || !nd || nr.locked) return
-  startEdit(nr, nd)
-  await nextTick()
-  const el = document.querySelector<HTMLInputElement>('.sheet input.cin')
-  el?.focus()
-  el?.select()
-}
-function onCellKey(e: KeyboardEvent, r: Row, d: string): void {
-  if (e.key === 'Enter') void commit(r, d, e.shiftKey ? 'up' : 'down')
-  else if (e.key === 'Escape') cancel()
-  else if (e.key === 'ArrowDown') void commit(r, d, 'down')
-  else if (e.key === 'ArrowUp') void commit(r, d, 'up')
-  else if (e.key === 'Tab' && !e.shiftKey) {
-    e.preventDefault()
-    void commit(r, d, 'right')
-  }
-}
-const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) }
 
 // ---------- adding a row ----------
 const adding = ref(false)
 const newKind = ref('task')
 const newTask = ref<TaskRef[]>([])
 const newLabel = ref('')
+/** The menus float over everything (Popover): the dashboard widget would clip them. */
 const addEl = ref<HTMLElement>()
-/** The menus float over everything (teleported): the dashboard widget would clip them. */
-const addPd = ref<HTMLElement>()
-const addStyle = ref<Record<string, string>>({})
-useAnchor(adding, addEl, () => addEl.value && (addStyle.value = placeFloat(addEl.value, 320, false, 40).style))
 const pickable = computed(() => kinds.value.filter((k) => !k.hidden))
 function addRow(): void {
   const t = newTask.value[0]
   const text = newLabel.value.trim() || (t ? `${t.key} ${t.summary}` : kindLabel(newKind.value))
-  const row = rowOf({ kind: newKind.value, label: text, task: t ? { key: t.key, summary: t.summary } : undefined })
-  const list = added.value[periodKey.value] ?? []
-  if (!list.some((x) => x.key === row.key) && !rows.value.some((x) => x.key === row.key)) added.value = { ...added.value, [periodKey.value]: [...list, row] }
+  addRows([rowOf({ kind: newKind.value, label: text, task: t ? { key: t.key, summary: t.summary } : undefined })])
   adding.value = false
   newTask.value = []
   newLabel.value = ''
 }
-function removeRow(r: Row): void {
+function removeRow(r: SheetGridRow): void {
   added.value = { ...added.value, [periodKey.value]: (added.value[periodKey.value] ?? []).filter((x) => x.key !== r.key) }
 }
 
-// ---------- copying the previous week ----------
+// ---------- copying the previous period ----------
 const copyOpen = ref(false)
 const copyEl = ref<HTMLElement>()
-const copyPd = ref<HTMLElement>()
-const copyStyle = ref<Record<string, string>>({})
-useAnchor(copyOpen, copyEl, () => copyEl.value && (copyStyle.value = placeFloat(copyEl.value, 200, false, 40).style))
+/** Rows of the previous period of the same length; `withHours` — their time too, into cells still empty. */
 async function copyPrev(withHours: boolean): Promise<void> {
   copyOpen.value = false
   const span = cols.value.length
   const prevCols = cols.value.map((d) => shiftDay(d, -span))
   const prev = await window.qa.rangeDays(prevCols[0], prevCols[prevCols.length - 1])
-  // what came by itself (meetings, found calls) is not copied
-  const own = prev.flatMap((d) => d.entries.filter((e) => !e.outlook && e.source !== 'detected').map((e) => ({ day: d.day, e })))
-  const prevRows = new Map<string, SheetRow>()
-  for (const { e } of own) prevRows.set(rowKeyOf(e), rowOf(e))
-  if (!withHours) {
-    const list = [...(added.value[periodKey.value] ?? [])]
-    for (const r of prevRows.values()) if (!list.some((x) => x.key === r.key) && !rows.value.some((x) => x.key === r.key)) list.push(r)
-    added.value = { ...added.value, [periodKey.value]: list }
-    return
-  }
-  const plan: Array<{ row: SheetRow; day: string; ms: number }> = []
-  for (const [key, row] of prevRows)
-    prevCols.forEach((pd, i) => {
-      const ms = unionMs(own.filter((x) => x.day === pd && rowKeyOf(x.e) === key).map((x) => x.e))
-      const d = cols.value[i]
-      const cur = rows.value.find((r) => r.key === key)?.cells.get(d)?.ms ?? 0
-      if (ms >= 60_000 && cur === 0) plan.push({ row, day: d, ms })
-    })
-  if (!plan.length) return
-  const sum = plan.reduce((s, p) => s + p.ms, 0)
-  if (!confirm(`Добавить ${plan.length} блоков (${formatDuration(sum)}) как на прошлой неделе?`)) return
+  const copy = copyFromPrevious(prev, prevCols, cols.value, (key, d) => rows.value.find((r) => r.key === key)?.cells.get(d)?.ms ?? 0)
+  if (!withHours) return addRows(copy.rows)
+  if (!copy.fills.length) return
+  const sum = copy.fills.reduce((s, p) => s + p.ms, 0)
+  if (!confirm(`Добавить ${copy.fills.length} блоков (${formatDuration(sum)}) как на прошлой неделе?`)) return
   busy.value = true
   try {
-    for (const p of plan) {
+    for (const p of copy.fills) {
       await setHours(p.row, p.day, p.ms)
       await load()
     }
@@ -416,60 +100,50 @@ async function copyPrev(withHours: boolean): Promise<void> {
     busy.value = false
   }
 }
-function onDown(e: MouseEvent): void {
-  if (copyOpen.value && !copyEl.value?.contains(e.target as Node) && !copyPd.value?.contains(e.target as Node)) copyOpen.value = false
-  if (adding.value && !addEl.value?.contains(e.target as Node) && !addPd.value?.contains(e.target as Node) && !(e.target as HTMLElement).closest('.dd')) adding.value = false
-}
-onMounted(() => window.addEventListener('mousedown', onDown, true))
-onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 </script>
 
 <template>
-  <div class="sh" :class="{ widget }">
-    <div v-if="!range" class="bar">
-      <div class="seg">
-        <button :class="{ on: mode === 'week' }" @click="setMode('week')">Неделя</button>
-        <button :class="{ on: mode === 'day' }" @click="setMode('day')">День</button>
+  <div class="sh tw:group/sh tw:flex tw:flex-col tw:h-full tw:min-h-0" :class="{ widget }">
+    <div v-if="!range" class="bar tw:flex-none tw:flex tw:flex-wrap tw:items-center tw:gap-y-6 tw:gap-x-10 tw:py-8 tw:px-12 tw:border-b tw:border-b-border tw:group-[.widget]/sh:gap-y-4 tw:group-[.widget]/sh:gap-x-6 tw:group-[.widget]/sh:flex-nowrap tw:group-[.widget]/sh:h-34 tw:group-[.widget]/sh:py-0 tw:group-[.widget]/sh:px-8 tw:group-[.widget]/sh:overflow-hidden">
+      <div class="seg tw:inline-flex tw:p-2 tw:rounded-[4px] tw:bg-white/4 tw:border tw:border-border">
+        <button class="tw:h-24 tw:py-0 tw:px-9 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:group-[.widget]/sh:h-22 tw:group-[.widget]/sh:py-0 tw:group-[.widget]/sh:px-7 tw:group-[.widget]/sh:text-[11.5px]" :class="{ on: mode === 'week' }" @click="setMode('week')">Неделя</button>
+        <button class="tw:h-24 tw:py-0 tw:px-9 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:group-[.widget]/sh:h-22 tw:group-[.widget]/sh:py-0 tw:group-[.widget]/sh:px-7 tw:group-[.widget]/sh:text-[11.5px]" :class="{ on: mode === 'day' }" @click="setMode('day')">День</button>
       </div>
-      <div class="nav" title="Колесо мыши — день / неделя вперёд или назад" @wheel.prevent="onWheel">
-        <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
-        <button ref="plEl" class="pl" :class="{ on: pickerOpen, now: isCurrent }" title="Выбрать период" @click="pickerOpen = !pickerOpen"><Icon name="calendar" :size="12" />{{ label }}</button>
-        <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
-        <button v-if="!isCurrent" class="ib" title="Сейчас" @click="goToday"><Icon name="clock" :size="13" /></button>
+      <div class="nav tw:inline-flex tw:items-center tw:gap-4" title="Колесо мыши — день / неделя вперёд или назад" @wheel.prevent="onWheel">
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:group-[.widget]/sh:w-24 tw:group-[.widget]/sh:h-24 tw:hover:enabled:border-border-3" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
+        <button ref="plEl" class="pl tw:min-w-110 tw:text-center tw:text-[13px] tw:font-semibold tw:whitespace-nowrap tw:group-[.widget]/sh:min-w-80 tw:group-[.widget]/sh:text-[12px] tw:inline-flex tw:items-center tw:justify-center tw:gap-6 tw:h-26 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:hover:not-[&.on]:bg-white/7 tw:[&.on]:bg-white/7 tw:[&.now]:text-accent-fg tw:group-[.widget]/sh:h-24 tw:group-[.widget]/sh:whitespace-nowrap" :class="{ on: pickerOpen, now: isCurrent }" title="Выбрать период" @click="pickerOpen = !pickerOpen"><Icon name="calendar" :size="12" />{{ label }}</button>
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:group-[.widget]/sh:w-24 tw:group-[.widget]/sh:h-24 tw:hover:enabled:border-border-3" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
+        <button v-if="!isCurrent" class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:group-[.widget]/sh:w-24 tw:group-[.widget]/sh:h-24 tw:hover:enabled:border-border-3" title="Сейчас" @click="goToday"><Icon name="clock" :size="13" /></button>
       </div>
       <DateRangePicker v-if="pickerOpen" :from="cols[0]" :to="cols[cols.length - 1]" :anchor="plEl" :max="62" @apply="applyRange" @close="pickerOpen = false" />
-      <span class="sp"></span>
+      <span class="sp tw:flex-1"></span>
       <FilterMenu v-model="kindFilter" label="Вид" icon="tag" :options="kindOpts" />
-      <span v-if="busy" class="busy"><Icon name="refresh" :size="13" /></span>
-      <div ref="addEl" class="pop">
-        <button class="btn" :class="{ on: adding }" title="Добавить строку" @click="adding = !adding"><Icon name="plus" :size="13" /><span class="bl">Строка</span></button>
-        <Teleport to="body">
-        <div v-if="adding" ref="addPd" class="pd add" :style="addStyle">
-          <div class="kinds">
-            <button v-for="k in pickable" :key="k.id" :class="{ on: newKind === k.id }" :style="{ '--c': k.color }" :title="k.label" @click="newKind = k.id"><Icon :name="k.icon" :size="13" /></button>
+      <span v-if="busy" class="busy tw:inline-flex tw:text-accent-fg tw:animate-[SheetView-spin_0.8s_linear_infinite]"><Icon name="refresh" :size="13" /></span>
+      <div ref="addEl" class="pop tw:relative">
+        <button class="btn tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border tw:rounded-[4px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:not-[&.on]:bg-white/6 tw:[&.on]:bg-white/6 tw:group-[.widget]/sh:h-24 tw:group-[.widget]/sh:py-0 tw:group-[.widget]/sh:px-7 tw:hover:enabled:border-border-3" :class="{ on: adding }" title="Добавить строку" @click="adding = !adding"><Icon name="plus" :size="13" /><span class="bl">Строка</span></button>
+        <Popover v-model:open="adding" :anchor="addEl" :width="320" :chrome="40" max-height="none" class="pd add tw:absolute tw:top-[calc(100%+4px)] tw:right-0 tw:z-40 tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)] tw:w-320 tw:flex tw:flex-col tw:gap-8 tw:p-10">
+          <div class="kinds tw:flex tw:flex-wrap tw:gap-4">
+            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-32 tw:h-28 tw:p-0 tw:border tw:border-transparent tw:rounded-[4px] tw:bg-[color-mix(in_srgb,var(--c)_14%,transparent)] tw:text-(--c) tw:[&.on]:border-(--c) tw:[&.on]:bg-[color-mix(in_srgb,var(--c)_30%,transparent)] tw:[&.on]:text-text-hi" v-for="k in pickable" :key="k.id" :class="{ on: newKind === k.id }" :style="{ '--c': k.color }" :title="k.label" @click="newKind = k.id"><Icon :name="k.icon" :size="13" /></button>
           </div>
-          <div class="arow">
+          <div class="arow tw:flex tw:gap-6 tw:items-center">
             <TaskPicker v-model="newTask" single compact />
-            <input v-model="newLabel" class="ain" :placeholder="newTask[0] ? newTask[0].summary : kindLabel(newKind)" @keydown.enter="addRow" />
+            <input v-model="newLabel" class="ain tw:flex-1 tw:min-w-0 tw:h-30 tw:py-0 tw:px-8 tw:rounded-[4px] tw:border tw:border-border tw:bg-panel tw:text-text tw:text-[12.5px]" :placeholder="newTask[0] ? newTask[0].summary : kindLabel(newKind)" @keydown.enter="addRow" />
           </div>
-          <button class="btn pri" @click="addRow"><Icon name="check" :size="13" />Добавить</button>
-        </div>
-        </Teleport>
+          <button class="btn pri tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border tw:rounded-[4px] tw:text-[12px] tw:justify-center tw:[&&]:border-transparent tw:bg-accent tw:text-on-accent" @click="addRow"><Icon name="check" :size="13" />Добавить</button>
+        </Popover>
       </div>
-      <div ref="copyEl" class="pop">
-        <button class="ib" :class="{ on: copyOpen }" :title="cols.length === 1 ? 'Как вчера' : 'Как в прошлый период'" @click="copyOpen = !copyOpen"><Icon name="copy" :size="14" /></button>
-        <Teleport to="body">
-        <div v-if="copyOpen" ref="copyPd" class="pd menu" :style="copyStyle">
-          <button @click="copyPrev(false)"><Icon name="list" :size="13" />Только строки</button>
-          <button @click="copyPrev(true)"><Icon name="clock" :size="13" />Строки и часы</button>
-        </div>
-        </Teleport>
+      <div ref="copyEl" class="pop tw:relative">
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:not-[&.on]:bg-white/7 tw:[&.on]:bg-white/7 tw:hover:not-[&.on]:text-text tw:[&.on]:text-text tw:group-[.widget]/sh:w-24 tw:group-[.widget]/sh:h-24 tw:hover:enabled:border-border-3" :class="{ on: copyOpen }" :title="cols.length === 1 ? 'Как вчера' : 'Как в прошлый период'" @click="copyOpen = !copyOpen"><Icon name="copy" :size="14" /></button>
+        <Popover v-model:open="copyOpen" :anchor="copyEl" :width="200" :chrome="40" max-height="none" class="pd menu tw:absolute tw:top-[calc(100%+4px)] tw:right-0 tw:z-40 tw:p-6 tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)] tw:min-w-190 tw:flex tw:flex-col">
+          <button class="tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-9 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/16" @click="copyPrev(false)"><Icon name="list" :size="13" />Только строки</button>
+          <button class="tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-9 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/16" @click="copyPrev(true)"><Icon name="clock" :size="13" />Строки и часы</button>
+        </Popover>
       </div>
-      <button class="ib" title="Обновить" @click="load"><Icon name="refresh" :size="14" /></button>
+      <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:group-[.widget]/sh:w-24 tw:group-[.widget]/sh:h-24 tw:hover:enabled:border-border-3" title="Обновить" @click="load"><Icon name="refresh" :size="14" /></button>
     </div>
 
-    <div class="wrap">
-      <table class="sheet" :style="{ width: `${tableW}px` }">
+    <div class="wrap tw:flex-1 tw:min-h-0 tw:overflow-auto tw:pt-0 tw:pr-12 tw:pb-16 tw:pl-12 tw:group-[.widget]/sh:pt-0 tw:group-[.widget]/sh:pr-8 tw:group-[.widget]/sh:pb-8 tw:group-[.widget]/sh:pl-8">
+      <table class="sheet tw:w-full tw:border-separate tw:[border-spacing:0] tw:text-[12.5px] tw:table-fixed tw:min-w-0! tw:max-w-none!" :style="{ width: `${tableW}px` }">
         <colgroup>
           <col :style="{ width: `${colW.rl}px` }" />
           <col v-for="d in cols" :key="d" :style="{ width: `${colW.dc}px` }" />
@@ -477,54 +151,54 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
         </colgroup>
         <thead>
           <tr>
-            <th class="rl">Задача<span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'rl')"></span></th>
-            <th v-for="d in cols" :key="d" class="dc" :class="{ off: isOff(d), today: d === today() }">
-              <button class="dh" title="Открыть день" @click="emit('go', 'day', d)">
-                <span class="dw">{{ fmt(d, { weekday: 'short' }) }}</span><b>{{ fmt(d, { day: 'numeric' }) }}</b>
+            <th class="rl tw:border-b tw:border-b-border tw:top-0 tw:whitespace-nowrap tw:text-muted tw:font-medium tw:text-[11.5px] tw:sticky tw:left-0 tw:[background:var(--bg,var(--bg))] tw:w-[34%] tw:min-w-220 tw:max-w-380 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-2 tw:text-left tw:z-4 tw:group-[.widget]/sh:min-w-140">Задача<span class="crz tw:absolute tw:top-4 tw:bottom-4 tw:-right-3 tw:z-5 tw:w-6 tw:cursor-col-resize tw:rounded-r2 tw:hover:bg-accent/55" title="Ширина" @pointerdown.prevent="startColResize($event, 'rl')"></span></th>
+            <th v-for="d in cols" :key="d" class="dc tw:group/dc tw:border-b tw:border-b-border tw:sticky tw:top-0 tw:z-3 tw:[background:var(--bg,var(--bg))] tw:py-5 tw:px-0 tw:whitespace-nowrap tw:text-muted tw:font-medium tw:text-[11.5px] tw:w-76 tw:text-right" :class="{ off: isOff(d), today: d === today() }">
+              <button class="dh tw:@container tw:flex tw:justify-end tw:items-baseline tw:gap-4 tw:w-full tw:box-border tw:whitespace-nowrap tw:overflow-hidden tw:py-2 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-inherit tw:leading-[1.15] tw:hover:bg-white/5 tw:hover:not-group-[.today]/dc:text-text tw:group-[.today]/dc:text-accent-fg tw:hover:enabled:border-border-3" title="Открыть день" @click="emit('go', 'day', d)">
+                <span class="dw tw:@max-[52px]:hidden">{{ fmt(d, { weekday: 'short' }) }}</span><b class="tw:text-[13px] tw:text-text-2 tw:group-[.today]/dc:text-accent-fg">{{ fmt(d, { day: 'numeric' }) }}</b>
               </button>
-              <span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'dc')"></span>
+              <span class="crz tw:absolute tw:top-4 tw:bottom-4 tw:-right-3 tw:z-5 tw:w-6 tw:cursor-col-resize tw:rounded-r2 tw:hover:bg-accent/55" title="Ширина" @pointerdown.prevent="startColResize($event, 'dc')"></span>
             </th>
-            <th v-if="cols.length > 1" class="tc">Итого<span class="crz" title="Ширина" @pointerdown.prevent="startColResize($event, 'tc')"></span></th>
+            <th v-if="cols.length > 1" class="tc tw:border-b tw:border-b-border tw:sticky tw:top-0 tw:z-3 tw:[background:var(--bg,var(--bg))] tw:py-5 tw:px-0 tw:whitespace-nowrap tw:text-muted tw:text-[11.5px] tw:w-76 tw:text-right tw:[&&]:pr-10 tw:tabular-nums tw:font-data tw:font-semibold">Итого<span class="crz tw:absolute tw:top-4 tw:bottom-4 tw:-right-3 tw:z-5 tw:w-6 tw:cursor-col-resize tw:rounded-r2 tw:hover:bg-accent/55" title="Ширина" @pointerdown.prevent="startColResize($event, 'tc')"></span></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rows" :key="r.key" :class="{ locked: r.locked }">
-            <td class="rl">
-              <span class="rlab">
-                <span class="eic" :style="{ background: kindColor(r.kind) }" :title="kindLabel(r.kind)"><Icon :name="entryIcon(r)" :size="11" :stroke="2.4" /></span>
-                <b v-if="r.task" class="key">{{ r.task.key }}</b>
-                <span class="rt" :title="r.task ? r.task.summary : r.label">{{ r.task ? r.task.summary : r.label }}</span>
-                <Icon v-if="r.locked" name="outlook" :size="12" class="lk" />
-                <button v-if="r.manual && !r.total" class="rx" title="Убрать строку" @click="removeRow(r)"><Icon name="x" :size="11" /></button>
+          <tr class="tw:group/g23" v-for="r in rows" :key="r.key" :class="{ locked: r.locked }">
+            <td class="rl tw:border-b tw:border-b-border tw:sticky tw:left-0 tw:z-2 tw:[background:var(--bg,var(--bg))] tw:w-[34%] tw:min-w-220 tw:max-w-380 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-2 tw:text-left tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px] tw:group-[.widget]/sh:min-w-140">
+              <span class="rlab tw:flex tw:items-center tw:gap-7 tw:h-34 tw:min-w-0 tw:group-[.widget]/sh:h-30">
+                <span class="eic tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:rounded-r2 tw:text-text-hi" :style="{ background: kindColor(r.kind) }" :title="kindLabel(r.kind)"><Icon :name="entryIcon(r)" :size="11" :stroke="2.4" /></span>
+                <b v-if="r.task" class="key tw:flex-none tw:text-info-fg tw:text-[12px]">{{ r.task.key }}</b>
+                <span class="rt tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:min-w-0" :title="r.task ? r.task.summary : r.label">{{ r.task ? r.task.summary : r.label }}</span>
+                <Icon v-if="r.locked" name="outlook" :size="12" class="lk tw:[&&]:flex-none tw:text-info" />
+                <button v-if="r.manual && !r.total" class="rx tw:flex-none tw:inline-flex tw:ml-auto tw:p-3 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Убрать строку" @click="removeRow(r)"><Icon name="x" :size="11" /></button>
               </span>
             </td>
-            <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today(), bad: bad === cellId(r, d) }" @click="editing !== cellId(r, d) && startEdit(r, d)">
+            <td v-for="d in cols" :key="d" class="cell tw:group/cell tw:border-b tw:border-b-border tw:h-34 tw:p-0 tw:text-right tw:tabular-nums tw:font-data tw:cursor-text tw:[&.off]:not-[&.today]:not-hover:bg-white/1.5 tw:[&.today]:not-hover:bg-accent/6 tw:hover:bg-white/5 tw:hover:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.35)] tw:group-[.locked]/g23:cursor-default tw:group-[.locked]/g23:hover:shadow-none tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px] tw:group-[.widget]/sh:h-30" :class="{ off: isOff(d), today: d === today(), bad: bad === cellId(r, d) }" @click="editing !== cellId(r, d) && startEdit(r, d)">
               <input
                 v-if="editing === cellId(r, d)"
                 v-model="draft"
                 v-focus
-                class="cin"
+                class="cin tw:w-full tw:h-32 tw:box-border tw:py-0 tw:px-9 tw:border tw:border-accent tw:rounded-r2 tw:outline-none tw:bg-panel tw:text-text-hi tw:[font:inherit] tw:text-right tw:group-[.bad]/cell:border-down tw:group-[.bad]/cell:animate-[SheetView-shake_0.3s]"
                 @keydown="onCellKey($event, r, d)"
                 @blur="commit(r, d)"
               />
-              <span v-else class="cv" :class="{ zero: !r.cells.get(d)?.ms }">{{ formatHours(r.cells.get(d)?.ms ?? 0) }}</span>
+              <span v-else class="cv tw:block tw:py-0 tw:px-10 tw:[&.zero]:before:content-['·'] tw:[&.zero]:before:text-border-3" :class="{ zero: !r.cells.get(d)?.ms }">{{ formatHours(r.cells.get(d)?.ms ?? 0) }}</span>
             </td>
-            <td v-if="cols.length > 1" class="tc">{{ formatHours(r.total) }}</td>
+            <td v-if="cols.length > 1" class="tc tw:border-b tw:border-b-border tw:w-76 tw:text-right tw:pr-10 tw:tabular-nums tw:font-data tw:font-semibold tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px]">{{ formatHours(r.total) }}</td>
           </tr>
           <tr v-if="!rows.length">
-            <td :colspan="cols.length + 2" class="empty">Пусто — добавьте строку</td>
+            <td :colspan="cols.length + 2" class="empty tw:border-b tw:border-b-border tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px] tw:py-18 tw:px-4 tw:text-muted">Пусто — добавьте строку</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="sum">
-            <td class="rl">Итого</td>
-            <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(dayTotal(d)) }}</td>
-            <td v-if="cols.length > 1" class="tc">{{ formatHours(grand) }}</td>
+            <td class="rl tw:border-b tw:border-b-border tw:sticky tw:left-0 tw:z-2 tw:[background:var(--bg,var(--bg))] tw:w-[34%] tw:min-w-220 tw:max-w-380 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-2 tw:text-left tw:h-30 tw:tabular-nums tw:font-data tw:font-semibold tw:border-t tw:border-t-white/12 tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px] tw:group-[.widget]/sh:min-w-140">Итого</td>
+            <td v-for="d in cols" :key="d" class="cell tw:border-b tw:border-b-border tw:h-34 tw:p-0 tw:text-right tw:tabular-nums tw:font-data tw:[&.off]:not-[&.today]:bg-white/1.5 tw:[&.today]:bg-accent/6 tw:[&&]:pr-10 tw:cursor-default tw:font-semibold tw:border-t tw:border-t-white/12 tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px] tw:group-[.widget]/sh:h-30" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(dayTotal(d)) }}</td>
+            <td v-if="cols.length > 1" class="tc tw:border-b tw:border-b-border tw:w-76 tw:text-right tw:pr-10 tw:tabular-nums tw:font-data tw:h-30 tw:font-semibold tw:border-t tw:border-t-white/12 tw:[.qa_&]:text-muted tw:[.qa_&]:text-[11.5px]">{{ formatHours(grand) }}</td>
           </tr>
-          <tr v-for="(k, ki) in kindRows" :key="k.kind" class="kt" :class="{ first: ki === 0 }">
-            <td class="rl"><span class="kname"><i :style="{ background: kindColor(k.kind) }"></i>{{ kindLabel(k.kind) }}</span></td>
-            <td v-for="d in cols" :key="d" class="cell" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(k.per.get(d) ?? 0) }}</td>
-            <td v-if="cols.length > 1" class="tc">{{ formatHours(k.total) }}</td>
+          <tr v-for="(k, ki) in kindRows" :key="k.kind" class="kt tw:group/kt" :class="{ first: ki === 0 }">
+            <td class="rl tw:border-b tw:border-b-border tw:sticky tw:left-0 tw:z-2 tw:[background:var(--bg,var(--bg))] tw:w-[34%] tw:min-w-220 tw:max-w-380 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-2 tw:text-left tw:group-[.widget]/sh:min-w-140 tw:h-26 tw:text-text-2 tw:text-[12px] tw:tabular-nums tw:font-data tw:group-[.first]/kt:border-t tw:group-[.first]/kt:[border-top-style:dashed] tw:group-[.first]/kt:border-t-border"><span class="kname tw:inline-flex tw:items-center tw:gap-7 tw:whitespace-nowrap"><i class="tw:w-9 tw:h-9 tw:rounded-r2" :style="{ background: kindColor(k.kind) }"></i>{{ kindLabel(k.kind) }}</span></td>
+            <td v-for="d in cols" :key="d" class="cell tw:border-b tw:border-b-border tw:p-0 tw:text-right tw:[&.off]:not-[&.today]:bg-white/1.5 tw:[&.today]:bg-accent/6 tw:[&&]:pr-10 tw:cursor-default tw:group-[.widget]/sh:h-30 tw:h-26 tw:text-text-2 tw:text-[12px] tw:tabular-nums tw:font-data tw:group-[.first]/kt:border-t tw:group-[.first]/kt:[border-top-style:dashed] tw:group-[.first]/kt:border-t-border" :class="{ off: isOff(d), today: d === today() }">{{ formatHours(k.per.get(d) ?? 0) }}</td>
+            <td v-if="cols.length > 1" class="tc tw:border-b tw:border-b-border tw:w-76 tw:text-right tw:pr-10 tw:font-semibold tw:h-26 tw:text-text-2 tw:text-[12px] tw:tabular-nums tw:font-data tw:group-[.first]/kt:border-t tw:group-[.first]/kt:[border-top-style:dashed] tw:group-[.first]/kt:border-t-border">{{ formatHours(k.total) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -532,529 +206,4 @@ onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
   </div>
 </template>
 
-<style scoped>
-.sh {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.sp {
-  flex: 1;
-}
-.seg {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
-}
-.seg button {
-  height: 24px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.25);
-  color: var(--text-hi);
-}
-.nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.pl {
-  min-width: 110px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover,
-.ib.on {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--text);
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.btn:hover,
-.btn.on {
-  background: rgba(255, 255, 255, 0.06);
-}
-.btn.pri {
-  justify-content: center;
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.busy {
-  display: inline-flex;
-  color: var(--accent-fg);
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.pop {
-  position: relative;
-}
-.pd {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 40;
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--panel-2);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
-}
-.pd.menu {
-  min-width: 190px;
-  display: flex;
-  flex-direction: column;
-}
-.pd.menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 9px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-size: 12.5px;
-  text-align: left;
-}
-.pd.menu button:hover {
-  background: rgb(var(--accent-rgb) / 0.16);
-}
-.pd.add {
-  width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-}
-.kinds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.kinds button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--c) 14%, transparent);
-  color: var(--c);
-}
-.kinds button.on {
-  border-color: var(--c);
-  background: color-mix(in srgb, var(--c) 30%, transparent);
-  color: var(--text-hi);
-}
-.arow {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.ain {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12.5px;
-}
-/* the table: the task column and the header stay put while it scrolls */
-.wrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 12px 16px;
-}
-.sheet {
-  width: 100%;
-  min-width: 720px;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12.5px;
-}
-.sheet.one {
-  min-width: 0;
-  max-width: 640px;
-}
-th,
-td {
-  border-bottom: 1px solid var(--border);
-}
-thead th {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--bg, var(--bg));
-  padding: 5px 0;
-  white-space: nowrap;
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 11.5px;
-}
-.rl {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--bg, var(--bg));
-  width: 34%;
-  min-width: 220px;
-  max-width: 380px;
-  padding: 0 10px 0 2px;
-  text-align: left;
-}
-thead .rl {
-  z-index: 4;
-}
-.dc,
-.tc {
-  width: 76px;
-  text-align: right;
-}
-/* one line: "пн 13"; a narrow column keeps only the date (never a second line) */
-.dh {
-  container-type: inline-size;
-  display: flex;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 4px;
-  width: 100%;
-  box-sizing: border-box;
-  white-space: nowrap;
-  overflow: hidden;
-  padding: 2px 10px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: inherit;
-  line-height: 1.15;
-}
-@container (max-width: 52px) {
-  .dw {
-    display: none;
-  }
-}
-.dh:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
-}
-.dh b {
-  font-size: 13px;
-  color: var(--text-2);
-}
-.dc.today .dh b,
-.dc.today .dh {
-  color: var(--accent-fg);
-}
-.tc {
-  padding-right: 10px;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  font-weight: 600;
-}
-.rlab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  min-width: 0;
-}
-.eic {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r2);
-  color: var(--text-hi);
-}
-.key {
-  flex: none;
-  color: var(--info-fg);
-  font-size: 12px;
-}
-.rt {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lk {
-  flex: none;
-  color: var(--info);
-}
-.rx {
-  flex: none;
-  display: inline-flex;
-  margin-left: auto;
-  padding: 3px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.rx:hover {
-  color: var(--down-fg);
-}
-.cell {
-  height: 34px;
-  padding: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  cursor: text;
-}
-.cell.off {
-  background: rgba(255, 255, 255, 0.015);
-}
-.cell.today {
-  background: rgb(var(--accent-rgb) / 0.06);
-}
-tbody .cell:hover {
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.35);
-}
-tr.locked .cell {
-  cursor: default;
-}
-tr.locked .cell:hover {
-  box-shadow: none;
-}
-.cv {
-  display: block;
-  padding: 0 10px;
-}
-.cv.zero::before {
-  content: '·';
-  color: var(--border-3);
-}
-.cin {
-  width: 100%;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 9px;
-  border: 1px solid var(--accent);
-  border-radius: var(--r2);
-  outline: none;
-  background: var(--panel);
-  color: var(--text-hi);
-  font: inherit;
-  text-align: right;
-}
-.cell.bad .cin {
-  border-color: var(--down);
-  animation: shake 0.3s;
-}
-@keyframes shake {
-  25% {
-    transform: translateX(-3px);
-  }
-  75% {
-    transform: translateX(3px);
-  }
-}
-tfoot td {
-  height: 30px;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-tfoot .cell {
-  padding-right: 10px;
-  cursor: default;
-}
-.sum td {
-  font-weight: 600;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-.qa td {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.empty {
-  padding: 18px 4px;
-  color: var(--muted);
-}
-/* the dashboard's: tighter */
-.sh.widget .bar {
-  padding: 6px 8px;
-  gap: 4px 6px;
-}
-.sh.widget .wrap {
-  padding: 0 8px 8px;
-}
-.sh.widget .sheet,
-.sh.widget .sheet.one {
-  min-width: 0;
-  max-width: none;
-  font-size: 12px;
-}
-.sh.widget .rl {
-  min-width: 140px;
-}
-.sh.widget .rlab,
-.sh.widget .cell {
-  height: 30px;
-}
-.sh.widget .pl {
-  min-width: 80px;
-  font-size: 12px;
-}
-/* the period label opens the calendar */
-button.pl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-}
-button.pl:hover,
-button.pl.on {
-  background: rgba(255, 255, 255, 0.07);
-}
-button.pl.now {
-  color: var(--accent-fg);
-}
-button.pl.now :deep(svg) {
-  color: var(--accent);
-}
-button.pl :deep(svg) {
-  color: var(--muted);
-}
-/* fixed columns, each edge drags */
-.sheet {
-  table-layout: fixed;
-  min-width: 0 !important;
-  max-width: none !important;
-}
-th {
-  position: sticky;
-}
-.crz {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  right: -3px;
-  z-index: 5;
-  width: 6px;
-  cursor: col-resize;
-  border-radius: var(--r2);
-}
-.crz:hover {
-  background: rgb(var(--accent-rgb) / 0.55);
-}
-.rt {
-  min-width: 0;
-}
-/* the dashboard's bar: one line */
-.sh.widget .bar {
-  flex-wrap: nowrap;
-  height: 34px;
-  padding: 0 8px;
-  overflow: hidden;
-}
-.sh.widget .seg button {
-  height: 22px;
-  padding: 0 7px;
-  font-size: 11.5px;
-}
-.sh.widget .ib {
-  width: 24px;
-  height: 24px;
-}
-.sh.widget .btn {
-  height: 24px;
-  padding: 0 7px;
-}
-.sh.widget .bl,
-.sh.widget :deep(.fl) {
-  display: none;
-}
-.sh.widget :deep(.fb) {
-  height: 24px;
-  padding: 0 6px;
-}
-.sh.widget button.pl {
-  height: 24px;
-  white-space: nowrap;
-}
-/* per kind, under the total */
-.kt td {
-  height: 26px;
-  color: var(--text-2);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-.kt.first td {
-  border-top: 1px dashed var(--border);
-}
-.kname {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-}
-.kname i {
-  width: 9px;
-  height: 9px;
-  border-radius: var(--r2);
-}
-</style>
+<style scoped src="./SheetView.css"></style>

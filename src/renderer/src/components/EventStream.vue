@@ -109,198 +109,36 @@ watch(
 </script>
 
 <template>
-  <div ref="box" class="es">
+  <div ref="box" class="es tw:h-full tw:overflow-y-auto tw:overscroll-contain tw:pb-[40vh]">
     <section v-for="g in groups" :key="g.day" class="eg">
-      <div class="eh" :data-k="`h${g.day}`" :class="{ today: g.day === todayKey, off: g.off }">
-        <span>{{ g.title }}</span>
-        <span class="et num">{{ g.total ? formatDuration(g.total) : '' }}</span>
+      <div class="eh tw:group/eh tw:sticky tw:top-0 tw:z-2 tw:flex tw:justify-between tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-b tw:border-b-border tw:bg-panel-2 tw:text-[12px] tw:font-semibold tw:text-text-hi" :data-k="`h${g.day}`" :class="{ today: g.day === todayKey, off: g.off }">
+        <span class="tw:group-[.off]/eh:first:not-group-[.today]/eh:text-down-fg tw:group-[.today]/eh:first:text-accent-fg">{{ g.title }}</span>
+        <span class="et num tw:font-data tw:tabular-nums tw:group-[.off]/eh:first:not-group-[.today]/eh:text-down-fg tw:group-[.today]/eh:first:text-accent-fg tw:text-muted tw:text-[11px] tw:font-normal">{{ g.total ? formatDuration(g.total) : '' }}</span>
       </div>
       <template v-for="r in g.rows" :key="r.key">
         <template v-if="r.t === 'gap'">
-          <div v-if="draft?.day === g.day && draft.entry.start === r.start" class="ecard draft" :data-k="`d${g.day}${r.start}`">
+          <div v-if="draft?.day === g.day && draft.entry.start === r.start" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`d${g.day}${r.start}`">
             <EntryEditor :key="`d${r.start}`" :day="g.day" :entry="draft.entry" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
-            <button class="ex" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
+            <button class="ex tw:absolute tw:top-8 tw:right-8 tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
           </div>
-          <button v-else class="egap" :class="{ past: r.past }" title="Заполнить это время событием" @click="fillGap(g.day, r.start, r.end)">
-            <span class="num">{{ formatHM(r.start) }}–{{ formatHM(r.end) }}</span>
+          <button v-else class="egap tw:group/egap tw:flex tw:items-center tw:gap-8 tw:w-[calc(100%-12px)] tw:h-24 tw:my-0 tw:mx-6 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-9 tw:border-0 tw:[&&]:border-b tw:[&&]:[border-bottom-style:dashed] tw:[&&]:border-b-border tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:text-left tw:[&.past]:not-hover:text-dim tw:hover:bg-hover tw:hover:text-accent-fg tw:hover:enabled:border-border-3" :class="{ past: r.past }" title="Заполнить это время событием" @click="fillGap(g.day, r.start, r.end)">
+            <span class="num tw:font-data tw:tabular-nums tw:w-84">{{ formatHM(r.start) }}–{{ formatHM(r.end) }}</span>
             <span>свободно {{ formatDuration(r.end - r.start) }}</span>
-            <Icon name="plus" :size="12" />
+            <Icon class="tw:ml-auto tw:opacity-0 tw:group-hover/egap:opacity-100" name="plus" :size="12" />
           </button>
         </template>
-        <div v-else-if="openId === r.e.id" class="ecard" :data-k="r.e.id" :style="{ '--c': kindColor(r.e.kind) }">
+        <div v-else-if="openId === r.e.id" class="ecard tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)]" :data-k="r.e.id" :style="{ '--c': kindColor(r.e.kind) }">
           <EntryEditor :key="r.e.id" :day="g.day" :entry="r.e" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="emit('changed')" @copied="(c, d) => (emit('changed'), d === g.day && emit('open', c.id))" @deleted="(emit('open', undefined), emit('changed'))" @close="emit('open', undefined)" />
         </div>
-        <button v-else class="erow" :data-k="r.e.id" :class="{ focus: focusId === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @click="emit('open', r.e.id)">
-          <span class="num tm">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
-          <Icon :name="entryIcon(r.e)" :size="13" class="ic" />
-          <span class="tl">{{ r.e.label || kindLabel(r.e.kind) }}<small v-if="r.e.task"> · {{ r.e.task.key }}</small></span>
+        <button v-else class="erow tw:group/erow tw:flex tw:items-center tw:gap-8 tw:w-[calc(100%-12px)] tw:min-h-32 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-0 tw:[&&]:border-l-3 tw:[&&]:border-l-(--c) tw:[&&]:border-b tw:[&&]:border-b-border tw:rounded-none tw:bg-transparent tw:text-left tw:whitespace-nowrap tw:text-[12.5px] tw:cursor-default tw:[transition:background_0.2s] tw:hover:not-[&.focus]:not-[&.live]:bg-[color-mix(in_srgb,var(--c)_14%,transparent)] tw:[&.focus]:not-[&.live]:bg-[color-mix(in_srgb,var(--c)_14%,transparent)] tw:[&.focus]:[box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--c)_60%,transparent)] tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:hover:enabled:border-border-3" :data-k="r.e.id" :class="{ focus: focusId === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @click="emit('open', r.e.id)">
+          <span class="num tm tw:font-data tw:tabular-nums tw:flex-none tw:w-84 tw:text-text-2 tw:text-[11.5px]">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
+          <Icon :name="entryIcon(r.e)" :size="13" class="ic tw:group-[.live]/erow:animate-[EventStream-es-pulse_1.4s_ease-in-out_infinite] tw:[&&]:flex-none tw:text-(--c)" />
+          <span class="tl tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">{{ r.e.label || kindLabel(r.e.kind) }}<small class="tw:text-info-fg tw:font-data" v-if="r.e.task"> · {{ r.e.task.key }}</small></span>
           <NoteLinks :id="r.e.id" />
-          <span class="num du">{{ formatDuration(r.e.end - r.e.start) }}</span>
+          <span class="num du tw:font-data tw:tabular-nums tw:flex-none tw:text-text-2 tw:text-[11.5px]">{{ formatDuration(r.e.end - r.e.start) }}</span>
         </button>
       </template>
-      <p v-if="!g.rows.length" class="none">Нет событий</p>
+      <p v-if="!g.rows.length" class="none tw:my-8 tw:mx-12 tw:text-dim tw:text-[12px]">Нет событий</p>
     </section>
   </div>
 </template>
-
-<style scoped>
-.es {
-  height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-bottom: 40vh;
-}
-.num {
-  font-family: var(--font-data);
-  font-variant-numeric: tabular-nums;
-}
-.eh {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 30px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel-2);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-hi);
-}
-.eh.off span:first-child {
-  color: var(--down-fg);
-}
-.eh.today span:first-child {
-  color: var(--accent-fg);
-}
-.et {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-.erow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 12px);
-  min-height: 32px;
-  margin: 0 6px;
-  padding: 3px 8px 3px 6px;
-  border: 0;
-  border-left: 3px solid var(--c);
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  white-space: nowrap;
-  font-size: 12.5px;
-  cursor: default;
-  transition: background 0.2s;
-}
-.erow:hover,
-.erow.focus {
-  background: color-mix(in srgb, var(--c) 14%, transparent);
-}
-.erow.focus {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent);
-}
-.erow.live {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
-}
-.erow.live .ic {
-  animation: es-pulse 1.4s ease-in-out infinite;
-}
-@keyframes es-pulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-.tm {
-  flex: none;
-  width: 84px;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-.ic {
-  flex: none;
-  color: var(--c);
-}
-.tl {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tl small {
-  color: var(--info-fg);
-  font-family: var(--font-data);
-}
-.du {
-  flex: none;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-.egap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 12px);
-  height: 24px;
-  margin: 0 6px;
-  padding: 0 8px 0 9px;
-  border: 0;
-  border-bottom: 1px dashed var(--border);
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-  text-align: left;
-}
-.egap .num {
-  width: 84px;
-}
-.egap.past {
-  color: var(--dim);
-}
-.egap svg {
-  margin-left: auto;
-  opacity: 0;
-}
-.egap:hover {
-  background: var(--hover);
-  color: var(--accent-fg);
-}
-.egap:hover svg {
-  opacity: 1;
-}
-.ecard {
-  position: relative;
-  margin: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--accent-line);
-  border-left: 3px solid var(--c, var(--accent));
-  border-radius: var(--r3);
-  background: var(--panel-2);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.ecard.draft {
-  border-style: dashed;
-}
-.ex {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  padding: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.none {
-  margin: 8px 12px;
-  color: var(--dim);
-  font-size: 12px;
-}
-</style>

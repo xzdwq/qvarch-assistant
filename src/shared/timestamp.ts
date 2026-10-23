@@ -2,7 +2,10 @@
  * Timestamps: whatever is pasted (Unix seconds / ms / µs / ns, ISO 8601, RFC 2822, «18.10.2026 15:30»,
  * SQL «2026-10-18 15:30:00», Excel's day number) → one moment; that moment written every usual way.
  */
-export type TsUnit = 's' | 'ms' | 'us' | 'ns'
+export const TS_UNITS = ['s', 'ms', 'us', 'ns'] as const
+export type TsUnit = (typeof TS_UNITS)[number]
+/** A number in a unit → ms. */
+const TO_MS: Record<TsUnit, (v: number) => number> = { s: (v) => v * 1000, ms: (v) => v, us: (v) => v / 1000, ns: (v) => v / 1e6 }
 
 /** A number's unit by its size (as today's moments are written: 10 digits — s, 13 — ms, 16 — µs, 19 — ns). */
 export function unitOf(digits: string): TsUnit {
@@ -17,9 +20,7 @@ export function parseMoment(input: string, unit?: TsUnit, now = Date.now()): num
   if (!s) return undefined
   if (/^(now|сейчас|today|сегодня)$/i.test(s)) return now
   if (/^-?\d+(\.\d+)?$/.test(s)) {
-    const u = unit ?? unitOf(s)
-    const v = Number(s)
-    const ms = u === 's' ? v * 1000 : u === 'ms' ? v : u === 'us' ? v / 1000 : v / 1e6
+    const ms = TO_MS[unit ?? unitOf(s)](Number(s))
     return Number.isFinite(ms) && Math.abs(ms) < 8.64e15 ? Math.round(ms) : undefined
   }
   // dd.mm.yyyy [hh:mm[:ss]]

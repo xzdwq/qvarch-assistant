@@ -1,0 +1,8 @@
+/* TaskPicker: what its template cannot carry as utilities (scoped). */
+
+/* same look as the text field next to it */
+.it b.own,
+.src.own,
+.it.create {
+  color: var(--accent-fg);
+}

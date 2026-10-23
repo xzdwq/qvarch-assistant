@@ -1,4 +1,5 @@
 import type { CommitInfo, PlanItem } from '@shared/release'
+import { cssColor } from './cssColor'
 
 /**
  * The branch rail left of the release chronology (ported from the VS Code panel): lane 0 is the dev trunk;
@@ -95,7 +96,7 @@ function dot(x: number, y: number, color: string, branch: string | null): string
 }
 
 /** The SVG inside: lines first, then the dots over them. */
-export function drawRail(rail: Rail, merged: Row[], centers: number[], height: number, colorFor: (b: string) => string, trunk = '#6b7387'): string {
+export function drawRail(rail: Rail, merged: Row[], centers: number[], height: number, colorFor: (b: string) => string, trunk = cssColor('--release-rail-trunk')): string {
   const total = merged.length
   if (!total) return ''
   const tx = laneX(0)

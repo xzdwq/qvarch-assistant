@@ -127,12 +127,12 @@ function setNow(): void {
 </script>
 
 <template>
-  <div class="ts">
-    <div class="top">
-      <div class="main" :class="{ bad: inputErr }">
+  <div class="ts tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="top tw:flex-none tw:flex tw:items-center tw:gap-10 tw:py-12 tw:px-14 tw:border-b tw:border-b-border">
+      <div class="main tw:flex-1 tw:min-w-0 tw:flex tw:items-center tw:gap-8 tw:h-40 tw:pt-0 tw:pr-4 tw:pb-0 tw:pl-12 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:text-muted tw:focus-within:not-[&.bad]:border-accent tw:[&.bad]:border-down" :class="{ bad: inputErr }">
         <Icon name="clock" :size="15" />
-        <input v-model="input" spellcheck="false" placeholder="Вставьте что угодно: 1792326600, 1792326600250, 2026-10-18T12:30:00Z, Sun, 18 Oct 2026 12:30:00 GMT, 18.10.2026 15:30" />
-        <select v-model="unit" title="Единица голого числа">
+        <input class="tw:flex-1 tw:min-w-0 tw:h-38 tw:p-0 tw:border-0 tw:bg-transparent tw:text-text-hi tw:font-data tw:text-[14px] tw:outline-none" v-model="input" spellcheck="false" placeholder="Вставьте что угодно: 1792326600, 1792326600250, 2026-10-18T12:30:00Z, Sun, 18 Oct 2026 12:30:00 GMT, 18.10.2026 15:30" />
+        <select class="tw:flex-none tw:h-30 tw:text-[12px]" v-model="unit" title="Единица голого числа">
           <option value="auto">число: авто</option>
           <option value="s">секунды</option>
           <option value="ms">миллисекунды</option>
@@ -140,222 +140,32 @@ function setNow(): void {
           <option value="ns">наносекунды</option>
         </select>
       </div>
-      <button class="btn" title="Текущий момент" @click="setNow"><Icon name="refresh" :size="13" />Сейчас</button>
-      <label class="chk" title="Часы идут — значения обновляются"><input v-model="live" type="checkbox" />Идут</label>
+      <button class="btn tw:flex-none tw:inline-flex tw:items-center tw:gap-6 tw:h-32" title="Текущий момент" @click="setNow"><Icon name="refresh" :size="13" />Сейчас</button>
+      <label class="chk tw:flex-none tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]" title="Часы идут — значения обновляются"><input v-model="live" type="checkbox" />Идут</label>
     </div>
-    <p v-if="inputErr" class="hint err">Не понимаю этот формат. Подойдут числа (секунды, мс, мкс, нс), ISO 8601, RFC 2822, «2026-10-18 15:30», «18.10.2026 15:30».</p>
-    <div class="body">
-      <div class="rows">
-        <div v-for="r in ROWS" :key="r.id" class="row" :class="{ bad: bad[r.id] }">
-          <span class="lb" :title="r.hint">{{ r.label }}<em v-if="r.hint">{{ r.hint }}</em></span>
-          <input :value="shownRow(r.id)" spellcheck="false" @input="onRow(r.id, ($event.target as HTMLInputElement).value)" @blur="endRow(r.id)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
-          <button class="ib" :title="copied && copied === shownRow(r.id) ? 'Скопировано' : 'Копировать'" :disabled="!shownRow(r.id)" @click="copy(shownRow(r.id))"><Icon :name="copied && copied === shownRow(r.id) ? 'check' : 'copy'" :size="13" /></button>
+    <p v-if="inputErr" class="hint err tw:flex-none tw:mt-8 tw:mr-16 tw:mb-0 tw:ml-16 tw:text-[12.5px] tw:text-down-fg">Не понимаю этот формат. Подойдут числа (секунды, мс, мкс, нс), ISO 8601, RFC 2822, «2026-10-18 15:30», «18.10.2026 15:30».</p>
+    <div class="body tw:flex-1 tw:min-h-0 tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(240px,300px)]">
+      <div class="rows tw:flex tw:flex-col tw:gap-4 tw:min-w-0 tw:py-12 tw:px-14 tw:overflow-auto">
+        <div v-for="r in ROWS" :key="r.id" class="row tw:group/row tw:grid tw:grid-cols-[190px_minmax(0,1fr)_30px] tw:items-center tw:gap-10" :class="{ bad: bad[r.id] }">
+          <span class="lb tw:flex tw:flex-col tw:min-w-0 tw:text-text-2 tw:text-[12.5px]" :title="r.hint">{{ r.label }}<em class="tw:overflow-hidden tw:text-dim tw:text-[11px] tw:not-italic tw:text-ellipsis tw:whitespace-nowrap" v-if="r.hint">{{ r.hint }}</em></span>
+          <input class="tw:h-32 tw:font-data tw:text-[13px] tw:group-[.bad]/row:border-down" :value="shownRow(r.id)" spellcheck="false" @input="onRow(r.id, ($event.target as HTMLInputElement).value)" @blur="endRow(r.id)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+          <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" :title="copied && copied === shownRow(r.id) ? 'Скопировано' : 'Копировать'" :disabled="!shownRow(r.id)" @click="copy(shownRow(r.id))"><Icon :name="copied && copied === shownRow(r.id) ? 'check' : 'copy'" :size="13" /></button>
         </div>
-        <div class="row zone">
-          <span class="lb">В часовом поясе</span>
-          <div class="zv">
-            <select v-model="tz">
+        <div class="row zone tw:grid tw:grid-cols-[190px_minmax(0,1fr)_30px] tw:items-center tw:gap-10 tw:mt-8 tw:pt-10 tw:border-t tw:border-t-border">
+          <span class="lb tw:flex tw:flex-col tw:min-w-0 tw:text-text-2 tw:text-[12.5px]">В часовом поясе</span>
+          <div class="zv tw:flex tw:items-center tw:gap-10 tw:min-w-0">
+            <select class="tw:flex-none tw:max-w-200 tw:h-32" v-model="tz">
               <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
             </select>
-            <code>{{ inZone }}</code>
+            <code class="tw:overflow-hidden tw:text-text tw:font-data tw:text-[12.5px] tw:text-ellipsis tw:whitespace-nowrap">{{ inZone }}</code>
           </div>
-          <button class="ib" title="Копировать ISO в этом поясе" :disabled="ms === undefined" @click="ms !== undefined && copy(isoIn(ms, tz))"><Icon name="copy" :size="13" /></button>
+          <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" title="Копировать ISO в этом поясе" :disabled="ms === undefined" @click="ms !== undefined && copy(isoIn(ms, tz))"><Icon name="copy" :size="13" /></button>
         </div>
       </div>
-      <aside class="facts">
-        <div v-for="f in facts" :key="f.k" class="fact"><span>{{ f.k }}</span><b>{{ f.v }}</b></div>
-        <p class="note">Любую строку слева можно править — остальные пересчитаются. Число без единицы распознаётся по длине: 10 цифр — секунды, 13 — мс, 16 — мкс, 19 — нс.</p>
+      <aside class="facts tw:flex tw:flex-col tw:gap-10 tw:min-w-0 tw:p-14 tw:overflow-auto tw:border-l tw:border-l-border">
+        <div v-for="f in facts" :key="f.k" class="fact tw:flex tw:flex-col tw:gap-2 tw:text-[12px]"><span class="tw:text-muted">{{ f.k }}</span><b class="tw:text-text-hi tw:text-[13.5px] tw:font-medium tw:first-letter:uppercase">{{ f.v }}</b></div>
+        <p class="note tw:mt-6 tw:mr-0 tw:mb-0 tw:ml-0 tw:text-dim tw:text-[11.5px]">Любую строку слева можно править — остальные пересчитаются. Число без единицы распознаётся по длине: 10 цифр — секунды, 13 — мс, 16 — мкс, 19 — нс.</p>
       </aside>
     </div>
   </div>
 </template>
-
-<style scoped>
-.ts {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.top {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 4px 0 12px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--field-bg);
-  color: var(--muted);
-}
-.main:focus-within {
-  border-color: var(--accent);
-}
-.main.bad {
-  border-color: var(--down);
-}
-.main input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 14px;
-  outline: none;
-}
-.main select {
-  flex: none;
-  height: 30px;
-  font-size: 12px;
-}
-.btn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-}
-.chk {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.hint {
-  flex: none;
-  margin: 8px 16px 0;
-  font-size: 12.5px;
-}
-.err {
-  color: var(--down-fg);
-}
-.body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-}
-.rows {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 12px 14px;
-  overflow: auto;
-}
-.row {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) 30px;
-  align-items: center;
-  gap: 10px;
-}
-.lb {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.lb em {
-  overflow: hidden;
-  color: var(--dim);
-  font-size: 11px;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.row input {
-  height: 32px;
-  font-family: var(--font-data);
-  font-size: 13px;
-}
-.row.bad input {
-  border-color: var(--down);
-}
-.zone {
-  margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.zv {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.zv select {
-  flex: none;
-  max-width: 200px;
-  height: 32px;
-}
-.zv code {
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.facts {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 14px;
-  overflow: auto;
-  border-left: 1px solid var(--border);
-}
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-}
-.fact span {
-  color: var(--muted);
-}
-.fact b {
-  color: var(--text-hi);
-  font-size: 13.5px;
-  font-weight: 500;
-}
-.fact b::first-letter {
-  text-transform: uppercase;
-}
-.note {
-  margin: 6px 0 0;
-  color: var(--dim);
-  font-size: 11.5px;
-}
-</style>

@@ -25,186 +25,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="hl-back" @mousedown.self="emit('close')">
-      <div class="hl" role="dialog" aria-label="Инструкция">
-        <nav>
-          <label class="hl-q"><Icon name="search" :size="12" /><input v-model="q" placeholder="Поиск по инструкции" spellcheck="false" /></label>
+    <div class="hl-back tw:fixed tw:inset-0 tw:z-1800 tw:grid tw:place-items-center tw:bg-black/45" @mousedown.self="emit('close')">
+      <div class="hl tw:flex tw:w-[min(980px,calc(100vw-32px))] tw:h-[min(720px,calc(100vh-48px))] tw:border tw:border-border-2 tw:rounded-r3 tw:bg-panel tw:shadow-pop tw:overflow-hidden" role="dialog" aria-label="Инструкция">
+        <nav class="tw:flex tw:flex-[0_0_230px] tw:flex-col tw:gap-1 tw:py-10 tw:px-8 tw:border-r tw:border-r-border tw:overflow-y-auto">
+          <label class="hl-q tw:flex tw:items-center tw:gap-6 tw:mb-6 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[5px] tw:bg-field tw:text-muted"><Icon name="search" :size="12" /><input class="tw:flex-1 tw:min-w-0 tw:h-28 tw:border-0 tw:bg-transparent tw:text-text tw:[font:inherit]" v-model="q" placeholder="Поиск по инструкции" spellcheck="false" /></label>
           <template v-for="g in ['Блокнот', 'Тестирование']" :key="g">
-            <p v-if="shown.some((s) => s.group === g)" class="hl-g">{{ g }}</p>
-            <button v-for="s in shown.filter((x) => x.group === g)" :key="s.id" :class="{ on: sec?.id === s.id }" @click="pick(s.id)"><Icon :name="s.icon" :size="13" /><span>{{ s.title }}</span></button>
+            <p v-if="shown.some((s) => s.group === g)" class="hl-g tw:mt-10 tw:mr-8 tw:mb-4 tw:ml-8 tw:text-muted tw:text-[11px] tw:font-semibold tw:tracking-[0.04em] tw:uppercase">{{ g }}</p>
+            <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:text-left tw:whitespace-nowrap tw:hover:not-[&.on]:bg-hover tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/16 tw:[&.on]:text-text tw:hover:enabled:border-border-3" v-for="s in shown.filter((x) => x.group === g)" :key="s.id" :class="{ on: sec?.id === s.id }" @click="pick(s.id)"><Icon :name="s.icon" :size="13" /><span class="tw:overflow-hidden tw:text-ellipsis">{{ s.title }}</span></button>
           </template>
-          <p v-if="!shown.length" class="hl-none">Ничего не найдено</p>
+          <p v-if="!shown.length" class="hl-none tw:m-8 tw:text-muted">Ничего не найдено</p>
         </nav>
-        <section ref="body">
-          <header>
-            <h2 v-if="sec">{{ sec.title }}</h2>
-            <span class="grow"></span>
-            <button class="hl-x" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="14" /></button>
+        <section class="tw:flex-1 tw:min-w-0 tw:overflow-y-auto" ref="body">
+          <header class="tw:sticky tw:top-0 tw:flex tw:items-center tw:pt-14 tw:pr-20 tw:pb-8 tw:pl-20 tw:bg-panel">
+            <h2 class="tw:m-0 tw:text-[18px]" v-if="sec">{{ sec.title }}</h2>
+            <span class="grow tw:flex-1"></span>
+            <button class="hl-x tw:grid tw:place-items-center tw:w-28 tw:h-28 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="14" /></button>
           </header>
           <!-- (the help's own static text — no one else's) -->
-          <div v-if="sec" class="hl-body" v-html="sec.html"></div>
+          <div v-if="sec" class="hl-body tw:pt-0 tw:pr-20 tw:pb-24 tw:pl-20 tw:text-text tw:text-[13.5px] tw:leading-[1.55]" v-html="sec.html"></div>
         </section>
       </div>
     </div>
   </Teleport>
 </template>
 
-<style scoped>
-.hl-back {
-  position: fixed;
-  inset: 0;
-  z-index: 1800;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / 0.45);
-}
-.hl {
-  display: flex;
-  width: min(980px, calc(100vw - 32px));
-  height: min(720px, calc(100vh - 48px));
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-nav {
-  display: flex;
-  flex: 0 0 230px;
-  flex-direction: column;
-  gap: 1px;
-  padding: 10px 8px;
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-}
-.hl-q {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--field-bg);
-  color: var(--muted);
-}
-.hl-q input {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-}
-.hl-g {
-  margin: 10px 8px 4px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-nav button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-2);
-  text-align: left;
-  white-space: nowrap;
-}
-nav button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-nav button:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-nav button.on {
-  background: rgb(var(--accent-rgb) / 0.16);
-  color: var(--text);
-}
-.hl-none {
-  margin: 8px;
-  color: var(--muted);
-}
-section {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-}
-header {
-  position: sticky;
-  top: 0;
-  display: flex;
-  align-items: center;
-  padding: 14px 20px 8px;
-  background: var(--panel);
-}
-h2 {
-  margin: 0;
-  font-size: 18px;
-}
-.grow {
-  flex: 1;
-}
-.hl-x {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-2);
-}
-.hl-x:hover {
-  background: var(--hover);
-}
-.hl-body {
-  padding: 0 20px 24px;
-  color: var(--text);
-  font-size: 13.5px;
-  line-height: 1.55;
-}
-.hl-body :deep(p) {
-  margin: 8px 0;
-}
-.hl-body :deep(ul) {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-.hl-body :deep(li) {
-  margin: 4px 0;
-}
-.hl-body :deep(dl) {
-  display: grid;
-  grid-template-columns: minmax(150px, 34%) 1fr;
-  gap: 6px 14px;
-  margin: 10px 0;
-}
-.hl-body :deep(dt) {
-  font-weight: 600;
-}
-.hl-body :deep(dd) {
-  margin: 0;
-  color: var(--text-2);
-}
-.hl-body :deep(code),
-.hl-body :deep(kbd) {
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--panel-3);
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-.hl-body :deep(kbd) {
-  border: 1px solid var(--border-2);
-}
-</style>
+<style scoped src="./NotebookHelp.css"></style>

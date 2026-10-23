@@ -1,0 +1,5 @@
+/* BlockTpl: what its template cannot carry as utilities (scoped). */
+
+.bt-ed :deep(.cm-editor) {
+  max-height: 420px;
+}

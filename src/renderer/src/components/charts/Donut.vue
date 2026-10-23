@@ -24,16 +24,16 @@ const shown = computed(() => props.parts.find((p) => p.key === hover.value))
 </script>
 
 <template>
-  <div class="dn">
-    <svg viewBox="0 0 140 140" class="ring">
-      <circle cx="70" cy="70" :r="R" class="bg" />
+  <div class="dn tw:flex tw:items-center tw:gap-16 tw:min-w-0">
+    <svg viewBox="0 0 140 140" class="donut tw:flex-none tw:w-150 tw:h-150 tw:[transform:rotate(-90deg)]">
+      <circle cx="70" cy="70" :r="R" class="bg tw:fill-none tw:[stroke:var(--panel-3)] tw:stroke-16" />
       <circle
         v-for="a in arcs"
         :key="a.key"
         cx="70"
         cy="70"
         :r="R"
-        class="arc"
+        class="arc tw:fill-none tw:stroke-16 tw:cursor-default tw:[transition:stroke-width_0.12s] tw:[&.on]:stroke-20"
         :class="{ on: hover === a.key }"
         :style="{ stroke: a.color }"
         :stroke-dasharray="a.dash"
@@ -42,108 +42,16 @@ const shown = computed(() => props.parts.find((p) => p.key === hover.value))
         @mouseleave="hover = undefined"
         @click="emit('pick', a.key)"
       />
-      <text x="70" y="66" class="t1">{{ shown ? `${Math.round((shown.value / (total || 1)) * 100)}%` : formatDuration(total) }}</text>
-      <text x="70" y="84" class="t2">{{ shown ? shown.label : 'всего' }}</text>
+      <text x="70" y="66" class="t1 tw:[transform:rotate(90deg)] tw:origin-[70px_70px] tw:[text-anchor:middle] tw:[fill:var(--text-hi)] tw:font-data tw:text-[15px] tw:font-bold">{{ shown ? `${Math.round((shown.value / (total || 1)) * 100)}%` : formatDuration(total) }}</text>
+      <text x="70" y="84" class="t2 tw:[transform:rotate(90deg)] tw:origin-[70px_70px] tw:[text-anchor:middle] tw:[fill:var(--muted)] tw:text-[10px]">{{ shown ? shown.label : 'всего' }}</text>
     </svg>
-    <div class="lg">
-      <button v-for="p in parts" :key="p.key" class="li" :class="{ on: hover === p.key }" @mouseenter="hover = p.key" @mouseleave="hover = undefined" @click="emit('pick', p.key)">
-        <i :style="{ background: p.color }"></i>
-        <span class="ll">{{ p.label }}</span>
-        <b>{{ formatDuration(p.value) }}</b>
-        <span class="lp">{{ Math.round((p.value / (total || 1)) * 100) }}%</span>
+    <div class="lg tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:gap-2">
+      <button v-for="p in parts" :key="p.key" class="li tw:flex tw:items-center tw:gap-8 tw:py-3 tw:px-6 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-[12px] tw:text-left tw:whitespace-nowrap tw:cursor-default tw:[&.on]:bg-hover tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:border-border-3" :class="{ on: hover === p.key }" @mouseenter="hover = p.key" @mouseleave="hover = undefined" @click="emit('pick', p.key)">
+        <i class="tw:flex-none tw:w-8 tw:h-8 tw:rounded-[2px]" :style="{ background: p.color }"></i>
+        <span class="ll tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-text-2">{{ p.label }}</span>
+        <b class="tw:font-data tw:text-[12px] tw:text-text-hi">{{ formatDuration(p.value) }}</b>
+        <span class="lp tw:w-34 tw:text-right tw:text-muted tw:font-data tw:text-[11px]">{{ Math.round((p.value / (total || 1)) * 100) }}%</span>
       </button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.dn {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-.ring {
-  flex: none;
-  width: 150px;
-  height: 150px;
-  transform: rotate(-90deg);
-}
-.ring text {
-  transform: rotate(90deg);
-  transform-origin: 70px 70px;
-  text-anchor: middle;
-}
-.bg {
-  fill: none;
-  stroke: var(--panel-3);
-  stroke-width: 16;
-}
-.arc {
-  fill: none;
-  stroke-width: 16;
-  cursor: default;
-  transition: stroke-width 0.12s;
-}
-.arc.on {
-  stroke-width: 20;
-}
-.t1 {
-  fill: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 15px;
-  font-weight: 700;
-}
-.t2 {
-  fill: var(--muted);
-  font-size: 10px;
-}
-.lg {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  font-size: 12px;
-  text-align: left;
-  white-space: nowrap;
-  cursor: default;
-}
-.li.on {
-  background: var(--hover);
-}
-.li i {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-}
-.ll {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-2);
-}
-.li b {
-  font-family: var(--font-data);
-  font-size: 12px;
-  color: var(--text-hi);
-}
-.lp {
-  width: 34px;
-  text-align: right;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11px;
-}
-</style>

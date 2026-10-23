@@ -1,0 +1,296 @@
+/*
+ * The note editor's look of what its extensions draw: the components' boxes and their drag, loop bands, value chips,
+ * event chips, pictures, recordings, emoji, the picture lightbox. (The editor's CodeMirror theme — theme.ts.)
+ */
+
+/* a loop's band: on the left of all it holds (its start, its blocks, its text, its end) — a loop in a loop, one more */
+.cm-loopband {
+  --lw: 12px;
+  padding-left: calc(var(--ld) * var(--lw) + 6px) !important;
+  background-image: repeating-linear-gradient(to right, rgb(var(--accent-rgb) / 0.5) 0 2px, transparent 2px var(--lw));
+  background-position: 2px 0;
+  background-size: calc(var(--ld) * var(--lw)) 100%;
+  background-repeat: no-repeat;
+}
+.cm-comp-drop {
+  position: fixed;
+  z-index: 4000;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.25);
+  pointer-events: none;
+}
+.cm-comp-ghost {
+  position: fixed;
+  z-index: 4001;
+  padding: 3px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--pop);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.cm-comp-moving {
+  opacity: 0.45;
+}
+.qa-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.qa-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* an event / a Jira task chip's status */
+.cm-ev-st {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cm-ev-st.done {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-2);
+}
+.cm-ev-st.now {
+  background: rgba(0, 230, 118, 0.16);
+  color: var(--up-fg);
+}
+.cm-ev-st.ahead {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--info-fg, #7dd3fc);
+}
+.cm-ev-st.gone {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--down-fg);
+}
+
+/* {{ value }} chips */
+.mde .cm-val {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+  font-family: var(--font-data);
+  font-size: 0.9em;
+}
+.mde .cm-val.none {
+  background: transparent;
+  outline: 1px dashed rgba(251, 191, 36, 0.5);
+  color: var(--muted);
+}
+.mde .cm-emoji {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 1.3em;
+  line-height: 1;
+}
+.mde .cm-emoji.big {
+  font-size: 2.6em;
+}
+/* the note editor's own look (its 40vh tail, paddings) must not reach the code fields inside components */
+.mde .cm-comp .cm-editor .cm-scroller {
+  /* (the note's own scroller shows everything — a field inside scrolls within its max height) */
+  overflow: auto !important;
+  padding: 0 !important;
+  line-height: 1.5;
+}
+.mde .cm-comp .cm-editor .cm-content {
+  padding: 4px 0 !important;
+}
+.mde .cm-comp .cm-editor .cm-gutters {
+  padding-top: 0;
+  font-size: 0.85em;
+}
+.mde .cm-comp {
+  padding: 2px 0;
+}
+
+/* event / Jira chips */
+.mde .cm-ev {
+  --ev: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin: 1px 0;
+  padding: 1px 8px 1px 3px;
+  border: 1px solid color-mix(in srgb, var(--ev) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ev) 9%, transparent);
+  vertical-align: baseline;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mde .cm-ev:hover {
+  background: color-mix(in srgb, var(--ev) 18%, transparent);
+}
+.mde .cm-ev-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ev) 22%, transparent);
+  color: var(--ev);
+}
+.mde .cm-ev-t {
+  overflow: hidden;
+  color: var(--text-hi);
+  font-size: 0.95em;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.mde .cm-ev-p,
+.mde .cm-ev-c {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.mde .cm-ev.gone .cm-ev-t {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.mde .cm-ev.wait {
+  opacity: 0.6;
+}
+
+/* pictures */
+.mde .cm-img {
+  display: inline-block;
+  max-width: 100%;
+  margin: 4px 0;
+  vertical-align: top;
+  line-height: 0;
+}
+/* under its line's text: a row of its own */
+.mde .cm-img.under {
+  width: 100%;
+  margin-top: 6px;
+}
+.mde .cm-img-in {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.mde .cm-img img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  cursor: zoom-in;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.mde .cm-img.missing {
+  padding: 10px 12px;
+  border: 1px dashed var(--border-2);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+.mde .cm-img-bar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.mde .cm-img-in:hover .cm-img-bar {
+  opacity: 1;
+}
+.mde .cm-img-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(15, 17, 23, 0.78);
+  color: #e6e9f2;
+  line-height: 1;
+}
+.mde .cm-img-bar button:hover {
+  background: rgba(15, 17, 23, 0.95);
+  color: #fff;
+}
+
+/* recordings */
+.mde .cm-audio {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.35);
+  background: rgb(var(--accent-rgb) / 0.08);
+  vertical-align: middle;
+  font-size: 12px;
+}
+.mde .cm-audio.missing {
+  border-color: rgba(255, 61, 61, 0.5);
+  opacity: 0.7;
+}
+.mde .cm-audio-ic {
+  display: inline-flex;
+  color: var(--accent-fg);
+}
+.mde .cm-audio audio {
+  height: 30px;
+  width: 300px;
+  color-scheme: dark;
+}
+.mde .cm-audio button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+.mde .cm-audio-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+}
+.mde .cm-audio button:hover:not(:disabled) {
+  background: rgb(var(--accent-rgb) / 0.18);
+}
+.mde .cm-audio .cm-audio-del {
+  color: var(--down-fg);
+}
+.mde .cm-audio .cm-audio-del:hover {
+  background: rgba(255, 61, 61, 0.15);
+}
+.mde .cm-audio button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

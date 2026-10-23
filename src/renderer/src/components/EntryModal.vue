@@ -21,9 +21,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="em-back" @mousedown.self="emit('close')">
-      <div class="em">
-        <div class="em-h">
+    <div class="em-back tw:fixed tw:inset-0 tw:z-1500 tw:flex tw:items-start tw:justify-center tw:pt-[10vh] tw:bg-black/55" @mousedown.self="emit('close')">
+      <div class="em tw:w-[min(560px,calc(100vw-32px))] tw:max-h-[80vh] tw:overflow-auto tw:pt-12 tw:pr-16 tw:pb-16 tw:pl-16 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-panel tw:[box-shadow:var(--shadow-pop-edge)]">
+        <div class="em-h tw:flex tw:items-center tw:justify-between tw:mb-6">
           <span class="cap">{{ title }}</span>
         </div>
         <EntryEditor
@@ -44,50 +44,3 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.em-notes {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-left: auto;
-}
-.em-notes button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: 11px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.em-back {
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 10vh;
-  background: rgba(0, 0, 0, 0.55);
-}
-.em {
-  width: min(560px, calc(100vw - 32px));
-  max-height: 80vh;
-  overflow: auto;
-  padding: 12px 16px 16px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--panel);
-  box-shadow: var(--shadow), inset 0 2px 0 var(--accent);
-}
-.em-h {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-</style>

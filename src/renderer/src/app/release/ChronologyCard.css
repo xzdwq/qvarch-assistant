@@ -1,0 +1,24 @@
+/* ChronologyCard: what its template cannot carry as utilities (scoped). */
+
+/* the rail's SVG is drawn from code (see useChronologyRail) */
+.railo :deep(.rl) {
+  fill: none;
+  stroke-width: 2;
+  transition:
+    opacity 0.1s ease,
+    stroke-width 0.1s ease;
+}
+.railo :deep(.rh) {
+  fill: var(--panel);
+}
+.railo :deep(circle[data-branch]) {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+}
+.railo :deep(.dim) {
+  opacity: 0.2;
+}
+.railo :deep(.hot.rl) {
+  stroke-width: 3.5;
+}

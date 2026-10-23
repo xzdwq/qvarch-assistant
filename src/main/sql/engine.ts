@@ -8,7 +8,7 @@
 import pg from 'pg'
 import Cursor from 'pg-cursor'
 import mysql from 'mysql2'
-import { DB_DEFAULTS, guardSql, plainValue, sqlErrorText, type DbConn, type DbSchema, type SqlColumn, type SqlMode, type SqlRun } from '../../shared/sql'
+import { DB_DEFAULTS, guardSql, plainValue, sqlErrorText, type DbConn, type DbKind, type DbSchema, type SqlColumn, type SqlMode, type SqlRun, type SslMode } from '../../shared/sql'
 import { mysqlAnalyzePlan, mysqlJsonPlan, pgPlan, sqlitePlan } from '../../shared/sqlPlan'
 
 export type { SqlMode, SqlRun }
@@ -22,6 +22,17 @@ const cell = (v: unknown) => {
 const limits = (c: DbConn) => ({ timeoutSec: c.timeoutSec ?? DB_DEFAULTS.timeoutSec, lockSec: c.lockSec ?? DB_DEFAULTS.lockSec, maxRows: Math.max(1, Math.min(c.maxRows ?? DB_DEFAULTS.maxRows, 100_000)) })
 /** A promise given up after `ms` (a close that would hang). */
 const within = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error('timeout')), ms))])
+/** The drivers' TLS options of a connection's mode (none — no TLS). */
+const TLS_OPTIONS: Record<SslMode, { rejectUnauthorized: boolean } | undefined> = { off: undefined, verify: { rejectUnauthorized: true }, 'no-verify': { rejectUnauthorized: false } }
+const tlsOf = (c: DbConn) => (c.ssl ? TLS_OPTIONS[c.ssl] : undefined)
+
+type Limits = ReturnType<typeof limits>
+/** How each database runs a query. */
+const RUNNERS: Record<DbKind, (c: DbConn, text: string, values: unknown[], mode: SqlMode, lim: Limits, signal?: AbortSignal) => Promise<SqlRun>> = {
+  pg: runPg,
+  mysql: runMysql,
+  sqlite: runSqlite,
+}
 
 /** The query run (or explained) — refused before sending when it is not a reading one. */
 export async function runSql(c: DbConn, sql: string, values: unknown[], mode: SqlMode, signal?: AbortSignal): Promise<SqlRun> {
@@ -30,9 +41,7 @@ export async function runSql(c: DbConn, sql: string, values: unknown[], mode: Sq
   const text = sql.trim().replace(/;\s*$/, '')
   const lim = limits(c)
   try {
-    if (c.kind === 'pg') return await runPg(c, text, values, mode, lim, signal)
-    if (c.kind === 'mysql') return await runMysql(c, text, values, mode, lim, signal)
-    return await runSqlite(c, text, values, mode, lim)
+    return await RUNNERS[c.kind](c, text, values, mode, lim, signal)
   } catch (e) {
     if (e instanceof SqlError) throw e
     if (signal?.aborted) throw new SqlError('Запрос остановлен — на сервере снят, соединение закрыто')
@@ -46,6 +55,8 @@ const SCHEMA_SQL: Record<DbConn['kind'], string> = {
   mysql: 'select table_schema, table_name, column_name, column_type from information_schema.columns where table_schema = coalesce(database(), table_schema) and table_schema not in (\'mysql\', \'sys\', \'information_schema\', \'performance_schema\') order by table_schema, table_name, ordinal_position',
   sqlite: "select null, m.name, p.name, p.type from sqlite_master m join pragma_table_info(m.name) p where m.type in ('table', 'view') and m.name not like 'sqlite\\_%' escape '\\' order by m.name, p.cid",
 }
+/** The schema a bare table name is in: PostgreSQL's «public», MySQL's database; SQLite has none. */
+const DEFAULT_SCHEMA: Record<DbKind, (c: DbConn) => string | undefined> = { pg: () => 'public', mysql: (c) => c.database || undefined, sqlite: () => undefined }
 /** The tables and their columns the connection's user can see — read the same safe way as any query. */
 export async function readSchema(c: DbConn, signal?: AbortSignal): Promise<DbSchema> {
   const big = { ...c, maxRows: 100_000 }
@@ -57,7 +68,7 @@ export async function readSchema(c: DbConn, signal?: AbortSignal): Promise<DbSch
     t.columns.push({ name: column, ...(type ? { type } : {}) })
     by.set(k, t)
   }
-  const def = c.kind === 'pg' ? 'public' : c.kind === 'mysql' ? c.database || undefined : undefined
+  const def = DEFAULT_SCHEMA[c.kind](c)
   return { defaultSchema: def, tables: [...by.values()], at: Date.now() }
 }
 
@@ -73,7 +84,7 @@ const pgConfig = (c: DbConn, lim: ReturnType<typeof limits>): pg.ClientConfig =>
   database: c.database,
   user: c.user,
   password: c.password,
-  ssl: c.ssl === 'verify' ? { rejectUnauthorized: true } : c.ssl === 'no-verify' ? { rejectUnauthorized: false } : undefined,
+  ssl: tlsOf(c),
   connectionTimeoutMillis: DB_DEFAULTS.connectSec * 1000,
   application_name: 'qvarch',
   // the server's own limits: the query's time; a lock waited for a few seconds only (a query queued behind another
@@ -144,7 +155,7 @@ const myConfig = (c: DbConn): mysql.ConnectionOptions => ({
   database: c.database || undefined,
   user: c.user,
   password: c.password,
-  ssl: c.ssl === 'verify' ? { rejectUnauthorized: true } : c.ssl === 'no-verify' ? { rejectUnauthorized: false } : undefined,
+  ssl: tlsOf(c),
   connectTimeout: DB_DEFAULTS.connectSec * 1000,
   multipleStatements: false,
   supportBigNumbers: true,

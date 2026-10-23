@@ -10,10 +10,21 @@
  * settings preview and the tests.
  */
 
-export type TabletRotation = 0 | 90 | 180 | 270
-export type TabletButton = 'right' | 'middle' | 'none'
+/** The tablet turned clockwise, degrees. */
+export const TABLET_ROTATIONS = [0, 90, 180, 270] as const
+export type TabletRotation = (typeof TABLET_ROTATIONS)[number]
+/** What a pen side button presses. */
+export const TABLET_BUTTONS = ['right', 'middle', 'none'] as const
+export type TabletButton = (typeof TABLET_BUTTONS)[number]
+/** Where the pen drives the mouse: a monitor, all of them, the Qvarch window, the board on screen. */
+export const TABLET_TARGET_KINDS = ['monitor', 'all', 'window', 'canvas'] as const
+export type TabletTargetKind = (typeof TABLET_TARGET_KINDS)[number]
 /** canvas — the board on screen (its visible area, whatever its pan / zoom); none shown → the Qvarch window. */
-export type TabletTarget = { kind: 'monitor'; name?: string } | { kind: 'all' } | { kind: 'window' } | { kind: 'canvas' }
+export type TabletTarget = { kind: 'monitor'; name?: string } | { kind: Exclude<TabletTargetKind, 'monitor'> }
+
+const isOneOf = <T>(list: readonly T[], v: unknown): v is T => list.includes(v as T)
+/** Turned a quarter: the tablet's long side stands upright. */
+export const isQuarterTurn = (rot: TabletRotation): boolean => rot === 90 || rot === 270
 
 export interface TabletPrefs {
   /** Qvarch reads the tablet (the system pen stops until the tablet is plugged in again). */
@@ -110,20 +121,26 @@ export type TabletMsg = { type: 'state'; state: TabletState } | { type: 'sample'
 /** The Deco mini7's working area, mm — the tablet's own proportions. */
 export const TABLET_MM = { w: 177.8, h: 111.095 }
 
+/** A stored target made valid: a known kind (a monitor keeps its name), anything else — the primary monitor. */
+function cleanTarget(t: Partial<TabletTarget> | undefined): TabletTarget {
+  const stored = t?.kind
+  const kind = isOneOf(TABLET_TARGET_KINDS, stored) ? stored : 'monitor'
+  if (kind !== 'monitor') return { kind }
+  const name = t && 'name' in t ? t.name : undefined
+  return { kind, name: typeof name === 'string' ? name : undefined }
+}
+
 export function clampPrefs(p: Partial<TabletPrefs>): TabletPrefs {
   const d = DEFAULT_TABLET
   const num = (v: unknown, lo: number, hi: number, def: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def)
-  const btn = (v: unknown, def: TabletButton): TabletButton => (v === 'right' || v === 'middle' || v === 'none' ? v : def)
-  const t = p.target
-  const target: TabletTarget =
-    t?.kind === 'all' ? { kind: 'all' } : t?.kind === 'window' ? { kind: 'window' } : t?.kind === 'canvas' ? { kind: 'canvas' } : { kind: 'monitor', name: t?.kind === 'monitor' && typeof t.name === 'string' ? t.name : undefined }
+  const btn = (v: unknown, def: TabletButton): TabletButton => (isOneOf(TABLET_BUTTONS, v) ? v : def)
   const pmin = num(p.pmin, 0, 0.5, d.pmin)
   return {
     enabled: !!p.enabled,
-    target,
+    target: cleanTarget(p.target),
     fallback: typeof p.fallback === 'string' ? p.fallback : '',
     keepAspect: p.keepAspect ?? d.keepAspect,
-    rotation: ([0, 90, 180, 270] as const).includes(p.rotation as TabletRotation) ? (p.rotation as TabletRotation) : 0,
+    rotation: isOneOf(TABLET_ROTATIONS, p.rotation) ? p.rotation : 0,
     click: num(p.click, 0.005, 0.6, d.click),
     pmin,
     pmax: Math.max(pmin + 0.05, num(p.pmax, 0.1, 1, d.pmax)),
@@ -147,16 +164,19 @@ export function pressureCurve(raw: number, p: Pick<TabletPrefs, 'pmin' | 'pmax' 
 
 /** The raw (unrotated) tablet point 0…1 seen through the rotation. */
 export function rotate(u: number, v: number, rot: TabletRotation): [number, number] {
-  if (rot === 90) return [1 - v, u]
-  if (rot === 180) return [1 - u, 1 - v]
-  if (rot === 270) return [v, 1 - u]
-  return [u, v]
+  return ROTATE[rot](u, v)
+}
+const ROTATE: Record<TabletRotation, (u: number, v: number) => [number, number]> = {
+  0: (u, v) => [u, v],
+  90: (u, v) => [1 - v, u],
+  180: (u, v) => [1 - u, 1 - v],
+  270: (u, v) => [v, 1 - u],
 }
 
 /** The used part of the (rotated) tablet: all of it, or cropped to the target's proportions, centred. [x0, y0, x1, y1] */
 export function activeArea(rot: TabletRotation, keepAspect: boolean, targetW: number, targetH: number): [number, number, number, number] {
   if (!keepAspect || targetW <= 0 || targetH <= 0) return [0, 0, 1, 1]
-  const tab = rot === 90 || rot === 270 ? TABLET_MM.h / TABLET_MM.w : TABLET_MM.w / TABLET_MM.h
+  const tab = isQuarterTurn(rot) ? TABLET_MM.h / TABLET_MM.w : TABLET_MM.w / TABLET_MM.h
   const scr = targetW / targetH
   if (tab > scr) {
     const f = scr / tab
@@ -192,7 +212,17 @@ const NAMED: Record<string, number> = {
   Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22, Left: 0x25, Up: 0x26, Right: 0x27, Down: 0x28,
   '=': 0xbb, '+': 0xbb, '-': 0xbd, ',': 0xbc, '.': 0xbe, '/': 0xbf, ';': 0xba, "'": 0xde, '`': 0xc0, '[': 0xdb, ']': 0xdd, '\\': 0xdc,
 }
-const MODS = ['Ctrl', 'Shift', 'Alt', 'Win']
+type KeyComboEvent = { code: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }
+/** The modifiers: the key event's flag and the name, in the order a combination names them. */
+const MOD_FLAGS: Array<[keyof Omit<KeyComboEvent, 'code'>, string]> = [
+  ['ctrlKey', 'Ctrl'],
+  ['shiftKey', 'Shift'],
+  ['altKey', 'Alt'],
+  ['metaKey', 'Win'],
+]
+const MODS = MOD_FLAGS.map(([, name]) => name)
+/** Only modifiers ("Alt", "Ctrl+Shift") — no key that ends the combination yet. */
+export const isModifiersOnly = (combo: string): boolean => !!combo && combo.split('+').every((p) => MODS.includes(p))
 
 /** "Ctrl+Shift+Z" → Windows virtual-key codes in press order (modifiers first); undefined — not a combination. */
 export function comboToVk(combo: string): number[] | undefined {
@@ -220,23 +250,28 @@ export function comboToVk(combo: string): number[] | undefined {
 }
 
 /** A pressed key (a keydown) → its combination name ("" — only modifiers so far). Layout-independent (by code). */
-export function comboOf(e: { code: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }): string {
-  const mods = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt', e.metaKey && 'Win'].filter(Boolean) as string[]
-  const c = e.code
-  let k = ''
-  if (/^Key[A-Z]$/.test(c)) k = c.slice(3)
-  else if (/^Digit[0-9]$/.test(c)) k = c.slice(5)
-  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(c)) k = c
-  else {
-    const m: Record<string, string> = {
-      Space: 'Space', Enter: 'Enter', NumpadEnter: 'Enter', Tab: 'Tab', Escape: 'Esc', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
-      Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', ArrowLeft: 'Left', ArrowUp: 'Up', ArrowRight: 'Right', ArrowDown: 'Down',
-      Equal: '=', NumpadAdd: '=', Minus: '-', NumpadSubtract: '-', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", Backquote: '`',
-      BracketLeft: '[', BracketRight: ']', Backslash: '\\',
-    }
-    k = m[c] ?? ''
-  }
+export function comboOf(e: KeyComboEvent): string {
+  const mods = MOD_FLAGS.filter(([flag]) => e[flag]).map(([, name]) => name)
+  const k = keyName(e.code)
   // a modifier alone ("Alt", "Ctrl") is a combination too, once released — the caller decides
   if (!k) return mods.join('+')
   return [...mods, k].join('+')
+}
+/** Key codes named by a pattern: letters, digits, F-keys. */
+const CODE_PATTERNS: Array<[RegExp, (code: string) => string]> = [
+  [/^Key[A-Z]$/, (c) => c.slice(3)],
+  [/^Digit[0-9]$/, (c) => c.slice(5)],
+  [/^F([1-9]|1[0-9]|2[0-4])$/, (c) => c],
+]
+/** The other keys a combination may end with (a key code → its name). */
+const CODE_NAMES: Record<string, string> = {
+  Space: 'Space', Enter: 'Enter', NumpadEnter: 'Enter', Tab: 'Tab', Escape: 'Esc', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', ArrowLeft: 'Left', ArrowUp: 'Up', ArrowRight: 'Right', ArrowDown: 'Down',
+  Equal: '=', NumpadAdd: '=', Minus: '-', NumpadSubtract: '-', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", Backquote: '`',
+  BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+}
+/** A key code → its name in a combination ("" — a modifier or a key that cannot be one). */
+function keyName(code: string): string {
+  const byPattern = CODE_PATTERNS.find(([re]) => re.test(code))
+  return byPattern ? byPattern[1](code) : (CODE_NAMES[code] ?? '')
 }

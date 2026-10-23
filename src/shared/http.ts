@@ -2,9 +2,11 @@
  * HTTP — a small Postman: requests in folders, variables `{{name}}`, requests and a script run before a request
  * (a token → a variable), a script that works on the response (filter, sort, count…).
  */
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'QUERY' | 'HEAD' | 'OPTIONS'
 /** QUERY — the new safe method with a body (a search that does not fit into a URL). */
-export const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'QUERY', 'HEAD', 'OPTIONS']
+export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'QUERY', 'HEAD', 'OPTIONS'] as const
+export type HttpMethod = (typeof HTTP_METHODS)[number]
+/** The methods that send no body. */
+export const BODILESS_METHODS: ReadonlySet<HttpMethod> = new Set(['GET', 'HEAD'])
 /** Each method's colour (the list shows every one in its own). */
 export const METHOD_COLOR: Record<HttpMethod, string> = {
   GET: 'var(--up-fg)',
@@ -32,7 +34,8 @@ export interface HttpKV {
   /** A secret (a token, a cookie): shown hidden, kept encrypted on disk (Windows DPAPI). Variables only. */
   secret?: boolean
 }
-export type HttpBodyMode = 'none' | 'json' | 'raw' | 'urlencoded' | 'form'
+export const HTTP_BODY_MODES = ['none', 'json', 'raw', 'urlencoded', 'form'] as const
+export type HttpBodyMode = (typeof HTTP_BODY_MODES)[number]
 export interface HttpBody {
   mode: HttpBodyMode
   /** json / raw text. */
@@ -42,8 +45,10 @@ export interface HttpBody {
   /** urlencoded / form-data rows. */
   rows: HttpKV[]
 }
+export const HTTP_AUTH_TYPES = ['none', 'bearer', 'basic'] as const
+export type HttpAuthType = (typeof HTTP_AUTH_TYPES)[number]
 export interface HttpAuth {
-  type: 'none' | 'bearer' | 'basic'
+  type: HttpAuthType
   token: string
   user: string
   pass: string
@@ -181,10 +186,7 @@ export function toCurl(r: HttpRequest, vars: Record<string, string>, settings?: 
   const url = buildUrl(r, vars)
   const parts = [`curl -X ${r.method} ${q(url)}`]
   for (const [k, v] of buildHeaders(r, vars, settings)) parts.push(`-H ${q(`${k}: ${v}`)}`)
-  const b = r.body
-  if (b.mode === 'json' || b.mode === 'raw') parts.push(`--data-raw ${q(fill(b.text, vars))}`)
-  else if (b.mode === 'urlencoded') for (const x of b.rows.filter((x) => x.on && x.key)) parts.push(`--data-urlencode ${q(`${fill(x.key, vars)}=${fill(x.value, vars)}`)}`)
-  else if (b.mode === 'form') for (const x of b.rows.filter((x) => x.on && x.key)) parts.push(`-F ${q(`${fill(x.key, vars)}=${fill(x.value, vars)}`)}`)
+  parts.push(...BODY_MODES[r.body.mode].curl(r.body, vars).map(([flag, arg]) => `${flag} ${q(arg)}`))
   return parts.join(' \\\n  ')
 }
 /** The URL with the on params added (variables filled). */
@@ -201,14 +203,76 @@ export function buildHeaders(r: HttpRequest, vars: Record<string, string>, setti
   // the global ones go under the request's own
   for (const h of settings?.headers ?? []) if (h.on && h.key && !has(fill(h.key, vars).toLowerCase())) out.push([fill(h.key, vars), fill(h.value, vars)])
   if (settings?.userAgent && !has('user-agent')) out.push(['User-Agent', fill(settings.userAgent, vars)])
-  if (r.auth.type === 'bearer' && r.auth.token && !has('authorization')) out.push(['Authorization', `Bearer ${fill(r.auth.token, vars)}`])
-  if (r.auth.type === 'basic' && !has('authorization')) out.push(['Authorization', `Basic ${btoaUtf8(`${fill(r.auth.user, vars)}:${fill(r.auth.pass, vars)}`)}`])
-  if (!has('content-type')) {
-    if (r.body.mode === 'json') out.push(['Content-Type', 'application/json'])
-    else if (r.body.mode === 'raw' && r.body.rawType) out.push(['Content-Type', r.body.rawType])
-    else if (r.body.mode === 'urlencoded') out.push(['Content-Type', 'application/x-www-form-urlencoded'])
-  }
+  const authorization = HTTP_AUTH[r.auth.type].header(r.auth, vars)
+  if (authorization && !has('authorization')) out.push(['Authorization', authorization])
+  const contentType = BODY_MODES[r.body.mode].contentType(r.body)
+  if (contentType && !has('content-type')) out.push(['Content-Type', contentType])
   return out
+}
+
+/** How each authorization is named and what Authorization header it makes (undefined — none). */
+export const HTTP_AUTH: Record<HttpAuthType, { label: string; header: (a: HttpAuth, vars: Record<string, string>) => string | undefined }> = {
+  none: { label: 'Нет', header: () => undefined },
+  bearer: { label: 'Bearer-токен', header: (a, vars) => (a.token ? `Bearer ${fill(a.token, vars)}` : undefined) },
+  basic: { label: 'Basic', header: (a, vars) => `Basic ${btoaUtf8(`${fill(a.user, vars)}:${fill(a.pass, vars)}`)}` },
+}
+
+/** The on rows of a form body, variables filled. */
+const formRows = (b: HttpBody, vars: Record<string, string>): Array<[string, string]> =>
+  b.rows.filter((x) => x.on && x.key).map((x) => [fill(x.key, vars), fill(x.value, vars)])
+
+/** How a body mode is named, sent and written as cURL. */
+interface BodyModeRule {
+  label: string
+  /** The body is a text (else rows). */
+  isText: boolean
+  /** The Content-Type it is sent with unless one is set by hand (undefined — none). */
+  contentType: (b: HttpBody) => string | undefined
+  /** It brings its own Content-Type (multipart with its boundary, set by fetch): one set by hand is dropped. */
+  ownContentType?: boolean
+  /** The body as fetch sends it, variables filled; throws when a JSON body is not JSON. */
+  encode: (b: HttpBody, vars: Record<string, string>) => string | FormData | undefined
+  /** Its cURL arguments: [flag, value]. */
+  curl: (b: HttpBody, vars: Record<string, string>) => Array<[string, string]>
+}
+const textCurl = (b: HttpBody, vars: Record<string, string>): Array<[string, string]> => [['--data-raw', fill(b.text, vars)]]
+export const BODY_MODES: Record<HttpBodyMode, BodyModeRule> = {
+  none: { label: 'Нет', isText: false, contentType: () => undefined, encode: () => undefined, curl: () => [] },
+  json: {
+    label: 'JSON',
+    isText: true,
+    contentType: () => 'application/json',
+    encode: (b, vars) => {
+      const text = fill(b.text, vars)
+      try {
+        JSON.parse(text || 'null')
+      } catch (e) {
+        throw new Error(`Тело — не JSON: ${e instanceof Error ? e.message : String(e)}`)
+      }
+      return text
+    },
+    curl: textCurl,
+  },
+  raw: { label: 'Текст', isText: true, contentType: (b) => b.rawType || undefined, encode: (b, vars) => fill(b.text, vars), curl: textCurl },
+  urlencoded: {
+    label: 'x-www-form-urlencoded',
+    isText: false,
+    contentType: () => 'application/x-www-form-urlencoded',
+    encode: (b, vars) => new URLSearchParams(formRows(b, vars)).toString(),
+    curl: (b, vars) => formRows(b, vars).map(([k, v]) => ['--data-urlencode', `${k}=${v}`]),
+  },
+  form: {
+    label: 'form-data',
+    isText: false,
+    contentType: () => undefined,
+    ownContentType: true,
+    encode: (b, vars) => {
+      const fd = new FormData()
+      for (const [k, v] of formRows(b, vars)) fd.append(k, v)
+      return fd
+    },
+    curl: (b, vars) => formRows(b, vars).map(([k, v]) => ['-F', `${k}=${v}`]),
+  },
 }
 function btoaUtf8(s: string): string {
   const bytes = new TextEncoder().encode(s)
@@ -217,82 +281,7 @@ function btoaUtf8(s: string): string {
   return btoa(bin)
 }
 
-/** The test collection made on the first start (kept — the user checks it). */
-export function sampleDoc(): HttpDoc {
-  const login = newRequest('Получить токен')
-  Object.assign(login, {
-    method: 'POST',
-    url: '{{auth_url}}/auth/login',
-    body: { mode: 'json', text: JSON.stringify({ username: '{{user}}', password: '{{password}}', expiresInMins: 30 }, null, 2), rawType: 'text/plain', rows: [] },
-    post: `// the token goes to the variable {{token}} — other requests use it
-const data = res.json()
-qa.set('token', data.accessToken)
-qa.log('Токен получен для', data.username)
-return { user: data.username, email: data.email, token: data.accessToken.slice(0, 24) + '…' }`,
-  })
-  const me = newRequest('Мой профиль (с токеном)')
-  Object.assign(me, {
-    url: '{{auth_url}}/auth/me',
-    auth: { type: 'bearer', token: '{{token}}', user: '', pass: '' },
-    pre: { requests: [login.id], script: `// перед запросом уже выполнен «Получить токен» — он положил {{token}}
-qa.log('token =', qa.get('token')?.slice(0, 12) + '…')` },
-    post: `const u = res.json()
-return { name: u.firstName + ' ' + u.lastName, age: u.age, company: u.company?.name, city: u.address?.city }`,
-  })
-  const products = newRequest('Товары: дороже 500, по цене')
-  Object.assign(products, {
-    url: '{{api}}/products',
-    params: [kv('limit', '100'), kv('select', 'title,price,category,rating')],
-    post: `// фильтр, сортировка и подсчёт по массиву
-const items = res.json().products
-const expensive = items.filter((p) => p.price > 500).sort((a, b) => b.price - a.price)
-const byCategory = {}
-for (const p of items) byCategory[p.category] = (byCategory[p.category] ?? 0) + 1
-qa.log('всего товаров:', items.length, '· дороже 500:', expensive.length)
-return { count: expensive.length, top: expensive.slice(0, 5).map((p) => p.title + ' — ' + p.price), byCategory }`,
-  })
-  const search = newRequest('Поиск товаров')
-  Object.assign(search, {
-    url: '{{api}}/products/search',
-    params: [kv('q', 'phone'), kv('limit', '10'), kv('skip', '0', false)],
-    post: `const { products, total } = res.json()
-return { total, found: products.map((p) => p.title) }`,
-  })
-  const form = newRequest('Форма (x-www-form-urlencoded)')
-  Object.assign(form, {
-    method: 'POST',
-    url: 'https://httpbin.org/post',
-    headers: [kv('X-Trace', 'qvarch-{{user}}')],
-    body: { mode: 'urlencoded', text: '', rawType: 'text/plain', rows: [kv('name', 'Виктор'), kv('role', 'dev'), kv('debug', 'true', false)] },
-    post: `return res.json().form`,
-  })
-  const xml = newRequest('Сырое тело (XML)')
-  Object.assign(xml, {
-    method: 'POST',
-    url: 'https://httpbin.org/anything',
-    body: { mode: 'raw', text: '<order id="42">\n  <item sku="A-1" qty="2"/>\n</order>', rawType: 'application/xml', rows: [] },
-    post: `const r = res.json()
-return { contentType: r.headers['Content-Type'], body: r.data }`,
-  })
-  const multipart = newRequest('Форма (multipart/form-data)')
-  Object.assign(multipart, {
-    method: 'POST',
-    url: 'https://httpbin.org/post',
-    body: { mode: 'form', text: '', rawType: 'text/plain', rows: [kv('title', 'Отчёт'), kv('month', '2026-10')] },
-    post: `return res.json().form`,
-  })
-  const basic = newRequest('Basic-авторизация')
-  Object.assign(basic, {
-    url: 'https://httpbin.org/basic-auth/{{user}}/{{password}}',
-    auth: { type: 'basic', token: '', user: '{{user}}', pass: '{{password}}' },
-  })
-  return {
-    v: 1,
-    vars: [kv('api', 'https://dummyjson.com'), kv('auth_url', 'https://dummyjson.com'), kv('user', 'emilys'), kv('password', 'emilyspass'), kv('token', '')],
-    items: [
-      { id: httpId(), type: 'folder', name: 'Авторизация', open: true, children: [login, basic] },
-      { id: httpId(), type: 'folder', name: 'Запросы', open: true, children: [me, products, search] },
-      { id: httpId(), type: 'folder', name: 'Форматы тела', open: true, children: [form, multipart, xml] },
-    ],
-  }
+/** The collection a first start makes: empty. */
+export function emptyHttpDoc(): HttpDoc {
+  return { v: 1, items: [], vars: [] }
 }

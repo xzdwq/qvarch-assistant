@@ -1,0 +1,22 @@
+/* BlockPw: what its template cannot carry as utilities (scoped). */
+
+.bp-ed :deep(.cm-editor),
+.bp-val :deep(.cm-editor) {
+  max-height: 420px;
+}
+.ck-pop small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.qa-c.fail {
+  border-left-color: var(--down);
+}
+.qa-c.warn {
+  border-left-color: var(--warn);
+}
+/* in groups (the field matrix): the group's name once, its rows marked by their verdict */
+.lg.warn {
+  border-color: #fbbf24;
+  color: #fde68a;
+}

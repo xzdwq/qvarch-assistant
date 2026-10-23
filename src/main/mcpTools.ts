@@ -1,5 +1,7 @@
-import { findBlocks } from '../shared/noteBlocks'
-import { parseInfo } from '../shared/runbook'
+import { findBlocks } from '../notebook/domain/findBlocks'
+import { fencedBlocksOf } from '../notebook/domain/noteBlocks'
+import { findLoops } from '../notebook/domain/loop'
+import { BLOCK_SPECS } from '../notebook/blocks/specs'
 import { dayKey, MINUTE } from '../shared/timeline'
 import type { Entry, DayData } from '../shared/types'
 import type { JiraIssue } from '../shared/jira'
@@ -50,13 +52,25 @@ function hostsOf(text: string): string[] {
   for (const m of text.matchAll(/https?:\/\/([a-z0-9.-]+(?::\d+)?)/gi)) out.add(m[1].toLowerCase().replace(/:\d+$/, ''))
   return [...out]
 }
-const blocksOf = (text: string) =>
-  findBlocks(text.split('\n'))
-    .filter((b) => ['http', 'code', 'pw', 'data', 'ref', 'browser'].includes(b.kind))
-    .map((b) => {
-      const info = parseInfo(b.src.split('\n')[0].replace(/^(`{3,}|~{3,})/, ''))
-      return { kind: b.kind, name: info.name, line: b.line0, lib: info.lib || undefined, soft: info.soft || undefined }
-    })
+/** Every block of a note for the assistant: its kind, its name (a fenced block's name=, a loop's name=), its line, flags. */
+function blocksOf(text: string): Array<{ kind: string; title: string; name?: string; line: number; lib?: boolean; soft?: boolean; runnable?: boolean }> {
+  const fenced = new Map(fencedBlocksOf(text).map((b) => [b.line0, b]))
+  const loops = new Map(findLoops(text.split('\n')).map((l) => [l.line0, l]))
+  return findBlocks(text.split('\n')).map((b) => {
+    const spec = BLOCK_SPECS[b.kind]
+    const info = fenced.get(b.line0)?.info
+    const loop = loops.get(b.line0)
+    return {
+      kind: b.kind,
+      title: spec.title,
+      name: info?.name ?? loop?.info.name,
+      line: b.line0,
+      lib: info?.lib || undefined,
+      soft: info?.soft || loop?.info.soft || undefined,
+      runnable: (!!spec.runnable && !info?.lib) || (b.kind === 'loop' && loop?.end !== undefined) || undefined,
+    }
+  })
+}
 
 export function qvarchTools(c: ToolCtx): McpTool[] {
   const approved = new Set<string>()
@@ -71,7 +85,7 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
   return [
     {
       name: 'qvarch_guide',
-      description: 'Как писать исполняемые заметки Qvarch: блоки HTTP / JS-TS / Playwright / данные, переменные {{ }}, флаги, отчёты. Вызови перед созданием или правкой блоков.',
+      description: 'Как писать исполняемые заметки Qvarch: блоки HTTP / JS-TS / Playwright / SQL / текст по шаблону / данные, циклы, переменные {{ }}, флаги, отчёты. Вызови перед созданием или правкой блоков.',
       inputSchema: { type: 'object', properties: {} },
       run: async () => GUIDE,
     },
@@ -112,7 +126,7 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
         const path = notePath(str(a.path, 'path', 1000))
         const text = await c.ui<string>('read', { path })
         const bl = blocksOf(text)
-        return `${text}\n\n---\nБлоки: ${bl.length ? bl.map((b) => `${b.kind}${b.name ? ` «${b.name}»` : ''} (строка ${b.line}${b.lib ? ', lib' : ''}${b.soft ? ', soft' : ''})`).join('; ') : 'нет'}`
+        return `${text}\n\n---\nБлоки: ${bl.length ? bl.map((b) => `${b.kind} (${b.title})${b.name ? ` «${b.name}»` : ''} (строка ${b.line}${b.runnable ? ', выполняется' : ''}${b.lib ? ', lib' : ''}${b.soft ? ', soft' : ''})`).join('; ') : 'нет'}`
       },
     },
     {
@@ -162,7 +176,7 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
         const body = JSON.stringify(a.value, null, 2)
         const text = await c.ui<string>('read', { path })
         const lines = text.split('\n')
-        const b = findBlocks(lines).find((x) => x.kind === 'data' && parseInfo(x.src.split('\n')[0].replace(/^(`{3,}|~{3,})/, '')).name === name)
+        const b = fencedBlocksOf(text).find((x) => x.kind === 'data' && x.info.name === name)
         let next: string
         if (b) {
           lines.splice(b.line0, b.line1 - b.line0 - 1, ...body.split('\n'))
@@ -181,8 +195,8 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
     },
     {
       name: 'note_run',
-      description: 'Выполнить заметку: все блоки сверху вниз (как «Выполнить всё») или один блок по имени. Ждёт конца и возвращает отчёт: статусы, шаги тестов, ошибки, результаты. Адреса вне разрешённых (*-dev, *-qa, localhost) пользователь подтверждает.',
-      inputSchema: { type: 'object', properties: { path: { type: 'string' }, block: { type: 'string', description: 'Имя блока (name=…); пусто — вся заметка' } }, required: ['path'] },
+      description: 'Выполнить заметку: все блоки сверху вниз (как «Выполнить всё») или один исполняемый блок / цикл по имени (HTTP, код, Playwright, SQL, текст по шаблону, цикл). Ждёт конца и возвращает отчёт: статусы, шаги тестов, ошибки, результаты. Адреса вне разрешённых (*-dev, *-qa, localhost) пользователь подтверждает.',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' }, block: { type: 'string', description: 'Имя блока или цикла (name=…); пусто — вся заметка' } }, required: ['path'] },
       run: async (a) => {
         const path = notePath(str(a.path, 'path', 1000))
         const text = await c.ui<string>('read', { path })
@@ -320,6 +334,36 @@ return { url: page.url() }
 - Ждать по признакам (expect(...).toBeVisible/toBeEnabled, page.waitForResponse), не таймерами.
 - Не сохраняй и не удаляй данные на стенде без прямой просьбы пользователя.
 - После прогона есть скриншот, трассировка (Trace Viewer) и Allure-результаты.
+
+## Запрос к БД (только чтение)
+\`\`\`sql db=main name=rows
+select id, status from orders where customer_id = {{ user.body.id }}
+\`\`\`
+- db — имя подключения из «Базы данных» (настройки там, не в заметке); значения {{ }} уходят параметрами, а не текстом.
+- Результат: rows = массив объектов ({{ rows[0].status }}, rows.length).
+
+## Текст по шаблону
+\`\`\`md template name=summary
+✅ **{{ user.body.email }}** — заказов: {{ rows.length }}
+\`\`\`
+Markdown с {{ значениями }}; публикуется заполненным под своим именем. Нет значения — ошибка блока.
+
+## Цикл
+<!-- qa:loop name=answers parallel=1 -->
+\`\`\`js loop
+for (const u of users) await body({ u })
+\`\`\`
+\`\`\`http name=user
+GET {{ config.base }}/users/{{ u.id }}
+\`\`\`
+<!-- /qa:loop -->
+- Заголовок — обычный JS; body({ … }) — один проход, его значения — переменные блоков внутри.
+- После цикла имя каждого блока внутри — массив его значений по проходам (user[0].status), имя цикла — записи проходов (или то, что вернул заголовок).
+- parallel=N — проходов одновременно (с Playwright внутри — всегда по одному), max=… — предел проходов, timeout=… — секунд на весь цикл, soft.
+- note_run(path, block: "answers") — выполнить один цикл.
+
+## Другие компоненты (не выполняются)
+Таблица (GFM), \`\`\`chart, \`\`\`mermaid, \`\`\`toc, выноска > [!info], <details> свёртка, \`\`\`work, \`\`\`board, \`\`\`browser, \`\`\`regress, \`\`\`files — видны в списке блоков note_read.
 
 ## Значение из контекста
 \`\`\`json ref=checks.list

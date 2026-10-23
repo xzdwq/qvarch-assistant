@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { convertCron, CRON_FORMATS, CRON_PRESETS, describeCron, fromCrontab, guessFormat, nextRuns, type CronFormat } from '@shared/cron'
+import { convertCron, CRON_DIALECTS, CRON_FORMATS, CRON_PRESETS, describeCron, fitsFormat, fromCrontab, guessFormat, nextRuns, type CronFormat } from '@shared/cron'
 import CronBuilder from './CronBuilder.vue'
 import Icon from '../Icon.vue'
 
@@ -17,7 +17,8 @@ const saved = (() => {
     return {}
   }
 })()
-const format = ref<CronFormat>(saved.format ?? 'crontab')
+const format = ref<CronFormat>(saved.format && Object.hasOwn(CRON_DIALECTS, saved.format) ? saved.format : 'crontab')
+const dialect = computed(() => CRON_DIALECTS[format.value])
 const expr = ref(saved.expr ?? '0 12 * * 1-6')
 watch([expr, format], () => {
   try {
@@ -40,9 +41,7 @@ function setFormat(f: CronFormat): void {
 function onInput(v: string): void {
   expr.value = v
   const g = guessFormat(v)
-  const n = v.trim().split(/\s+/).length
-  const fits = format.value === 'crontab' ? n === 5 : format.value === 'spring' ? n === 6 : n === 6 || n === 7
-  if (g && !fits) format.value = g
+  if (g && !fitsFormat(v.trim().split(/\s+/).length, format.value)) format.value = g
 }
 const result = computed(() => {
   const e = expr.value.trim()
@@ -68,7 +67,7 @@ const runs = computed<{ list: Date[]; error: string }>(() => {
   }
 })
 const fmtRun = (d: Date) =>
-  d.toLocaleString('ru-RU', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: format.value === 'crontab' ? undefined : '2-digit', timeZone: utc.value ? 'UTC' : undefined })
+  d.toLocaleString('ru-RU', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: dialect.value.seconds ? '2-digit' : undefined, timeZone: utc.value ? 'UTC' : undefined })
 function rel(d: Date): string {
   let s = Math.round((d.getTime() - now.value) / 1000)
   if (s < 60) return 'меньше минуты'
@@ -91,308 +90,65 @@ async function copy(): Promise<void> {
   setTimeout(() => (copied.value = false), 1200)
 }
 /** The fields of the dialect (what each place of the expression is). */
-const FIELDS = computed(() => {
-  const base = [
-    { n: 'минута', v: '0–59' },
-    { n: 'час', v: '0–23' },
-    { n: 'день месяца', v: format.value === 'crontab' ? '1–31, L' : '1–31, L, W, ?' },
-    { n: 'месяц', v: '1–12, JAN–DEC' },
-    { n: 'день недели', v: format.value === 'quartz' ? '1–7 (1 = вс), SUN–SAT, ?, L, #' : '0–7 (0, 7 = вс), SUN–SAT, L, #' },
-  ]
-  return format.value === 'crontab' ? base : [{ n: 'секунда', v: '0–59' }, ...base, ...(format.value === 'quartz' ? [{ n: 'год (необяз.)', v: '1970–2099' }] : [])]
-})
+const FIELDS = computed(() => dialect.value.fields)
 </script>
 
 <template>
-  <div class="cr">
-    <div class="bar">
-      <span class="seg">
-        <button v-for="f in CRON_FORMATS" :key="f.id" :class="{ on: format === f.id }" :title="f.hint" @click="setFormat(f.id)">{{ f.title }}</button>
+  <div class="cr tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="bar tw:flex-none tw:flex tw:items-center tw:gap-14 tw:h-44 tw:py-0 tw:px-14 tw:border-b tw:border-b-border tw:whitespace-nowrap tw:overflow-hidden">
+      <span class="seg tw:flex-none tw:inline-flex tw:border tw:border-border-2 tw:rounded-r2 tw:overflow-hidden">
+        <button class="tw:h-28 tw:py-0 tw:px-12 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:font-data tw:text-[12px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="f in CRON_FORMATS" :key="f.id" :class="{ on: format === f.id }" :title="f.hint" @click="setFormat(f.id)">{{ f.title }}</button>
       </span>
-      <span class="muted">{{ CRON_FORMATS.find((f) => f.id === format)!.hint }}</span>
+      <span class="muted tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[12px]">{{ dialect.hint }}</span>
     </div>
-    <div class="body">
-      <div class="main">
-        <div class="exprw">
-          <input class="expr" :value="expr" spellcheck="false" :placeholder="format === 'crontab' ? '0 12 * * 1-6' : '0 0 12 * * 1-6'" @input="onInput(($event.target as HTMLInputElement).value)" />
-          <button class="ib" :title="copied ? 'Скопировано' : 'Копировать выражение'" :disabled="!expr.trim()" @click="copy"><Icon :name="copied ? 'check' : 'copy'" :size="14" /></button>
+    <div class="body tw:flex-1 tw:min-h-0 tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
+      <div class="main tw:flex tw:flex-col tw:gap-14 tw:min-w-0 tw:py-16 tw:px-18 tw:overflow-auto">
+        <div class="exprw tw:flex tw:items-center tw:gap-6">
+          <input class="expr tw:flex-1 tw:min-w-0 tw:h-44 tw:py-0 tw:px-14 tw:font-data tw:text-[20px] tw:tracking-[0.04em]" :value="expr" spellcheck="false" :placeholder="dialect.placeholder" @input="onInput(($event.target as HTMLInputElement).value)" />
+          <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-36 tw:h-36 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" :title="copied ? 'Скопировано' : 'Копировать выражение'" :disabled="!expr.trim()" @click="copy"><Icon :name="copied ? 'check' : 'copy'" :size="14" /></button>
         </div>
-        <div class="fields" :style="{ gridTemplateColumns: `repeat(${FIELDS.length}, minmax(0, 1fr))` }">
-          <span v-for="(f, i) in FIELDS" :key="f.n" :title="f.v"><code>{{ expr.trim().split(/\s+/)[i] ?? '' }}</code>{{ f.n }}</span>
+        <div class="fields tw:grid tw:gap-6 tw:-mt-6" :style="{ gridTemplateColumns: `repeat(${FIELDS.length}, minmax(0, 1fr))` }">
+          <span class="tw:flex tw:flex-col tw:items-center tw:gap-2 tw:overflow-hidden tw:text-muted tw:text-[11px] tw:whitespace-nowrap" v-for="(f, i) in FIELDS" :key="f.name" :title="f.values"><code class="tw:max-w-full tw:overflow-hidden tw:text-accent-fg tw:font-data tw:text-[12.5px] tw:text-ellipsis">{{ expr.trim().split(/\s+/)[i] ?? '' }}</code>{{ f.name }}</span>
         </div>
-        <p v-if="result.error" class="desc err">{{ result.error }}</p>
-        <p v-else-if="result.text" class="desc">{{ result.text }}</p>
+        <p v-if="result.error" class="desc err tw:m-0 tw:text-down-fg tw:text-[13px] tw:font-medium tw:first-letter:uppercase">{{ result.error }}</p>
+        <p v-else-if="result.text" class="desc tw:m-0 tw:text-text-hi tw:text-[16px] tw:font-semibold tw:first-letter:uppercase">{{ result.text }}</p>
 
-        <div class="card">
-          <div class="cap">Конструктор</div>
+        <div class="card tw:flex tw:flex-col tw:gap-10 tw:py-12 tw:px-14 tw:border tw:border-border tw:rounded-r2 tw:bg-panel">
+          <div class="cap tw:text-muted tw:font-data tw:text-[10.5px] tw:tracking-[0.06em] tw:uppercase">Конструктор</div>
           <CronBuilder :key="format" :model-value="expr" :format="format" @update:model-value="(v) => (expr = v)" />
         </div>
 
-        <div class="card">
-          <div class="cap">Готовые</div>
-          <div class="pre">
-            <button v-for="p in presets" :key="p.title" :class="{ on: p.expr === expr.trim() }" :title="p.expr" @click="expr = p.expr">{{ p.title }}</button>
+        <div class="card tw:flex tw:flex-col tw:gap-10 tw:py-12 tw:px-14 tw:border tw:border-border tw:rounded-r2 tw:bg-panel">
+          <div class="cap tw:text-muted tw:font-data tw:text-[10.5px] tw:tracking-[0.06em] tw:uppercase">Готовые</div>
+          <div class="pre tw:flex tw:flex-wrap tw:gap-6">
+            <button class="tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:not-[&.on]:text-text tw:hover:bg-hover tw:[&.on]:border-accent/60 tw:[&.on]:text-accent-fg" v-for="p in presets" :key="p.title" :class="{ on: p.expr === expr.trim() }" :title="p.expr" @click="expr = p.expr">{{ p.title }}</button>
           </div>
         </div>
       </div>
 
-      <aside class="runs">
-        <div class="ph">
-          <b>Ближайшие запуски</b>
-          <span class="grow"></span>
-          <label class="chk" title="Время по UTC (как на сервере без часового пояса)"><input v-model="utc" type="checkbox" />UTC</label>
+      <aside class="runs tw:flex tw:flex-col tw:gap-4 tw:min-w-0 tw:p-14 tw:overflow-auto tw:border-l tw:border-l-border">
+        <div class="ph tw:flex tw:items-center tw:gap-8 tw:min-h-28 tw:mb-4 tw:text-[12.5px]">
+          <b class="tw:text-text-hi">Ближайшие запуски</b>
+          <span class="grow tw:flex-1"></span>
+          <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12px]" title="Время по UTC (как на сервере без часового пояса)"><input v-model="utc" type="checkbox" />UTC</label>
         </div>
-        <p v-if="runs.error" class="err">{{ runs.error }}</p>
-        <div v-for="(d, i) in runs.list" :key="i" class="run" :class="{ first: i === 0 }">
+        <p v-if="runs.error" class="err tw:text-down-fg tw:text-[13px] tw:font-medium">{{ runs.error }}</p>
+        <div v-for="(d, i) in runs.list" :key="i" class="run tw:flex tw:justify-between tw:gap-10 tw:py-6 tw:px-8 tw:rounded-r2 tw:font-data tw:text-[12px] tw:whitespace-nowrap tw:[&.first]:bg-accent/10 tw:[&.first]:text-text-hi" :class="{ first: i === 0 }">
           <span>{{ fmtRun(d) }}</span>
-          <em>{{ rel(d) }}</em>
+          <em class="tw:overflow-hidden tw:text-muted tw:not-italic tw:text-ellipsis">{{ rel(d) }}</em>
         </div>
-        <p v-if="!runs.list.length && !runs.error && !result.error && expr.trim()" class="muted">Запусков впереди нет</p>
-        <div class="ref">
-          <div class="cap">Символы</div>
-          <div><code>*</code>любое значение</div>
-          <div><code>,</code>список: 1,15</div>
-          <div><code>-</code>диапазон: 1-5</div>
-          <div><code>/</code>шаг: */10 — каждые 10</div>
-          <div><code>L</code>последний (день месяца / недели)</div>
-          <div><code>#</code>N-й день недели: 1#2 — второй понедельник</div>
-          <div v-if="format !== 'crontab'"><code>?</code>не важно (день месяца или недели)</div>
+        <p v-if="!runs.list.length && !runs.error && !result.error && expr.trim()" class="muted tw:text-muted tw:text-[12px]">Запусков впереди нет</p>
+        <div class="ref tw:flex tw:flex-col tw:gap-4 tw:mt-14 tw:pt-12 tw:border-t tw:border-t-border tw:text-text-2 tw:text-[12px]">
+          <div class="cap tw:text-muted tw:font-data tw:text-[10.5px] tw:tracking-[0.06em] tw:uppercase">Символы</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">*</code>любое значение</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">,</code>список: 1,15</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">-</code>диапазон: 1-5</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">/</code>шаг: */10 — каждые 10</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">L</code>последний (день месяца / недели)</div>
+          <div><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">#</code>N-й день недели: 1#2 — второй понедельник</div>
+          <div v-if="dialect.noSpecificDay"><code class="tw:inline-block tw:w-26 tw:text-accent-fg tw:font-data">?</code>не важно (день месяца или недели)</div>
         </div>
       </aside>
     </div>
   </div>
 </template>
-
-<style scoped>
-.cr {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  height: 44px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.bar .muted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.seg {
-  flex: none;
-  display: inline-flex;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.seg button {
-  height: 28px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent-fg);
-}
-.muted {
-  color: var(--muted);
-  font-size: 12px;
-}
-.body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-}
-.main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-  padding: 16px 18px;
-  overflow: auto;
-}
-.exprw {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.expr {
-  flex: 1;
-  min-width: 0;
-  height: 44px;
-  padding: 0 14px;
-  font-family: var(--font-data);
-  font-size: 20px;
-  letter-spacing: 0.04em;
-}
-.fields {
-  display: grid;
-  gap: 6px;
-  margin-top: -6px;
-}
-.fields span {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.fields code {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--accent-fg);
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-}
-.desc {
-  margin: 0;
-  color: var(--text-hi);
-  font-size: 16px;
-  font-weight: 600;
-}
-.desc::first-letter {
-  text-transform: uppercase;
-}
-.err {
-  color: var(--down-fg);
-  font-size: 13px;
-  font-weight: 500;
-}
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--panel);
-}
-.cap {
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.pre {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.pre button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.pre button:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-.pre button.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  color: var(--accent-fg);
-}
-.runs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 14px;
-  overflow: auto;
-  border-left: 1px solid var(--border);
-}
-.ph {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  margin-bottom: 4px;
-  font-size: 12.5px;
-}
-.ph b {
-  color: var(--text-hi);
-}
-.grow {
-  flex: 1;
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.run {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: var(--r2);
-  font-family: var(--font-data);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.run em {
-  overflow: hidden;
-  color: var(--muted);
-  font-style: normal;
-  text-overflow: ellipsis;
-}
-.run.first {
-  background: rgb(var(--accent-rgb) / 0.1);
-  color: var(--text-hi);
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.ref {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  color: var(--text-2);
-  font-size: 12px;
-}
-.ref code {
-  display: inline-block;
-  width: 26px;
-  color: var(--accent-fg);
-  font-family: var(--font-data);
-}
-</style>

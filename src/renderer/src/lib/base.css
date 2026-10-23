@@ -1,37 +1,23 @@
 @import '@fontsource-variable/inter/index.css';
 @import '@fontsource-variable/jetbrains-mono/index.css';
+/* the colours by context (variables; the base layer, as the rest of the base look) */
+@import '../styles/colors/theme.css' layer(base);
+@import '../styles/colors/tracker.css' layer(base);
+@import '../styles/colors/notebook.css' layer(base);
+@import '../styles/colors/browser.css' layer(base);
+@import '../styles/colors/integrations.css' layer(base);
+@import '../styles/colors/tools.css' layer(base);
+@import '../styles/colors/release.css' layer(base);
+@import '../styles/colors/common.css' layer(base);
 
+/* the base look, a layer below the components' utilities (they always outweigh it) */
+@layer base {
 /*
  * The terminal theme (after OpenTerminalUI): a near-black canvas, flat panels with hairline borders, one hot
  * accent (orange), data in a monospace face, small sharp corners. Every colour of the app comes from here.
  */
 :root {
-  /* surfaces */
-  --bg: #0d1117;
-  --panel: #161b22;
-  --panel-2: #1a212b;
-  --panel-3: #222b36;
-  --field-bg: #0f141b;
-  --hover: #1f2731;
-  --pop: #1a212b;
-  /* lines */
-  --border: #212a36;
-  --border-2: #2d3745;
-  --border-3: #3a4658;
-  /* text */
-  --text-hi: #f0f3f6;
-  --text: #d7dde7;
-  --text-2: #adb7c6;
-  --muted: #7f8b9d;
-  --dim: #566173;
-  /* the accent */
-  --accent: #ff6b00;
-  --accent-hi: #ff8b3d;
-  --accent-fg: #ffa25c;
-  --accent-rgb: 255 107 0;
-  --accent-soft: rgb(var(--accent-rgb) / 0.14);
-  --accent-line: rgb(var(--accent-rgb) / 0.5);
-  --on-accent: #0d1117;
+  /* surfaces, lines, text and the accent: by the contrast theme (styles/colors/theme.css) */
   /* signals */
   --cyan: #18ffff;
   --info: #448aff;
@@ -44,6 +30,8 @@
   --warn-fg: #ffcc80;
   --danger: var(--down);
   --ok: var(--up);
+  /* a solid «stop» / destructive button */
+  --stop: #ef4444;
   /* type */
   --font-ui: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-data: 'JetBrains Mono Variable', 'Cascadia Mono', Consolas, monospace;
@@ -52,6 +40,11 @@
   --r2: 3px;
   --r3: 6px;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  /* a menu's shadow; a popover's with the accent along its top; an active tab's accent underline; an accent ring */
+  --shadow-menu: 0 14px 34px rgba(0, 0, 0, 0.55);
+  --shadow-pop-edge: var(--shadow), inset 0 2px 0 var(--accent);
+  --shadow-underline: inset 0 -2px 0 var(--accent);
+  --shadow-ring-accent: inset 0 0 0 1px var(--accent);
 
   color-scheme: dark;
   font-family: var(--font-ui);
@@ -59,6 +52,11 @@
   font-feature-settings: 'cv11', 'ss01';
   color: var(--text);
   accent-color: var(--accent);
+}
+
+/* numbers and times in the interface's face (the user turned the mono face off) */
+:root[data-digits='ui'] {
+  --font-data: var(--font-ui);
 }
 
 * {
@@ -234,4 +232,5 @@ textarea::placeholder {
 button,
 .chip {
   transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
 }

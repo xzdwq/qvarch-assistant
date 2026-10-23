@@ -1,0 +1,9 @@
+/* ReportsBar: what its template cannot carry as utilities (scoped). */
+
+/* the reload icon turns while loading */
+.ib.spin :deep(svg) {
+  animation: ReportsView-spin 0.8s linear infinite;
+}
+.rng :deep(svg) {
+  color: var(--muted);
+}

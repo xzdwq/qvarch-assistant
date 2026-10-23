@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { EntryKind } from '@shared/types'
-import { placeFloat, useAnchor } from '../lib/floating'
+import { placeFloat } from '../lib/floating'
+import { usePopover, type Placement } from '../lib/usePopover'
 
 export interface Recent {
   label: string
@@ -29,17 +30,15 @@ const suggestions = computed<Recent[]>(() => {
 
 /** The suggestions: over everything (teleported), as wide as the field, kept by it; `dropUp` — always over it. */
 const root = ref<HTMLElement>()
-// (the field scrolled out of sight — closed)
-const shown = computed({ get: () => open.value && suggestions.value.length > 0, set: (v) => void (v || (open.value = false)) })
-const style = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
-useAnchor(shown, root, () => {
-  if (!root.value) return
-  const r = root.value.getBoundingClientRect()
-  const f = placeFloat(root.value, r.width, true, 0)
+const placeList: Placement = ({ el, rect: r }) => {
+  const f = placeFloat(el!, r.width, true, 0)
   const up: Record<string, string> = props.dropUp ? { bottom: `${window.innerHeight - r.top + 4}px`, top: 'auto' } : {}
   const maxH = props.dropUp ? Math.min(180, Math.max(60, r.top - 12)) : Math.min(220, f.maxH)
-  style.value = { ...f.style, ...up, maxHeight: `${maxH}px` }
-})
+  return { style: { ...f.style, ...up, maxHeight: `${maxH}px` } }
+}
+// (the field scrolled out of sight — closed; the field owns the keys, Esc too)
+const shown = computed({ get: () => open.value && suggestions.value.length > 0, set: (v) => void (v || (open.value = false)) })
+const { panelRef, style } = usePopover(root, { place: placeList, esc: false }, shown)
 
 function onFocus(): void {
   open.value = true
@@ -59,38 +58,52 @@ function pick(s: Recent): void {
   emit('pick', s)
 }
 
-function onKey(e: KeyboardEvent): void {
-  const n = suggestions.value.length
-  if (e.key === 'ArrowDown' && n) {
-    e.preventDefault()
-    open.value = true
-    active.value = (active.value + 1) % n
-  } else if (e.key === 'ArrowUp' && n) {
-    e.preventDefault()
-    active.value = (active.value - 1 + n) % n
-  } else if (e.key === 'Enter') {
-    // multiline: Shift+Enter is a new line (the first line is the title, the rest — the description)
-    if (props.multiline && e.shiftKey) return
-    e.preventDefault()
-    if (open.value && active.value >= 0 && suggestions.value[active.value]) pick(suggestions.value[active.value])
-    else {
+/** What the field's keys do: ↑ ↓ move through the suggestions, Enter takes one (or submits), Esc closes them. */
+const KEY_ACTIONS = new Map<string, (e: KeyboardEvent) => void>([
+  [
+    'ArrowDown',
+    (e) => {
+      const n = suggestions.value.length
+      if (!n) return
+      e.preventDefault()
+      open.value = true
+      active.value = (active.value + 1) % n
+    },
+  ],
+  [
+    'ArrowUp',
+    (e) => {
+      const n = suggestions.value.length
+      if (!n) return
+      e.preventDefault()
+      active.value = (active.value - 1 + n) % n
+    },
+  ],
+  [
+    'Enter',
+    (e) => {
+      // multiline: Shift+Enter is a new line (the first line is the title, the rest — the description)
+      if (props.multiline && e.shiftKey) return
+      e.preventDefault()
+      const s = open.value && active.value >= 0 ? suggestions.value[active.value] : undefined
+      if (s) return pick(s)
       open.value = false
       emit('submit')
-    }
-  } else if (e.key === 'Escape') {
-    open.value = false
-  }
-}
+    },
+  ],
+  ['Escape', () => (open.value = false)],
+])
+const onKey = (e: KeyboardEvent): void => KEY_ACTIONS.get(e.key)?.(e)
 </script>
 
 <template>
-  <div ref="root" class="label-input">
-    <div class="field">
+  <div ref="root" class="label-input tw:relative tw:flex-1 tw:min-w-0">
+    <div class="field tw:flex tw:items-center tw:gap-6 tw:bg-field tw:border tw:border-border tw:rounded-[4px] tw:py-0 tw:px-8 tw:focus-within:border-accent">
       <textarea
         v-if="multiline"
         ref="input"
         v-model="label"
-        class="ml"
+        class="ml tw:flex-1 tw:min-w-0 tw:resize-none tw:overflow-y-hidden tw:py-8 tw:px-0 tw:bg-transparent tw:border-0 tw:outline-none tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.4] tw:[&.scroll]:overflow-y-auto tw:first-line:font-semibold"
         :class="{ scroll: rows >= 4 }"
         :rows="rows"
         :placeholder="placeholder ?? 'Что делал?'"
@@ -100,7 +113,7 @@ function onKey(e: KeyboardEvent): void {
         @blur="onBlur"
         @keydown="onKey"
       ></textarea>
-      <input
+      <input class="tw:flex-1 tw:min-w-0 tw:bg-transparent tw:border-0 tw:outline-none tw:text-text tw:[font:inherit] tw:py-7 tw:px-0"
         v-else
         ref="input"
         v-model="label"
@@ -113,111 +126,18 @@ function onKey(e: KeyboardEvent): void {
       />
     </div>
     <Teleport to="body">
-      <ul v-if="shown" class="li-pop" :style="style">
-        <li
+      <ul v-if="shown" :ref="panelRef" class="li-pop tw:box-border tw:m-0 tw:p-4 tw:[list-style:none] tw:bg-panel tw:border tw:border-border tw:rounded-[4px] tw:overflow-auto tw:[box-shadow:0_10px_30px_rgba(0,0,0,0.4)] tw:animate-[LabelInput-drop-in_0.14s_ease-out]" :style="style">
+        <li class="tw:flex tw:gap-8 tw:items-baseline tw:py-5 tw:px-8 tw:rounded-r2 tw:cursor-pointer tw:text-[13px] tw:[&.active]:bg-hover"
           v-for="(s, i) in suggestions"
           :key="`${s.kind}-${s.label}`"
           :class="{ active: i === active }"
           @mousedown.prevent="pick(s)"
           @mouseenter="active = i"
         >
-          <span class="text">{{ s.label }}</span>
-          <span class="hint">недавнее</span>
+          <span class="text tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ s.label }}</span>
+          <span class="hint tw:flex-none tw:text-muted tw:text-[11px]">недавнее</span>
         </li>
       </ul>
     </Teleport>
   </div>
 </template>
-
-<style scoped>
-textarea.ml {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  /* a scrollbar only once the text outgrows the 4 lines */
-  overflow-y: hidden;
-  padding: 8px 0;
-  background: transparent;
-  border: 0;
-  outline: 0;
-  color: var(--text);
-  font: inherit;
-  line-height: 1.4;
-}
-textarea.ml.scroll {
-  overflow-y: auto;
-}
-textarea.ml::first-line {
-  font-weight: 600;
-}
-.label-input {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-.field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--field-bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 8px;
-}
-.field:focus-within {
-  border-color: var(--accent);
-}
-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  outline: 0;
-  color: var(--text);
-  font: inherit;
-  padding: 7px 0;
-}
-/* the suggestions — teleported to <body> (placed by placeFloat; a click outside blurs the field and closes them) */
-.li-pop {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: auto;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-  animation: drop-in 0.14s ease-out;
-}
-@keyframes drop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-li {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  padding: 5px 8px;
-  border-radius: var(--r2);
-  cursor: pointer;
-  font-size: 13px;
-}
-li.active {
-  background: var(--hover);
-}
-.text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hint {
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-}
-</style>

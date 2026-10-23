@@ -1,224 +1,31 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IPC, type QaApi } from '../shared/api'
+import type { QaApi } from '../shared/api'
+import { QA_ROUTES, type Route } from '../shared/ipc/routes'
 
-function listen<T>(channel: string, cb: (payload: T) => void): () => void {
-  const h = (_: unknown, payload: T) => cb(payload)
-  ipcRenderer.on(channel, h)
-  return () => ipcRenderer.off(channel, h)
+/**
+ * The window's bridge to the main process: `window.qa` built from the IPC contract (shared/ipc/routes) — a method
+ * per route, crossing as the route says; the few local methods added by hand.
+ */
+function bridge(route: Route): (...args: unknown[]) => unknown {
+  switch (route.kind) {
+    case 'invoke':
+      return (...args) => ipcRenderer.invoke(route.channel, ...args)
+    case 'send':
+      return (...args) => ipcRenderer.send(route.channel, ...args)
+    case 'event':
+      return (cb) => {
+        const listener = (_e: unknown, ...args: unknown[]) => (cb as (...a: unknown[]) => void)(...args)
+        ipcRenderer.on(route.channel, listener)
+        return () => void ipcRenderer.off(route.channel, listener)
+      }
+  }
 }
 
-const api: QaApi = {
-  getDay: (day) => ipcRenderer.invoke(IPC.getDay, day),
-  getLive: () => ipcRenderer.invoke(IPC.getLive),
-  saveEntry: (day, entry, opts) => ipcRenderer.invoke(IPC.saveEntry, day, entry, opts),
-  mergeEntries: (day, ids) => ipcRenderer.invoke(IPC.mergeEntries, day, ids),
-  rangeDays: (from, to) => ipcRenderer.invoke(IPC.rangeDays, from, to),
-  eventsIndex: () => ipcRenderer.invoke(IPC.eventsIndex),
-  sigList: () => ipcRenderer.invoke(IPC.sigList),
-  sigSave: (url) => ipcRenderer.invoke(IPC.sigSave, url),
-  sigDelete: (id) => ipcRenderer.invoke(IPC.sigDelete, id),
-  pdfSave: (bytes, name) => ipcRenderer.invoke(IPC.pdfSave, bytes, name),
-  imageSave: (bytes, name, ext) => ipcRenderer.invoke(IPC.imageSave, bytes, name, ext),
-  fileSave: (bytes, name, ext) => ipcRenderer.invoke(IPC.fileSave, bytes, name, ext),
-  hashOf: (src, key) => ipcRenderer.invoke(IPC.hashOf, src, key),
-  tabletState: () => ipcRenderer.invoke(IPC.tabletState),
-  tabletSet: (patch) => ipcRenderer.invoke(IPC.tabletSet, patch),
-  tabletLive: (on) => ipcRenderer.invoke(IPC.tabletLive, on),
-  tabletCanvas: (rect) => ipcRenderer.invoke(IPC.tabletCanvas, rect),
-  onTablet: (cb) => listen(IPC.tabletMsg, cb),
-  releaseOpen: (id, resume) => ipcRenderer.invoke(IPC.releaseOpen, id, resume),
-  releaseCmd: (msg) => ipcRenderer.invoke(IPC.releaseCmd, msg),
-  onRelease: (cb) => listen(IPC.releaseMsg, cb),
-  releaseProjects: () => ipcRenderer.invoke(IPC.releaseProjects),
-  releaseSaveProject: (p) => ipcRenderer.invoke(IPC.releaseSaveProject, p),
-  releaseDeleteProject: (id) => ipcRenderer.invoke(IPC.releaseDeleteProject, id),
-  releaseImport: () => ipcRenderer.invoke(IPC.releaseImport),
-  releasePickFolder: () => ipcRenderer.invoke(IPC.releasePickFolder),
-  releaseOpenInCode: (path) => ipcRenderer.invoke(IPC.releaseOpenInCode, path),
-  deleteEntry: (day, id) => ipcRenderer.invoke(IPC.deleteEntry, day, id),
-  moveEntry: (from, to, id, start, end) => ipcRenderer.invoke(IPC.moveEntry, from, to, id, start, end),
-  saveNote: (day, note) => ipcRenderer.invoke(IPC.saveNote, day, note),
-  deleteNote: (day, id) => ipcRenderer.invoke(IPC.deleteNote, day, id),
-  savePlan: (day, block) => ipcRenderer.invoke(IPC.savePlan, day, block),
-  setDayTasks: (day, tasks) => ipcRenderer.invoke(IPC.setDayTasks, day, tasks),
-  setEntryTask: (day, id, task) => ipcRenderer.invoke(IPC.setEntryTask, day, id, task),
-  search: (q) => ipcRenderer.invoke(IPC.search, q),
-  voiceState: () => ipcRenderer.invoke(IPC.voiceState),
-  onVoice: (cb) => listen(IPC.voice, cb),
-  voiceDownloadModel: (id) => ipcRenderer.invoke(IPC.voiceDownloadModel, id),
-  voiceDeleteModel: (id) => ipcRenderer.invoke(IPC.voiceDeleteModel, id),
-  saveAudioNote: (day, note, audio) => ipcRenderer.invoke(IPC.saveAudioNote, day, note, audio),
-  transcribeNote: (day, noteId, wav) => ipcRenderer.invoke(IPC.transcribeNote, day, noteId, wav),
-  readAudio: (file) => ipcRenderer.invoke(IPC.readAudio, file),
-  tasks: () => ipcRenderer.invoke(IPC.tasks),
-  saveTask: (t) => ipcRenderer.invoke(IPC.saveTask, t),
-  deleteTask: (id) => ipcRenderer.invoke(IPC.deleteTask, id),
-  onTasks: (cb) => listen(IPC.tasksChanged, cb),
-  noteToTask: (day, noteId) => ipcRenderer.invoke(IPC.noteToTask, day, noteId),
-  deletePlan: (day, id) => ipcRenderer.invoke(IPC.deletePlan, day, id),
-  planDone: (day, id) => ipcRenderer.invoke(IPC.planDone, day, id),
-  getSelection: () => ipcRenderer.invoke(IPC.getSelection),
-  setSelection: (sel) => ipcRenderer.send(IPC.setSelection, sel),
-  getSettings: () => ipcRenderer.invoke(IPC.getSettings),
-  updateSettings: (patch) => ipcRenderer.invoke(IPC.updateSettings, patch),
-  islandSolid: (solid) => ipcRenderer.send(IPC.islandSolid, solid),
-  islandRect: (r) => ipcRenderer.send(IPC.islandRect, r),
-  islandBlur: () => ipcRenderer.send(IPC.islandBlur),
-  islandFocus: () => ipcRenderer.send(IPC.islandFocus),
-  getIslandLayout: () => ipcRenderer.invoke(IPC.getIslandLayout),
-  openMain: (day, entryId) => ipcRenderer.send(IPC.openMain, day, entryId),
-  command: (cmd) => ipcRenderer.send(IPC.command, cmd),
-  onDayState: (cb) => listen(IPC.dayState, cb),
-  onNavigate: (cb) => listen(IPC.navigate, cb),
-  onIslandHotkey: (cb) => listen(IPC.islandHotkey, () => cb()),
-  onIslandHover: (cb) => listen(IPC.islandHover, cb),
-  onIslandLayout: (cb) => listen(IPC.islandLayout, cb),
-  onSettings: (cb) => listen(IPC.settings, cb),
-  outlookState: () => ipcRenderer.invoke(IPC.outlookState),
-  onOutlook: (cb) => listen(IPC.outlook, cb),
-  outlookLogin: () => ipcRenderer.invoke(IPC.outlookLogin),
-  outlookLogout: () => ipcRenderer.invoke(IPC.outlookLogout),
-  outlookSync: () => ipcRenderer.invoke(IPC.outlookSync),
-  jiraState: () => ipcRenderer.invoke(IPC.jiraState),
-  onJira: (cb) => listen(IPC.jira, cb),
-  jiraLogin: () => ipcRenderer.invoke(IPC.jiraLogin),
-  jiraLogout: () => ipcRenderer.invoke(IPC.jiraLogout),
-  jiraSync: () => ipcRenderer.invoke(IPC.jiraSync),
-  jiraSetSecret: (secret) => ipcRenderer.invoke(IPC.jiraSetSecret, secret),
-  jiraStar: (key, on) => ipcRenderer.invoke(IPC.jiraStar, key, on),
-  jiraSetMyStatus: (key, status) => ipcRenderer.invoke(IPC.jiraSetMyStatus, key, status),
-  jiraTracked: () => ipcRenderer.invoke(IPC.jiraTracked),
-  jiraWorked: () => ipcRenderer.invoke(IPC.jiraWorked),
-  jiraFind: (q, offset, limit, mode, query) => ipcRenderer.invoke(IPC.jiraFind, q, offset, limit, mode, query),
-  jiraIssue: (key) => ipcRenderer.invoke(IPC.jiraIssue, key),
-  jiraVersions: (q, offset, limit) => ipcRenderer.invoke(IPC.jiraVersions, q, offset, limit),
-  httpLoad: () => ipcRenderer.invoke(IPC.httpLoad),
-  termCreate: (cwd) => ipcRenderer.invoke(IPC.termCreate, cwd),
-  termWrite: (id, data) => ipcRenderer.send(IPC.termWrite, id, data),
-  termResize: (id, cols, rows) => ipcRenderer.send(IPC.termResize, id, cols, rows),
-  termKill: (id) => ipcRenderer.invoke(IPC.termKill, id),
-  termRename: (id, title) => ipcRenderer.invoke(IPC.termRename, id, title),
-  termReplay: (id) => ipcRenderer.invoke(IPC.termReplay, id),
-  termValues: (id) => ipcRenderer.invoke(IPC.termValues, id),
-  termAlerts: () => ipcRenderer.invoke(IPC.termAlerts),
-  termDismiss: (id) => ipcRenderer.invoke(IPC.termDismiss, id),
-  termList: () => ipcRenderer.invoke(IPC.termList),
-  termDirs: (path) => ipcRenderer.invoke(IPC.termDirs, path),
-  termConfig: () => ipcRenderer.invoke(IPC.termConfig),
-  termSetConfig: (c) => ipcRenderer.invoke(IPC.termSetConfig, c),
-  termRender: (id, cmd, answers) => ipcRenderer.invoke(IPC.termRender, id, cmd, answers),
-  onTermData: (cb) => {
-    const h = (_e: unknown, id: string, data: string, end: number) => cb(id, data, end)
-    ipcRenderer.on(IPC.termData, h)
-    return () => void ipcRenderer.off(IPC.termData, h)
-  },
-  onTermState: (cb) => listen(IPC.termState, cb),
-  onTermAlerts: (cb) => listen(IPC.termAlertsEv, cb),
-  httpSave: (doc) => ipcRenderer.invoke(IPC.httpSave, doc),
-  httpRun: (req, doc, runId) => ipcRenderer.invoke(IPC.httpRun, req, doc, runId),
-  httpChain: (ids, doc, stopOn, runId) => ipcRenderer.invoke(IPC.httpChain, ids, doc, stopOn, runId),
-  httpAbort: (runId) => ipcRenderer.invoke(IPC.httpAbort, runId),
-  onHttpChain: (cb) => {
-    const h = (_e: unknown, runId: string, i: number, id: string, out: Parameters<typeof cb>[3]) => cb(runId, i, id, out)
-    ipcRenderer.on(IPC.httpChainEv, h)
-    return () => void ipcRenderer.off(IPC.httpChainEv, h)
-  },
-  httpImport: (folder, vars) => ipcRenderer.invoke(IPC.httpImport, folder, vars),
-  browser: (m, ...a) => ipcRenderer.invoke(IPC.browser, m, ...a),
-  files: (m, ...a) => ipcRenderer.invoke(IPC.files, m, ...a),
-  sql: (m, ...a) => ipcRenderer.invoke(IPC.sql, m, ...a),
-  pathForFile: (file) => webUtils.getPathForFile(file),
-  clipGet: () => ipcRenderer.invoke(IPC.clip, 'get'),
-  clipSet: (on) => ipcRenderer.invoke(IPC.clip, 'set', on),
-  clipRemove: (id) => ipcRenderer.invoke(IPC.clip, 'remove', id),
-  clipClear: () => ipcRenderer.invoke(IPC.clip, 'clear'),
-  clipCopy: (id) => ipcRenderer.invoke(IPC.clip, 'copy', id),
-  onClip: (cb) => listen(IPC.clipEv, cb),
-  browserLayout: (rects) => ipcRenderer.send(IPC.browserLayout, rects),
-  onBrowser: (cb) => {
-    const h = (_e: unknown, type: string, payload: unknown) => cb(type, payload)
-    ipcRenderer.on(IPC.browserEv, h)
-    return () => void ipcRenderer.off(IPC.browserEv, h)
-  },
-  jiraVersionIssues: (id) => ipcRenderer.invoke(IPC.jiraVersionIssues, id),
-  calendarRange: (from, to) => ipcRenderer.invoke(IPC.calendarRange, from, to),
-  openExternal: (url) => ipcRenderer.send(IPC.openExternal, url),
-  copyImage: (bytes) => ipcRenderer.invoke(IPC.copyImage, bytes),
-  onCombo: (cb) => listen(IPC.combo, cb),
-  getCombo: () => ipcRenderer.invoke(IPC.getCombo),
-  onPulse: (cb) => listen(IPC.pulse, cb),
-  getPulse: () => ipcRenderer.invoke(IPC.getPulse),
-  vaultTree: () => ipcRenderer.invoke(IPC.vaultTree),
-  vaultRead: (path) => ipcRenderer.invoke(IPC.vaultRead, path),
-  vaultWrite: (path, text) => ipcRenderer.invoke(IPC.vaultWrite, path, text),
-  vaultCreate: (dir, kind, name, text) => ipcRenderer.invoke(IPC.vaultCreate, dir, kind, name, text),
-  vaultMove: (from, toDir, name) => ipcRenderer.invoke(IPC.vaultMove, from, toDir, name),
-  vaultDelete: (path) => ipcRenderer.invoke(IPC.vaultDelete, path),
-  vaultSearch: (q) => ipcRenderer.invoke(IPC.vaultSearch, q),
-  eventMentions: () => ipcRenderer.invoke(IPC.eventMentions),
-  vaultSaveAudio: (audio) => ipcRenderer.invoke(IPC.vaultSaveAudio, audio),
-  vaultReadAudio: (path) => ipcRenderer.invoke(IPC.vaultReadAudio, path),
-  vaultTranscribe: (wav, key) => ipcRenderer.invoke(IPC.vaultTranscribe, wav, key),
-  vaultTranscribeCancel: (key) => ipcRenderer.send(IPC.vaultTranscribeCancel, key),
-  vaultReveal: (path) => ipcRenderer.send(IPC.vaultReveal, path),
-  vaultSetColor: (path, color) => ipcRenderer.invoke(IPC.vaultSetColor, path, color),
-  vaultSetEmoji: (path, emoji) => ipcRenderer.invoke(IPC.vaultSetEmoji, path, emoji),
-  vaultPair: (a, b) => ipcRenderer.invoke(IPC.vaultPair, a, b),
-  vaultDeleteAudio: (path) => ipcRenderer.invoke(IPC.vaultDeleteAudio, path),
-  vaultRestoreAudio: (path, audio) => ipcRenderer.invoke(IPC.vaultRestoreAudio, path, audio),
-  vaultSaveImage: (bytes) => ipcRenderer.invoke(IPC.vaultSaveImage, bytes),
-  runLoad: (path) => ipcRenderer.invoke(IPC.runLoad, path),
-  runSave: (path, json) => ipcRenderer.invoke(IPC.runSave, path, json),
-  docExport: (path) => ipcRenderer.invoke(IPC.docExport, path),
-  runPw: (runId, job) => ipcRenderer.invoke(IPC.runPw, runId, job),
-  runPwStop: (runId) => ipcRenderer.send(IPC.runPwStop, runId),
-  onPwProgress: (cb) => {
-    const h = (_e: unknown, runId: string, steps: Parameters<Parameters<QaApi['onPwProgress']>[0]>[1]) => cb(runId, steps)
-    ipcRenderer.on(IPC.pwProgress, h)
-    return () => void ipcRenderer.off(IPC.pwProgress, h)
-  },
-  runFile: (path, key, name) => ipcRenderer.invoke(IPC.runFile, path, key, name),
-  pwTrace: (path, key) => ipcRenderer.invoke(IPC.pwTrace, path, key),
-  pwAllure: (path, key) => ipcRenderer.send(IPC.pwAllure, path, key),
-  nbNet: (id, on, preserve) => ipcRenderer.invoke(IPC.nbNet, id, on, preserve),
-  nbNetClear: (id) => ipcRenderer.invoke(IPC.nbNetClear, id),
-  onNoteBrowser: (cb) => {
-    const h = (_e: unknown, type: string, payload: unknown) => cb(type, payload)
-    ipcRenderer.on(IPC.nbEv, h)
-    return () => void ipcRenderer.off(IPC.nbEv, h)
-  },
-  browserOpen: (url) => ipcRenderer.send(IPC.browserOpen, url),
-  mcpInfo: () => ipcRenderer.invoke(IPC.mcpInfo),
-  mcpSet: (patch) => ipcRenderer.invoke(IPC.mcpSet, patch),
-  mcpInstall: (client) => ipcRenderer.invoke(IPC.mcpInstall, client),
-  onMcpCall: (cb) => {
-    const h = (_e: unknown, id: string, op: string, args: Record<string, unknown>) => cb(id, op, args)
-    ipcRenderer.on(IPC.mcpCall, h)
-    return () => void ipcRenderer.off(IPC.mcpCall, h)
-  },
-  mcpReply: (id, ok, value) => ipcRenderer.send(IPC.mcpReply, id, ok, value),
-  docImport: (dir) => ipcRenderer.invoke(IPC.docImport, dir),
-  docImportFile: (dir, file) => ipcRenderer.invoke(IPC.docImportFile, dir, file),
-  runCode: (runId, job) => ipcRenderer.invoke(IPC.runCode, runId, job),
-  runCodeStop: (runId) => ipcRenderer.send(IPC.runCodeStop, runId),
-  runLoop: (runId, job) => ipcRenderer.invoke(IPC.runLoop, runId, job),
-  runLoopPass: (runId, n, result) => ipcRenderer.send(IPC.runLoopPass, runId, n, result),
-  runLoopStop: (runId) => ipcRenderer.send(IPC.runLoopStop, runId),
-  onLoopPass: (cb) => {
-    const h = (_e: unknown, runId: string, n: number, vars: Record<string, unknown>) => cb(runId, n, vars)
-    ipcRenderer.on(IPC.loopPass, h)
-    return () => void ipcRenderer.off(IPC.loopPass, h)
-  },
-  vaultReadImage: (path) => ipcRenderer.invoke(IPC.vaultReadImage, path),
-  vaultDeleteImage: (path) => ipcRenderer.invoke(IPC.vaultDeleteImage, path),
-  vaultRestoreImage: (path, bytes) => ipcRenderer.invoke(IPC.vaultRestoreImage, path, bytes),
-  vaultClipImage: (save) => ipcRenderer.invoke(IPC.vaultClipImage, save),
-  vaultFetchImage: (url) => ipcRenderer.invoke(IPC.vaultFetchImage, url),
-  repeatEntry: (day, id, rule, count) => ipcRenderer.invoke(IPC.repeatEntry, day, id, rule, count),
-  seriesSave: (day, entry) => ipcRenderer.invoke(IPC.seriesSave, day, entry),
-  seriesDelete: (day, id) => ipcRenderer.invoke(IPC.seriesDelete, day, id),
-  setRemind: (day, id, remind) => ipcRenderer.invoke(IPC.setRemind, day, id, remind),
-  onVault: (cb) => listen(IPC.vault, cb),
-}
+const routed = Object.fromEntries(Object.entries(QA_ROUTES).map(([name, route]) => [name, bridge(route)]))
+const api = {
+  ...routed,
+  /** A dropped file's path on disk (the preload's own Electron API). */
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+} as unknown as QaApi
 
 contextBridge.exposeInMainWorld('qa', api)

@@ -1,0 +1,21 @@
+/* BlockWork: what its template cannot carry as utilities (scoped). */
+
+.wk-view button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.wk-view button.on {
+  background: rgb(var(--accent-rgb) / 0.2);
+  color: var(--accent-fg);
+}
+/* the table */
+/* the list */
+/* the totals */

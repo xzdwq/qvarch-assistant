@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, type Ref } from 'vue'
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml'
 import { sortDeep } from '../../lib/codeLang'
 import CodeArea from '../CodeArea.vue'
@@ -19,12 +19,13 @@ const saved = (() => {
   }
 })()
 const opt = reactive({ indent: saved.indent ?? 2, sort: saved.sort ?? false })
-const json = ref(saved.json ?? '{\n  "service": "orders",\n  "replicas": 3,\n  "env": { "LOG_LEVEL": "info", "DB_URL": "postgres://db:5432/orders" },\n  "ports": [8080, 9090]\n}')
+const json = ref(saved.json ?? '')
 const yaml = ref('')
 const jsonErr = ref('')
 const yamlErr = ref('')
+type Side = 'json' | 'yaml'
 /** The side the user wrote last (an option change re-lays the other one from it). */
-let source: 'json' | 'yaml' = 'json'
+let source: Side = 'json'
 let mute = false
 const write = (r: typeof json, v: string) => {
   mute = true
@@ -62,6 +63,22 @@ function fromYaml(): void {
     yamlErr.value = where(e)
   }
 }
+
+/** Each side (left to right): its title and editor, its text and error, how it is read, how the other side is written from it. */
+interface SideSpec {
+  label: string
+  placeholder: string
+  text: Ref<string>
+  err: Ref<string>
+  parse: (s: string) => unknown
+  relay: () => void
+}
+const SIDES: Record<Side, SideSpec> = {
+  json: { label: 'JSON', placeholder: 'JSON — YAML справа появится сам', text: json, err: jsonErr, parse: (s) => JSON.parse(s) as unknown, relay: fromJson },
+  yaml: { label: 'YAML', placeholder: 'YAML — JSON слева появится сам', text: yaml, err: yamlErr, parse: (s) => yamlLoad(s), relay: fromYaml },
+}
+const SIDE_ORDER = Object.keys(SIDES) as Side[]
+
 watch(json, () => {
   if (mute) return
   source = 'json'
@@ -74,8 +91,7 @@ watch(yaml, () => {
 }, { flush: 'sync' })
 fromJson()
 watch(opt, () => {
-  if (source === 'json') fromJson()
-  else fromYaml()
+  SIDES[source].relay()
   persist()
 })
 watch(json, () => persist())
@@ -88,179 +104,53 @@ function persist(): void {
 }
 /** Both sides laid out again from the side last written. */
 function formatBoth(): void {
+  const from = SIDES[source]
   try {
-    const v = source === 'json' ? (JSON.parse(json.value) as unknown) : yamlLoad(yaml.value)
+    const v = from.parse(from.text.value)
     write(json, toJson(v))
     write(yaml, toYaml(v))
     jsonErr.value = yamlErr.value = ''
   } catch (e) {
-    if (source === 'json') jsonErr.value = where(e)
-    else yamlErr.value = where(e)
+    from.err.value = where(e)
   }
 }
 const copiedSide = ref('')
-async function copy(side: 'json' | 'yaml'): Promise<void> {
-  await navigator.clipboard.writeText(side === 'json' ? json.value : yaml.value)
+async function copy(side: Side): Promise<void> {
+  await navigator.clipboard.writeText(SIDES[side].text.value)
   copiedSide.value = side
   setTimeout(() => copiedSide.value === side && (copiedSide.value = ''), 1200)
 }
-async function paste(side: 'json' | 'yaml'): Promise<void> {
-  const t = await navigator.clipboard.readText()
-  if (side === 'json') json.value = t
-  else yaml.value = t
+async function paste(side: Side): Promise<void> {
+  SIDES[side].text.value = await navigator.clipboard.readText()
 }
 </script>
 
 <template>
-  <div class="yt">
-    <div class="bar">
-      <span class="lbl">Отступ</span>
-      <span class="seg">
-        <button v-for="i in [2, 4]" :key="i" :class="{ on: opt.indent === i }" @click="opt.indent = i">{{ i }}</button>
-        <button :class="{ on: opt.indent === -1 }" title="Табуляция (в JSON; YAML табы не допускает — там 2)" @click="opt.indent = -1">Tab</button>
-        <button :class="{ on: opt.indent === 0 }" title="JSON в одну строку (YAML — с отступом 2)" @click="opt.indent = 0">Сжать</button>
+  <div class="yt tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="bar tw:flex-none tw:flex tw:items-center tw:gap-12 tw:h-44 tw:py-0 tw:px-14 tw:border-b tw:border-b-border tw:whitespace-nowrap">
+      <span class="lbl tw:text-text-2 tw:text-[12.5px]">Отступ</span>
+      <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-r2 tw:overflow-hidden">
+        <button class="tw:h-28 tw:py-0 tw:px-11 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:font-data tw:text-[12px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="i in [2, 4]" :key="i" :class="{ on: opt.indent === i }" @click="opt.indent = i">{{ i }}</button>
+        <button class="tw:h-28 tw:py-0 tw:px-11 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:font-data tw:text-[12px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: opt.indent === -1 }" title="Табуляция (в JSON; YAML табы не допускает — там 2)" @click="opt.indent = -1">Tab</button>
+        <button class="tw:h-28 tw:py-0 tw:px-11 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:font-data tw:text-[12px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: opt.indent === 0 }" title="JSON в одну строку (YAML — с отступом 2)" @click="opt.indent = 0">Сжать</button>
       </span>
-      <label class="chk"><input v-model="opt.sort" type="checkbox" />Ключи по алфавиту</label>
-      <span class="grow"></span>
-      <button class="fmt" title="Разложить обе стороны заново" @click="formatBoth"><Icon name="code" :size="13" />Форматировать</button>
+      <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]"><input v-model="opt.sort" type="checkbox" />Ключи по алфавиту</label>
+      <span class="grow tw:flex-1"></span>
+      <button class="fmt tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:bg-hover tw:hover:text-text tw:hover:enabled:border-border-3" title="Разложить обе стороны заново" @click="formatBoth"><Icon name="code" :size="13" />Форматировать</button>
     </div>
-    <div class="cols">
-      <div v-for="side in ['json', 'yaml'] as const" :key="side" class="col">
-        <div class="ph">
-          <b>{{ side === 'json' ? 'JSON' : 'YAML' }}</b>
-          <span v-if="side === 'json' ? jsonErr : yamlErr" class="err" :title="side === 'json' ? jsonErr : yamlErr">{{ side === 'json' ? jsonErr : yamlErr }}</span>
-          <span class="grow"></span>
-          <button class="ib" title="Вставить из буфера" @click="paste(side)"><Icon name="clipboard" :size="13" /></button>
-          <button class="ib" :title="copiedSide === side ? 'Скопировано' : 'Копировать'" @click="copy(side)"><Icon :name="copiedSide === side ? 'check' : 'copy'" :size="13" /></button>
+    <div class="cols tw:flex-1 tw:min-h-0 tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] tw:gap-1 tw:bg-border">
+      <div v-for="side in SIDE_ORDER" :key="side" class="col tw:flex tw:flex-col tw:gap-6 tw:min-w-0 tw:min-h-0 tw:pt-10 tw:pr-14 tw:pb-14 tw:pl-14 tw:bg-bg">
+        <div class="ph tw:flex-none tw:flex tw:items-center tw:gap-10 tw:min-h-26 tw:text-[12.5px] tw:whitespace-nowrap">
+          <b class="tw:text-text-hi">{{ SIDES[side].label }}</b>
+          <span v-if="SIDES[side].err.value" class="err tw:overflow-hidden tw:text-down-fg tw:text-ellipsis" :title="SIDES[side].err.value">{{ SIDES[side].err.value }}</span>
+          <span class="grow tw:flex-1"></span>
+          <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:hover:enabled:border-border-3" title="Вставить из буфера" @click="paste(side)"><Icon name="clipboard" :size="13" /></button>
+          <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:hover:enabled:border-border-3" :title="copiedSide === side ? 'Скопировано' : 'Копировать'" @click="copy(side)"><Icon :name="copiedSide === side ? 'check' : 'copy'" :size="13" /></button>
         </div>
-        <div class="ed">
-          <CodeArea v-if="side === 'json'" v-model="json" lang="json" fill :min-height="0" placeholder="JSON — YAML справа появится сам" />
-          <CodeArea v-else v-model="yaml" lang="yaml" fill :min-height="0" placeholder="YAML — JSON слева появится сам" />
+        <div class="ed tw:flex-1 tw:min-h-0">
+          <CodeArea v-model="SIDES[side].text.value" :lang="side" fill :min-height="0" :placeholder="SIDES[side].placeholder" />
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.yt {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.lbl {
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.seg button {
-  height: 28px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent-fg);
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.grow {
-  flex: 1;
-}
-.fmt {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.fmt:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.cols {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1px;
-  background: var(--border);
-}
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  min-height: 0;
-  padding: 10px 14px 14px;
-  background: var(--bg);
-}
-.ph {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 26px;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.ph b {
-  color: var(--text-hi);
-}
-.err {
-  overflow: hidden;
-  color: var(--down-fg);
-  text-overflow: ellipsis;
-}
-.ed {
-  flex: 1;
-  min-height: 0;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-</style>

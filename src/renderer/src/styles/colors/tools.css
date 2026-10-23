@@ -1,0 +1,65 @@
+/* Colours of tools: the board, codecs, PDF signing. */
+
+:root {
+  /* the "any colour" swatch behind a colour input (board, signature) */
+  --swatch-wheel: conic-gradient(var(--down), var(--warn), var(--warn), var(--up), #06b6d4, var(--info), var(--accent), #ec4899, var(--down));
+
+  /* board: the pen's swatches on light paper / on dark paper, the marker's; what a new user's tools start with */
+  --board-ink-on-light-1: #111827;
+  --board-ink-on-light-2: #2563eb;
+  --board-ink-on-light-3: #dc2626;
+  --board-ink-on-light-4: #16a34a;
+  --board-ink-on-light-5: #ea580c;
+  --board-ink-on-light-6: #7c3aed;
+  --board-ink-on-dark-1: #f3f4f6;
+  --board-ink-on-dark-2: #93c5fd;
+  --board-ink-on-dark-3: #fca5a5;
+  --board-ink-on-dark-4: #86efac;
+  --board-ink-on-dark-5: #fdba74;
+  --board-ink-on-dark-6: #c4b5fd;
+  --board-marker-1: #facc15;
+  --board-marker-2: #4ade80;
+  --board-marker-3: #38bdf8;
+  --board-marker-4: #f472b6;
+  --board-marker-5: #fb923c;
+  --board-pen-default: var(--board-ink-on-light-1);
+  --board-marker-default: var(--board-marker-1);
+  --board-gradient-default: var(--board-ink-on-light-3);
+
+  /* board: the papers offered (by the paper's id) */
+  --board-paper-white: #ffffff;
+  --board-paper-warm: #fbf8f1;
+  --board-paper-mint: #f1f8f4;
+  --board-paper-slate: #1e2230;
+  --board-paper-night: #0f1117;
+
+  /* board canvas: the grid (r g b; its alpha — the grid's brightness), the size ring, the selection's handles,
+     a picture still loading / missing */
+  --board-grid-on-light-rgb: 30 41 59;
+  --board-grid-on-dark-rgb: 255 255 255;
+  --board-ring-on-light: rgba(17, 24, 39, 0.6);
+  --board-ring-on-dark: rgba(255, 255, 255, 0.75);
+  --board-handle: #ffffff;
+  --board-picture-wait-fill: rgba(127, 127, 127, 0.12);
+  --board-picture-wait-line: rgba(127, 127, 127, 0.55);
+
+  /* signature: the ink swatches (pad and placed drawing) */
+  --sign-ink-1: #111827;
+  --sign-ink-2: #1d3fa8;
+  --sign-ink-3: #b91c1c;
+
+  /* regular expressions: the matches (two alternating), the groups (by number, cycling) */
+  --regex-match-a: rgba(56, 189, 248, 0.22);
+  --regex-match-a-line: rgba(56, 189, 248, 0.8);
+  --regex-match-b: rgba(250, 204, 21, 0.18);
+  --regex-match-b-line: rgba(250, 204, 21, 0.75);
+  --regex-group-1: #86efac;
+  --regex-group-2: #f9a8d4;
+  --regex-group-3: #c4b5fd;
+  --regex-group-4: #fdba74;
+
+  /* JWT: the token's three parts */
+  --jwt-header: #ff7b72;
+  --jwt-payload: #d2a8ff;
+  --jwt-signature: #18e0ff;
+}

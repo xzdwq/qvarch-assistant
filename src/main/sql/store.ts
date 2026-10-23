@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, safeStorage, utilityProcess, type UtilityProcess } from 'electron'
+import { app, BrowserWindow, dialog, safeStorage } from 'electron'
+import { ProcessSupervisor } from '../process/processSupervisor'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DB_DEFAULTS, connName, rowsCsv, sqlTemplates, type DbConn, type DbSchema, type SqlExport, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
+import { DB_DEFAULTS, connName, rowsCsv, sqlTemplates, type DbConn, type DbSchema, type SqlColumn, type SqlExport, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
 import type { Vault } from '../vault'
 import { rowsXlsx } from './export'
 
@@ -13,16 +14,35 @@ import { rowsXlsx } from './export'
 type Stored = Omit<DbConn, 'password' | 'hasPassword'> & { enc?: string; plain?: string }
 /** Queries at once against one connection, at most (a note's «Выполнить всё» and a click — not a flood). */
 const PER_CONN = 3
+/** The files rows are saved as: the extension, the dialog's filter name, the content. */
+const ROW_FILES: Record<SqlExport['format'], { ext: string; title: string; content: (columns: SqlColumn[], rows: unknown[][]) => string | Promise<Buffer> }> = {
+  xlsx: { ext: 'xlsx', title: 'Excel', content: rowsXlsx },
+  csv: { ext: 'csv', title: 'CSV', content: rowsCsv },
+}
 
 export class SqlStore {
   private file: string
-  private runs = new Map<string, { proc: UtilityProcess; conn: string; done: (r: SqlRunOut) => void; t0: number; timer: NodeJS.Timeout; kill?: NodeJS.Timeout; reason?: string }>()
+  /**
+   * The queries going on, each in a process of its own: stopped — asked to cancel the query on the server and close
+   * its connection (it answers — ended); if it does not in 10 s, killed (its socket goes with it).
+   */
+  private readonly queries: ProcessSupervisor<SqlRunOut>
+  /** The connection of each query going on (queries at once per connection are limited). */
+  private readonly runConn = new Map<string, string>()
   constructor(
     root: string,
-    private worker: string,
+    worker: string,
     private vault: Vault,
   ) {
     this.file = join(root, 'databases.json')
+    this.queries = new ProcessSupervisor<SqlRunOut>({
+      script: () => worker,
+      serviceName: 'Qvarch SQL',
+      memoryMb: 512,
+      failure: (error, ms) => ({ ok: false, error, ms }),
+      stop: { kind: 'ask', message: { type: 'stop' }, graceMs: 10_000 },
+      restart: 'stop',
+    })
   }
 
   private read(): Stored[] {
@@ -95,63 +115,52 @@ export class SqlStore {
   }
   /** The rows saved as an Excel workbook or a CSV file where the person says. */
   async exportRows(x: SqlExport): Promise<string | undefined> {
-    const ext = x.format === 'xlsx' ? 'xlsx' : 'csv'
-    const name = `${String(x.name || 'Результат').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80)}.${ext}`
+    // (an unknown format from the page — CSV, its name and its content alike)
+    const file = Object.hasOwn(ROW_FILES, x.format) ? ROW_FILES[x.format] : ROW_FILES.csv
+    const name = `${String(x.name || 'Результат').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80)}.${file.ext}`
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    const r = await dialog.showSaveDialog(win, { defaultPath: join(app.getPath('downloads'), name), filters: [x.format === 'xlsx' ? { name: 'Excel', extensions: ['xlsx'] } : { name: 'CSV', extensions: ['csv'] }] })
+    const r = await dialog.showSaveDialog(win, { defaultPath: join(app.getPath('downloads'), name), filters: [{ name: file.title, extensions: [file.ext] }] })
     if (r.canceled || !r.filePath) return undefined
     const columns = Array.isArray(x.columns) ? x.columns : []
     const rows = Array.isArray(x.rows) ? x.rows : []
-    if (x.format === 'csv') writeFileSync(r.filePath, rowsCsv(columns, rows), 'utf8')
-    else writeFileSync(r.filePath, await rowsXlsx(columns, rows))
+    writeFileSync(r.filePath, await file.content(columns, rows))
     return r.filePath
   }
   private exec(runId: string, connRef: string, sql: string, values: unknown[], mode: SqlMode, schema: boolean): Promise<SqlRunOut> {
     const s = this.read().find((x) => x.name === connRef || x.id === connRef)
     if (!s) return Promise.resolve({ ok: false, error: connRef ? `Нет подключения «${connRef}» — добавьте его в «Базы данных»` : 'Не выбрано подключение', ms: 0 })
-    if ([...this.runs.values()].filter((r) => r.conn === s.id).length >= PER_CONN) return Promise.resolve({ ok: false, error: `К «${s.name}» уже идут ${PER_CONN} запроса — дождитесь их или остановите`, ms: 0 })
-    this.stop(runId, 'Перезапущено')
+    if (this.queries.count((id) => id !== runId && this.runConn.get(id) === s.id) >= PER_CONN) return Promise.resolve({ ok: false, error: `К «${s.name}» уже идут ${PER_CONN} запроса — дождитесь их или остановите`, ms: 0 })
     const { enc: _e, plain: _p, ...base } = s
     const conn: DbConn = { ...base, password: this.password(s) }
     const sec = (conn.timeoutSec ?? DB_DEFAULTS.timeoutSec) + DB_DEFAULTS.connectSec + 15
-    return new Promise((done) => {
-      const proc = utilityProcess.fork(this.worker, [], { serviceName: 'Qvarch SQL', execArgv: ['--max-old-space-size=512', '--disable-warning=ExperimentalWarning'] })
-      const t0 = Date.now()
+    const t0 = Date.now()
+    this.runConn.set(runId, s.id)
+    const done = this.queries.start(runId, {
+      job: { conn, sql, values, mode, schema },
+      timeoutSec: sec,
       // the server's own limit failed to stop it, the process did not answer: stopped from here
-      const timer = setTimeout(() => this.stop(runId, `Нет ответа дольше ${sec} с — запрос снят, соединение закрыто`), sec * 1000)
-      this.runs.set(runId, { proc, conn: s.id, done, t0, timer })
-      proc.on('message', (m: { ok: boolean; run?: SqlRun; error?: string }) => this.end(runId, { ok: !!m.ok, run: m.run, error: m.error, ms: Date.now() - t0 }))
-      proc.on('exit', (code) => this.end(runId, { ok: false, error: code ? `Процесс запроса завершился (код ${code})` : 'Процесс запроса завершился', ms: Date.now() - t0 }))
-      proc.postMessage({ conn, sql, values, mode, schema })
+      timeoutError: `Нет ответа дольше ${sec} с — запрос снят, соединение закрыто`,
+      onMessage: (raw, run) => {
+        const m = raw as { ok: boolean; run?: SqlRun; error?: string }
+        run.finish({ ok: !!m.ok, run: m.run, error: m.error, ms: Date.now() - t0 })
+      },
+      exitError: (code) => (code ? `Процесс запроса завершился (код ${code})` : 'Процесс запроса завершился'),
     })
-  }
-  private end(runId: string, r: SqlRunOut): void {
-    const run = this.runs.get(runId)
-    if (!run) return
-    this.runs.delete(runId)
-    clearTimeout(run.timer)
-    clearTimeout(run.kill)
-    try {
-      run.proc.kill()
-    } catch {
-      // gone
-    }
-    run.done(run.reason && !r.ok ? { ...r, error: run.reason } : r)
+    void done.finally(() => {
+      if (!this.queries.has(runId)) this.runConn.delete(runId)
+    })
+    return done
   }
   /**
    * Stopped: the process asked to cancel the query on the server and close its connection (it answers — ended); if it
    * does not in 10 s, killed (its socket goes with it; the server's own limits end the rest).
    */
   stop(runId: string, reason = 'Запрос остановлен — на сервере снят, соединение закрыто'): void {
-    const run = this.runs.get(runId)
-    if (!run || run.reason) return
-    run.reason = reason
-    run.proc.postMessage({ type: 'stop' })
-    run.kill = setTimeout(() => this.end(runId, { ok: false, error: reason, ms: Date.now() - run.t0 }), 10_000)
+    this.queries.stop(runId, reason)
   }
   /** Every query stopped (the app closing). */
   stopAll(): void {
-    for (const id of [...this.runs.keys()]) this.stop(id, 'Приложение закрывается')
+    this.queries.stopAll('Приложение закрывается')
   }
 
   // ---------- the library: every query of the notebook ----------

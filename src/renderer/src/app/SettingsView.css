@@ -1,0 +1,30 @@
+/* SettingsView: what its template cannot carry as utilities (scoped). */
+.preview {
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+/* narrow window: the sections become a scrollable row of tabs on top */
+/* iOS-like switch on top of a checkbox */
+.fields.wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.secret {
+  display: flex;
+  gap: 6px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.order {
+  display: inline-flex;
+  flex-direction: column;
+}
+

@@ -104,12 +104,12 @@ export function emptyOf(spec: Obj, schema: unknown, o: { defaults?: boolean } = 
     }
     return out
   }
-  if (type === 'array') return []
-  if (type === 'integer' || type === 'number') return 0
-  if (type === 'boolean') return false
-  if (type === 'string' || Array.isArray(schema.enum)) return ''
+  if (typeof type === 'string' && Object.hasOwn(EMPTY_SCALAR, type)) return EMPTY_SCALAR[type]()
+  if (Array.isArray(schema.enum)) return ''
   return null
 }
+/** The empty value of a schema's (non-object) type. */
+const EMPTY_SCALAR: Record<string, () => unknown> = { array: () => [], integer: () => 0, number: () => 0, boolean: () => false, string: () => '' }
 /** A parameter's value as text: what its schema suggests (with `defaults`), else empty. */
 function paramValue(spec: Obj, p: Obj, defaults: boolean): string {
   // nothing suggested anywhere — the field stays blank (an empty shape says nothing)
@@ -156,6 +156,31 @@ export function serverOf(spec: Obj, specUrl: string): string {
   }
 }
 
+/** How a request carries the login a security scheme names: the auth tab, or an API key in a header / the query. */
+type AuthKind = 'bearer' | 'basic' | 'header' | 'query'
+/** An HTTP security scheme (`scheme`) → its auth. */
+const HTTP_SCHEME_AUTH: Record<string, AuthKind> = { bearer: 'bearer', basic: 'basic' }
+/** Where an API key may go. */
+const API_KEY_PLACES: readonly AuthKind[] = ['header', 'query']
+/** The auth a security scheme means; undefined — one not filled in. */
+function authKindOf(s: Obj): AuthKind | undefined {
+  switch (s.type) {
+    case 'http': {
+      const scheme = String(s.scheme).toLowerCase()
+      return Object.hasOwn(HTTP_SCHEME_AUTH, scheme) ? HTTP_SCHEME_AUTH[scheme] : undefined
+    }
+    case 'oauth2':
+    case 'openIdConnect':
+      return 'bearer'
+    case 'basic':
+      return 'basic'
+    case 'apiKey':
+      return API_KEY_PLACES.find((place) => place === s.in)
+    default:
+      return undefined
+  }
+}
+
 /** The picked operations as a folder of requests (by tag when there are several), and their variables. */
 export function specToHttp(spec: unknown, specUrl: string, ids: string[], opt: SpecToHttpOptions = {}): { folder: HttpFolder; vars: Array<HttpKV & { secret?: boolean }> } {
   if (!isObj(spec) || !isObj(spec.paths)) throw new Error('Нет описания API')
@@ -186,12 +211,25 @@ export function specToHttp(spec: unknown, specUrl: string, ids: string[], opt: S
       const name = String(p.name ?? '')
       const req1 = p.required === true || !!opt.optional
       const value = paramValue(spec, p, !!opt.defaults)
-      if (p.in === 'query') req.params.push(kv(name, value, req1))
-      else if (p.in === 'header' && !/^(authorization|content-type|accept)$/i.test(name)) req.headers.push(kv(name, value, req1))
-      // a path param with a known value goes straight into the address
-      else if (p.in === 'path' && value) req.url = req.url.split(`{{${name}}}`).join(encodeURIComponent(value))
-      else if (p.in === 'body') swaggerBody = p.schema
-      else if (p.in === 'formData') form.push(kv(name, value, req1 || p.type !== 'file'))
+      switch (p.in) {
+        case 'query':
+          req.params.push(kv(name, value, req1))
+          break
+        case 'header':
+          // (the auth and the body's type are set by their own sections)
+          if (!/^(authorization|content-type|accept)$/i.test(name)) req.headers.push(kv(name, value, req1))
+          break
+        case 'path':
+          // a path param with a known value goes straight into the address
+          if (value) req.url = req.url.split(`{{${name}}}`).join(encodeURIComponent(value))
+          break
+        case 'body':
+          swaggerBody = p.schema
+          break
+        case 'formData':
+          form.push(kv(name, value, req1 || p.type !== 'file'))
+          break
+      }
     }
     // the body: JSON from its schema, or a form
     const rb = deref(spec, op.requestBody)
@@ -214,22 +252,18 @@ export function specToHttp(spec: unknown, specUrl: string, ids: string[], opt: S
     for (const name of sec.flatMap((s) => (isObj(s) ? Object.keys(s) : []))) {
       const s = deref(spec, schemes[name])
       if (!isObj(s)) continue
-      if ((s.type === 'http' && String(s.scheme).toLowerCase() === 'bearer') || s.type === 'oauth2' || s.type === 'openIdConnect') {
-        req.auth = { type: 'bearer', token: secret(`token_${hk}`), user: '', pass: '' }
-        break
+      const kind = authKindOf(s)
+      if (!kind) continue
+      // (an API key: a variable named after the key)
+      const keyVar = () => secret(`${String(s.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${hk}`)
+      const fillAuth: Record<AuthKind, () => void> = {
+        bearer: () => (req.auth = { type: 'bearer', token: secret(`token_${hk}`), user: '', pass: '' }),
+        basic: () => (req.auth = { type: 'basic', token: '', user: secret(`user_${hk}`), pass: secret(`password_${hk}`) }),
+        header: () => req.headers.push(kv(String(s.name), keyVar())),
+        query: () => req.params.push(kv(String(s.name), keyVar())),
       }
-      if ((s.type === 'http' && String(s.scheme).toLowerCase() === 'basic') || s.type === 'basic') {
-        req.auth = { type: 'basic', token: '', user: secret(`user_${hk}`), pass: secret(`password_${hk}`) }
-        break
-      }
-      if (s.type === 'apiKey' && s.in === 'header') {
-        req.headers.push(kv(String(s.name), secret(`${String(s.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${hk}`)))
-        break
-      }
-      if (s.type === 'apiKey' && s.in === 'query') {
-        req.params.push(kv(String(s.name), secret(`${String(s.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${hk}`)))
-        break
-      }
+      fillAuth[kind]()
+      break
     }
     if (!byTag.has(o.tag)) byTag.set(o.tag, [])
     byTag.get(o.tag)!.push(req)
@@ -238,6 +272,15 @@ export function specToHttp(spec: unknown, specUrl: string, ids: string[], opt: S
   const pad = (n: number) => String(n).padStart(2, '0')
   const children: HttpNode[] = byTag.size > 1 ? [...byTag].map(([tag, reqs]) => ({ id: httpId(), type: 'folder' as const, name: tag, open: false, children: reqs })) : [...byTag.values()].flat()
   return { folder: { id: httpId(), type: 'folder', name: `${info.title}${info.version ? ` ${info.version}` : ''} ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`, open: true, children }, vars }
+}
+
+/** A body mode that becomes plain text (the others — a file form, none — are left out): its type and its text. */
+const BODY_AS_TEXT: Partial<Record<HttpRequest['body']['mode'], { contentType: string; text: (b: HttpRequest['body']) => string }>> = {
+  json: { contentType: 'application/json', text: (b) => b.text },
+  urlencoded: {
+    contentType: 'application/x-www-form-urlencoded',
+    text: (b) => b.rows.filter((x) => x.on && x.key).map((x) => `${encodeURIComponent(x.key)}=${encodeURIComponent(x.value)}`).join('&'),
+  },
 }
 
 /**
@@ -255,9 +298,9 @@ export function specExamples(spec: unknown, specUrl: string, ids: string[], opt:
     let url = r.url.split(`{{${base.key}}}`).join(base.value)
     const q = r.params.filter((p) => p.on && p.key).map((p) => `${encodeURIComponent(p.key)}=${/\{\{[^}]+\}\}/.test(p.value) ? p.value : encodeURIComponent(p.value)}`)
     if (q.length) url += `${url.includes('?') ? '&' : '?'}${q.join('&')}`
-    const b = r.body
-    const body = b.mode === 'json' ? b.text : b.mode === 'urlencoded' ? b.rows.filter((x) => x.on && x.key).map((x) => `${encodeURIComponent(x.key)}=${encodeURIComponent(x.value)}`).join('&') : undefined
-    const contentType = b.mode === 'json' ? 'application/json' : b.mode === 'urlencoded' ? 'application/x-www-form-urlencoded' : undefined
+    const asText = Object.hasOwn(BODY_AS_TEXT, r.body.mode) ? BODY_AS_TEXT[r.body.mode] : undefined
+    const body = asText?.text(r.body)
+    const contentType = asText?.contentType
     return { method: r.method, url, ...(body ? { body, contentType } : {}), headers: r.headers.filter((h) => h.on && h.key).map((h) => [h.key, h.value] as [string, string]) }
   })
 }

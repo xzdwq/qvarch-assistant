@@ -1,5 +1,7 @@
 import type { Entry, Ms } from './types'
 import { dayKey, dayStart, mergeIntervals, MINUTE, shiftDay, unionMs } from './timeline'
+import { isOwnTask } from './work'
+import type { ChartUnit, EntryOrigin, GroupBy, TaskType } from './tracker/constants'
 
 /**
  * Reports over a period and the week sheet: durations typed by hand, where new time goes in a day,
@@ -114,13 +116,13 @@ export function takeTime(blocks: Entry[], remove: Ms): Array<{ id: string; end?:
 
 // ---------- reports ----------
 
-export type GroupBy = 'kind' | 'task' | 'day' | 'week'
+export type { ChartUnit, EntryOrigin, GroupBy, TaskType }
 export interface ReportFilter {
   kinds?: string[]
   tasks?: string[]
   /** "jira" — on a Jira task, "own" — on an own task (Q-n), "none" — without a task. */
-  taskType?: Array<'jira' | 'own' | 'none'>
-  sources?: Array<'outlook' | 'call' | 'manual'>
+  taskType?: TaskType[]
+  sources?: EntryOrigin[]
   text?: string
 }
 export interface RangeDay {
@@ -128,12 +130,11 @@ export interface RangeDay {
   entries: Entry[]
 }
 
-const OWN = 'Q-'
-export function taskType(e: { task?: { key: string } }): 'jira' | 'own' | 'none' {
-  return !e.task ? 'none' : e.task.key.startsWith(OWN) ? 'own' : 'jira'
+export function taskType(e: { task?: { key: string } }): TaskType {
+  return !e.task ? 'none' : isOwnTask(e.task.key) ? 'own' : 'jira'
 }
 /** Where a block came from: an Outlook meeting, a detected call, or put by hand (AI included). */
-export function sourceOf(e: Entry): 'outlook' | 'call' | 'manual' {
+export function sourceOf(e: Entry): EntryOrigin {
   return e.outlook ? 'outlook' : e.source === 'detected' ? 'call' : 'manual'
 }
 
@@ -158,13 +159,19 @@ export interface Group {
   items: ReportItem[]
 }
 
-/** The key of a block's group. */
-export function groupKey(it: ReportItem, by: GroupBy): string {
-  if (by === 'kind') return it.e.kind
-  if (by === 'task') return it.e.task?.key ?? ''
-  if (by === 'day') return it.day
-  return weekStart(it.day)
+/** The key of a block's group, per grouping. */
+const GROUP_KEYS: Record<GroupBy, (it: ReportItem) => string> = {
+  kind: (it) => it.e.kind,
+  task: (it) => it.e.task?.key ?? '',
+  day: (it) => it.day,
+  week: (it) => weekStart(it.day),
 }
+export const groupKey = (it: ReportItem, by: GroupBy): string => GROUP_KEYS[by](it)
+
+const byTime = (a: Group, b: Group): number => a.key.localeCompare(b.key)
+const bySize = (a: Group, b: Group): number => b.ms - a.ms
+/** Groups by a period go in time order, the others — the biggest first. */
+const GROUP_ORDER: Record<GroupBy, (a: Group, b: Group) => number> = { kind: bySize, task: bySize, day: byTime, week: byTime }
 
 /** Time per group — a group's own overlaps counted once (a call inside a meeting is not double time). */
 export function groupItems(items: ReportItem[], by: GroupBy): Group[] {
@@ -173,8 +180,7 @@ export function groupItems(items: ReportItem[], by: GroupBy): Group[] {
     const k = groupKey(it, by)
     m.set(k, [...(m.get(k) ?? []), it])
   }
-  const out = [...m].map(([key, list]) => ({ key, ms: unionOf(list), count: list.length, items: list }))
-  return by === 'day' || by === 'week' ? out.sort((a, b) => a.key.localeCompare(b.key)) : out.sort((a, b) => b.ms - a.ms)
+  return [...m].map(([key, list]) => ({ key, ms: unionOf(list), count: list.length, items: list })).sort(GROUP_ORDER[by])
 }
 
 /** Time of blocks over several days, overlaps counted once. */
@@ -182,9 +188,16 @@ export function unionOf(items: ReportItem[]): number {
   return unionMs(items.map((i) => ({ start: i.e.start, end: i.e.end })))
 }
 
+/** The bar a day falls into: the day itself, its week's Monday, its month (YYYY-MM). */
+const BAR_BUCKETS: Record<ChartUnit, (day: string) => string> = {
+  day: (d) => d,
+  week: weekStart,
+  month: (d) => d.slice(0, 7),
+}
+
 /** Bars of the chart: per day / week / month, the time of each series key (a kind or a task) in it. */
-export function bars(items: ReportItem[], days: string[], unit: 'day' | 'week' | 'month', series: (it: ReportItem) => string): Array<{ key: string; days: string[]; parts: Map<string, number>; total: number }> {
-  const bucket = (d: string) => (unit === 'day' ? d : unit === 'week' ? weekStart(d) : d.slice(0, 7))
+export function bars(items: ReportItem[], days: string[], unit: ChartUnit, series: (it: ReportItem) => string): Array<{ key: string; days: string[]; parts: Map<string, number>; total: number }> {
+  const bucket = BAR_BUCKETS[unit]
   const order: string[] = []
   const map = new Map<string, { key: string; days: string[]; parts: Map<string, number>; total: number }>()
   for (const d of days) {

@@ -10,10 +10,13 @@ export const BUNDLE_FORMAT = 'qvarch-doc'
 /** The whole file at most (the pictures are inside, base64). */
 export const MAX_BUNDLE = 300 * 1024 * 1024
 
+/** What a packed document is: a note or a board. */
+export const BUNDLE_DOC_KINDS = ['note', 'board'] as const
+export type BundleDocKind = (typeof BUNDLE_DOC_KINDS)[number]
 export interface BundleDoc {
   /** Its path in the vault it came from — the key the others refer to it by. */
   key: string
-  kind: 'note' | 'board'
+  kind: BundleDocKind
   text: string
   /** vault/.runs/<note>.json as it was (only when exported with results). */
   runs?: unknown
@@ -74,7 +77,7 @@ export function parseBundle(json: string): DocBundle {
   const folder = typeof b.root === 'string' && !!b.root.trim()
   if (!Array.isArray(b.docs) || (!b.docs.length && !folder)) throw new Error('В файле нет документов')
   for (const d of b.docs) {
-    if (!d || typeof d.key !== 'string' || typeof d.text !== 'string' || (d.kind !== 'note' && d.kind !== 'board')) throw new Error('Файл повреждён: неверный документ')
+    if (!d || typeof d.key !== 'string' || typeof d.text !== 'string' || !(BUNDLE_DOC_KINDS as readonly unknown[]).includes(d.kind)) throw new Error('Файл повреждён: неверный документ')
   }
   if (typeof b.main !== 'string' || (!folder && !b.docs.some((d) => d.key === b.main))) throw new Error('Файл повреждён: нет основного документа')
   const safeRel = (p: unknown) => typeof p === 'string' && !/(^|\/)\.\.?(\/|$)/.test(p) && !/^[\\/]|:/.test(p)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useCloseOnScroll } from '../lib/floating'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { atPoint, usePopover } from '../lib/usePopover'
+import { computed, ref, shallowRef } from 'vue'
 import type { Entry, KindDef } from '@shared/types'
 import { formatDuration, formatHM } from '@shared/timeline'
 import EntryModal from './EntryModal.vue'
@@ -28,19 +28,13 @@ refreshMentions()
 const kind = computed(() => kinds.value.find((k) => k.id === entry.value?.kind))
 const dayText = computed(() => new Date(`${props.day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' }))
 const others = computed(() => notesOf(props.id).filter((p) => p !== props.path))
-const pos = computed(() => ({ left: `${Math.max(8, Math.min(props.x, window.innerWidth - 440))}px`, top: `${Math.min(props.y + 6, window.innerHeight - 360)}px` }))
-// (it stood by a mark in the text: the text scrolled — gone)
-useCloseOnScroll(ref(true), () => !editing.value && emit('close'), '.evc')
-const close = (e: PointerEvent) => !(e.target as HTMLElement).closest('.evc, .em-back') && !editing.value && emit('close')
-const key = (e: KeyboardEvent) => e.key === 'Escape' && !editing.value && emit('close')
-onMounted(() => {
-  window.addEventListener('pointerdown', close, true)
-  window.addEventListener('keydown', key)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', close, true)
-  window.removeEventListener('keydown', key)
-})
+// it stood by a mark in the text (the text scrolled — gone); while its event is being changed it stays
+const open = computed({ get: () => true, set: (on) => void (on || editing.value || emit('close')) })
+const { panelRef, style } = usePopover(() => ({ x: Math.max(8, Math.min(props.x, window.innerWidth - 440)), y: Math.min(props.y + 6, window.innerHeight - 360) }), {
+  place: atPoint,
+  // (the form changing it has Esc then)
+  esc: () => !editing.value,
+}, open)
 function toWork(): void {
   openEventInWork(props.day, props.id)
   emit('close')
@@ -49,145 +43,30 @@ function toWork(): void {
 
 <template>
   <Teleport to="body">
-    <div class="evc" :style="pos">
-      <p v-if="missing" class="muted">Этого события больше нет.</p>
+    <div :ref="panelRef" class="evc tw:fixed tw:z-1400 tw:flex tw:flex-col tw:gap-6 tw:w-420 tw:max-h-[60vh] tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:overflow-auto tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:text-[13px]" :style="style">
+      <p v-if="missing" class="muted tw:m-0 tw:text-muted">Этого события больше нет.</p>
       <template v-else-if="entry">
-        <div class="h" :style="{ '--c': kind?.color ?? 'var(--accent)' }">
-          <span class="k"><Icon :name="kind?.icon ?? 'tag'" :size="13" />{{ kind?.label ?? entry.kind }}</span>
-          <span class="grow"></span>
-          <button class="x" title="Закрыть" @click="emit('close')"><Icon name="x" :size="13" /></button>
+        <div class="h tw:flex tw:items-center tw:gap-6" :style="{ '--c': kind?.color ?? 'var(--accent)' }">
+          <span class="k tw:inline-flex tw:items-center tw:gap-6 tw:py-1 tw:px-8 tw:rounded-[10px] tw:bg-[color-mix(in_srgb,var(--c)_18%,transparent)] tw:text-(--c) tw:text-[12px]"><Icon :name="kind?.icon ?? 'tag'" :size="13" />{{ kind?.label ?? entry.kind }}</span>
+          <span class="grow tw:flex-1"></span>
+          <button class="x tw:inline-flex tw:w-24 tw:h-24 tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Закрыть" @click="emit('close')"><Icon name="x" :size="13" /></button>
         </div>
-        <b class="t">{{ entry.label || kind?.label }}</b>
-        <p class="when">{{ dayText }} · {{ formatHM(entry.start) }}–{{ formatHM(entry.end) }} · {{ formatDuration(entry.end - entry.start) }}<template v-if="entry.outlook"> · Outlook</template></p>
-        <p v-if="entry.task" class="task"><Icon name="jira" :size="12" /><b>{{ entry.task.key }}</b> {{ entry.task.summary }}</p>
-        <p v-if="entry.description" class="desc">{{ entry.description }}</p>
-        <p v-else class="muted small">Без описания</p>
-        <div v-if="others.length" class="notes">
-          <span class="muted small">Ещё в заметках:</span>
-          <button v-for="p in others" :key="p" class="nl" @click="(openNote(p), emit('close'))"><Icon name="note" :size="11" />{{ noteTitle(p) }}</button>
+        <b class="t tw:text-[14.5px]">{{ entry.label || kind?.label }}</b>
+        <p class="when tw:flex tw:items-center tw:gap-5 tw:m-0 tw:text-text-2 tw:text-[12.5px]">{{ dayText }} · {{ formatHM(entry.start) }}–{{ formatHM(entry.end) }} · {{ formatDuration(entry.end - entry.start) }}<template v-if="entry.outlook"> · Outlook</template></p>
+        <p v-if="entry.task" class="task tw:flex tw:items-center tw:gap-5 tw:m-0 tw:text-text-2 tw:text-[12.5px]"><Icon name="jira" :size="12" /><b>{{ entry.task.key }}</b> {{ entry.task.summary }}</p>
+        <p v-if="entry.description" class="desc tw:my-2 tw:mx-0 tw:py-6 tw:px-8 tw:border-l-2 tw:border-l-border-2 tw:text-text tw:whitespace-pre-wrap tw:[word-break:break-word]">{{ entry.description }}</p>
+        <p v-else class="muted small tw:m-0 tw:text-muted tw:text-[12px]">Без описания</p>
+        <div v-if="others.length" class="notes tw:flex tw:flex-wrap tw:items-center tw:gap-4">
+          <span class="muted small tw:m-0 tw:text-muted tw:text-[12px]">Ещё в заметках:</span>
+          <button v-for="p in others" :key="p" class="nl tw:inline-flex tw:items-center tw:gap-4 tw:h-22 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-[11px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="(openNote(p), emit('close'))"><Icon name="note" :size="11" />{{ noteTitle(p) }}</button>
         </div>
-        <div class="acts">
-          <button v-if="!entry.outlook" @click="editing = true"><Icon name="pencil" :size="12" />Изменить</button>
-          <button class="pri" @click="toWork"><Icon name="checkSquare" :size="12" />В Моей работе</button>
+        <div class="acts tw:flex tw:gap-6 tw:mt-4">
+          <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-11 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12.5px]" v-if="!entry.outlook" @click="editing = true"><Icon name="pencil" :size="12" />Изменить</button>
+          <button class="pri tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-11 tw:border tw:border-border-2 tw:rounded-[6px] tw:text-[12.5px] tw:[&&]:border-accent tw:bg-accent tw:text-on-accent" @click="toWork"><Icon name="checkSquare" :size="12" />В Моей работе</button>
         </div>
       </template>
-      <p v-else class="muted">Загружаю…</p>
+      <p v-else class="muted tw:m-0 tw:text-muted">Загружаю…</p>
     </div>
     <EntryModal v-if="editing && entry" :day="day" :entry="entry" @close="editing = false" @changed="load" />
   </Teleport>
 </template>
-
-<style scoped>
-.evc {
-  position: fixed;
-  z-index: 1400;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 420px;
-  max-height: 60vh;
-  padding: 10px 12px 12px;
-  overflow: auto;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-  font-size: 13px;
-}
-.h {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.k {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--c) 18%, transparent);
-  color: var(--c);
-  font-size: 12px;
-}
-.grow {
-  flex: 1;
-}
-.x {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.t {
-  font-size: 14.5px;
-}
-.when,
-.task {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 0;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.desc {
-  margin: 2px 0;
-  padding: 6px 8px;
-  border-left: 2px solid var(--border-2);
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.muted {
-  margin: 0;
-  color: var(--muted);
-}
-.small {
-  font-size: 12px;
-}
-.notes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-.nl {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: 11px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.acts {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-.acts button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12.5px;
-}
-.acts .pri {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--on-accent, #fff);
-}
-</style>

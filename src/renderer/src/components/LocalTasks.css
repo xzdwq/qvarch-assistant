@@ -1,0 +1,6 @@
+/* LocalTasks: what its template cannot carry as utilities (scoped). */
+
+.due.late {
+  color: var(--down-fg);
+  border-color: rgba(255, 61, 61, 0.5);
+}

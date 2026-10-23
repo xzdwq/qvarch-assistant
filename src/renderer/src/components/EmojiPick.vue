@@ -20,61 +20,12 @@ function onKey(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="ep">
-    <input ref="input" v-model="q" spellcheck="false" placeholder="Поиск: сердце, star, огонь…" @keydown="onKey" />
-    <div class="ep-grid">
-      <button v-for="e in list" :key="e.u" :title="`${e.ru} · ${e.en}`" @mouseenter="hover = e" @click="emit('pick', e.u)">{{ e.u }}</button>
-      <p v-if="!list.length" class="ep-e">{{ all.length ? 'Не нашлось' : 'Загружаю…' }}</p>
+  <div class="ep tw:flex tw:flex-col tw:gap-6 tw:w-340 tw:p-8 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+    <input class="tw:h-30" ref="input" v-model="q" spellcheck="false" placeholder="Поиск: сердце, star, огонь…" @keydown="onKey" />
+    <div class="ep-grid tw:grid tw:grid-cols-[repeat(9,1fr)] tw:gap-2 tw:max-h-250 tw:overflow-y-auto">
+      <button class="tw:h-34 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:font-['Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif] tw:text-[20px] tw:hover:bg-accent/20" v-for="e in list" :key="e.u" :title="`${e.ru} · ${e.en}`" @mouseenter="hover = e" @click="emit('pick', e.u)">{{ e.u }}</button>
+      <p v-if="!list.length" class="ep-e tw:col-span-full tw:m-8 tw:text-muted tw:text-[12.5px]">{{ all.length ? 'Не нашлось' : 'Загружаю…' }}</p>
     </div>
-    <div class="ep-f">{{ hover ? `${hover.u}  ${hover.ru}` : 'Enter — первый найденный' }}</div>
+    <div class="ep-f tw:overflow-hidden tw:text-muted tw:text-[11.5px] tw:text-ellipsis tw:whitespace-nowrap">{{ hover ? `${hover.u}  ${hover.ru}` : 'Enter — первый найденный' }}</div>
   </div>
 </template>
-
-<style scoped>
-.ep {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 340px;
-  padding: 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.ep input {
-  height: 30px;
-}
-.ep-grid {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 2px;
-  max-height: 250px;
-  overflow-y: auto;
-}
-.ep-grid button {
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
-  font-size: 20px;
-}
-.ep-grid button:hover {
-  background: rgb(var(--accent-rgb) / 0.2);
-}
-.ep-e {
-  grid-column: 1 / -1;
-  margin: 8px;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.ep-f {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

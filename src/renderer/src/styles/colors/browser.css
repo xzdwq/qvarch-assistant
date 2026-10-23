@@ -1,0 +1,28 @@
+/* Colours of the browser: recording, checks, the API map. */
+:root {
+  /* a note's blocks of the browser: their stripe */
+  --block-browser: #60a5fa;
+  --block-pw: #2dd4bf;
+  /* a page's load timeline (the browser block): DOMContentLoaded, load, a request's bar */
+  --timing-dcl: #60a5fa;
+  --timing-load: #f87171;
+  --timing-request: #34d399;
+  /* «worth a look» marks: a check's warning row, the site taking an address back */
+  --caution: #fbbf24;
+  /* the history not being kept */
+  --history-off: #ffb300;
+  /* hooks: searching, paused, saved, a find in a snippet */
+  --hook-live: #34d399;
+  --hook-paused: #f87171;
+  --hook-saved: #4ade80;
+  --hook-match: #facc15;
+  /* Swagger's operations by method */
+  --api-method-get: #22c55e;
+  --api-method-post: #f59e0b;
+  --api-method-put: #38bdf8;
+  --api-method-patch: #a78bfa;
+  --api-method-delete: #ef4444;
+  /* the device preview: the backdrop's stripes, the frame's shadow */
+  --device-stripe: rgb(255 255 255 / 0.015);
+  --device-frame-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
+}

@@ -29,12 +29,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="em-back" @pointerdown.self="emit('close')">
-      <div class="em">
-        <div class="em-head">
+    <div class="em-back tw:fixed tw:inset-0 tw:z-1500 tw:flex tw:items-start tw:justify-center tw:pt-70 tw:bg-bg/50" @pointerdown.self="emit('close')">
+      <div class="em tw:w-520 tw:max-w-[calc(100vw-32px)] tw:max-h-[calc(100vh-100px)] tw:overflow-auto tw:pt-12 tw:pr-16 tw:pb-16 tw:pl-16 tw:rounded-r3 tw:border tw:border-white/10 tw:bg-panel tw:[box-shadow:0_24px_60px_rgba(0,0,0,0.6)]">
+        <div class="em-head tw:flex tw:items-center tw:gap-6 tw:mb-10 tw:text-text-2 tw:text-[12.5px] tw:font-semibold">
           <Icon name="plus" :size="13" /><span>Событие</span>
-          <span class="grow"></span>
-          <button class="x" title="Закрыть" @click="emit('close')"><Icon name="x" :size="14" /></button>
+          <span class="grow tw:flex-1"></span>
+          <button class="x tw:inline-flex tw:p-5 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/8 tw:hover:enabled:border-border-3" title="Закрыть" @click="emit('close')"><Icon name="x" :size="14" /></button>
         </div>
         <EntryEditor
           :day="today"
@@ -52,50 +52,3 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.em-back {
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 70px;
-  background: rgba(13, 17, 23, 0.5);
-}
-.em {
-  width: 520px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 100px);
-  overflow: auto;
-  padding: 12px 16px 16px;
-  border-radius: var(--r3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--panel);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-}
-.em-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  color: var(--text-2);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.grow {
-  flex: 1;
-}
-.x {
-  display: inline-flex;
-  padding: 5px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.x:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-</style>

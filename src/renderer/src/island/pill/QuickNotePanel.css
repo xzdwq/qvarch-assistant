@@ -1,0 +1,15 @@
+/* QuickNotePanel: what its template cannot carry as utilities (scoped). */
+
+.nhead .muted {
+  font-size: 10px;
+}
+.qkinds {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.qlabel :deep(.qft) {
+  font-size: 12px;
+}

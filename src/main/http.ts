@@ -2,10 +2,10 @@ import { safeStorage } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import vm from 'node:vm'
-import { buildHeaders, buildUrl, DEFAULT_HTTP_SETTINGS, fill, findNode, sampleDoc, stopReason, type HttpDoc, type HttpFolder, type HttpKV, type HttpSettings, type HttpRequest, type HttpResponse, type HttpRunResult, type HttpRunStep } from '../shared/http'
+import { BODILESS_METHODS, BODY_MODES, buildHeaders, buildUrl, DEFAULT_HTTP_SETTINGS, findNode, emptyHttpDoc, stopReason, type HttpDoc, type HttpFolder, type HttpKV, type HttpSettings, type HttpRequest, type HttpResponse, type HttpRunResult, type HttpRunStep } from '../shared/http'
 
 /**
- * The HTTP section's backend: the collection (data/http.json, a test one made on the first start) and running a
+ * The HTTP section's backend: the collection (data/http.json, empty at the first start) and running a
  * request here — no browser limits (CORS), the scripts in a separate VM context with a time limit.
  */
 export class HttpClient {
@@ -16,7 +16,7 @@ export class HttpClient {
 
   load(): HttpDoc {
     if (!existsSync(this.file)) {
-      const doc = sampleDoc()
+      const doc = emptyHttpDoc()
       this.save(doc)
       return doc
     }
@@ -176,25 +176,11 @@ export class HttpClient {
     if (!/^https?:\/\//i.test(url)) throw new Error(`Адрес должен начинаться с http:// или https:// — «${url || 'пусто'}»`)
     const headers = buildHeaders(r, vars, settings)
     let body: string | FormData | undefined
-    const b = r.body
-    if (r.method !== 'GET' && r.method !== 'HEAD') {
-      if (b.mode === 'json') {
-        const text = fill(b.text, vars)
-        try {
-          JSON.parse(text || 'null')
-        } catch (e) {
-          throw new Error(`Тело — не JSON: ${msg(e)}`)
-        }
-        body = text
-      } else if (b.mode === 'raw') body = fill(b.text, vars)
-      else if (b.mode === 'urlencoded') body = new URLSearchParams(b.rows.filter((x) => x.on && x.key).map((x) => [fill(x.key, vars), fill(x.value, vars)])).toString()
-      else if (b.mode === 'form') {
-        const fd = new FormData()
-        for (const x of b.rows.filter((x) => x.on && x.key)) fd.append(fill(x.key, vars), fill(x.value, vars))
-        body = fd
-        // fetch sets the multipart boundary itself
-        for (let i = headers.length - 1; i >= 0; i--) if (headers[i][0].toLowerCase() === 'content-type') headers.splice(i, 1)
-      }
+    if (!BODILESS_METHODS.has(r.method)) {
+      const mode = BODY_MODES[r.body.mode]
+      body = mode.encode(r.body, vars)
+      // fetch sets the multipart boundary itself
+      if (mode.ownContentType) for (let i = headers.length - 1; i >= 0; i--) if (headers[i][0].toLowerCase() === 'content-type') headers.splice(i, 1)
     }
     const t0 = performance.now()
     const ctl = new AbortController()

@@ -24,14 +24,27 @@ let session: ReleaseSession | undefined
 port.on('message', (e) => {
   const m = e.data as In
   try {
-    if (m.type === 'init') setReleaseDataDir(m.dataDir)
-    else if (m.type === 'open') {
-      const project = readProjects().find((p) => p.id === m.id)
-      if (!project) throw new Error('Проект не найден')
-      session = new ReleaseSession({ workspaceState: releaseState })
-      const ctx = { projectId: project.id, projectName: project.name }
-      void (m.resume ? session.resume(project, ctx) : session.start(project, ctx))
-    } else if (m.type === 'cmd') void session?.dispatch(m.msg)
+    switch (m.type) {
+      case 'init':
+        setReleaseDataDir(m.dataDir)
+        break
+      case 'open': {
+        const project = readProjects().find((p) => p.id === m.id)
+        if (!project) throw new Error('Проект не найден')
+        session = new ReleaseSession({ workspaceState: releaseState })
+        const ctx = { projectId: project.id, projectName: project.name }
+        void (m.resume ? session.resume(project, ctx) : session.start(project, ctx))
+        break
+      }
+      case 'cmd':
+        void session?.dispatch(m.msg)
+        break
+      default: {
+        // a message this worker does not know — ignored
+        const unknown: never = m
+        void unknown
+      }
+    }
   } catch (err) {
     port.postMessage({ type: 'msg', msg: { command: 'error', message: err instanceof Error ? err.message : String(err) } })
   }

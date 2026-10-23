@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import '../lib/base.css'
+import '../styles/tailwind.css'
 import { syncTheme } from '../lib/theme'
 import Island from './Island.vue'
 

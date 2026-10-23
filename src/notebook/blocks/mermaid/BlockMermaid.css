@@ -1,0 +1,6 @@
+/* BlockMermaid: what its template cannot carry as utilities (scoped). */
+
+.bm-svg :deep(svg) {
+  max-width: 100%;
+  height: auto;
+}

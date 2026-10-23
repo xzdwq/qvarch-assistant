@@ -28,25 +28,30 @@ export function startBrowser(): void {
   void window.qa.browser('checkList').then((l) => (checkProblems.value = l))
   void window.qa.browser('apiMapHosts').then((h) => (apiMapHosts.value = h))
   window.qa.onBrowser((type, p) => {
-    if (type === 'tabs') tabs.value = p as BrowserTab[]
-    else if (type === 'rec') {
-      const r = p as { state: RecState; items: RecItem[] }
-      recState.value = r.state
-      recItems.value = r.items
-    } else if (type === 'bookmarks') bookmarks.value = p as Bookmark[]
-    else if (type === 'check') {
-      const c = p as { state: CheckState; problems: CheckProblem[] }
-      checkState.value = c.state
-      checkProblems.value = c.problems
-    }
-    else if (type === 'apimap') {
-      apiMapHosts.value = (p as { hosts: typeof apiMapHosts.value }).hosts
-      apiMapTick.value++
-    }
-    // a tab the app opened (a recording, a link, a trace): shown in the current pane
-    else if (type === 'activate') placeTab(bLayout.cur, (p as { id: string }).id)
+    if (Object.hasOwn(STATE_EVENTS, type)) STATE_EVENTS[type](p)
     for (const l of listeners) l(type, p)
   })
+}
+/** The main process's news this module keeps the state of: the event → where it goes. */
+const STATE_EVENTS: Record<string, (p: unknown) => void> = {
+  tabs: (p) => (tabs.value = p as BrowserTab[]),
+  rec: (p) => {
+    const r = p as { state: RecState; items: RecItem[] }
+    recState.value = r.state
+    recItems.value = r.items
+  },
+  bookmarks: (p) => (bookmarks.value = p as Bookmark[]),
+  check: (p) => {
+    const c = p as { state: CheckState; problems: CheckProblem[] }
+    checkState.value = c.state
+    checkProblems.value = c.problems
+  },
+  apimap: (p) => {
+    apiMapHosts.value = (p as { hosts: typeof apiMapHosts.value }).hosts
+    apiMapTick.value++
+  },
+  // a tab the app opened (a recording, a link, a trace): shown in the current pane
+  activate: (p) => placeTab(bLayout.cur, (p as { id: string }).id),
 }
 /** The browser's other news (a tab opened by a page, a key in a page, a sign-in asked…). */
 export function onBrowserEvent(l: Listener): void {

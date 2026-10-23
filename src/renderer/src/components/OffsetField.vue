@@ -50,98 +50,43 @@ function finish(apply: boolean): void {
   }
   editing.value = false
 }
-function onKey(e: KeyboardEvent): void {
-  e.stopPropagation()
-  if (e.key === 'Enter') {
+/** The typed value one step further (up — more, down — less; an unsigned one never goes below a step). */
+function stepTyped(e: KeyboardEvent, dir: 1 | -1): void {
+  e.preventDefault()
+  const cur = parseOffset(text.value) ?? props.modelValue
+  const v = props.unsigned && dir < 0 && Math.abs(cur) <= props.step ? props.step : stepOffset(Math.abs(cur) * (props.unsigned ? 1 : Math.sign(cur) || 1), dir, props.step, props.max)
+  text.value = formatOffset(v).replace('+', '')
+  set(v)
+}
+/** The keys of the editing field: Enter applies, Esc drops, the arrows step. */
+const KEY_ACTIONS: Partial<Record<string, (e: KeyboardEvent) => void>> = {
+  Enter: (e) => {
     e.preventDefault()
     finish(true)
-  } else if (e.key === 'Escape') finish(false)
-  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    e.preventDefault()
-    const cur = parseOffset(text.value) ?? props.modelValue
-    const dir = e.key === 'ArrowUp' ? 1 : -1
-    const v = props.unsigned && dir < 0 && Math.abs(cur) <= props.step ? props.step : stepOffset(Math.abs(cur) * (props.unsigned ? 1 : Math.sign(cur) || 1), dir, props.step, props.max)
-    text.value = formatOffset(v).replace('+', '')
-    set(v)
-  }
+  },
+  Escape: () => finish(false),
+  ArrowUp: (e) => stepTyped(e, 1),
+  ArrowDown: (e) => stepTyped(e, -1),
+}
+function onKey(e: KeyboardEvent): void {
+  e.stopPropagation()
+  KEY_ACTIONS[e.key]?.(e)
 }
 </script>
 
 <template>
   <span
-    class="off"
+    class="off tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:min-w-64 tw:justify-center tw:box-border tw:py-0 tw:px-9 tw:rounded-r2 tw:border tw:border-accent/45 tw:bg-accent/12 tw:text-text tw:text-[12px] tw:cursor-ns-resize tw:select-none tw:[transition:border-color_0.15s,background_0.15s] tw:hover:not-[&.back]:border-accent/85 tw:[&.back]:border-info/45 tw:[&.back]:bg-info/10 tw:[&.back]:hover:border-info/85 tw:[&.compact]:h-30 tw:[&.compact]:min-w-64 tw:[&.editing]:cursor-text"
     :class="{ back, compact, editing }"
     :title="unsigned ? 'Длительность' : back ? 'Назад' : 'Вперёд'"
     @wheel.prevent.stop="onWheel"
     @click="!editing && startEdit()"
   >
-    <input v-if="editing" ref="input" v-model="text" class="in" :class="{ bad }" spellcheck="false" @keydown="onKey" @blur="finish(true)" @input="bad = false" />
+    <input v-if="editing" ref="input" v-model="text" class="in tw:w-80 tw:p-0 tw:border-0 tw:bg-transparent tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:[line-height:inherit] tw:[&&]:font-bold tw:tabular-nums tw:[&&]:font-data tw:outline-none tw:[&.bad]:text-down-fg" :class="{ bad }" spellcheck="false" @keydown="onKey" @blur="finish(true)" @input="bad = false" />
     <template v-else>
-      <b class="v">{{ shown }}</b>
+      <b class="v tw:font-bold tw:tabular-nums tw:font-data">{{ shown }}</b>
     </template>
   </span>
 </template>
 
-<style scoped>
-.off {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  min-width: 64px;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 9px;
-  border-radius: var(--r2);
-  border: 1px solid rgb(var(--accent-rgb) / 0.45);
-  background: rgb(var(--accent-rgb) / 0.12);
-  color: var(--text);
-  font-size: 12px;
-  cursor: ns-resize;
-  user-select: none;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-.off:hover {
-  border-color: rgb(var(--accent-rgb) / 0.85);
-}
-.off.back {
-  border-color: rgba(68, 138, 255, 0.45);
-  background: rgba(68, 138, 255, 0.1);
-}
-.off.back:hover {
-  border-color: rgba(68, 138, 255, 0.85);
-}
-.off.compact {
-  height: 30px;
-  min-width: 64px;
-}
-.off.editing {
-  cursor: text;
-}
-.v {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-.cap {
-  color: var(--muted);
-  font-size: 11px;
-}
-.in {
-  width: 80px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  outline: none;
-}
-.in.bad {
-  color: var(--down-fg);
-}
-</style>
+<style scoped src="./OffsetField.css"></style>

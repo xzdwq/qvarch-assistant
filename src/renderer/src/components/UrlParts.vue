@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { buildUrl, parseUrl, type UrlParam, type UrlParts } from '@shared/urlParts'
-import { placeFloat, useAnchor } from '../lib/floating'
+import { usePopover } from '../lib/usePopover'
 import Icon from './Icon.vue'
 
 /**
@@ -42,207 +42,53 @@ async function copy(): Promise<void> {
 }
 
 // ---------- placed under the address line (a popover of the window — over the page) ----------
-const pop = ref<HTMLElement>()
-const style = ref<Record<string, string>>({})
-// (turned on once mounted: the anchoring starts on the change — placed from the first frame)
-const shown = ref(false)
-const anchorRef = computed(() => props.anchor)
-useAnchor(shown, anchorRef, () => {
-  if (!props.anchor) return
-  const w = Math.max(560, Math.min(860, props.anchor.getBoundingClientRect().width))
-  const f = placeFloat(props.anchor, w, true, 0)
-  style.value = { ...f.style, maxHeight: `${Math.max(f.maxH, 320)}px` }
-})
-const away = (e: PointerEvent) => {
-  const t = e.target as Node
-  if (!pop.value?.contains(t) && !props.anchor?.contains(t)) emit('close')
-}
-const onKey = (e: KeyboardEvent) => e.key === 'Escape' && emit('close')
-onMounted(() => {
-  shown.value = true
-  window.addEventListener('pointerdown', away, true)
-  window.addEventListener('keydown', onKey)
-})
-onBeforeUnmount(() => (window.removeEventListener('pointerdown', away, true), window.removeEventListener('keydown', onKey)))
+const shown = computed({ get: () => true, set: (on) => void (on || emit('close')) })
+const { panelRef, style } = usePopover(() => props.anchor, { width: (el) => Math.max(560, Math.min(860, el.getBoundingClientRect().width)), alignLeft: true, chrome: 0, maxHeight: (room) => Math.max(room, 320) }, shown)
 const rows = (v: string) => Math.min(6, Math.max(1, Math.ceil(v.length / 60), v.split('\n').length))
 </script>
 
 <template>
   <Teleport to="body">
-    <div ref="pop" class="up" :style="style" @keydown.enter.exact.prevent="open()" @keydown.ctrl.enter.prevent="open(true)">
-      <label class="up-all">
-        <span>Адрес</span>
-        <textarea :value="text" :rows="rows(text)" spellcheck="false" @input="onText(($event.target as HTMLTextAreaElement).value)" @keydown.enter.exact.prevent.stop="open()"></textarea>
+    <div :ref="panelRef" class="uptw:flex tw:flex-col tw:gap-8 tw:p-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:overflow-y-auto tw:text-[12.5px]" :style="style" @keydown.enter.exact.prevent="open()" @keydown.ctrl.enter.prevent="open(true)">
+      <label class="up-all tw:flex tw:flex-col tw:gap-3 tw:min-w-0">
+        <span class="tw:text-muted tw:text-[11.5px]">Адрес</span>
+        <textarea class="tw:min-w-0 tw:py-4 tw:px-7 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:[&&]:font-data tw:[&&]:text-[12px] tw:resize-y tw:break-all" :value="text" :rows="rows(text)" spellcheck="false" @input="onText(($event.target as HTMLTextAreaElement).value)" @keydown.enter.exact.prevent.stop="open()"></textarea>
       </label>
-      <div class="up-grid">
-        <label>
-          <span>Протокол</span>
-          <select v-model="parts.scheme"><option value="https">https</option><option value="http">http</option><option v-if="!['http', 'https'].includes(parts.scheme)" :value="parts.scheme">{{ parts.scheme }}</option></select>
+      <div class="up-grid tw:grid tw:grid-cols-[90px_1fr] tw:gap-y-6 tw:gap-x-8">
+        <label class="tw:flex tw:flex-col tw:gap-3 tw:min-w-0">
+          <span class="tw:text-muted tw:text-[11.5px]">Протокол</span>
+          <select class="tw:min-w-0 tw:py-4 tw:px-7 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" v-model="parts.scheme"><option value="https">https</option><option value="http">http</option><option v-if="!['http', 'https'].includes(parts.scheme)" :value="parts.scheme">{{ parts.scheme }}</option></select>
         </label>
-        <label class="grow"><span>Хост (и порт)</span><input v-model="parts.host" spellcheck="false" /></label>
-        <label class="wide"><span>Путь</span><input v-model="parts.path" spellcheck="false" /></label>
+        <label class="grow tw:flex tw:flex-col tw:gap-3 tw:min-w-0 tw:flex-1"><span class="tw:text-muted tw:text-[11.5px]">Хост (и порт)</span><input class="tw:[&:not([type='checkbox'])]:min-w-0 tw:[&:not([type='checkbox'])]:py-4 tw:[&:not([type='checkbox'])]:px-7 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font:inherit] tw:[&&&]:font-data tw:[&&&]:text-[12px]" v-model="parts.host" spellcheck="false" /></label>
+        <label class="wide tw:flex tw:flex-col tw:gap-3 tw:min-w-0 tw:col-span-full"><span class="tw:text-muted tw:text-[11.5px]">Путь</span><input class="tw:[&:not([type='checkbox'])]:min-w-0 tw:[&:not([type='checkbox'])]:py-4 tw:[&:not([type='checkbox'])]:px-7 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font:inherit] tw:[&&&]:font-data tw:[&&&]:text-[12px]" v-model="parts.path" spellcheck="false" /></label>
       </div>
 
       <template v-for="sec in [{ title: 'Параметры запроса (после ?)', list: parts.params }, ...(parts.hash || parts.hashParams.length ? [{ title: 'Параметры после #', list: parts.hashParams }] : [])]" :key="sec.title">
-        <div class="up-h">
+        <div class="up-h tw:flex tw:items-center tw:gap-8 tw:mt-4 tw:whitespace-nowrap">
           <b>{{ sec.title }}</b>
-          <span class="muted">{{ sec.list.filter((x) => x.on).length }} из {{ sec.list.length }}</span>
-          <span class="grow"></span>
-          <button class="lnk" @click="add(sec.list)"><Icon name="plus" :size="12" />параметр</button>
+          <span class="muted tw:text-muted">{{ sec.list.filter((x) => x.on).length }} из {{ sec.list.length }}</span>
+          <span class="grow tw:flex-1"></span>
+          <button class="lnk tw:inline-flex tw:items-center tw:gap-4 tw:p-0 tw:border-0 tw:[background:none] tw:text-accent tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="add(sec.list)"><Icon name="plus" :size="12" />параметр</button>
         </div>
-        <p v-if="!sec.list.length" class="muted none">Нет параметров</p>
-        <div v-for="(p, i) in sec.list" :key="i" class="up-p" :class="{ off: !p.on }">
-          <input v-model="p.on" type="checkbox" :title="p.on ? 'Выключить (не уйдёт в адрес)' : 'Включить'" />
-          <input v-model="p.key" class="k" placeholder="ключ" spellcheck="false" />
-          <span class="eq">=</span>
-          <textarea v-model="p.value" class="v" :rows="rows(p.value)" placeholder="значение" spellcheck="false" @keydown.enter.exact.prevent.stop="open()"></textarea>
-          <button class="ib" title="Удалить параметр" @click="sec.list.splice(i, 1)"><Icon name="x" :size="12" /></button>
+        <p v-if="!sec.list.length" class="muted none tw:text-muted tw:m-0">Нет параметров</p>
+        <div v-for="(p, i) in sec.list" :key="i" class="up-p tw:group/up-p tw:grid tw:grid-cols-[auto_minmax(90px,30%)_auto_1fr_auto] tw:items-start tw:gap-6" :class="{ off: !p.on }">
+          <input class="tw:[&:not([type='checkbox'])]:min-w-0 tw:[&:not([type='checkbox'])]:py-4 tw:[&:not([type='checkbox'])]:px-7 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font:inherit] tw:mt-6" v-model="p.on" type="checkbox" :title="p.on ? 'Выключить (не уйдёт в адрес)' : 'Включить'" />
+          <input v-model="p.key" class="k tw:[&:not([type='checkbox'])]:min-w-0 tw:[&:not([type='checkbox'])]:py-4 tw:[&:not([type='checkbox'])]:px-7 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font:inherit] tw:[&&&]:font-data tw:[&&&]:text-[12px] tw:group-[.off]/up-p:opacity-50 tw:group-[.off]/up-p:line-through" placeholder="ключ" spellcheck="false" />
+          <span class="eq tw:mt-4 tw:text-muted">=</span>
+          <textarea v-model="p.value" class="v tw:min-w-0 tw:py-4 tw:px-7 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:[&&]:font-data tw:[&&]:text-[12px] tw:resize-y tw:break-all tw:group-[.off]/up-p:opacity-50 tw:group-[.off]/up-p:line-through" :rows="rows(p.value)" placeholder="значение" spellcheck="false" @keydown.enter.exact.prevent.stop="open()"></textarea>
+          <button class="ib tw:inline-grid tw:place-items-center tw:w-24 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:hover:enabled:border-border-3" title="Удалить параметр" @click="sec.list.splice(i, 1)"><Icon name="x" :size="12" /></button>
         </div>
       </template>
-      <label v-if="parts.hash || parts.hashParams.length" class="up-hash"><span>После #</span><input v-model="parts.hash" spellcheck="false" placeholder="#/маршрут" /></label>
-      <button v-else class="lnk add-hash" @click="parts.hash = '#'"><Icon name="plus" :size="12" />часть после #</button>
+      <label v-if="parts.hash || parts.hashParams.length" class="up-hash tw:flex tw:flex-col tw:gap-3 tw:min-w-0 tw:mt-2"><span class="tw:text-muted tw:text-[11.5px]">После #</span><input class="tw:[&:not([type='checkbox'])]:min-w-0 tw:[&:not([type='checkbox'])]:py-4 tw:[&:not([type='checkbox'])]:px-7 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font:inherit]" v-model="parts.hash" spellcheck="false" placeholder="#/маршрут" /></label>
+      <button v-else class="lnk add-hash tw:inline-flex tw:items-center tw:gap-4 tw:p-0 tw:border-0 tw:[background:none] tw:text-accent tw:whitespace-nowrap tw:self-start tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="parts.hash = '#'"><Icon name="plus" :size="12" />часть после #</button>
 
-      <div class="up-acts">
-        <button class="primary" :disabled="!text.trim()" title="Открыть в этой вкладке (Enter)" @click="open()"><Icon name="play" :size="11" />Открыть</button>
-        <button :disabled="!text.trim()" title="Открыть в новой вкладке (Ctrl+Enter)" @click="open(true)"><Icon name="plus" :size="12" />В новой вкладке</button>
-        <button title="Скопировать адрес" @click="copy"><Icon name="copy" :size="12" />{{ copied ? 'Скопировано' : 'Копировать' }}</button>
-        <span class="grow"></span>
-        <button v-if="changed" class="lnk" title="Вернуть адрес страницы" @click="reset">сбросить</button>
+      <div class="up-acts tw:flex tw:items-center tw:gap-6 tw:pt-4 tw:border-t tw:border-t-border">
+        <button class="primary tw:[&:not(.lnk)]:inline-flex tw:[&:not(.lnk)]:items-center tw:[&:not(.lnk)]:gap-6 tw:[&:not(.lnk)]:h-28 tw:[&:not(.lnk)]:py-0 tw:[&:not(.lnk)]:px-12 tw:[&:not(.lnk)]:whitespace-nowrap" :disabled="!text.trim()" title="Открыть в этой вкладке (Enter)" @click="open()"><Icon name="play" :size="11" />Открыть</button>
+        <button class="tw:[&:not(.lnk)]:inline-flex tw:[&:not(.lnk)]:items-center tw:[&:not(.lnk)]:gap-6 tw:[&:not(.lnk)]:h-28 tw:[&:not(.lnk)]:py-0 tw:[&:not(.lnk)]:px-12 tw:[&:not(.lnk)]:whitespace-nowrap" :disabled="!text.trim()" title="Открыть в новой вкладке (Ctrl+Enter)" @click="open(true)"><Icon name="plus" :size="12" />В новой вкладке</button>
+        <button class="tw:[&:not(.lnk)]:inline-flex tw:[&:not(.lnk)]:items-center tw:[&:not(.lnk)]:gap-6 tw:[&:not(.lnk)]:h-28 tw:[&:not(.lnk)]:py-0 tw:[&:not(.lnk)]:px-12 tw:[&:not(.lnk)]:whitespace-nowrap" title="Скопировать адрес" @click="copy"><Icon name="copy" :size="12" />{{ copied ? 'Скопировано' : 'Копировать' }}</button>
+        <span class="grow tw:flex-1"></span>
+        <button v-if="changed" class="lnk tw:inline-flex tw:items-center tw:gap-4 tw:p-0 tw:border-0 tw:[background:none] tw:text-accent tw:whitespace-nowrap tw:[&:not(.lnk)]:inline-flex tw:[&:not(.lnk)]:items-center tw:[&:not(.lnk)]:gap-6 tw:[&:not(.lnk)]:h-28 tw:[&:not(.lnk)]:py-0 tw:[&:not(.lnk)]:px-12 tw:[&:not(.lnk)]:whitespace-nowrap tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Вернуть адрес страницы" @click="reset">сбросить</button>
       </div>
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.up {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-  overflow-y: auto;
-  font-size: 12.5px;
-}
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-label > span {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-input:not([type='checkbox']),
-select,
-textarea {
-  min-width: 0;
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-}
-textarea,
-.up-grid input,
-.up-p .k {
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-textarea {
-  resize: vertical;
-  word-break: break-all;
-}
-.up-grid {
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 6px 8px;
-}
-.up-grid .wide {
-  grid-column: 1 / -1;
-}
-.up-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  white-space: nowrap;
-}
-.grow {
-  flex: 1;
-}
-.muted {
-  color: var(--muted);
-}
-.none {
-  margin: 0;
-}
-.up-p {
-  display: grid;
-  grid-template-columns: auto minmax(90px, 30%) auto 1fr auto;
-  align-items: start;
-  gap: 6px;
-}
-.up-p > input[type='checkbox'] {
-  margin-top: 6px;
-}
-.up-p .eq {
-  margin-top: 4px;
-  color: var(--muted);
-}
-.up-p.off .k,
-.up-p.off .v {
-  opacity: 0.5;
-  text-decoration: line-through;
-}
-.up-hash {
-  margin-top: 2px;
-}
-.lnk {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  white-space: nowrap;
-}
-.add-hash {
-  align-self: flex-start;
-}
-.ib {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.up-acts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
-}
-.up-acts button:not(.lnk) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-</style>

@@ -3,6 +3,8 @@
  * the tiny raised spots ink does not reach — both as seamless tiles, laid in world units (they zoom with the
  * board). Made once per paper colour.
  */
+import { cssHex } from './cssColor'
+
 const T = 512
 
 /** A hash → 0…1 (deterministic: the same paper every time). */
@@ -70,14 +72,15 @@ export function paperTiles(color: string): PaperTiles {
     }
   tc.putImageData(ti, 0, 0)
   kc.putImageData(ki, 0, 0)
-  // fibres: a few long faint curves
+  // fibres: a few long faint curves (light on a dark paper, brownish on a light one)
   tc.lineCap = 'round'
+  const fibre = rgb(cssHex(dark ? '--paper-fibre-on-dark' : '--paper-fibre-on-light') ?? '').join(',')
   for (let i = 0; i < 70; i++) {
     const x = hash(i, 1, 7) * T
     const y = hash(i, 2, 7) * T
     const a = hash(i, 3, 7) * Math.PI * 2
     const len = 8 + hash(i, 4, 7) * 30
-    tc.strokeStyle = dark ? `rgba(255,255,255,${0.01 + hash(i, 5, 7) * 0.015})` : `rgba(90,70,40,${0.03 + hash(i, 5, 7) * 0.04})`
+    tc.strokeStyle = `rgba(${fibre},${dark ? 0.01 + hash(i, 5, 7) * 0.015 : 0.03 + hash(i, 5, 7) * 0.04})`
     tc.lineWidth = 0.4 + hash(i, 6, 7) * 0.5
     tc.beginPath()
     tc.moveTo(x, y)

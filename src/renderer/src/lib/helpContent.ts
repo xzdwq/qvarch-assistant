@@ -2,7 +2,7 @@ import { CHECK_KINDS } from '@shared/check'
 import { DEFECTS } from '@shared/excelGen'
 import { GEN_KINDS } from '@shared/gen'
 import { QA_CHECKS } from '@shared/qaChecks'
-import { NOTE_CMDS } from './noteCommands'
+import { NOTE_COMMANDS } from '@nb/commands/registry'
 
 /**
  * «Инструкция» of the notebook: what the notebook and its testing tools do, section by section. The lists (the «@»
@@ -20,7 +20,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const list = (items: Array<[string, string]>) => `<dl>${items.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl>`
 const genCall = (id: string) => {
   const k = GEN_KINDS.find((g) => g.id === id)!
-  return k.call ? `gen.${k.call}(${k.params.map((p) => (p.kind === 'num' ? p.def : p.kind === 'json' ? p.def : `'${p.def}'`)).join(', ')})` : ''
+  return k.call ? `gen.${k.call}(${k.params.map((p) => (p.kind === 'num' || p.kind === 'json' ? p.def : `'${p.def}'`)).join(', ')})` : ''
 }
 
 export const HELP: HelpSection[] = [
@@ -68,7 +68,7 @@ ${list([
     icon: 'zap',
     html: `
 <p>Наберите <kbd>@</kbd> в тексте — откроется список того, что можно вставить. Дальше пишите название (по-русски или по-английски), <kbd>Enter</kbd> — вставить.</p>
-${list(NOTE_CMDS.map((c) => [c.title, c.hint]))}`,
+${list(NOTE_COMMANDS.map((c) => [c.title, c.hint]))}`,
   },
   {
     id: 'run',

@@ -1,12 +1,7 @@
 import { GitConflictError, GitService } from '../git/gitService';
-import { PlanItem, ReleasePlan } from './types';
+import { PlanItem, ReleasePlan, ReleaseProgressEvent } from './types';
 
-export type ExecutorEvent =
-  | { type: 'applied'; item: PlanItem; index: number; total: number }
-  | { type: 'conflict'; item: PlanItem; index: number; total: number }
-  | { type: 'done' };
-
-export type ProgressCallback = (event: ExecutorEvent) => void;
+export type ProgressCallback = (event: ReleaseProgressEvent) => void;
 
 function pendingItems(plan: ReleasePlan): PlanItem[] {
   return plan.items.filter((i) => i.included && !i.applied);

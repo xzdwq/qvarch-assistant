@@ -45,7 +45,7 @@ const theme = EditorView.theme(
     '&.cm-focused': { outline: 'none', borderColor: 'var(--accent)' },
     '.cm-content': { fontFamily: 'var(--font-data)', caretColor: 'var(--accent-fg)' },
     '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: 'var(--dim)' },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.03)' },
+    '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--muted)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgb(var(--accent-rgb) / 0.3) !important' },
     '.cm-cursor': { borderLeftColor: 'var(--accent-fg)' },
@@ -89,21 +89,7 @@ onBeforeUnmount(() => view?.destroy())
 </script>
 
 <template>
-  <div ref="host" class="ca" :class="{ fill }"></div>
+  <div ref="host" class="ca tw:min-w-0 tw:[&.fill]:h-full" :class="{ fill }"></div>
 </template>
 
-<style scoped>
-.ca {
-  min-width: 0;
-}
-.ca :deep(.cm-editor) {
-  max-height: 100%;
-}
-/* fill: as tall as its box, scrolling inside */
-.ca.fill {
-  height: 100%;
-}
-.ca.fill :deep(.cm-editor) {
-  height: 100%;
-}
-</style>
+<style scoped src="./CodeArea.css"></style>

@@ -1,0 +1,23 @@
+/* AudioNote: what its template cannot carry as utilities (scoped). */
+
+.lb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-fg);
+  font-size: 11px;
+  cursor: pointer;
+}
+.spin {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border: 2px solid rgb(var(--accent-rgb) / 0.3);
+  border-top-color: var(--accent-fg);
+  border-radius: 50%;
+  animation: AudioNote-sp 0.8s linear infinite;
+}

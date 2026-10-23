@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { activeArea, comboOf, monitorsBounds, pressureCurve, TABLET_MM, type TabletButton, type TabletMonitor, type TabletPrefs, type TabletRotation } from '@shared/tablet'
+import { activeArea, comboOf, isModifiersOnly, isQuarterTurn, monitorsBounds, pressureCurve, TABLET_BUTTONS, TABLET_MM, TABLET_ROTATIONS, type TabletButton, type TabletMonitor, type TabletPrefs } from '@shared/tablet'
 import Icon from '../components/Icon.vue'
+import { cssColor } from '../lib/cssColor'
 import { useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { useInk } from '../lib/ink'
 
@@ -25,12 +26,19 @@ function startRecord(i: number): void {
 function onRecordKey(e: KeyboardEvent, i: number): void {
   e.preventDefault()
   e.stopPropagation()
-  if (e.code === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey) return void (recording.value = undefined)
-  if ((e.code === 'Delete' || e.code === 'Backspace') && !e.ctrlKey && !e.altKey && !e.shiftKey) return void saveKey(i, '')
+  const plain = !e.ctrlKey && !e.altKey && !e.shiftKey
+  const action = plain ? RECORD_KEYS[e.code] : undefined
+  if (action) return action(i)
   const c = comboOf(e)
   recorded.value = c
   // a real key (not only modifiers) ends the recording
-  if (c && !/^(Ctrl|Shift|Alt|Win)(\+(Ctrl|Shift|Alt|Win))*$/.test(c)) saveKey(i, c)
+  if (c && !isModifiersOnly(c)) saveKey(i, c)
+}
+/** Plain keys that do not record: Esc cancels, Delete / Backspace clear the key. */
+const RECORD_KEYS: Partial<Record<string, (i: number) => void>> = {
+  Escape: () => (recording.value = undefined),
+  Delete: (i) => saveKey(i, ''),
+  Backspace: (i) => saveKey(i, ''),
 }
 /** Only modifiers held and let go ("Alt", "Ctrl+Shift") — that is the combination. */
 function onRecordUp(i: number): void {
@@ -67,17 +75,29 @@ const isMon = (m: TabletMonitor) => prefs.value?.target.kind === 'monitor' && (p
 const monLabel = (m: TabletMonitor) => m.name.replace(/^\\\\\.\\DISPLAY/i, '')
 /** The target's size in physical pixels — the tablet area's proportions. */
 const targetSize = computed(() => {
-  const p = prefs.value
-  if (!p) return { w: 16, h: 9 }
-  if (p.target.kind === 'all') return mapBox.value
-  if (p.target.kind === 'canvas') return state.value?.canvas ?? { w: window.innerWidth * devicePixelRatio, h: window.innerHeight * devicePixelRatio }
-  if (p.target.kind === 'window') return { w: window.innerWidth * devicePixelRatio, h: window.innerHeight * devicePixelRatio }
-  const name = p.target.name || primaryName.value
-  return monitors.value.find((m) => m.name === name) ?? { w: 16, h: 9 }
+  const t = prefs.value?.target
+  if (!t) return { w: 16, h: 9 }
+  const windowSize = () => ({ w: window.innerWidth * devicePixelRatio, h: window.innerHeight * devicePixelRatio })
+  switch (t.kind) {
+    case 'all':
+      return mapBox.value
+    case 'canvas':
+      return state.value?.canvas ?? windowSize()
+    case 'window':
+      return windowSize()
+    case 'monitor': {
+      const name = t.name || primaryName.value
+      return monitors.value.find((m) => m.name === name) ?? { w: 16, h: 9 }
+    }
+    default: {
+      const never: never = t
+      return never
+    }
+  }
 })
 
 // ---------- the tablet area ----------
-const turned = computed(() => prefs.value?.rotation === 90 || prefs.value?.rotation === 270)
+const turned = computed(() => isQuarterTurn(prefs.value?.rotation ?? 0))
 const tabAspect = computed(() => (turned.value ? TABLET_MM.h / TABLET_MM.w : TABLET_MM.w / TABLET_MM.h))
 const area = computed(() => activeArea(prefs.value?.rotation ?? 0, !!prefs.value?.keepAspect, targetSize.value.w, targetSize.value.h))
 const areaStyle = computed(() => {
@@ -85,7 +105,7 @@ const areaStyle = computed(() => {
   return { left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` }
 })
 const penDot = computed(() => (sample.value?.in ? { left: `${sample.value.x * 100}%`, top: `${sample.value.y * 100}%` } : undefined))
-const ROTS: TabletRotation[] = [0, 90, 180, 270]
+const ROTS = TABLET_ROTATIONS
 
 // ---------- the pen (sliders commit on release; the preview follows the drag) ----------
 const draft = ref<Partial<TabletPrefs>>({})
@@ -101,11 +121,8 @@ function commit(k: SliderKey): void {
   const v = draft.value[k]
   if (v !== undefined) void set({ [k]: v })
 }
-const BUTTONS: Array<{ id: TabletButton; label: string }> = [
-  { id: 'right', label: 'ПКМ' },
-  { id: 'middle', label: 'СКМ' },
-  { id: 'none', label: 'Нет' },
-]
+const BUTTON_LABELS: Record<TabletButton, string> = { right: 'ПКМ', middle: 'СКМ', none: 'Нет' }
+const BUTTONS = TABLET_BUTTONS.map((id) => ({ id, label: BUTTON_LABELS[id] }))
 /** The curve: raw pressure → drawing pressure (SVG path in a 100×100 box). */
 const curvePath = computed(() => {
   const p = { pmin: val('pmin') ?? 0, pmax: val('pmax') ?? 1, curve: val('curve') ?? 0 }
@@ -138,7 +155,7 @@ const padSize = ref(6)
 const ink = useInk({
   base: () => pad.value,
   live: () => padLive.value,
-  style: () => ({ color: '#1d3fa8', size: padSize.value, streamline: val('streamline') ?? 0.55, smoothing: val('smoothing') ?? 0.6, thinning: val('thinning') ?? 0.55 }),
+  style: () => ({ color: cssColor('--tablet-pad-ink'), size: padSize.value, streamline: val('streamline') ?? 0.55, smoothing: val('smoothing') ?? 0.6, thinning: val('thinning') ?? 0.55 }),
   keys: () => padTarget.isActive(),
 })
 function clearPad(): void {
@@ -149,153 +166,164 @@ function clearPad(): void {
 
 const statusText = computed(() => {
   const s = status.value
-  if (s.state === 'off') return 'Выключено'
-  if (s.state === 'starting') return 'Запуск…'
-  if (s.state === 'searching') return 'Планшет не найден'
-  if (s.state === 'connected') return s.device
-  return s.message
+  switch (s.state) {
+    case 'off':
+      return 'Выключено'
+    case 'starting':
+      return 'Запуск…'
+    case 'searching':
+      return 'Планшет не найден'
+    case 'connected':
+      return s.device
+    case 'error':
+      return s.message
+    default: {
+      const never: never = s
+      return never
+    }
+  }
 })
 </script>
 
 <template>
-  <div class="tv" :class="{ embedded }">
-    <div class="bar">
+  <div class="tv tw:group/tv tw:flex tw:flex-col tw:h-full tw:min-h-0 tw:[&.embedded]:h-auto tw:[&.embedded]:border tw:[&.embedded]:border-border tw:[&.embedded]:rounded-r3" :class="{ embedded }">
+    <div class="bar tw:flex-none tw:flex tw:items-center tw:gap-12 tw:h-44 tw:py-0 tw:px-14 tw:border-b tw:border-b-border tw:text-[13px] tw:whitespace-nowrap">
       <b>Планшет</b>
-      <span class="st" :class="status.state"><i></i>{{ statusText }}</span>
-      <span class="sp"></span>
-      <label class="sw" :title="prefs?.enabled ? 'Вернуть планшет Windows (после выключения перезапустите его кнопкой питания)' : 'Qvarch будет читать планшет сам'">
-        <input type="checkbox" :checked="prefs?.enabled" @change="toggle" />
+      <span class="st tw:group/st tw:inline-flex tw:items-center tw:gap-6 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[12px] tw:[&.curve]:flex tw:[&.curve]:gap-12 tw:[&.curve]:mt-6" :class="status.state"><i class="tw:flex-none tw:w-7 tw:h-7 tw:rounded-[50%] tw:bg-dim tw:group-[.connected]/st:not-group-[.searching]/st:not-group-[.starting]/st:not-[.st.error_&]:bg-up tw:group-[.searching]/st:not-group-[.starting]/st:not-[.st.error_&]:bg-warn tw:group-[.starting]/st:not-[.st.error_&]:bg-warn tw:[.st.error_&]:bg-down"></i>{{ statusText }}</span>
+      <span class="sp tw:flex-1"></span>
+      <label class="sw tw:inline-flex tw:items-center tw:gap-7 tw:text-text-2 tw:text-[12.5px] tw:cursor-pointer" :title="prefs?.enabled ? 'Вернуть планшет Windows (после выключения перезапустите его кнопкой питания)' : 'Qvarch будет читать планшет сам'">
+        <input class="tw:[accent-color:var(--accent)]" type="checkbox" :checked="prefs?.enabled" @change="toggle" />
         <span>Управлять через Qvarch</span>
       </label>
     </div>
 
-    <div class="body">
-      <p v-if="replug" class="note warn"><Icon name="refresh" :size="13" />Чтобы перо снова работало в Windows как раньше — выключите и включите планшет кнопкой питания.</p>
-      <p v-if="!prefs?.enabled" class="note">Перо будет работать как мышь на выбранном экране или только в окне Qvarch. Давление и наклон — в рисовании Qvarch.</p>
+    <div class="body tw:flex-1 tw:min-h-0 tw:overflow-auto tw:pt-12 tw:pr-14 tw:pb-16 tw:pl-14 tw:group-[.embedded]/tv:overflow-visible">
+      <p v-if="replug" class="note warn tw:flex tw:items-center tw:gap-7 tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:text-[12.5px] tw:text-warn"><Icon name="refresh" :size="13" />Чтобы перо снова работало в Windows как раньше — выключите и включите планшет кнопкой питания.</p>
+      <p v-if="!prefs?.enabled" class="note tw:flex tw:items-center tw:gap-7 tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:text-muted tw:text-[12.5px]">Перо будет работать как мышь на выбранном экране или только в окне Qvarch. Давление и наклон — в рисовании Qvarch.</p>
 
-      <div class="grid" :class="{ off: !prefs?.enabled }">
+      <div class="fields tw:group/fields tw:grid tw:grid-cols-[repeat(auto-fill,minmax(320px,1fr))] tw:gap-12" :class="{ off: !prefs?.enabled }">
         <!-- where -->
-        <section>
-          <h4>Где работает перо</h4>
-          <div class="map">
-            <div v-if="!monitors.length" class="empty">{{ prefs?.enabled ? 'Ищу экраны…' : 'Экраны появятся после включения' }}</div>
-            <button v-for="m in monitors" :key="m.name" class="mon" :class="{ on: isMon(m) }" :style="monStyle(m)" :title="`${m.w}×${m.h}`" @click="set({ target: { kind: 'monitor', name: m.name } })">
-              <b>{{ monLabel(m) }}</b><small>{{ m.w }}×{{ m.h }}</small><Icon v-if="m.primary" name="star" :size="10" />
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Где работает перо</h4>
+          <div class="map tw:relative tw:h-130 tw:mb-10">
+            <div v-if="!monitors.length" class="empty tw:flex tw:items-center tw:justify-center tw:h-full tw:border tw:border-dashed tw:border-border tw:rounded-[4px] tw:text-muted tw:text-[12px]">{{ prefs?.enabled ? 'Ищу экраны…' : 'Экраны появятся после включения' }}</div>
+            <button v-for="m in monitors" :key="m.name" class="mon tw:absolute tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-2 tw:m-0 tw:p-0 tw:border-2 tw:border-border-2 tw:rounded-r2 tw:bg-panel tw:text-muted tw:text-[11px] tw:overflow-hidden tw:box-border tw:[&.on]:border-accent tw:[&.on]:bg-accent/18 tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: isMon(m) }" :style="monStyle(m)" :title="`${m.w}×${m.h}`" @click="set({ target: { kind: 'monitor', name: m.name } })">
+              <b class="tw:text-[14px] tw:text-text">{{ monLabel(m) }}</b><small class="tw:text-[10px]">{{ m.w }}×{{ m.h }}</small><Icon v-if="m.primary" name="star" :size="10" />
             </button>
           </div>
-          <div class="seg">
-            <button :class="{ on: prefs?.target.kind === 'monitor' }" @click="set({ target: { kind: 'monitor', name: prefs?.target.kind === 'monitor' ? prefs.target.name : undefined } })"><Icon name="monitor" :size="13" />Монитор</button>
-            <button :class="{ on: prefs?.target.kind === 'all' }" @click="set({ target: { kind: 'all' } })"><Icon name="display" :size="13" />Все</button>
-            <button :class="{ on: prefs?.target.kind === 'window' }" title="Когда окно скрыто — главный монитор" @click="set({ target: { kind: 'window' } })"><Icon name="layers" :size="13" />Окно Qvarch</button>
-            <button :class="{ on: prefs?.target.kind === 'canvas' }" title="Только видимая область открытой доски, как бы её ни двигали и ни масштабировали; доски нет — всё окно Qvarch" @click="set({ target: { kind: 'canvas' } })"><Icon name="penTool" :size="13" />Полотно Qvarch</button>
+          <div class="seg tw:inline-flex tw:flex-wrap tw:max-w-full tw:gap-2 tw:p-2 tw:rounded-[4px] tw:bg-white/5">
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'monitor' }" @click="set({ target: { kind: 'monitor', name: prefs?.target.kind === 'monitor' ? prefs.target.name : undefined } })"><Icon name="monitor" :size="13" />Монитор</button>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'all' }" @click="set({ target: { kind: 'all' } })"><Icon name="display" :size="13" />Все</button>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'window' }" title="Когда окно скрыто — главный монитор" @click="set({ target: { kind: 'window' } })"><Icon name="layers" :size="13" />Окно Qvarch</button>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'canvas' }" title="Только видимая область открытой доски, как бы её ни двигали и ни масштабировали; доски нет — всё окно Qvarch" @click="set({ target: { kind: 'canvas' } })"><Icon name="penTool" :size="13" />Полотно Qvarch</button>
           </div>
         </section>
 
         <!-- the area -->
-        <section>
-          <h4>Область планшета</h4>
-          <div class="tabwrap">
-            <div class="tab" :style="{ aspectRatio: String(tabAspect) }">
-              <div class="act" :style="areaStyle"></div>
-              <span v-if="penDot" class="dot" :class="{ c: sample?.c }" :style="penDot"></span>
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Область планшета</h4>
+          <div class="tabwrap tw:flex tw:justify-center tw:h-130 tw:mb-10">
+            <div class="tab tw:relative tw:h-full tw:max-w-full tw:border-2 tw:border-border-2 tw:rounded-[4px] tw:bg-bg" :style="{ aspectRatio: String(tabAspect) }">
+              <div class="act tw:absolute tw:rounded-r2 tw:bg-accent/20 tw:[outline:1px_solid_rgb(var(--accent-rgb)/0.6)]" :style="areaStyle"></div>
+              <span v-if="penDot" class="dot tw:absolute tw:w-8 tw:h-8 tw:-mt-4 tw:mr-0 tw:mb-0 tw:-ml-4 tw:rounded-[50%] tw:bg-accent-fg tw:[&.c]:bg-(--tablet-contact) tw:[&.c]:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--tablet-contact)_30%,transparent)]" :class="{ c: sample?.c }" :style="penDot"></span>
             </div>
           </div>
-          <div class="row">
-            <span class="seg sm">
-              <button v-for="r in ROTS" :key="r" :class="{ on: prefs?.rotation === r }" :title="`Планшет повёрнут на ${r}°`" @click="set({ rotation: r })">{{ r }}°</button>
+          <div class="row tw:flex tw:items-center tw:gap-10 tw:mt-8 tw:whitespace-nowrap">
+            <span class="seg sm tw:inline-flex tw:flex-wrap tw:max-w-full tw:gap-2 tw:p-2 tw:rounded-[4px] tw:bg-white/5">
+              <button class="tw:inline-flex tw:items-center tw:gap-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:h-24 tw:py-0 tw:px-8 tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" v-for="r in ROTS" :key="r" :class="{ on: prefs?.rotation === r }" :title="`Планшет повёрнут на ${r}°`" @click="set({ rotation: r })">{{ r }}°</button>
             </span>
-            <label class="chk"><input type="checkbox" :checked="prefs?.keepAspect" @change="set({ keepAspect: !prefs?.keepAspect })" />Пропорции экрана</label>
+            <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12px]"><input class="tw:[accent-color:var(--accent)]" type="checkbox" :checked="prefs?.keepAspect" @change="set({ keepAspect: !prefs?.keepAspect })" />Пропорции экрана</label>
           </div>
         </section>
 
         <!-- the pen -->
-        <section>
-          <h4>Нажатие</h4>
-          <label class="sl">
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Нажатие</h4>
+          <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
             <span>Клик от</span>
-            <input type="range" min="1" max="40" :value="pct('click')" @input="drag('click', $event)" @change="commit('click')" />
-            <em>{{ pct('click') }}%</em>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="1" max="40" :value="pct('click')" @input="drag('click', $event)" @change="commit('click')" />
+            <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pct('click') }}%</em>
           </label>
-          <div class="curve">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-              <path d="M0,100 L100,0" class="diag" />
-              <path :d="curvePath" class="cv" />
-              <line v-if="sample?.in" :x1="rawNow * 100" :x2="rawNow * 100" y1="0" y2="100" class="now" />
-              <line :x1="pct('click')" :x2="pct('click')" y1="0" y2="100" class="clk" />
+          <div class="curve tw:flex tw:gap-12 tw:mt-6">
+            <svg class="tw:flex-none tw:w-92 tw:h-92 tw:border tw:border-border tw:rounded-r2 tw:bg-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <path d="M0,100 L100,0" class="diag tw:[stroke:var(--border-2)] tw:stroke-1 tw:fill-none tw:[vector-effect:non-scaling-stroke]" />
+              <path :d="curvePath" class="cv tw:[stroke:var(--accent-fg)] tw:stroke-2 tw:fill-none tw:[vector-effect:non-scaling-stroke]" />
+              <line v-if="sample?.in" :x1="rawNow * 100" :x2="rawNow * 100" y1="0" y2="100" class="now tw:stroke-(--tablet-contact) tw:stroke-[1.5] tw:[vector-effect:non-scaling-stroke]" />
+              <line :x1="pct('click')" :x2="pct('click')" y1="0" y2="100" class="clk tw:[stroke:var(--warn)] tw:stroke-1 tw:[stroke-dasharray:3_3] tw:[vector-effect:non-scaling-stroke]" />
             </svg>
-            <div class="cvs">
-              <label class="sl">
+            <div class="cvs tw:flex-1 tw:min-w-0">
+              <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
                 <span>Мягче</span>
-                <input type="range" min="-100" max="100" :value="Math.round((val('curve') ?? 0) * 100)" @input="drag('curve', $event)" @change="commit('curve')" />
+                <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="-100" max="100" :value="Math.round((val('curve') ?? 0) * 100)" @input="drag('curve', $event)" @change="commit('curve')" />
                 <span>Жёстче</span>
               </label>
-              <label class="sl">
+              <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
                 <span>Минимум</span>
-                <input type="range" min="0" max="30" :value="pct('pmin')" @input="drag('pmin', $event)" @change="commit('pmin')" />
-                <em>{{ pct('pmin') }}%</em>
+                <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="0" max="30" :value="pct('pmin')" @input="drag('pmin', $event)" @change="commit('pmin')" />
+                <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pct('pmin') }}%</em>
               </label>
-              <label class="sl">
+              <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
                 <span>Максимум</span>
-                <input type="range" min="30" max="100" :value="pct('pmax')" @input="drag('pmax', $event)" @change="commit('pmax')" />
-                <em>{{ pct('pmax') }}%</em>
+                <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="30" max="100" :value="pct('pmax')" @input="drag('pmax', $event)" @change="commit('pmax')" />
+                <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pct('pmax') }}%</em>
               </label>
             </div>
           </div>
-          <div class="meter"><i :style="{ width: `${curvedNow * 100}%` }"></i></div>
+          <div class="meter tw:h-6 tw:mt-10 tw:rounded-r2 tw:bg-panel-2 tw:overflow-hidden"><i class="tw:[.st.error_&]:bg-down tw:block tw:h-full tw:[background:linear-gradient(90deg,var(--accent),var(--tablet-contact))]" :style="{ width: `${curvedNow * 100}%` }"></i></div>
         </section>
 
-        <section>
-          <h4>Перо</h4>
-          <div class="row">
-            <span class="lbl">Кнопка 1</span>
-            <span class="seg sm"><button v-for="b in BUTTONS" :key="b.id" :class="{ on: prefs?.button1 === b.id }" @click="set({ button1: b.id })">{{ b.label }}</button></span>
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Перо</h4>
+          <div class="row tw:flex tw:items-center tw:gap-10 tw:mt-8 tw:whitespace-nowrap">
+            <span class="lbl tw:w-66 tw:text-muted tw:text-[12px]">Кнопка 1</span>
+            <span class="seg sm tw:inline-flex tw:flex-wrap tw:max-w-full tw:gap-2 tw:p-2 tw:rounded-[4px] tw:bg-white/5"><button class="tw:inline-flex tw:items-center tw:gap-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:h-24 tw:py-0 tw:px-8 tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" v-for="b in BUTTONS" :key="b.id" :class="{ on: prefs?.button1 === b.id }" @click="set({ button1: b.id })">{{ b.label }}</button></span>
           </div>
-          <div class="row">
-            <span class="lbl">Кнопка 2</span>
-            <span class="seg sm"><button v-for="b in BUTTONS" :key="b.id" :class="{ on: prefs?.button2 === b.id }" @click="set({ button2: b.id })">{{ b.label }}</button></span>
+          <div class="row tw:flex tw:items-center tw:gap-10 tw:mt-8 tw:whitespace-nowrap">
+            <span class="lbl tw:w-66 tw:text-muted tw:text-[12px]">Кнопка 2</span>
+            <span class="seg sm tw:inline-flex tw:flex-wrap tw:max-w-full tw:gap-2 tw:p-2 tw:rounded-[4px] tw:bg-white/5"><button class="tw:inline-flex tw:items-center tw:gap-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:h-24 tw:py-0 tw:px-8 tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" v-for="b in BUTTONS" :key="b.id" :class="{ on: prefs?.button2 === b.id }" @click="set({ button2: b.id })">{{ b.label }}</button></span>
           </div>
-          <div class="row">
-            <label class="chk"><input type="checkbox" :checked="prefs?.tilt" @change="set({ tilt: !prefs?.tilt })" />Наклон в рисовании Qvarch</label>
+          <div class="row tw:flex tw:items-center tw:gap-10 tw:mt-8 tw:whitespace-nowrap">
+            <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12px]"><input class="tw:[accent-color:var(--accent)]" type="checkbox" :checked="prefs?.tilt" @change="set({ tilt: !prefs?.tilt })" />Наклон в рисовании Qvarch</label>
           </div>
-          <div class="live">
-            <span :class="{ on: sample?.in }">{{ sample?.in ? (sample.c ? 'касание' : 'в воздухе') : 'перо далеко' }}</span>
+          <div class="live tw:flex tw:flex-wrap tw:gap-y-4 tw:gap-x-12 tw:mt-12 tw:text-muted tw:text-[11.5px] tw:tabular-nums tw:font-data">
+            <span class="tw:[&.on]:text-accent-fg" :class="{ on: sample?.in }">{{ sample?.in ? (sample.c ? 'касание' : 'в воздухе') : 'перо далеко' }}</span>
             <span>давление {{ Math.round(rawNow * 100) }}%</span>
             <span>наклон {{ sample?.in ? `${sample.tx}° / ${sample.ty}°` : '—' }}</span>
             <span>кнопки {{ sample?.in ? (sample.b & 1 ? '1' : '') + (sample.b & 2 ? '2' : '') || '—' : '—' }}</span>
           </div>
         </section>
 
-        <section>
-          <h4>Плавность линии</h4>
-          <label class="sl" title="Насколько лениво линия следует за пером: больше — ровнее, но чуть отстаёт">
-            <span class="w">Сглаживание</span>
-            <input type="range" min="0" max="95" :value="pc('streamline')" @input="drag('streamline', $event)" @change="commit('streamline')" />
-            <em>{{ pc('streamline') }}%</em>
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Плавность линии</h4>
+          <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Насколько лениво линия следует за пером: больше — ровнее, но чуть отстаёт">
+            <span class="w tw:w-112">Сглаживание</span>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="0" max="95" :value="pc('streamline')" @input="drag('streamline', $event)" @change="commit('streamline')" />
+            <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pc('streamline') }}%</em>
           </label>
-          <label class="sl" title="Насколько скруглён контур линии">
-            <span class="w">Скругление</span>
-            <input type="range" min="0" max="100" :value="pc('smoothing')" @input="drag('smoothing', $event)" @change="commit('smoothing')" />
-            <em>{{ pc('smoothing') }}%</em>
+          <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Насколько скруглён контур линии">
+            <span class="w tw:w-112">Скругление</span>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="0" max="100" :value="pc('smoothing')" @input="drag('smoothing', $event)" @change="commit('smoothing')" />
+            <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pc('smoothing') }}%</em>
           </label>
-          <label class="sl" title="Насколько нажатие меняет толщину">
-            <span class="w">От нажатия</span>
-            <input type="range" min="0" max="90" :value="pc('thinning')" @input="drag('thinning', $event)" @change="commit('thinning')" />
-            <em>{{ pc('thinning') }}%</em>
+          <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Насколько нажатие меняет толщину">
+            <span class="w tw:w-112">От нажатия</span>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" min="0" max="90" :value="pc('thinning')" @input="drag('thinning', $event)" @change="commit('thinning')" />
+            <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ pc('thinning') }}%</em>
           </label>
-          <label class="sl">
-            <span class="w">Толщина (проверка)</span>
-            <input v-model.number="padSize" type="range" min="2" max="24" />
-            <em>{{ padSize }}</em>
+          <label class="sl tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
+            <span class="w tw:w-112">Толщина (проверка)</span>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" v-model.number="padSize" type="range" min="2" max="24" />
+            <em class="tw:w-34 tw:not-italic tw:text-right tw:tabular-nums tw:font-data tw:text-text-2">{{ padSize }}</em>
           </label>
         </section>
 
-        <section>
-          <h4>Кнопки планшета <span class="raw" :title="'Последний отчёт кнопок: ' + (auxRaw || '—')">{{ auxRaw ? auxRaw.slice(3, 17) : '' }}</span></h4>
-          <div v-for="(k, i) in prefs?.keys ?? []" :key="i" class="krow">
-            <span class="kled" :class="{ on: keysMask & (1 << i) }"></span>
-            <b>K{{ i + 1 }}</b>
+        <section class="tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Кнопки планшета <span class="raw tw:overflow-hidden tw:max-w-140 tw:text-dim tw:font-data tw:text-[10px] tw:font-normal tw:text-ellipsis" :title="'Последний отчёт кнопок: ' + (auxRaw || '—')">{{ auxRaw ? auxRaw.slice(3, 17) : '' }}</span></h4>
+          <div v-for="(k, i) in prefs?.keys ?? []" :key="i" class="krow tw:flex tw:items-center tw:gap-8 tw:my-4 tw:mx-0 tw:whitespace-nowrap">
+            <span class="kled tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-border-2 tw:[&.on]:bg-up tw:[&.on]:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--up)_25%,transparent)]" :class="{ on: keysMask & (1 << i) }"></span>
+            <b class="tw:w-22 tw:text-text-2 tw:text-[12px]">K{{ i + 1 }}</b>
             <button
-              class="kcap"
+              class="kcap tw:flex-1 tw:min-w-90 tw:max-w-180 tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-r2 tw:bg-white/3 tw:text-text-hi tw:font-data tw:text-[12px] tw:text-left tw:[&.rec]:border-accent tw:[&.rec]:bg-accent/15 tw:[&.rec]:text-accent-fg tw:hover:enabled:not-[&.rec]:bg-hover tw:hover:enabled:not-[&.rec]:border-border-3"
               :class="{ rec: recording === i }"
               :title="recording === i ? 'Нажмите сочетание; Delete — убрать, Esc — отмена' : 'Нажмите, чтобы записать сочетание'"
               @click="startRecord(i)"
@@ -305,434 +333,19 @@ const statusText = computed(() => {
             >
               {{ recording === i ? recorded || 'Нажмите сочетание…' : k || '—' }}
             </button>
-            <small>{{ KEY_HINTS[i] }}</small>
+            <small class="tw:overflow-hidden tw:text-muted tw:text-[11px] tw:text-ellipsis">{{ KEY_HINTS[i] }}</small>
           </div>
         </section>
 
         <!-- try it -->
-        <section class="wide">
-          <h4>Проверка <span class="padacts"><button class="lnk" title="Ctrl+Z" @click="ink.undo()">Отменить</button><button class="lnk" @click="clearPad">Очистить</button></span></h4>
-          <div ref="padBox" class="padw" @pointerdown="padTarget.report()">
-            <canvas ref="pad"></canvas>
-            <canvas ref="padLive" @pointerdown="ink.down" @pointermove="ink.move" @pointerup="ink.up" @pointercancel="ink.up"></canvas>
+        <section class="wide tw:group-[.off]/fields:[&:not(.wide)]:opacity-[0.55] tw:min-w-0 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[4px] tw:bg-white/2 tw:col-span-full">
+          <h4 class="tw:flex tw:items-center tw:justify-between tw:mt-0 tw:mr-0 tw:mb-10 tw:ml-0 tw:whitespace-nowrap tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Проверка <span class="padacts tw:inline-flex tw:gap-12"><button class="lnk tw:p-0 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:text-[11.5px] tw:font-normal tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Ctrl+Z" @click="ink.undo()">Отменить</button><button class="lnk tw:p-0 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:text-[11.5px] tw:font-normal tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="clearPad">Очистить</button></span></h4>
+          <div ref="padBox" class="padw tw:relative tw:h-240 tw:rounded-[4px] tw:bg-text-hi" @pointerdown="padTarget.report()">
+            <canvas class="tw:absolute tw:inset-0 tw:w-full tw:h-full tw:cursor-crosshair tw:touch-none" ref="pad"></canvas>
+            <canvas class="tw:absolute tw:inset-0 tw:w-full tw:h-full tw:cursor-crosshair tw:touch-none" ref="padLive" @pointerdown="ink.down" @pointermove="ink.move" @pointerup="ink.up" @pointercancel="ink.up"></canvas>
           </div>
         </section>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.tv {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  white-space: nowrap;
-}
-.sp {
-  flex: 1;
-}
-.st {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
-  font-size: 12px;
-}
-.st i {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dim);
-}
-.st.connected i {
-  background: var(--up);
-}
-.st.searching i,
-.st.starting i {
-  background: var(--warn);
-}
-.st.error i {
-  background: var(--down);
-}
-.sw {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-2);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.sw input,
-.chk input {
-  accent-color: var(--accent);
-}
-.body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px 14px 16px;
-}
-.note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 10px;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.note.warn {
-  color: var(--warn);
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-}
-.grid.off section:not(.wide) {
-  opacity: 0.55;
-}
-section {
-  min-width: 0;
-  padding: 10px 12px 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.02);
-}
-section.wide {
-  grid-column: 1 / -1;
-}
-h4 {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 10px;
-  white-space: nowrap;
-  font-size: 11px;
-  font-family: var(--font-data);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-.map {
-  position: relative;
-  height: 130px;
-  margin-bottom: 10px;
-}
-.empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.mon {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  border: 2px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 11px;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-.mon b {
-  font-size: 14px;
-  color: var(--text);
-}
-.mon small {
-  font-size: 10px;
-}
-.mon.on {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.18);
-}
-.seg {
-  display: inline-flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-}
-.seg button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.seg.sm button {
-  height: 24px;
-  padding: 0 8px;
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.22);
-  color: var(--text-hi);
-}
-.tabwrap {
-  display: flex;
-  justify-content: center;
-  height: 130px;
-  margin-bottom: 10px;
-}
-.tab {
-  position: relative;
-  height: 100%;
-  max-width: 100%;
-  border: 2px solid var(--border-2);
-  border-radius: 4px;
-  background: var(--bg);
-}
-.act {
-  position: absolute;
-  border-radius: var(--r2);
-  background: rgb(var(--accent-rgb) / 0.2);
-  outline: 1px solid rgb(var(--accent-rgb) / 0.6);
-}
-.dot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border-radius: 50%;
-  background: var(--accent-fg);
-}
-.dot.c {
-  background: #f472b6;
-  box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.3);
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  white-space: nowrap;
-}
-.lbl {
-  width: 66px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.sl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0;
-  color: var(--muted);
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-.sl input {
-  flex: 1;
-  min-width: 60px;
-  accent-color: var(--accent);
-}
-.sl em {
-  width: 34px;
-  font-style: normal;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  color: var(--text-2);
-}
-.curve {
-  display: flex;
-  gap: 12px;
-  margin-top: 6px;
-}
-.curve svg {
-  flex: none;
-  width: 92px;
-  height: 92px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--bg);
-}
-.cvs {
-  flex: 1;
-  min-width: 0;
-}
-.diag {
-  stroke: var(--border-2);
-  stroke-width: 1;
-  fill: none;
-  vector-effect: non-scaling-stroke;
-}
-.cv {
-  stroke: var(--accent-fg);
-  stroke-width: 2;
-  fill: none;
-  vector-effect: non-scaling-stroke;
-}
-.now {
-  stroke: #f472b6;
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-.clk {
-  stroke: var(--warn);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-}
-.meter {
-  height: 6px;
-  margin-top: 10px;
-  border-radius: var(--r2);
-  background: var(--panel-2);
-  overflow: hidden;
-}
-.meter i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), #f472b6);
-}
-.live {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-.live .on {
-  color: var(--accent-fg);
-}
-.padw {
-  position: relative;
-  height: 240px;
-  border-radius: 4px;
-  background: var(--text-hi);
-}
-.padw canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  cursor: crosshair;
-  touch-action: none;
-}
-.sl .w {
-  width: 112px;
-}
-.lnk {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent-fg);
-  font-size: 11.5px;
-  font-weight: 400;
-}
-.raw {
-  overflow: hidden;
-  max-width: 140px;
-  color: var(--dim);
-  font-family: var(--font-data);
-  font-size: 10px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-}
-.krow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0;
-  white-space: nowrap;
-}
-.krow b {
-  width: 22px;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.krow small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-}
-.kled {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-2);
-}
-.kled.on {
-  background: var(--up);
-  box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.25);
-}
-.kcap {
-  flex: 1;
-  min-width: 90px;
-  max-width: 180px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 12px;
-  text-align: left;
-}
-.kcap.rec {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.15);
-  color: var(--accent-fg);
-}
-.tv.embedded {
-  height: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-}
-.tv.embedded .body {
-  overflow: visible;
-}
-.padacts {
-  display: inline-flex;
-  gap: 12px;
-}
-</style>

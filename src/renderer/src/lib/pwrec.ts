@@ -1,10 +1,8 @@
 import { shallowRef } from 'vue'
 import { CHECK_STEPS } from '@shared/check'
 import type { PwRecState } from '@shared/browser'
-import { findBlocks } from '@shared/noteBlocks'
-import { parseInfo } from '@shared/runbook'
+import { fencedBlocksOf } from '@nb/domain/noteBlocks'
 import { doc, openFile, save, setText } from './notebook'
-import { runKey } from './runbook'
 
 /**
  * Recording a Playwright scenario: a block's «Записать» opens its address in the Браузер, the clicks and typing
@@ -46,11 +44,7 @@ export async function stopPwRec(cancel = false): Promise<string | undefined> {
   const d = doc(r.note)
   for (let i = 0; i < 100 && !d.loaded; i++) await new Promise((res) => setTimeout(res, 30))
   const lines = d.text.split('\n')
-  const b = findBlocks(lines).find((x) => {
-    if (x.kind !== 'pw') return false
-    const info = parseInfo(x.src.split('\n')[0].replace(/^(`{3,}|~{3,})/, ''))
-    return runKey(info.name, 'pw', x.line0) === r.key
-  })
+  const b = fencedBlocksOf(d.text).find((x) => x.kind === 'pw' && x.key === r.key)
   const after = tail && tail.note === r.note && tail.key === r.key ? tail.lines : []
   tail = undefined
   const code = [...r.lines, ...after].join('\n')

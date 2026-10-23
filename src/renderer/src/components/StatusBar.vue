@@ -30,156 +30,29 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
 </script>
 
 <template>
-  <footer class="sb">
-    <span class="it" :class="live.inCall ? 'call' : 'live'" :title="live.inCall ? 'Идёт созвон — он попадёт в день сам' : 'Qvarch работает'">
-      <i class="led"></i>{{ live.inCall ? `CALL${live.callApp ? ` · ${live.callApp}` : ''}` : 'LIVE' }}
+  <footer class="sb tw:flex-none tw:flex tw:items-center tw:gap-12 tw:h-24 tw:py-0 tw:px-10 tw:border-t tw:border-t-border tw:bg-panel tw:text-muted tw:font-data tw:text-[10.5px] tw:tracking-[0.05em] tw:whitespace-nowrap tw:overflow-hidden tw:select-none tw:@container">
+    <span class="it tw:group/it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:[&.live]:not-[&.call]:text-up-fg tw:[&.call]:text-down-fg" :class="live.inCall ? 'call' : 'live'" :title="live.inCall ? 'Идёт созвон — он попадёт в день сам' : 'Qvarch работает'">
+      <i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:group-[.live]/it:not-group-[.call]/it:bg-up tw:group-[.live]/it:not-group-[.call]/it:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:group-[.call]/it:bg-down tw:group-[.call]/it:[box-shadow:0_0_6px_color-mix(in_srgb,var(--down)_70%,transparent)] tw:group-[.call]/it:animate-[StatusBar-blink_1s_steps(2)_infinite]"></i>{{ live.inCall ? `CALL${live.callApp ? ` · ${live.callApp}` : ''}` : 'LIVE' }}
     </span>
-    <span class="sep"></span>
-    <span class="it" :title="`Jira: ${TIP[jl]}${jira.error ? ` — ${jira.error}` : ''}`"><i class="led" :class="jl"></i>JIRA</span>
-    <span class="it" :title="`Outlook: ${TIP[ol]}${outlook.error ? ` — ${outlook.error}` : ''}`"><i class="led" :class="ol"></i>OUTLOOK</span>
-    <button v-if="terms.length" class="it term" :class="termLight.kind" :title="termLight.title" @click="emit('terminal')">
-      <i class="led" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
+    <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
+    <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Jira: ${TIP[jl]}${jira.error ? ` — ${jira.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="jl"></i>JIRA</span>
+    <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Outlook: ${TIP[ol]}${outlook.error ? ` — ${outlook.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="ol"></i>OUTLOOK</span>
+    <button v-if="terms.length" class="it term tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:hover:not-[&.err]:text-text tw:[&.err]:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :class="termLight.kind" :title="termLight.title" @click="emit('terminal')">
+      <i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
     </button>
-    <button v-if="recState.on" class="it term rec" title="Браузер записывает запросы — открыть" @click="emit('browser')"><i class="led err blinkrec"></i>REC · {{ recItems.length }}</button>
-    <span class="sep"></span>
-    <span class="it n">СЕГОДНЯ <b>{{ formatDuration(today.all) }}</b></span>
-    <span class="it n opt">ЗАДАЧИ <b>{{ formatDuration(today.tasks) }}</b></span>
-    <span class="it n opt">ВСТРЕЧИ <b>{{ formatDuration(today.meetings) }}</b></span>
-    <span class="grow"></span>
-    <span class="it sec">{{ section }}</span>
-    <span class="sep"></span>
-    <span class="it n opt">{{ date }}</span>
-    <span class="it n clk">{{ clock }}</span>
-    <span class="sep"></span>
-    <span class="it n ver" :title="`Qvarch Assistant ${version}`">v{{ version }}</span>
+    <button v-if="recState.on" class="it term rec tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Браузер записывает запросы — открыть" @click="emit('browser')"><i class="led err blinkrec tw:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-down"></i>REC · {{ recItems.length }}</button>
+    <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
+    <span class="it n tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums">СЕГОДНЯ <b class="tw:text-text tw:font-semibold">{{ formatDuration(today.all) }}</b></span>
+    <span class="it n opt tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden">ЗАДАЧИ <b class="tw:text-text tw:font-semibold">{{ formatDuration(today.tasks) }}</b></span>
+    <span class="it n opt tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden">ВСТРЕЧИ <b class="tw:text-text tw:font-semibold">{{ formatDuration(today.meetings) }}</b></span>
+    <span class="grow tw:flex-1"></span>
+    <span class="it sec tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:text-accent-fg tw:uppercase">{{ section }}</span>
+    <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
+    <span class="it n opt tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden">{{ date }}</span>
+    <span class="it n clk tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:text-text">{{ clock }}</span>
+    <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
+    <span class="it n ver tw:text-muted tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums" :title="`Qvarch Assistant ${version}`">v{{ version }}</span>
   </footer>
 </template>
 
-<style scoped>
-.ver {
-  color: var(--muted);
-}
-.sb {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 24px;
-  padding: 0 10px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  overflow: hidden;
-  user-select: none;
-  container-type: inline-size;
-}
-.it {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-.n {
-  font-variant-numeric: tabular-nums;
-}
-.it b {
-  color: var(--text);
-  font-weight: 600;
-}
-.term {
-  height: 18px;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  cursor: default;
-}
-.term:hover {
-  color: var(--text);
-}
-.term.rec {
-  color: var(--down-fg);
-}
-.blinkrec {
-  animation: blink 1s steps(2) infinite;
-}
-.term.alert {
-  color: var(--text-hi);
-}
-.term.err {
-  color: var(--down-fg);
-}
-.led.run {
-  background: var(--up);
-  box-shadow: 0 0 6px rgba(0, 230, 118, 0.6);
-}
-.led.alert {
-  animation: blink-fast 0.36s steps(2) infinite;
-}
-.sep {
-  flex: none;
-  width: 1px;
-  height: 12px;
-  background: var(--border-2);
-}
-.grow {
-  flex: 1;
-}
-.led {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--dim);
-}
-.led.on,
-.live .led {
-  background: var(--up);
-  box-shadow: 0 0 6px rgba(0, 230, 118, 0.6);
-}
-.led.busy {
-  background: var(--warn);
-  animation: blink 1s steps(2) infinite;
-}
-.led.err {
-  background: var(--down);
-}
-.live {
-  color: var(--up-fg);
-}
-.call {
-  color: var(--down-fg);
-}
-.call .led {
-  background: var(--down);
-  box-shadow: 0 0 6px rgba(255, 61, 61, 0.7);
-  animation: blink 1s steps(2) infinite;
-}
-.sec {
-  color: var(--accent-fg);
-  text-transform: uppercase;
-}
-.clk {
-  color: var(--text);
-}
-@keyframes blink-fast {
-  50% {
-    opacity: 0.15;
-  }
-}
-@keyframes blink {
-  50% {
-    opacity: 0.35;
-  }
-}
-@container (max-width: 760px) {
-  .opt {
-    display: none;
-  }
-}
-</style>
+<style scoped src="./StatusBar.css"></style>

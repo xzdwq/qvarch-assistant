@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { infoMd, interpolate, parseHttpText, parseInfo, resolvePath, runKindOf } from '../src/shared/runbook'
+import { infoMd, parseInfo } from '../src/notebook/domain/blockInfo'
+import { interpolate, resolvePath } from '../src/notebook/domain/values'
+import { parseHttpText } from '../src/notebook/blocks/http/httpText'
+import { fenceKindOfInfoLine } from '../src/notebook/domain/findBlocks'
 
 describe('runnable notes', () => {
   it('reads a block\'s info line', () => {
     const i = parseInfo('ts run name=total timeout=60')
     expect(i).toEqual({ lang: 'ts', run: true, lib: false, name: 'total', timeout: 60 })
-    expect(runKindOf(i)).toBe('code')
-    expect(runKindOf(parseInfo('ts'))).toBeUndefined()
-    expect(runKindOf(parseInfo('http name=login'))).toBe('http')
-    expect(runKindOf(parseInfo('json name=items'))).toBe('data')
-    expect(runKindOf(parseInfo('json ref=login.body'))).toBe('ref')
+    expect(fenceKindOfInfoLine('ts run name=total timeout=60')).toBe('code')
+    expect(fenceKindOfInfoLine('ts')).toBeUndefined()
+    expect(fenceKindOfInfoLine('http name=login')).toBe('http')
+    expect(fenceKindOfInfoLine('json name=items')).toBe('data')
+    expect(fenceKindOfInfoLine('json ref=login.body')).toBe('ref')
     expect(parseInfo('js run name=ctx').name).toBeUndefined()
     expect(infoMd(i)).toBe('ts run name=total timeout=60')
   })

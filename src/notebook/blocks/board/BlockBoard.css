@@ -1,0 +1,5 @@
+/* BlockBoard: what its template cannot carry as utilities (scoped). */
+
+.bb-view :deep(.bd) {
+  height: 100%;
+}

@@ -2,6 +2,17 @@
  * A query's plan (EXPLAIN) of any of the databases as one tree — each step: what it does, on what, what was expected
  * and (when the query was run) what came, its own time — and what in it is slow or wrong, said in words.
  */
+/** The marks a step may carry (shown as they are; the findings read them). */
+export const PLAN_FLAG = {
+  fullScan: 'полный просмотр',
+  filesort: 'filesort',
+  tempTable: 'временная таблица',
+  tempIndex: 'временный индекс',
+} as const
+export type PlanFlag = (typeof PLAN_FLAG)[keyof typeof PLAN_FLAG]
+/** MySQL's steps over their rows (a sort, a grouping, DISTINCT) and their names. */
+const MYSQL_STEP_OPS: Record<string, string> = { ordering_operation: 'Сортировка', grouping_operation: 'Группировка', duplicates_removal: 'Удаление дублей' }
+
 export interface PlanNode {
   /** What the step does (Seq Scan, Index Scan, Nested Loop, Sort…). */
   op: string
@@ -15,8 +26,8 @@ export interface PlanNode {
   /** Its own time: the step's minus its children's, ms. */
   selfMs?: number
   children: PlanNode[]
-  /** Marks for the view: «полный просмотр», «на диске»… */
-  flags: string[]
+  /** Marks for the view: «полный просмотр», «filesort»… */
+  flags: PlanFlag[]
   /** PostgreSQL's facts the findings read: rows a filter dropped, a sort on disk, a hash in parts. */
   facts?: { removed?: number; filter?: string; disk?: boolean; sortKey?: string[]; batches?: number }
 }
@@ -84,11 +95,11 @@ export function mysqlJsonPlan(json: unknown): Plan {
         const nl = node('Вложенный цикл (nested loop)')
         nl.children = v.map((x) => (x && typeof x === 'object' && 'table' in x ? table((x as Record<string, unknown>).table as Record<string, unknown>) : walk(x)))
         n.children.push(nl)
-      } else if (k === 'ordering_operation' || k === 'grouping_operation' || k === 'duplicates_removal') {
+      } else if (Object.hasOwn(MYSQL_STEP_OPS, k)) {
         const w = v as Record<string, unknown>
-        const c = walk(w, k === 'ordering_operation' ? 'Сортировка' : k === 'grouping_operation' ? 'Группировка' : 'Удаление дублей')
-        if (w.using_filesort || w.filesort) c.flags.push('filesort')
-        if (w.using_temporary_table || w.temporary_table) c.flags.push('временная таблица')
+        const c = walk(w, MYSQL_STEP_OPS[k])
+        if (w.using_filesort || w.filesort) c.flags.push(PLAN_FLAG.filesort)
+        if (w.using_temporary_table || w.temporary_table) c.flags.push(PLAN_FLAG.tempTable)
         n.children.push(c)
       } else if (/subquer|materialized_from_subquery|query_specifications|union_result|attached_subqueries/.test(k)) {
         const list = Array.isArray(v) ? v : [v]
@@ -109,7 +120,7 @@ export function mysqlJsonPlan(json: unknown): Plan {
     if (t.attached_condition) n.detail.push(`условие: ${String(t.attached_condition)}`)
     if (t.filtered !== undefined) n.detail.push(`проходит фильтр: ${String(t.filtered)}%`)
     if (t.using_index) n.detail.push('только по индексу (covering)')
-    if (access === 'ALL') n.flags.push('полный просмотр')
+    if (access === 'ALL') n.flags.push(PLAN_FLAG.fullScan)
     if (t.materialized_from_subquery) n.children.push(walk((t.materialized_from_subquery as Record<string, unknown>).query_block, 'Подзапрос'))
     return n
   }
@@ -137,9 +148,9 @@ function mysqlJsonPlan2(qp: unknown): Plan {
     if (o.condition) n.detail.push(`условие: ${String(o.condition)}`)
     if (o.lookup_condition) n.detail.push(`по индексу: ${String(o.lookup_condition)}`)
     if (Array.isArray(o.sort_fields)) n.detail.push(`сортировка по: ${(o.sort_fields as string[]).join(', ')}`)
-    if (o.access_type === 'table') n.flags.push('полный просмотр')
-    if (o.access_type === 'sort') n.flags.push('filesort')
-    if (o.access_type === 'temp_table' || /temporary/i.test(op)) n.flags.push('временная таблица')
+    if (o.access_type === 'table') n.flags.push(PLAN_FLAG.fullScan)
+    if (o.access_type === 'sort') n.flags.push(PLAN_FLAG.filesort)
+    if (o.access_type === 'temp_table' || /temporary/i.test(op)) n.flags.push(PLAN_FLAG.tempTable)
     n.children = Array.isArray(o.inputs) ? (o.inputs as Array<Record<string, unknown>>).map(walk) : []
     return n
   }
@@ -165,8 +176,8 @@ export function mysqlAnalyzePlan(text: string): Plan {
     const n = node(op.replace(/\bon \S+( using \S+)?/, '').replace(/:\s*$/, '').trim() || op, { on: on ? [on[1], on[2] ? `индекс ${on[2]}` : undefined].filter(Boolean).join(' · ') : undefined })
     if (est) n.est = { rows: num(est[3]), cost: num(est[2] ?? est[1]) }
     if (act) n.act = { ms: Number(act[2]) * Number(act[4]), rows: Number(act[3]) * Number(act[4]), loops: Number(act[4]) }
-    if (/^Table scan/i.test(op)) n.flags.push('полный просмотр')
-    if (/^Sort\b/i.test(op)) n.flags.push('filesort')
+    if (/^Table scan/i.test(op)) n.flags.push(PLAN_FLAG.fullScan)
+    if (/^Sort\b/i.test(op)) n.flags.push(PLAN_FLAG.filesort)
     const cond = /^Filter:\s*(.*)$/.exec(op)
     if (cond) n.detail.push(`условие: ${cond[1]}`)
     while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop()
@@ -189,9 +200,9 @@ export function sqlitePlan(rows: Array<{ id: number; parent: number; detail: str
     const m = /^(SCAN|SEARCH)\s+(?:TABLE\s+)?(\S+)(?:\s+AS\s+(\S+))?(?:\s+USING\s+(?:COVERING\s+|INTEGER PRIMARY KEY|AUTOMATIC\s+(?:PARTIAL\s+)?(?:COVERING\s+)?)?(?:INDEX\s+(\S+))?(.*))?$/i.exec(d)
     const n = m ? node(m[1].toUpperCase() === 'SCAN' ? (/USING/i.test(d) ? 'Просмотр по индексу' : 'Полный просмотр (SCAN)') : 'Поиск по индексу (SEARCH)', { on: [m[3] ? `${m[2]} ${m[3]}` : m[2], m[4] ? `индекс ${m[4]}` : undefined].filter(Boolean).join(' · ') }) : node(d)
     if (m) n.detail.push(d)
-    if (m && m[1].toUpperCase() === 'SCAN' && !/USING/i.test(d)) n.flags.push('полный просмотр')
-    if (/AUTOMATIC/i.test(d)) n.flags.push('временный индекс')
-    if (/TEMP B-TREE/i.test(d)) n.flags.push(/ORDER BY/i.test(d) ? 'filesort' : 'временная таблица')
+    if (m && m[1].toUpperCase() === 'SCAN' && !/USING/i.test(d)) n.flags.push(PLAN_FLAG.fullScan)
+    if (/AUTOMATIC/i.test(d)) n.flags.push(PLAN_FLAG.tempIndex)
+    if (/TEMP B-TREE/i.test(d)) n.flags.push(/ORDER BY/i.test(d) ? PLAN_FLAG.filesort : PLAN_FLAG.tempTable)
     by.set(r.id, n)
     ;(by.get(r.parent) ?? root).children.push(n)
   }
@@ -231,14 +242,14 @@ export function findings(p: Plan): Plan['findings'] {
   }
   for (const n of nodes) {
     const pg = n.facts
-    const scan = /^Seq Scan/.test(n.op) || n.flags.includes('полный просмотр')
+    const scan = /^Seq Scan/.test(n.op) || n.flags.includes(PLAN_FLAG.fullScan)
     const read = (n.act?.rows ?? 0) + (pg?.removed ?? 0)
     const many = n.act ? read : (n.est?.rows ?? 0)
     if (scan && n.on) {
       const cond = pg?.filter ? String(pg.filter) : condOf(n)
       if (many >= BIG && cond) out.push({ level: 'warn', text: `Полный просмотр ${n.on}: ${n.act ? 'прочитано' : 'ожидается'} ${fmt(many)} строк${n.act && pg?.removed ? `, подошло ${fmt(n.act.rows ?? 0)}` : ''} — индекс по условию «${cond}» сократил бы чтение` })
       else if (many >= BIG * 10) out.push({ level: 'info', text: `Полный просмотр ${n.on}: ${fmt(many)} строк` })
-      else if (!n.act && !n.est?.rows && n.flags.includes('полный просмотр')) out.push({ level: 'info', text: `Полный просмотр ${n.on} (без индекса)` })
+      else if (!n.act && !n.est?.rows && n.flags.includes(PLAN_FLAG.fullScan)) out.push({ level: 'info', text: `Полный просмотр ${n.on} (без индекса)` })
     }
     // the estimate off: the statistics are old (ANALYZE) or the condition is not one the planner can judge
     if (n.act?.rows !== undefined && n.est?.rows !== undefined && n.act.loops) {
@@ -250,13 +261,13 @@ export function findings(p: Plan): Plan['findings'] {
     }
     if (pg?.disk) out.push({ level: 'warn', text: `Сортировка ушла на диск${pg.sortKey ? ` (${(pg.sortKey as string[]).join(', ')})` : ''} — мало work_mem, или индекс по этим полям избавил бы от сортировки` })
     if (pg?.batches && pg.batches > 1) out.push({ level: 'warn', text: `Хеш-соединение не поместилось в память (${pg.batches} частей) — мало work_mem или соединяется слишком много строк` })
-    if (n.flags.includes('filesort') && !pg) out.push({ level: 'info', text: `Сортировка без индекса (filesort)${n.on ? `: ${n.on}` : ''} — при больших объёмах индекс по полям ORDER BY ускорит` })
-    if (n.flags.includes('временная таблица')) out.push({ level: 'info', text: `Временная таблица для ${n.op.toLowerCase()} — при больших объёмах дорого` })
-    if (n.flags.includes('временный индекс')) out.push({ level: 'warn', text: `${n.on ?? 'Таблица'}: индекс строится на каждый запрос (AUTOMATIC) — нужен постоянный индекс` })
+    if (n.flags.includes(PLAN_FLAG.filesort) && !pg) out.push({ level: 'info', text: `Сортировка без индекса (filesort)${n.on ? `: ${n.on}` : ''} — при больших объёмах индекс по полям ORDER BY ускорит` })
+    if (n.flags.includes(PLAN_FLAG.tempTable)) out.push({ level: 'info', text: `Временная таблица для ${n.op.toLowerCase()} — при больших объёмах дорого` })
+    if (n.flags.includes(PLAN_FLAG.tempIndex)) out.push({ level: 'warn', text: `${n.on ?? 'Таблица'}: индекс строится на каждый запрос (AUTOMATIC) — нужен постоянный индекс` })
     // a loop over a scan: the inner table read once per outer row
     if (/^Nested Loop|^Вложенный цикл/.test(n.op))
       for (const c of n.children.slice(1)) {
-        const inner = all(c).find((x) => /^Seq Scan/.test(x.op) || x.flags.includes('полный просмотр'))
+        const inner = all(c).find((x) => /^Seq Scan/.test(x.op) || x.flags.includes(PLAN_FLAG.fullScan))
         if (inner?.act?.loops && inner.act.loops >= 100) out.push({ level: 'warn', text: `Вложенный цикл: ${inner.on ?? 'таблица'} просматривается целиком ${fmt(inner.act.loops)} раз — нужен индекс по условию соединения` })
       }
   }

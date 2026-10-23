@@ -142,7 +142,7 @@ const svg = (n: string) => (ICONS as Record<string, string>)[n] ?? ICONS.tag
 
 <template>
   <svg
-    class="icon"
+    class="icon tw:flex-none tw:inline-block tw:align-middle"
     :width="props.size"
     :height="props.size"
     viewBox="0 0 24 24"
@@ -155,11 +155,3 @@ const svg = (n: string) => (ICONS as Record<string, string>)[n] ?? ICONS.tag
     v-html="svg(props.name)"
   ></svg>
 </template>
-
-<style scoped>
-.icon {
-  flex: none;
-  display: inline-block;
-  vertical-align: middle;
-}
-</style>

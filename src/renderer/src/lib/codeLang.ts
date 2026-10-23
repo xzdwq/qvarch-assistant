@@ -1,12 +1,12 @@
 import type { Extension } from '@codemirror/state'
+import type { StreamParser } from '@codemirror/language'
 import { formatCode } from './codeblocks'
 
 /**
  * The code kinds the tools know (the notebook's code blocks + XML and YAML): their highlighting, a guess of
  * the kind by the text, and formatting.
  */
-export type CodeKind = 'json' | 'yaml' | 'xml' | 'html' | 'sql' | 'css' | 'javascript' | 'typescript' | 'bash'
-export const CODE_KINDS: Array<{ id: CodeKind; title: string }> = [
+export const CODE_KINDS = [
   { id: 'json', title: 'JSON' },
   { id: 'yaml', title: 'YAML' },
   { id: 'xml', title: 'XML' },
@@ -16,42 +16,43 @@ export const CODE_KINDS: Array<{ id: CodeKind; title: string }> = [
   { id: 'javascript', title: 'JavaScript' },
   { id: 'typescript', title: 'TypeScript' },
   { id: 'bash', title: 'Shell' },
-]
+] as const satisfies ReadonlyArray<{ id: string; title: string }>
+export type CodeKind = (typeof CODE_KINDS)[number]['id']
 export const kindTitle = (k?: string) => CODE_KINDS.find((x) => x.id === k)?.title ?? 'Текст'
 
-/** CodeMirror's highlighting of a kind (loaded when first needed). */
-export async function languageOf(kind: string): Promise<Extension> {
-  switch (kind) {
-    case 'js':
-    case 'javascript':
-      return (await import('@codemirror/lang-javascript')).javascript()
-    case 'typescript':
-      return (await import('@codemirror/lang-javascript')).javascript({ typescript: true })
-    case 'json':
-      return (await import('@codemirror/lang-json')).json()
-    case 'sql': {
-      const m = await import('@codemirror/lang-sql')
-      return m.sql({ dialect: m.PostgreSQL, upperCaseKeywords: true })
-    }
-    case 'html':
-      return (await import('@codemirror/lang-html')).html()
-    case 'css':
-      return (await import('@codemirror/lang-css')).css()
-    case 'md':
-    case 'markdown':
-      return (await import('@codemirror/lang-markdown')).markdown()
-    case 'http':
-    case 'xml':
-    case 'yaml':
-    case 'bash': {
-      const { StreamLanguage, LanguageSupport } = await import('@codemirror/language')
-      const mode =
-        kind === 'http' ? (await import('@codemirror/legacy-modes/mode/http')).http : kind === 'xml' ? (await import('@codemirror/legacy-modes/mode/xml')).xml : kind === 'yaml' ? (await import('@codemirror/legacy-modes/mode/yaml')).yaml : (await import('@codemirror/legacy-modes/mode/shell')).shell
-      return new LanguageSupport(StreamLanguage.define(mode))
-    }
-    default:
-      return []
+type LanguageLoader = () => Promise<Extension>
+/** A highlighting by a CodeMirror 5 mode (the kinds with no own package). */
+const legacyMode =
+  (load: () => Promise<StreamParser<unknown>>): LanguageLoader =>
+  async () => {
+    const { StreamLanguage, LanguageSupport } = await import('@codemirror/language')
+    return new LanguageSupport(StreamLanguage.define(await load()))
   }
+const javascript: LanguageLoader = async () => (await import('@codemirror/lang-javascript')).javascript()
+const markdown: LanguageLoader = async () => (await import('@codemirror/lang-markdown')).markdown()
+/** The highlightings by a kind's name (its aliases too), each loaded when first needed. */
+const LANGUAGES: Record<string, LanguageLoader> = {
+  js: javascript,
+  javascript,
+  typescript: async () => (await import('@codemirror/lang-javascript')).javascript({ typescript: true }),
+  json: async () => (await import('@codemirror/lang-json')).json(),
+  sql: async () => {
+    const m = await import('@codemirror/lang-sql')
+    return m.sql({ dialect: m.PostgreSQL, upperCaseKeywords: true })
+  },
+  html: async () => (await import('@codemirror/lang-html')).html(),
+  css: async () => (await import('@codemirror/lang-css')).css(),
+  md: markdown,
+  markdown,
+  http: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/http')).http),
+  xml: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/xml')).xml),
+  yaml: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/yaml')).yaml),
+  bash: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/shell')).shell),
+}
+
+/** CodeMirror's highlighting of a kind (loaded when first needed); none for an unknown one. */
+export async function languageOf(kind: string): Promise<Extension> {
+  return Object.hasOwn(LANGUAGES, kind) ? LANGUAGES[kind]() : []
 }
 
 const HTML_TAG = /<(!doctype\s+html|html|head|body|div|span|p|a|ul|ol|li|table|tr|td|th|img|br|script|style|meta|link|h[1-6]|form|input|button|section|header|footer|nav|main)\b/i
@@ -93,18 +94,25 @@ function looksYaml(head: string): boolean {
 export const canFormat = (k?: string): k is CodeKind => !!k && CODE_KINDS.some((x) => x.id === k)
 
 /** Formats a text of a kind; throws with a short message when it does not parse. */
-export async function formatKind(kind: CodeKind, text: string, opts: { indent?: number; sortKeys?: boolean } = {}): Promise<string> {
-  const indent = opts.indent ?? 2
-  if (kind === 'json') {
+interface FormatOptions {
+  indent: number
+  sortKeys: boolean
+}
+/** The kinds formatted here; the others — by the shared code formatter. */
+const OWN_FORMATTERS: Partial<Record<CodeKind, (text: string, o: FormatOptions) => string | Promise<string>>> = {
+  json: (text, o) => {
     const v = JSON.parse(text) as unknown
-    return JSON.stringify(opts.sortKeys ? sortDeep(v) : v, null, indent)
-  }
-  if (kind === 'yaml') {
+    return JSON.stringify(o.sortKeys ? sortDeep(v) : v, null, o.indent)
+  },
+  yaml: async (text, o) => {
     const y = await import('js-yaml')
-    return y.dump(y.load(text), { indent, lineWidth: -1, noRefs: true, sortKeys: !!opts.sortKeys }).replace(/\s+$/, '')
-  }
-  if (kind === 'xml') return formatXml(text, indent)
-  return formatCode(kind, text)
+    return y.dump(y.load(text), { indent: o.indent, lineWidth: -1, noRefs: true, sortKeys: o.sortKeys }).replace(/\s+$/, '')
+  },
+  xml: (text, o) => formatXml(text, o.indent),
+}
+export async function formatKind(kind: CodeKind, text: string, opts: { indent?: number; sortKeys?: boolean } = {}): Promise<string> {
+  const own = OWN_FORMATTERS[kind]
+  return own ? own(text, { indent: opts.indent ?? 2, sortKeys: !!opts.sortKeys }) : formatCode(kind, text)
 }
 export function sortDeep(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortDeep)
@@ -124,19 +132,29 @@ export function formatXml(xml: string, indent = 2): string {
   const decl = /^<\?xml[^?]*\?>/.exec(xml.trim())
   if (decl) out.push(decl[0])
   const walk = (n: Node, d: number) => {
-    if (n.nodeType === Node.ELEMENT_NODE) {
-      const el = n as Element
-      const attrs = [...el.attributes].map((a) => ` ${a.name}="${attr(a.value)}"`).join('')
-      const kids = [...el.childNodes].filter((c) => !(c.nodeType === Node.TEXT_NODE && !c.textContent?.trim()))
-      if (!kids.length) return void out.push(`${pad(d)}<${el.tagName}${attrs}/>`)
-      if (kids.length === 1 && kids[0].nodeType === Node.TEXT_NODE) return void out.push(`${pad(d)}<${el.tagName}${attrs}>${esc(kids[0].textContent!.trim())}</${el.tagName}>`)
-      out.push(`${pad(d)}<${el.tagName}${attrs}>`)
-      for (const c of kids) walk(c, d + 1)
-      out.push(`${pad(d)}</${el.tagName}>`)
-    } else if (n.nodeType === Node.TEXT_NODE) out.push(pad(d) + esc(n.textContent!.trim()))
-    else if (n.nodeType === Node.CDATA_SECTION_NODE) out.push(`${pad(d)}<![CDATA[${n.textContent}]]>`)
-    else if (n.nodeType === Node.COMMENT_NODE) out.push(`${pad(d)}<!--${n.textContent}-->`)
-    else if (n.nodeType === Node.PROCESSING_INSTRUCTION_NODE) out.push(`${pad(d)}<?${(n as ProcessingInstruction).target} ${(n as ProcessingInstruction).data}?>`)
+    switch (n.nodeType) {
+      case Node.ELEMENT_NODE: {
+        const el = n as Element
+        const attrs = [...el.attributes].map((a) => ` ${a.name}="${attr(a.value)}"`).join('')
+        const kids = [...el.childNodes].filter((c) => !(c.nodeType === Node.TEXT_NODE && !c.textContent?.trim()))
+        if (!kids.length) return void out.push(`${pad(d)}<${el.tagName}${attrs}/>`)
+        if (kids.length === 1 && kids[0].nodeType === Node.TEXT_NODE) return void out.push(`${pad(d)}<${el.tagName}${attrs}>${esc(kids[0].textContent!.trim())}</${el.tagName}>`)
+        out.push(`${pad(d)}<${el.tagName}${attrs}>`)
+        for (const c of kids) walk(c, d + 1)
+        out.push(`${pad(d)}</${el.tagName}>`)
+        return
+      }
+      case Node.TEXT_NODE:
+        return void out.push(pad(d) + esc(n.textContent!.trim()))
+      case Node.CDATA_SECTION_NODE:
+        return void out.push(`${pad(d)}<![CDATA[${n.textContent}]]>`)
+      case Node.COMMENT_NODE:
+        return void out.push(`${pad(d)}<!--${n.textContent}-->`)
+      case Node.PROCESSING_INSTRUCTION_NODE: {
+        const pi = n as ProcessingInstruction
+        return void out.push(`${pad(d)}<?${pi.target} ${pi.data}?>`)
+      }
+    }
   }
   for (const c of doc.childNodes) walk(c, 0)
   return out.join('\n')

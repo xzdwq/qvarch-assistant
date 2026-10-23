@@ -1,0 +1,48 @@
+/* Colours of integrations and settings: the terminal (ANSI), HTTP, Jira. */
+
+:root {
+  /* the terminal's 16 ANSI colours and its selection (xterm takes them as concrete values: lib/terminal.ts) */
+  --ansi-black: #1a212b;
+  --ansi-bright-black: var(--dim);
+  --ansi-red: #ff5c57;
+  --ansi-bright-red: #ff7a75;
+  --ansi-green: #00d26a;
+  --ansi-bright-green: #5af78e;
+  --ansi-yellow: #ffb74d;
+  --ansi-bright-yellow: #ffd480;
+  --ansi-blue: #448aff;
+  --ansi-bright-blue: #82b1ff;
+  --ansi-magenta: #c792ea;
+  --ansi-bright-magenta: #e0aaff;
+  --ansi-cyan: #18e0ff;
+  --ansi-bright-cyan: #8cf5ff;
+  --ansi-white: var(--text-2);
+  --ansi-bright-white: var(--text-hi);
+  --ansi-selection: rgba(255, 107, 0, 0.3);
+
+  /* the AI assistants' server (settings): listening / done, failed to start */
+  --mcp-ok: #4ade80;
+  --mcp-bad: #f87171;
+
+  /* the colours offered for a new terminal reaction (in turn; a picked one is kept in the reaction) */
+  --new-watch-1: #ff3d3d;
+  --new-watch-2: #ff9100;
+  --new-watch-3: #ffd400;
+  --new-watch-4: #00e676;
+  --new-watch-5: #18e0ff;
+  --new-watch-6: #448aff;
+  --new-watch-7: #c792ea;
+  --new-watch-8: #ff4fd8;
+
+  /* the colours offered for a new kind of activity (in turn; a picked one is kept in the kind) */
+  --new-kind-1: #6366f1;
+  --new-kind-2: #14b8a6;
+  --new-kind-3: #0ea5e9;
+  --new-kind-4: #f59e0b;
+  --new-kind-5: #f97316;
+  --new-kind-6: #ec4899;
+  --new-kind-7: #22c55e;
+  --new-kind-8: #a855f7;
+  --new-kind-9: #ef4444;
+  --new-kind-10: #94a3b8;
+}

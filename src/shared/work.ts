@@ -1,5 +1,6 @@
 import type { TaskRef } from './jira'
 import { OWN_PREFIX } from './board'
+import { isKind } from './tracker/constants'
 import type { DayData, Entry, Ms } from './types'
 
 /**
@@ -24,8 +25,9 @@ export interface WorkDay {
 }
 
 export const isOwnTask = (key: string) => key.startsWith(OWN_PREFIX)
-export const isMeeting = (e: Entry) => !!e.outlook || e.kind === 'meeting'
-export const isCall = (e: Entry) => e.kind === 'call'
+/** A meeting (from Outlook, or of the built-in kind) / a detected call — the kinds the app itself gives blocks. */
+export const isMeeting = (e: Entry) => !!e.outlook || isKind(e.kind, 'meeting')
+export const isCall = (e: Entry) => isKind(e.kind, 'call')
 
 /** Union length of intervals (parallel time counted once). */
 function unionLen(list: Array<{ start: Ms; end: Ms }>): number {

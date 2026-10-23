@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { boardMd, boardPathOf, parseWork, workMd, workRange, workReport, calloutMd, chartMd, findBlocks, newTable, parseCallout, parseChart, parseTable, parseToggle, tableMd, toggleMd } from '../src/shared/noteBlocks'
+import { boardMd, boardPathOf } from '../src/notebook/blocks/board/model'
+import { parseWork, workMd, workRange, workReport } from '../src/notebook/blocks/work/model'
+import { calloutMd, parseCallout } from '../src/notebook/blocks/callout/model'
+import { chartMd, parseChart } from '../src/notebook/blocks/chart/model'
+import { findBlocks } from '../src/notebook/domain/findBlocks'
+import { newTable, parseTable, tableMd } from '../src/notebook/blocks/table/model'
+import { parseToggle, toggleMd } from '../src/notebook/blocks/toggle/model'
 
 describe('note components', () => {
   it('finds them and leaves other code alone', () => {

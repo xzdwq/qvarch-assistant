@@ -40,6 +40,17 @@ describe('Excel: the files of a spec', () => {
     expect(files[7].sheets[0].header).toEqual(['Количество', 'Код'])
     expect(files[9].expect).toBeUndefined()
     expect(files[10].sheets.map((s) => s.name)).toEqual(['Пустой', 'Лист1'])
+    // the rest of the faults, in the list's order whatever order they are asked in
+    const more = makeFiles(spec, ['big', 'textnum', 'spaces', 'blank', 'title', 'order'], make).slice(1)
+    expect(more.map((f) => f.name.split(' — ')[1])).toEqual(['другой порядок', 'заголовки иначе', 'пустые строки', 'пробелы по краям', 'числа текстом', '10000 строк'])
+    expect(more[0].sheets[0].header).toEqual(['Код', 'Количество', 'Наименование'])
+    expect(more[1].sheets[0].header[0]).toBe(' НАИМЕНОВАНИЕ ')
+    // 5 rows: an empty one after rows 1 and 4 (never after the last)
+    expect(more[2].sheets[0].rows.map((r) => r[0].v === null)).toEqual([false, true, false, false, false, true, false])
+    expect(String(more[3].sheets[0].rows[0][0].v)).toMatch(/^ {2}.+ {2}$/)
+    expect(more[4].sheets[0].asText).toBe(true)
+    expect(more[5]).toMatchObject({ expect: 'ok' })
+    expect(more[5].sheets[0].rows).toHaveLength(10_000)
     // csv has no sheets: the xlsx-only faults are left out
     expect(makeFiles({ ...spec, format: 'csv' }, ['sheet2', 'textnum'], make)).toHaveLength(1)
   })

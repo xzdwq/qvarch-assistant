@@ -1,0 +1,5 @@
+/* PageError: what its template cannot carry as utilities (scoped). */
+
+.perr :deep(svg) {
+  color: var(--down-fg);
+}

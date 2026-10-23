@@ -3,6 +3,7 @@ import { noteEntry } from '@shared/notes'
 import { formatHM } from '@shared/timeline'
 import type { Entry, Note } from '@shared/types'
 import { kindColor, kindLabel } from '../lib/palette'
+import { noteIcon } from '@shared/tracker/constants'
 import Icon from './Icon.vue'
 import Markdown from './Markdown.vue'
 import AudioNote from './AudioNote.vue'
@@ -13,122 +14,27 @@ const emit = defineEmits<{ delete: [id: string]; select: [entryId: string]; edit
 </script>
 
 <template>
-  <div class="notes">
+  <div class="notes tw:flex tw:flex-col tw:gap-8">
     <template v-for="n in notes" :key="n.id">
     <slot v-if="n.id === editingId" name="editor" :note="n" />
-    <div v-else class="note">
-      <div class="nh">
-        <Icon :name="n.audio ? (n.audio.kind === 'call' ? 'phone' : 'mic') : 'note'" :size="13" class="ni" />
-        <span class="time">{{ formatHM(n.at) }}</span>
+    <div v-else class="note tw:py-8 tw:px-10 tw:rounded-[4px] tw:bg-panel-2 tw:border-l-3 tw:border-l-warn">
+      <div class="nh tw:flex tw:items-center tw:gap-8 tw:text-[12px]">
+        <Icon :name="noteIcon(n)":size="13" class="ni tw:text-warn" />
+        <span class="time tw:tabular-nums tw:font-data tw:font-semibold">{{ formatHM(n.at) }}</span>
         <template v-for="e in [noteEntry(n, entries)]" :key="e?.id ?? 'none'">
-          <button v-if="e" class="ent" :title="`${formatHM(e.start)}–${formatHM(e.end)}`" @click="emit('select', e.id)">
-            <i :style="{ background: kindColor(e.kind) }"></i>{{ kindLabel(e.kind) }}<template v-if="e.label && e.label !== kindLabel(e.kind)"> · {{ e.label }}</template>
+          <button v-if="e" class="ent tw:inline-flex tw:items-center tw:gap-5 tw:py-1 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-white/6 tw:text-[12px] tw:cursor-pointer tw:hover:bg-white/12 tw:hover:enabled:border-border-3" :title="`${formatHM(e.start)}–${formatHM(e.end)}`" @click="emit('select', e.id)">
+            <i class="tw:w-8 tw:h-8 tw:rounded-[50%]" :style="{ background: kindColor(e.kind) }"></i>{{ kindLabel(e.kind) }}<template v-if="e.label && e.label !== kindLabel(e.kind)"> · {{ e.label }}</template>
           </button>
-          <span v-else class="muted ent-none">вне записей</span>
+          <span v-else class="muted ent-none tw:text-[12px]">вне записей</span>
         </template>
-        <span class="spacer"></span>
-        <span v-if="n.taskId" class="tk" title="Из этой заметки сделана задача"><Icon name="checkSquare" :size="12" />задача</span>
-        <button v-else-if="editable" class="mk" title="Сделать задачей" @click="emit('toTask', n)"><Icon name="checkSquare" :size="12" />В задачу</button>
-        <button v-if="deletable" class="del" title="Удалить заметку" @click="emit('delete', n.id)"><Icon name="trash" :size="13" /></button>
+        <span class="spacer tw:flex-1"></span>
+        <span v-if="n.taskId" class="tk tw:inline-flex tw:items-center tw:gap-4 tw:text-[11px] tw:text-up-fg" title="Из этой заметки сделана задача"><Icon name="checkSquare" :size="12" />задача</span>
+        <button v-else-if="editable" class="mk tw:inline-flex tw:items-center tw:gap-4 tw:text-[11px] tw:py-2 tw:px-6 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:cursor-pointer tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Сделать задачей" @click="emit('toTask', n)"><Icon name="checkSquare" :size="12" />В задачу</button>
+        <button v-if="deletable" class="del tw:inline-flex tw:p-3 tw:border-0 tw:bg-transparent tw:text-muted tw:rounded-r2 tw:hover:text-down-fg tw:hover:bg-down/12 tw:hover:enabled:border-border-3" title="Удалить заметку" @click="emit('delete', n.id)"><Icon name="trash" :size="13" /></button>
       </div>
-      <div v-if="n.text.trim()" class="txt" :class="{ editable }" :title="editable ? 'Клик — изменить' : undefined" @click="editable && emit('edit', n)"><Markdown :text="n.text" compact /></div>
+      <div v-if="n.text.trim()" class="txt tw:[&.editable]:cursor-text tw:[&.editable]:rounded-r2 tw:[&.editable]:hover:bg-white/4 tw:mt-4 tw:text-[13px] tw:leading-[1.45] tw:[word-break:break-word]" :class="{ editable }" :title="editable ? 'Клик — изменить' : undefined" @click="editable && emit('edit', n)"><Markdown :text="n.text" compact /></div>
       <AudioNote v-if="n.audio && day" :day="day" :note="n" compact />
     </div>
     </template>
   </div>
 </template>
-
-<style scoped>
-.notes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.note {
-  padding: 8px 10px;
-  border-radius: 4px;
-  background: var(--panel-2);
-  border-left: 3px solid var(--warn);
-}
-.nh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.ni {
-  color: var(--warn);
-}
-.time {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  font-weight: 600;
-}
-.ent {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 1px 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 12px;
-  cursor: pointer;
-}
-.ent:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-.ent i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.ent-none {
-  font-size: 12px;
-}
-.spacer {
-  flex: 1;
-}
-.tk,
-.mk {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-}
-.tk {
-  color: var(--up-fg);
-}
-.mk {
-  padding: 2px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--accent-fg);
-  cursor: pointer;
-}
-.del {
-  display: inline-flex;
-  padding: 3px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--r2);
-}
-.del:hover {
-  color: var(--down-fg);
-  background: rgba(255, 61, 61, 0.12);
-}
-.txt.editable {
-  cursor: text;
-  border-radius: var(--r2);
-}
-.txt.editable:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-.txt {
-  margin-top: 4px;
-  font-size: 13px;
-  line-height: 1.45;
-  word-break: break-word;
-}
-</style>

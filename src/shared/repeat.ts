@@ -6,22 +6,29 @@ import type { Ms } from './types'
  *  an edit or a delete can go to one of them or to all).
  *  A reminder: "at the start" (or N minutes before it) — follows the block when it moves; or at a set time.
  */
-export type RepeatRule = 'hour' | 'day' | 'week' | 'year'
-export const REPEAT_RULES: Array<{ id: RepeatRule; label: string; every: string; count: number }> = [
-  { id: 'hour', label: 'Каждый час', every: 'каждый час', count: 8 },
-  { id: 'day', label: 'Каждый день', every: 'каждый день', count: 10 },
-  { id: 'week', label: 'Каждую неделю', every: 'каждую неделю', count: 8 },
-  { id: 'year', label: 'Каждый год', every: 'каждый год', count: 3 },
-]
+
+/** A calendar step of k units (a day stays the same local time across DST). */
+const calendarStep = (step: (d: Date, k: number) => void) => (t: Ms, k: number): Ms => {
+  const d = new Date(t)
+  step(d, k)
+  return d.getTime()
+}
+
+/** Each rule: its menu names, how many copies it makes, how it steps. */
+const REPEAT_RULE_DEFS = {
+  hour: { label: 'Каждый час', every: 'каждый час', count: 8, shift: (t: Ms, k: number): Ms => t + k * 3_600_000 },
+  day: { label: 'Каждый день', every: 'каждый день', count: 10, shift: calendarStep((d, k) => d.setDate(d.getDate() + k)) },
+  week: { label: 'Каждую неделю', every: 'каждую неделю', count: 8, shift: calendarStep((d, k) => d.setDate(d.getDate() + 7 * k)) },
+  year: { label: 'Каждый год', every: 'каждый год', count: 3, shift: calendarStep((d, k) => d.setFullYear(d.getFullYear() + k)) },
+}
+export type RepeatRule = keyof typeof REPEAT_RULE_DEFS
+export const REPEAT_RULES: Array<{ id: RepeatRule; label: string; every: string; count: number }> = (Object.keys(REPEAT_RULE_DEFS) as RepeatRule[]).map(
+  (id) => ({ id, label: REPEAT_RULE_DEFS[id].label, every: REPEAT_RULE_DEFS[id].every, count: REPEAT_RULE_DEFS[id].count }),
+)
 
 /** The k-th repeat of a moment (calendar steps: a day stays the same local time across DST). */
 export function shiftBy(t: Ms, rule: RepeatRule, k: number): Ms {
-  if (rule === 'hour') return t + k * 3_600_000
-  const d = new Date(t)
-  if (rule === 'day') d.setDate(d.getDate() + k)
-  else if (rule === 'week') d.setDate(d.getDate() + 7 * k)
-  else d.setFullYear(d.getFullYear() + k)
-  return d.getTime()
+  return REPEAT_RULE_DEFS[rule].shift(t, k)
 }
 
 export interface Remind {

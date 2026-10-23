@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { MenuItem } from '../components/MenuButton.vue'
 import type { GridData } from '@shared/gridData'
+import { rangeHas, rangeSize, tsvCell as esc } from '@shared/gridRange'
 export { asGrid, type GridData } from '@shared/gridData'
 
 /**
@@ -12,7 +13,12 @@ export { asGrid, type GridData } from '@shared/gridData'
 export type Grid = ReturnType<typeof useGrid>
 
 export const cellText = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
-const esc = (s: string) => (/[\t\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+/** The rows' export menu of every table: copied for Excel, saved as Excel or CSV. */
+export const rowsExportItems = (copy: () => unknown, save: (format: 'xlsx' | 'csv') => unknown): MenuItem[] => [
+  { label: 'Копировать', icon: 'copy', title: 'В буфер — вставляется в Excel по столбцам', run: copy },
+  { label: 'Сохранить в Excel (.xlsx)', icon: 'table', run: () => save('xlsx') },
+  { label: 'Сохранить в CSV (UTF-8)', icon: 'list', run: () => save('csv') },
+]
 /** The value as JSON when it is one (an object / an array; a text that parses as one). */
 export function jsonOf(v: unknown): unknown {
   if (v !== null && typeof v === 'object') return v
@@ -68,10 +74,7 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
   const box = ref<HTMLElement>()
   let anchor: { r: number; c: number } | undefined
   let dragging = false
-  const inSel = (r: number, c: number) => {
-    const x = sel.value
-    return !!x && r >= Math.min(x.r0, x.r1) && r <= Math.max(x.r0, x.r1) && c >= Math.min(x.c0, x.c1) && c <= Math.max(x.c0, x.c1)
-  }
+  const inSel = (r: number, c: number) => rangeHas(sel.value, r, c)
   const lastRow = () => (data.value?.rows.length ?? 1) - 1
   const lastCol = () => (data.value?.columns.length ?? 1) - 1
   const focus = () => box.value?.focus({ preventScroll: true })
@@ -121,7 +124,7 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
     for (let r = Math.min(x.r0, x.r1); r <= Math.max(x.r0, x.r1); r++) out.push(t.rows[r].slice(c0, c1 + 1).map((v) => esc(v === null ? '' : cellText(v))).join('\t'))
     return out.join('\n')
   }
-  const selCount = computed(() => (sel.value ? (Math.abs(sel.value.r1 - sel.value.r0) + 1) * (Math.abs(sel.value.c1 - sel.value.c0) + 1) : 0))
+  const selCount = computed(() => rangeSize(sel.value))
   const copied = ref(false)
   const flash = () => {
     copied.value = true
@@ -196,11 +199,7 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
     await navigator.clipboard.writeText([t.columns.map((c) => esc(c.name)).join('\t'), ...t.rows.map((r) => r.map((v) => esc(cellText(v))).join('\t'))].join('\n'))
     flash()
   }
-  const exportItems = computed<MenuItem[]>(() => [
-    { label: 'Копировать', icon: 'copy', title: 'В буфер — вставляется в Excel по столбцам', run: copyTsv },
-    { label: 'Сохранить в Excel (.xlsx)', icon: 'table', run: () => exportAs('xlsx') },
-    { label: 'Сохранить в CSV (UTF-8)', icon: 'list', run: () => exportAs('csv') },
-  ])
+  const exportItems = computed<MenuItem[]>(() => rowsExportItems(copyTsv, exportAs))
 
   return { data, limit, shownRows, widths, fit, resize, sel, box, inSel, cellDown, cellEnter, pickCol, pickRow, pickAll, selCount, copied, onKey, jsonCells, unfolded, toggleJson, prettyJson, cellMenu, onCellMenu, cellItems, exported, exportItems }
 }

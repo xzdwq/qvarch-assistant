@@ -3,7 +3,12 @@
  * touches nothing of theirs) and tells the browser through a protocol binding what it sees — error toasts,
  * dialogs, spinners that do not go, text out of its table cell, a page wider than the window.
  */
+import { UNSAVED_TEXT } from './check'
+
 export const CHECK_BINDING = '__qvarchCheck'
+/** The outline drawn on a foreign page (no CSS of ours there, so a literal colour). */
+const HIGHLIGHT_OUTLINE = '#ef4444'
+const HIGHLIGHT_DIM = 'rgba(0,0,0,.25)'
 export const CHECK_WORLD = 'qvarch-check'
 
 export type PageFinding =
@@ -14,7 +19,7 @@ export type PageFinding =
   | { t: 'hscroll'; over: number }
 
 /** The script (the settings put in): an IIFE, safe to run twice (the second does nothing). */
-export function checkPageScript(o: { loadingMs: number; kinds: { toast: boolean; dialog: boolean; loading: boolean; overflow: boolean; hscroll: boolean } }): string {
+export function checkPageScript(o: { loadingMs: number; kinds: Record<PageFinding['t'], boolean> }): string {
   return `(() => {
   if (window.__qvarchCheckOn) return
   window.__qvarchCheckOn = true
@@ -49,7 +54,7 @@ export function checkPageScript(o: { loadingMs: number; kinds: { toast: boolean;
     return ERRWORDS.test(textOf(el))
   }
   const DIALOG = '.q-dialog, [role="dialog"], [role="alertdialog"], .el-message-box, .modal.show, .ant-modal'
-  const UNSAVED = /несохран|не сохран|изменения (будут )?(потеря|утеря)|покинуть страницу|unsaved|discard changes|leave (this )?page/i
+  const UNSAVED = ${UNSAVED_TEXT}
   const look = (root) => {
     if (!(root instanceof Element)) return
     if (O.kinds.toast) for (const el of [root, ...root.querySelectorAll(TOAST)]) {
@@ -128,7 +133,7 @@ export function highlightScript(sel: string): string {
   el.scrollIntoView({ block: 'center', inline: 'center' })
   const r = el.getBoundingClientRect()
   const box = document.createElement('div')
-  box.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:3px solid #ef4444;border-radius:4px;box-shadow:0 0 0 4000px rgba(0,0,0,.25);transition:opacity .4s'
+  box.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:3px solid ${HIGHLIGHT_OUTLINE};border-radius:4px;box-shadow:0 0 0 4000px ${HIGHLIGHT_DIM};transition:opacity .4s'
   Object.assign(box.style, { left: r.left - 4 + 'px', top: r.top - 4 + 'px', width: r.width + 8 + 'px', height: r.height + 8 + 'px' })
   document.documentElement.appendChild(box)
   setTimeout(() => (box.style.opacity = '0'), 1800)

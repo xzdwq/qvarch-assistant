@@ -1,0 +1,69 @@
+/* Colours of the tracker: kinds, the island, the calendar, reports. */
+:root {
+  /* the built-in kinds' default colours (default settings refer to them; a colour the user picks is stored) */
+  --kind-task: #6366f1;
+  --kind-call: #14b8a6;
+  --kind-meeting: #0ea5e9;
+  --kind-break: #f59e0b;
+  --kind-lunch: #f97316;
+  --kind-other: #94a3b8;
+
+  /* reports: the task types, where blocks came from, the Jira total */
+  --report-task-jira: #3b82f6;
+  --report-task-own: #a78bfa;
+  --report-task-none: #64748b;
+  --report-origin-outlook: #0ea5e9;
+  --report-origin-call: #14b8a6;
+  --report-origin-manual: #94a3b8;
+  --report-kpi-jira: #448aff;
+  /* reports: the chart's series by task (the biggest ten) and "all the smaller ones" */
+  --report-series-1: #6366f1;
+  --report-series-2: #14b8a6;
+  --report-series-3: #f59e0b;
+  --report-series-4: #ec4899;
+  --report-series-5: #0ea5e9;
+  --report-series-6: #84cc16;
+  --report-series-7: #a855f7;
+  --report-series-8: #ef4444;
+  --report-series-9: #22d3ee;
+  --report-series-10: #f97316;
+  --report-series-rest: #475569;
+
+  /* the island's surface and outline (their opacity follows the pill's setting, --bga) */
+  --island-bg: #0d1117;
+  --island-line: #3a4658;
+
+  /* a call going on (the status dot, a found call, the call note) and the scheduled lunch on the timelines */
+  --call-mark: #14b8a6;
+  --call-mark-fg: #5eead4;
+  --lunch-mark: #f97316;
+  --lunch-mark-fg: #fdba74;
+  --lunch-mark-text: #fed7aa;
+  /* making an own task from a search; a Jira issue's details */
+  --task-create: #fdba74;
+  --jira-mark: #2684ff;
+
+  /* the island's orb: one tint per mood (read as a concrete colour — the orb paints on a canvas) */
+  --orb-recording: #f87171;
+  --orb-transcribing: #c4b5fd;
+  --orb-composing: #fde68a;
+  --orb-call: #5eead4;
+  --orb-day-filled: #f9a8d4;
+  --orb-off-hours: #7dd3fc;
+  --orb-working: #86efac;
+  /* the typing combo: its number heats from the text colour to this one */
+  --combo-hot: #ef4444;
+  --combo-cold: #e2e8f0;
+
+  /* the day strip: the "now" mark, a meeting starting soon, the dotted line of the past */
+  --daystrip-now: #ff3d3d;
+  --daystrip-soon: #f59e0b;
+  --daystrip-past-line: #6b7387;
+
+  /* calendar: a note in the side list */
+  --calendar-note: #fbbf24;
+
+  /* the tablet's pen: the pad's trace, a pen touching the surface */
+  --tablet-pad-ink: #1d3fa8;
+  --tablet-contact: #f472b6;
+}

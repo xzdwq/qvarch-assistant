@@ -1,0 +1,7 @@
+/* Colours of the shared components (pickers, dialogs, helpers). */
+:root {
+  /* a dialog / picker floating over the page (the date range, the series question) */
+  --shadow-dialog: 0 18px 44px rgba(0, 0, 0, 0.6);
+  /* the code editor's line under the caret */
+  --code-active-line: rgba(255, 255, 255, 0.03);
+}

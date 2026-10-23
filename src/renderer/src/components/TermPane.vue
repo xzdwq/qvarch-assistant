@@ -7,9 +7,10 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { crumbs, type TermSession } from '@shared/terminal'
 import { formatDuration } from '@shared/timeline'
-import { placeFloat, useAnchor } from '../lib/floating'
+import { openWhile } from '../lib/usePopover'
 import { termTheme } from '../lib/terminal'
 import Icon from './Icon.vue'
+import Popover from './Popover.vue'
 
 /**
  * One shell on screen: over it the line of its place (each folder a click away; ›  — the folders inside),
@@ -23,6 +24,11 @@ let term: Terminal | undefined
 let fit: FitAddon | undefined
 let ro: ResizeObserver | undefined
 let off: (() => void) | undefined
+
+/** Keys that delete the selected piece of the command being typed. */
+const DELETE_KEYS: ReadonlySet<string> = new Set(['Backspace', 'Delete'])
+/** Keys that only modify others (pressed alone they type nothing). */
+const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Control', 'Shift', 'Alt', 'Meta'])
 
 function fitNow(): void {
   const el = box.value
@@ -93,13 +99,14 @@ onMounted(async () => {
       return false
     }
     // a piece of the typed command selected with the mouse: Backspace / Delete remove it, Ctrl+X cuts it
-    if (term?.hasSelection() && (e.key === 'Backspace' || e.key === 'Delete' || (e.ctrlKey && e.code === 'KeyX'))) {
-      if (cutSelection(e.ctrlKey && e.code === 'KeyX')) return false
-      if (e.key !== 'Backspace' && e.key !== 'Delete') return true
+    const cut = e.ctrlKey && e.code === 'KeyX'
+    if (term?.hasSelection() && (DELETE_KEYS.has(e.key) || cut)) {
+      if (cutSelection(cut)) return false
+      if (!DELETE_KEYS.has(e.key)) return true
       term.clearSelection()
     }
     // a key typed over a Ctrl+A selection: the shell replaces the line, the shown selection goes
-    if (term?.hasSelection() && !['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) && !(e.ctrlKey && (e.code === 'KeyA' || e.code === 'KeyC'))) term.clearSelection()
+    if (term?.hasSelection() && !MODIFIER_KEYS.has(e.key) && !(e.ctrlKey && (e.code === 'KeyA' || e.code === 'KeyC'))) term.clearSelection()
     return true
   })
   // right click: a selection — copied; none — the clipboard pasted (as in Windows Terminal)
@@ -218,12 +225,10 @@ function go(path: string): void {
   window.qa.termWrite(props.session.id, `\x1bcd ${arg}\r`)
   term?.focus()
 }
+/** The folders inside a crumb (its ›): a list under it. */
 const menu = ref<{ path: string; dirs: string[] }>()
-const menuEl = ref<HTMLElement>()
 const menuAnchor = ref<HTMLElement>()
-const menuStyle = ref<Record<string, string>>({})
-const menuOpen = computed(() => !!menu.value)
-useAnchor(menuOpen, menuAnchor, () => menuAnchor.value && (menuStyle.value = placeFloat(menuAnchor.value, 260, true, 60).style))
+const menuOpen = openWhile(menu)
 async function openDirs(path: string, e: MouseEvent): Promise<void> {
   if (menu.value?.path === path) return void (menu.value = undefined)
   menuAnchor.value = e.currentTarget as HTMLElement
@@ -234,12 +239,6 @@ function pickDir(d: string): void {
   menu.value = undefined
   go(`${p.replace(/\\$/, '')}\\${d}`)
 }
-function onDown(e: PointerEvent): void {
-  const t = e.target as Node
-  if (menu.value && !menuEl.value?.contains(t) && !menuAnchor.value?.contains(t)) menu.value = undefined
-}
-onMounted(() => document.addEventListener('pointerdown', onDown, true))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
 const wantOk = computed(() => {
   const w = info.value.project?.nodeWanted
   const n = info.value.node
@@ -250,217 +249,35 @@ const wantOk = computed(() => {
 </script>
 
 <template>
-  <div class="tp" :class="{ active }" @mousedown="emit('focus')">
-    <div class="tl">
-      <span class="crumbs">
-        <Icon name="folderOpen" :size="13" class="fi" />
-        <template v-for="(c, i) in parts" :key="c.path">
-          <button class="cr" :class="{ last: i === parts.length - 1 }" :disabled="session.busy" :title="`Перейти: ${c.path}`" @click="go(c.path)">{{ c.name }}</button>
-          <button class="sep" :disabled="session.busy" :title="`Папки в ${c.name}`" @click="openDirs(c.path, $event)"><Icon name="chevronRight" :size="11" /></button>
+  <div class="tp tw:flex tw:flex-col tw:min-w-0 tw:min-h-0 tw:border tw:border-border tw:rounded-r3 tw:bg-bg tw:overflow-hidden tw:[&.active]:border-accent-line" :class="{ active }" @mousedown="emit('focus')">
+    <div class="tl tw:flex-none tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-b tw:border-b-border tw:bg-panel tw:whitespace-nowrap tw:overflow-hidden tw:font-data tw:text-[11.5px]">
+      <span class="crumbs tw:inline-flex tw:flex-[0_1_auto] tw:justify-end tw:items-center tw:min-w-40 tw:overflow-hidden">
+        <Icon name="folderOpen" :size="13" class="fi tw:[&&]:flex-none tw:mr-4 tw:text-warn" />
+        <template class="tw:flex-none" v-for="(c, i) in parts" :key="c.path">
+          <button class="cr tw:flex-none tw:inline-flex tw:items-center tw:h-22 tw:py-0 tw:px-4 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-text-2 tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:[line-height:inherit] tw:font-[inherit] tw:cursor-default tw:[&.last]:text-text-hi tw:[&.last]:font-semibold tw:hover:enabled:bg-hover tw:hover:enabled:text-accent-fg tw:hover:enabled:border-border-3" :class="{ last: i === parts.length - 1 }" :disabled="session.busy" :title="`Перейти: ${c.path}`" @click="go(c.path)">{{ c.name }}</button>
+          <button class="sep tw:flex-none tw:inline-flex tw:items-center tw:h-22 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:[font:inherit] tw:cursor-default tw:py-0 tw:px-1 tw:text-dim tw:hover:enabled:bg-hover tw:hover:enabled:text-accent-fg tw:hover:enabled:border-border-3" :disabled="session.busy" :title="`Папки в ${c.name}`" @click="openDirs(c.path, $event)"><Icon name="chevronRight" :size="11" /></button>
         </template>
       </span>
-      <span v-if="info.branch" class="seg git" :title="`Ветка git${info.dirty ? ` · изменено файлов: ${info.dirty}` : ''}`">
-        <Icon name="branch" :size="12" />{{ info.branch }}<b v-if="info.dirty">±{{ info.dirty }}</b>
+      <span v-if="info.branch" class="seg git tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-warn/14 tw:text-warn-fg" :title="`Ветка git${info.dirty ? ` · изменено файлов: ${info.dirty}` : ''}`">
+        <Icon name="branch" :size="12" />{{ info.branch }}<b class="tw:ml-3 tw:text-down-fg tw:font-semibold" v-if="info.dirty">±{{ info.dirty }}</b>
       </span>
-      <span class="grow"></span>
-      <span v-if="session.skipped" class="seg dim" :title="`Вывод шёл быстрее проверки реакций — ${Math.round(session.skipped / 1024)} КБ пропущено без проверки (терминал показал всё)`">⚠ {{ Math.round(session.skipped / 1024) }} КБ без проверки</span>
-      <span v-if="session.busy" class="seg run"><i></i>выполняется</span>
-      <span v-else-if="session.failed !== undefined && session.exited === undefined" class="seg bad" title="Последняя команда завершилась с ошибкой — пройдёт, когда команда выполнится успешно">ошибка · код {{ session.failed }}</span>
-      <span v-else-if="session.lastMs !== undefined" class="seg dim" title="Сколько шла последняя команда">{{ session.lastMs < 1000 ? `${(session.lastMs / 1000).toFixed(1)}s` : formatDuration(session.lastMs) }}</span>
-      <span v-if="info.project?.name" class="seg pkg" :title="`package.json${info.project.packageManager ? ` · ${info.project.packageManager}` : ''}`">{{ info.project.name }}<template v-if="info.project.version">@{{ info.project.version }}</template></span>
-      <span v-if="info.node" class="seg node" :class="{ bad: !wantOk }" :title="info.project?.nodeWanted ? `Проект просит node ${info.project.nodeWanted}` : 'Версия node в этой оболочке'">⬢ {{ info.node }}<template v-if="!wantOk"> ≠ {{ info.project?.nodeWanted }}</template></span>
-      <span v-if="info.npm" class="seg npm" title="npm">npm {{ info.npm }}</span>
-      <span v-if="info.pnpm" class="seg pnpm" title="pnpm">pnpm {{ info.pnpm }}</span>
-      <span v-if="session.exited !== undefined" class="seg bad">завершён ({{ session.exited }})</span>
+      <span class="grow tw:flex-1"></span>
+      <span v-if="session.skipped" class="seg dim tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-transparent tw:text-muted" :title="`Вывод шёл быстрее проверки реакций — ${Math.round(session.skipped / 1024)} КБ пропущено без проверки (терминал показал всё)`">⚠ {{ Math.round(session.skipped / 1024) }} КБ без проверки</span>
+      <span v-if="session.busy" class="seg run tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-accent-soft tw:text-accent-fg"><i class="tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-accent tw:animate-[TermPane-tp-blink_1s_steps(2)_infinite]"></i>выполняется</span>
+      <span v-else-if="session.failed !== undefined && session.exited === undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg" title="Последняя команда завершилась с ошибкой — пройдёт, когда команда выполнится успешно">ошибка · код {{ session.failed }}</span>
+      <span v-else-if="session.lastMs !== undefined" class="seg dim tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-transparent tw:text-muted" title="Сколько шла последняя команда">{{ session.lastMs < 1000 ? `${(session.lastMs / 1000).toFixed(1)}s` : formatDuration(session.lastMs) }}</span>
+      <span v-if="info.project?.name" class="seg pkg tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-info/12 tw:text-info-fg" :title="`package.json${info.project.packageManager ? ` · ${info.project.packageManager}` : ''}`">{{ info.project.name }}<template v-if="info.project.version">@{{ info.project.version }}</template></span>
+      <span v-if="info.node" class="seg node tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-up/12 tw:text-up-fg tw:[&.bad]:bg-down/16 tw:[&.bad]:text-down-fg" :class="{ bad: !wantOk }" :title="info.project?.nodeWanted ? `Проект просит node ${info.project.nodeWanted}` : 'Версия node в этой оболочке'">⬢ {{ info.node }}<template v-if="!wantOk"> ≠ {{ info.project?.nodeWanted }}</template></span>
+      <span v-if="info.npm" class="seg npm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/12 tw:text-down-fg" title="npm">npm {{ info.npm }}</span>
+      <span v-if="info.pnpm" class="seg pnpm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-warn/12 tw:text-warn-fg" title="pnpm">pnpm {{ info.pnpm }}</span>
+      <span v-if="session.exited !== undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg">завершён ({{ session.exited }})</span>
     </div>
-    <div ref="box" class="xt" @wheel="onWheel"></div>
-    <Teleport to="body">
-      <div v-if="menu" ref="menuEl" class="tdirs" :style="menuStyle">
-        <button v-for="d in menu.dirs" :key="d" @click="pickDir(d)"><Icon name="folder" :size="12" />{{ d }}</button>
-        <p v-if="!menu.dirs.length">Папок нет</p>
-      </div>
-    </Teleport>
+    <div ref="box" class="xt tw:flex-1 tw:min-h-0 tw:pt-4 tw:pr-0 tw:pb-0 tw:pl-6" @wheel="onWheel"></div>
+    <Popover v-model:open="menuOpen" :anchor="menuAnchor" :width="260" align-left :chrome="60" max-height="none" class="tdirs tw:flex tw:flex-col tw:max-h-340 tw:overflow-y-auto tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+        <button class="tw:flex tw:items-center tw:gap-7 tw:py-5 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:whitespace-nowrap tw:hover:bg-hover" v-for="d in menu?.dirs" :key="d" @click="pickDir(d)"><Icon class="tw:text-warn" name="folder" :size="12" />{{ d }}</button>
+        <p class="tw:m-8 tw:text-muted tw:text-[12px]" v-if="!menu?.dirs.length">Папок нет</p>
+    </Popover>
   </div>
 </template>
 
-<style scoped>
-.tp {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-  background: var(--bg);
-  overflow: hidden;
-}
-.tp.active {
-  border-color: var(--accent-line);
-}
-.tl {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  white-space: nowrap;
-  overflow: hidden;
-  font-family: var(--font-data);
-  font-size: 11.5px;
-}
-.crumbs {
-  /* short of room — the start of the path goes, the folder you are in stays */
-  display: inline-flex;
-  flex: 0 1 auto;
-  justify-content: flex-end;
-  align-items: center;
-  min-width: 40px;
-  overflow: hidden;
-}
-.crumbs > * {
-  flex: none;
-}
-.fi {
-  flex: none;
-  margin-right: 4px;
-  color: var(--warn);
-}
-.cr,
-.sep {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: var(--r1);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  cursor: default;
-}
-.cr.last {
-  color: var(--text-hi);
-  font-weight: 600;
-}
-.sep {
-  padding: 0 1px;
-  color: var(--dim);
-}
-.cr:hover:not(:disabled),
-.sep:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--accent-fg);
-}
-.seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  padding: 0 7px;
-  height: 20px;
-  border-radius: var(--r2);
-  background: var(--panel-3);
-  color: var(--text-2);
-}
-.seg.git {
-  background: rgba(255, 183, 77, 0.14);
-  color: var(--warn-fg);
-}
-.seg.git b {
-  margin-left: 3px;
-  color: var(--down-fg);
-  font-weight: 600;
-}
-.seg.node {
-  background: rgba(0, 230, 118, 0.12);
-  color: var(--up-fg);
-}
-.seg.npm {
-  background: rgba(255, 61, 61, 0.12);
-  color: var(--down-fg);
-}
-.seg.pnpm {
-  background: rgba(255, 183, 77, 0.12);
-  color: var(--warn-fg);
-}
-.seg.pkg {
-  background: rgba(68, 138, 255, 0.12);
-  color: var(--info-fg);
-}
-.seg.dim {
-  background: transparent;
-  color: var(--muted);
-}
-.seg.bad {
-  background: rgba(255, 61, 61, 0.16);
-  color: var(--down-fg);
-}
-.seg.run {
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-}
-.seg.run i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: tp-blink 1s steps(2) infinite;
-}
-@keyframes tp-blink {
-  50% {
-    opacity: 0.3;
-  }
-}
-.grow {
-  flex: 1;
-}
-.xt {
-  flex: 1;
-  min-height: 0;
-  padding: 4px 0 0 6px;
-}
-.xt :deep(.xterm) {
-  height: 100%;
-}
-.xt :deep(.xterm-viewport) {
-  background: transparent !important;
-}
-.tdirs {
-  display: flex;
-  flex-direction: column;
-  max-height: 340px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.tdirs button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-size: 12.5px;
-  text-align: left;
-  white-space: nowrap;
-}
-.tdirs button:hover {
-  background: var(--hover);
-}
-.tdirs button svg {
-  color: var(--warn);
-}
-.tdirs p {
-  margin: 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-</style>
+<style scoped src="./TermPane.css"></style>

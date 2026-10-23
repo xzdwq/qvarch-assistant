@@ -9,14 +9,15 @@ import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './
 import type { BrowserApi } from './browser'
 import type { TestFilesApi } from './testFiles'
 import type { SqlApi } from './sql'
-import type { PwBrowser } from './runbook'
-import type { LoopJob, LoopResult, PassResult } from './loop'
+import type { PwBrowser } from '../notebook/domain/blockInfo'
+import type { LoopJob, LoopResult, PassResult } from '../notebook/domain/loop'
 import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
-import type { VaultHit, VaultNode } from './vault'
+import type { VaultEntryKind, VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
 import type { TabletMsg, TabletPrefs, TabletState } from './tablet'
+import type { AudioNoteKind } from './tracker/constants'
 
 export interface IslandLayout {
   /** Island sits in the lower half of the screen → content grows upward. */
@@ -91,7 +92,7 @@ export interface QaApi {
   /** Deletes a downloaded model (frees the space). */
   voiceDeleteModel(id: string): Promise<void>
   /** A recording becomes a note (voice note or a call recording). */
-  saveAudioNote(day: string, note: { id: string; at: number; durationSec: number; kind: 'voice' | 'call'; text?: string; entryId?: string }, audio: Uint8Array): Promise<Note>
+  saveAudioNote(day: string, note: { id: string; at: number; durationSec: number; kind: AudioNoteKind; text?: string; entryId?: string }, audio: Uint8Array): Promise<Note>
   /** 16 kHz mono WAV of the note's audio → transcript (stored on the note). */
   transcribeNote(day: string, noteId: string, wav: Uint8Array): Promise<string>
   readAudio(file: string): Promise<Uint8Array>
@@ -247,7 +248,7 @@ export interface QaApi {
   vaultRead(path: string): Promise<string>
   vaultWrite(path: string, text: string): Promise<void>
   /** A new note / folder with a free name in `dir`; its path. */
-  vaultCreate(dir: string, kind: 'note' | 'folder' | 'board', name?: string, text?: string): Promise<string>
+  vaultCreate(dir: string, kind: VaultEntryKind, name?: string, text?: string): Promise<string>
   /** Rename / move; the new path. */
   vaultMove(from: string, toDir: string, name?: string): Promise<string>
   /** To the recycle bin. */
@@ -306,7 +307,7 @@ export interface QaApi {
   /** The AI assistants' server (MCP): its settings, the clients set up. */
   mcpInfo(): Promise<McpInfoView>
   mcpSet(patch: { on?: boolean; port?: number; allow?: string[]; newToken?: boolean }): Promise<McpInfoView>
-  mcpInstall(client: 'desktop' | 'code'): Promise<string>
+  mcpInstall(client: McpClient): Promise<string>
   /** The main process asks the window to do something with the notes (for an AI tool). */
   onMcpCall(cb: (id: string, op: string, args: Record<string, unknown>) => void): () => void
   mcpReply(id: string, ok: boolean, value: unknown): void
@@ -337,186 +338,6 @@ export interface QaApi {
   onVault(cb: (paths: string[]) => void): () => void
 }
 
-export const IPC = {
-  getDay: 'qa:getDay',
-  getLive: 'qa:getLive',
-  saveEntry: 'qa:saveEntry',
-  deleteEntry: 'qa:deleteEntry',
-  moveEntry: 'qa:moveEntry',
-  saveNote: 'qa:saveNote',
-  deleteNote: 'qa:deleteNote',
-  savePlan: 'qa:savePlan',
-  setDayTasks: 'qa:setDayTasks',
-  setEntryTask: 'qa:setEntryTask',
-  search: 'qa:search',
-  voiceState: 'qa:voiceState',
-  voice: 'qa:voice',
-  voiceDownloadModel: 'qa:voiceDownloadModel',
-  voiceDeleteModel: 'qa:voiceDeleteModel',
-  saveAudioNote: 'qa:saveAudioNote',
-  transcribeNote: 'qa:transcribeNote',
-  readAudio: 'qa:readAudio',
-  tasks: 'qa:tasks',
-  saveTask: 'qa:saveTask',
-  deleteTask: 'qa:deleteTask',
-  tasksChanged: 'qa:tasksChanged',
-  noteToTask: 'qa:noteToTask',
-  deletePlan: 'qa:deletePlan',
-  planDone: 'qa:planDone',
-  mergeEntries: 'qa:mergeEntries',
-  rangeDays: 'qa:rangeDays',
-  eventsIndex: 'qa:eventsIndex',
-  sigList: 'qa:sigList',
-  sigSave: 'qa:sigSave',
-  sigDelete: 'qa:sigDelete',
-  pdfSave: 'qa:pdfSave',
-  imageSave: 'qa:imageSave',
-  fileSave: 'qa:fileSave',
-  hashOf: 'qa:hashOf',
-  tabletState: 'qa:tabletState',
-  tabletSet: 'qa:tabletSet',
-  tabletLive: 'qa:tabletLive',
-  tabletCanvas: 'qa:tabletCanvas',
-  tabletMsg: 'qa:tabletMsg',
-  releaseOpen: 'qa:releaseOpen',
-  releaseCmd: 'qa:releaseCmd',
-  releaseMsg: 'qa:releaseMsg',
-  releaseProjects: 'qa:releaseProjects',
-  releaseSaveProject: 'qa:releaseSaveProject',
-  releaseDeleteProject: 'qa:releaseDeleteProject',
-  releaseImport: 'qa:releaseImport',
-  releasePickFolder: 'qa:releasePickFolder',
-  releaseOpenInCode: 'qa:releaseOpenInCode',
-  getSelection: 'qa:getSelection',
-  setSelection: 'qa:setSelection',
-  getSettings: 'qa:getSettings',
-  updateSettings: 'qa:updateSettings',
-  islandSolid: 'qa:islandSolid',
-  islandRect: 'qa:islandRect',
-  islandBlur: 'qa:islandBlur',
-  islandFocus: 'qa:islandFocus',
-  getIslandLayout: 'qa:getIslandLayout',
-  openMain: 'qa:openMain',
-  command: 'qa:command',
-  dayState: 'qa:dayState',
-  navigate: 'qa:navigate',
-  islandHotkey: 'qa:islandHotkey',
-  islandHover: 'qa:islandHover',
-  islandLayout: 'qa:islandLayout',
-  settings: 'qa:settings',
-  outlookState: 'qa:outlookState',
-  outlook: 'qa:outlook',
-  outlookLogin: 'qa:outlookLogin',
-  outlookLogout: 'qa:outlookLogout',
-  outlookSync: 'qa:outlookSync',
-  jiraState: 'qa:jiraState',
-  jira: 'qa:jira',
-  jiraLogin: 'qa:jiraLogin',
-  jiraLogout: 'qa:jiraLogout',
-  jiraSync: 'qa:jiraSync',
-  jiraSetSecret: 'qa:jiraSetSecret',
-  jiraStar: 'qa:jiraStar',
-  jiraSetMyStatus: 'qa:jiraSetMyStatus',
-  jiraTracked: 'qa:jiraTracked',
-  jiraWorked: 'qa:jiraWorked',
-  jiraFind: 'qa:jiraFind',
-  jiraIssue: 'qa:jiraIssue',
-  jiraVersions: 'qa:jiraVersions',
-  httpLoad: 'qa:httpLoad',
-  termCreate: 'qa:termCreate',
-  termWrite: 'qa:termWrite',
-  termResize: 'qa:termResize',
-  termKill: 'qa:termKill',
-  termRename: 'qa:termRename',
-  termReplay: 'qa:termReplay',
-  termList: 'qa:termList',
-  termDirs: 'qa:termDirs',
-  termConfig: 'qa:termConfig',
-  termSetConfig: 'qa:termSetConfig',
-  termRender: 'qa:termRender',
-  termData: 'qa:termData',
-  termState: 'qa:termState',
-  termValues: 'qa:termValues',
-  termAlerts: 'qa:termAlerts',
-  termDismiss: 'qa:termDismiss',
-  termAlertsEv: 'qa:termAlertsEv',
-  httpSave: 'qa:httpSave',
-  httpRun: 'qa:httpRun',
-  httpImport: 'qa:httpImport',
-  httpChain: 'qa:httpChain',
-  httpAbort: 'qa:httpAbort',
-  httpChainEv: 'qa:httpChainEv',
-  browser: 'qa:browser',
-  files: 'qa:files',
-  sql: 'qa:sql',
-  clip: 'qa:clip',
-  clipEv: 'qa:clipEv',
-  browserLayout: 'qa:browserLayout',
-  browserEv: 'qa:browserEv',
-  jiraVersionIssues: 'qa:jiraVersionIssues',
-  calendarRange: 'qa:calendarRange',
-  openExternal: 'qa:openExternal',
-  copyImage: 'qa:copyImage',
-  combo: 'qa:combo',
-  getCombo: 'qa:getCombo',
-  pulse: 'qa:pulse',
-  getPulse: 'qa:getPulse',
-  vaultTree: 'qa:vaultTree',
-  vaultRead: 'qa:vaultRead',
-  vaultWrite: 'qa:vaultWrite',
-  vaultCreate: 'qa:vaultCreate',
-  vaultMove: 'qa:vaultMove',
-  vaultDelete: 'qa:vaultDelete',
-  vaultSearch: 'qa:vaultSearch',
-  eventMentions: 'qa:eventMentions',
-  vaultSaveAudio: 'qa:vaultSaveAudio',
-  vaultReadAudio: 'qa:vaultReadAudio',
-  vaultTranscribe: 'qa:vaultTranscribe',
-  vaultTranscribeCancel: 'qa:vaultTranscribeCancel',
-  vaultReveal: 'qa:vaultReveal',
-  vaultSetColor: 'qa:vaultSetColor',
-  vaultSetEmoji: 'qa:vaultSetEmoji',
-  vaultPair: 'qa:vaultPair',
-  vaultDeleteAudio: 'qa:vaultDeleteAudio',
-  vaultRestoreAudio: 'qa:vaultRestoreAudio',
-  vaultSaveImage: 'qa:vaultSaveImage',
-  runLoad: 'qa:runLoad',
-  runSave: 'qa:runSave',
-  runCode: 'qa:runCode',
-  runCodeStop: 'qa:runCodeStop',
-  runLoop: 'qa:runLoop',
-  runLoopPass: 'qa:runLoopPass',
-  runLoopStop: 'qa:runLoopStop',
-  loopPass: 'qa:loopPass',
-  runPw: 'qa:runPw',
-  runPwStop: 'qa:runPwStop',
-  pwProgress: 'qa:pwProgress',
-  runFile: 'qa:runFile',
-  pwTrace: 'qa:pwTrace',
-  pwAllure: 'qa:pwAllure',
-  nbNet: 'qa:nbNet',
-  nbNetClear: 'qa:nbNetClear',
-  nbEv: 'qa:nbEv',
-  browserOpen: 'qa:browserOpen',
-  mcpInfo: 'qa:mcpInfo',
-  mcpSet: 'qa:mcpSet',
-  mcpInstall: 'qa:mcpInstall',
-  mcpCall: 'qa:mcpCall',
-  mcpReply: 'qa:mcpReply',
-  docExport: 'qa:docExport',
-  docImport: 'qa:docImport',
-  docImportFile: 'qa:docImportFile',
-  vaultReadImage: 'qa:vaultReadImage',
-  vaultDeleteImage: 'qa:vaultDeleteImage',
-  vaultRestoreImage: 'qa:vaultRestoreImage',
-  vaultClipImage: 'qa:vaultClipImage',
-  vaultFetchImage: 'qa:vaultFetchImage',
-  repeatEntry: 'qa:repeatEntry',
-  seriesSave: 'qa:seriesSave',
-  seriesDelete: 'qa:seriesDelete',
-  setRemind: 'qa:setRemind',
-  vault: 'qa:vault',
-} as const
 
 // ---------- a notebook's Playwright block ----------
 export interface PwStep {
@@ -563,6 +384,8 @@ export interface PwResult {
   browser?: string
 }
 
+/** The AI clients Qvarch can set itself up in: Claude Desktop (its config file), Claude Code (its own command). */
+export type McpClient = 'desktop' | 'code'
 export interface McpInfoView {
   on: boolean
   port: number

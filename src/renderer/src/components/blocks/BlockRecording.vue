@@ -7,73 +7,11 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).p
 </script>
 
 <template>
-  <div class="rc">
-    <span class="dot"></span>
-    <b>{{ fmt(props.sec) }}</b>
-    <span class="meter"><i :style="{ width: `${Math.round(props.level * 100)}%` }"></i></span>
-    <span class="muted">Идёт запись — запись встанет здесь</span>
-    <button @mousedown.prevent @click="props.onStop()"><Icon name="stop" :size="11" />Остановить</button>
+  <div class="rc tw:inline-flex tw:items-center tw:gap-10 tw:max-w-full tw:pt-6 tw:pr-8 tw:pb-6 tw:pl-12 tw:border tw:border-stop/50 tw:rounded-[10px] tw:bg-stop/8 tw:text-[12.5px] tw:whitespace-nowrap">
+    <span class="dot tw:w-9 tw:h-9 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockRecording-blink_1s_infinite]"></span>
+    <b class="tw:min-w-36 tw:text-text-hi tw:font-data">{{ fmt(props.sec) }}</b>
+    <span class="meter tw:w-90 tw:h-6 tw:rounded-[3px] tw:bg-panel-3 tw:overflow-hidden"><i class="tw:block tw:h-full tw:bg-stop tw:[transition:width_0.08s]" :style="{ width: `${Math.round(props.level * 100)}%` }"></i></span>
+    <span class="muted tw:overflow-hidden tw:text-muted tw:text-ellipsis">Идёт запись — запись встанет здесь</span>
+    <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-[6px] tw:bg-stop tw:text-white tw:text-[12px] tw:hover:enabled:brightness-110" @mousedown.prevent @click="props.onStop()"><Icon name="stop" :size="11" />Остановить</button>
   </div>
 </template>
-
-<style scoped>
-.rc {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 100%;
-  padding: 6px 8px 6px 12px;
-  border: 1px solid rgba(239, 68, 68, 0.5);
-  border-radius: 10px;
-  background: rgba(239, 68, 68, 0.08);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #ef4444;
-  animation: blink 1s infinite;
-}
-@keyframes blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-b {
-  min-width: 36px;
-  color: var(--text-hi);
-  font-family: var(--font-data);
-}
-.meter {
-  width: 90px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--panel-3);
-  overflow: hidden;
-}
-.meter i {
-  display: block;
-  height: 100%;
-  background: #ef4444;
-  transition: width 0.08s;
-}
-.muted {
-  overflow: hidden;
-  color: var(--muted);
-  text-overflow: ellipsis;
-}
-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 12px;
-}
-</style>

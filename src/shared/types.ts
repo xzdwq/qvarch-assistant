@@ -1,4 +1,7 @@
 import type { Remind, RepeatRule } from './repeat'
+import type { OutlookSource } from './outlook'
+import type { Contrast } from './contrast'
+import type { AudioNoteKind } from './tracker/constants'
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -89,7 +92,7 @@ export interface Note {
   text: string
   updatedAt: Ms
   /** A voice note / a call recording: the audio file (relative to the data folder). */
-  audio?: { file: string; durationSec: number; kind: 'voice' | 'call' }
+  audio?: { file: string; durationSec: number; kind: AudioNoteKind }
   /** Local speech-to-text of the audio (whisper.cpp). */
   transcript?: string
   /** The own task this note was turned into. */
@@ -198,7 +201,7 @@ export interface UiPrefs {
    */
   timeline: { follow: boolean; stepSec: number; leftPx: number; idleSec: number; zoom: 'keep' | 'fixed'; spanMin: number; countdown: 'any' | 'outlook' }
   /** The look: contrast, the accent colour, the panels' corners (px), numbers in the mono face. */
-  theme: { contrast: 'soft' | 'normal' | 'high'; accent: string; radius: number; mono: boolean }
+  theme: { contrast: Contrast; accent: string; radius: number; mono: boolean }
   /** The main menu: the sections in the user's order; hidden ones are not shown. */
   menu: { order: string[]; hidden: string[] }
 }
@@ -218,7 +221,7 @@ export interface Settings {
    * Outlook / Teams over Microsoft Graph (the user's own app registration, public client — no secret).
    * syncMin — how often meetings are fetched; meetings → blocks; calls → linked to meetings; presence → a call signal.
    */
-  outlook: { source: 'local' | 'graph'; clientId?: string; tenantId?: string; syncMin: number; meetings: boolean; presence: boolean }
+  outlook: { source: OutlookSource; clientId?: string; tenantId?: string; syncMin: number; meetings: boolean; presence: boolean }
   /** Voice notes: local speech-to-text (whisper) — on/off, right after recording, which model; micId — the microphone ('' — the system's default). */
   voice: { enabled: boolean; autoTranscribe: boolean; model: string; micId?: string }
   idleThresholdSec: number

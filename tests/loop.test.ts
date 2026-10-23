@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { bodyVars, findLoops, loopAt, loopOpenMd, parseLoopInfo, LOOP_CLOSE_MD } from '../src/shared/loop'
-import { findBlocks } from '../src/shared/noteBlocks'
-import { parseInfo, runKindOf } from '../src/shared/runbook'
+import { bodyVars, findLoops, loopAt, loopOpenMd, parseLoopInfo, LOOP_CLOSE_MD } from '../src/notebook/domain/loop'
+import { findBlocks } from '../src/notebook/domain/findBlocks'
+import { fenceKindOfInfoLine } from '../src/notebook/domain/findBlocks'
 import { runLoopHead } from '../src/main/runner/loopCore'
-import type { LoopJob, PassResult } from '../src/shared/loop'
+import type { LoopJob, PassResult } from '../src/notebook/domain/loop'
 
 const note = [
   '# Заметка',
@@ -45,8 +45,8 @@ describe('loop: the note', () => {
   it('blocks: a start with its head, an end, a template', () => {
     const kinds = findBlocks(note).map((b) => `${b.kind}:${b.line0}-${b.line1}`)
     expect(kinds).toEqual(['loop:2-5', 'http:6-8', 'loop:9-12', 'tpl:13-15', 'loopEnd:16-16', 'loopEnd:18-18'])
-    expect(runKindOf(parseInfo('md template name=x'))).toBe('tpl')
-    expect(runKindOf(parseInfo('md name=x'))).toBeUndefined()
+    expect(fenceKindOfInfoLine('md template name=x')).toBe('tpl')
+    expect(fenceKindOfInfoLine('md name=x')).toBeUndefined()
   })
   it('a start with no head; no end — no body', () => {
     const ls = findLoops(['<!-- qa:loop name=a -->', 'text'])

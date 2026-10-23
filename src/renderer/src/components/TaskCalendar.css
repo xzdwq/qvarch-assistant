@@ -1,0 +1,20 @@
+/* TaskCalendar: what its template cannot carry as utilities (scoped). */
+
+/* ---------- layout: the strip + the side panel ---------- */
+
+/* ---------- the strip ---------- */
+/* events: the text close to the edges, smaller; the title wraps as far as the event is tall */
+/* the new event: a dashed outline marching round until it is saved */
+.hint {
+  font-size: 11px;
+}
+/* under a fanned-out group of notes: the pointer may cross it without the group folding back */
+/* the list: days on the left, the open card highlighted in the middle */
+.picker {
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

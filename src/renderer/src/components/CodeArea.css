@@ -1,0 +1,9 @@
+/* CodeArea: what its template cannot carry as utilities (scoped). */
+
+.ca :deep(.cm-editor) {
+  max-height: 100%;
+}
+/* fill: as tall as its box, scrolling inside */
+.ca.fill :deep(.cm-editor) {
+  height: 100%;
+}

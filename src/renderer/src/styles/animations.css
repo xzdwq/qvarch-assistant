@@ -1,0 +1,296 @@
+/* The components' animations (moved from their styles: <Component>-<name>). */
+
+@keyframes App-qa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes BrowserView-prblink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes BrowserView-bv-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes BrowserView-bv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes BrowserView-bv-load {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@keyframes HttpView-hv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes NotebookView-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes ReleaseView-qspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ReportsView-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes SheetView-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes SheetView-shake {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes TaskList-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes TerminalView-tv-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes WorkBoard-flash {
+  0% {
+    background: rgb(var(--accent-rgb) / 0.4);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes WorkBoard-live-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes WorkBoard-live-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.88);
+  }
+}
+
+@keyframes WorkBoard-live-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes WorkList-live-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes WorkList-live-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.88);
+  }
+}
+
+@keyframes WorkList-live-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes AudioNote-sp {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes BlockRecording-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes CheckPanel-ckblink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes EventStream-es-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes HooksPanel-hblink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes KindMenu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes LabelInput-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes StatusBar-blink-fast {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes StatusBar-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes TaskCalendar-ants {
+  to {
+    background-position:
+      10px 0,
+      -10px 100%,
+      0 -10px,
+      100% 10px,
+      0 0;
+  }
+}
+
+@keyframes TermPane-tp-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes Timeline-flow {
+  to {
+    background-position: 17px 0;
+  }
+}
+
+@keyframes Timeline-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes Island-pulse {
+  50% {
+    box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.22);
+  }
+}
+
+@keyframes Island-flow {
+  to {
+    background-position: 14px 0;
+  }
+}
+
+@keyframes Island-comboShake {
+  0% {
+    transform: translate(0, 0) scale(1.08);
+  }
+  25% {
+    transform: translate(var(--amp), calc(var(--amp) * -0.5)) rotate(-1.5deg);
+  }
+  50% {
+    transform: translate(calc(var(--amp) * -1), calc(var(--amp) * 0.5)) rotate(1deg);
+  }
+  75% {
+    transform: translate(calc(var(--amp) * 0.4), 0);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes Island-nslide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes Island-recpulse {
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 61, 61, 0.25);
+  }
+}
+
+@keyframes Island-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes BlockBrowser-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes BlockPw-prblink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes BlockPw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes RunHead-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}

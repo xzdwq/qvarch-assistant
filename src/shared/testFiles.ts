@@ -4,6 +4,8 @@
  * / refused) and a note. A scenario names one as qa.file('Набор/файл.xlsx'); «Прогнать с разными файлами» runs it once
  * per file of a set.
  */
+import type { QaMark } from './browser/constants'
+
 export interface TestFile {
   name: string
   size: number
@@ -69,7 +71,7 @@ export function answerText(res?: string): string {
   }
   return cut(res.replace(/\s+/g, ' ').trim())
 }
-export function judgeFile(expect: TestFile['expect'], o: FileObs): { state: 'ok' | 'warn' | 'fail'; result: string; detail: string } {
+export function judgeFile(expect: TestFile['expect'], o: FileObs): { state: QaMark; result: string; detail: string } {
   const bad5 = o.muts.find((m) => (m.status ?? 0) >= 500)
   if (bad5) return { state: 'fail', result: `Ошибка сервера ${bad5.status}`, detail: answerText(bad5.res) || bad5.line }
   const errs = o.hints.filter((h) => ERROR_WORDS.test(h))

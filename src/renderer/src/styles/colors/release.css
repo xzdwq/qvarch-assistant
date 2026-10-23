@@ -1,0 +1,7 @@
+/* Colours of the release screen. */
+:root {
+  /* a caution mark: a commit touching the files of another branch, a task diverged on dev */
+  --release-caution: #fb923c;
+  /* the main line of the chronology rail */
+  --release-rail-trunk: #6b7387;
+}

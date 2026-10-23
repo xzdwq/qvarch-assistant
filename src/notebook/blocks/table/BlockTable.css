@@ -1,0 +1,11 @@
+/* BlockTable: what its template cannot carry as utilities (scoped). */
+
+/* (the line over the table — its own rules: TableTools.css) */
+.bt-json :deep(.cm-editor) {
+  max-height: 420px;
+}
+/* room around the table for its «+» and handles (they stand on its borders); under the tools, never over them */
+/* a merged cell: its text in the middle (as Excel's «merge and centre») */
+/* a cell merged down to the last row: no line under it (the table's border is there) */
+/* a cell as it shows (the one typed in is a field): one line cut with «…», or wrapped */
+/* the «+» on a border: between this column and the next / this row and the next */

@@ -38,18 +38,26 @@ function commit(): void {
   set(atTime(dayKey(props.modelValue), `${m[1]}:${m[2]}`))
 }
 
+/** An arrow moves the time by a minute (5 with Shift): up — later, down — earlier. */
+function nudgeByKey(e: KeyboardEvent, dir: 1 | -1): void {
+  e.preventDefault()
+  nudge(dir * (e.shiftKey ? 5 : 1))
+}
+/** The keys of the field: the arrows nudge, Enter applies (by leaving). */
+const KEY_ACTIONS: Partial<Record<string, (e: KeyboardEvent) => void>> = {
+  ArrowUp: (e) => nudgeByKey(e, 1),
+  ArrowDown: (e) => nudgeByKey(e, -1),
+  Enter: (e) => (e.target as HTMLInputElement).blur(),
+}
 function onKey(e: KeyboardEvent): void {
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    e.preventDefault()
-    nudge((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 5 : 1))
-  } else if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+  KEY_ACTIONS[e.key]?.(e)
 }
 </script>
 
 <template>
-  <span class="tf" :class="{ compact }" @wheel.prevent="nudge(($event.deltaY < 0 ? 1 : -1) * ($event.shiftKey ? 5 : 1))">
-    <button tabindex="-1" title="−1 мин (Shift — 5)" @click="nudge($event.shiftKey ? -5 : -1)"><Icon name="chevronLeft" :size="13" /></button>
-    <input
+  <span class="tf tw:group/tf tw:inline-flex tw:items-center tw:bg-field tw:border tw:border-border tw:rounded-[4px] tw:overflow-hidden tw:[transition:border-color_0.15s] tw:focus-within:border-accent" :class="{ compact }" @wheel.prevent="nudge(($event.deltaY < 0 ? 1 : -1) * ($event.shiftKey ? 5 : 1))">
+    <button class="tw:inline-flex tw:items-center tw:border-0 tw:rounded-none tw:bg-transparent tw:py-4 tw:px-7 tw:text-muted tw:leading-none tw:hover:text-text tw:hover:bg-hover tw:group-[.compact]/tf:py-2 tw:group-[.compact]/tf:px-5 tw:hover:enabled:border-border-3" tabindex="-1" title="−1 мин (Shift — 5)" @click="nudge($event.shiftKey ? -5 : -1)"><Icon name="chevronLeft" :size="13" /></button>
+    <input class="tw:w-46 tw:border-0 tw:bg-transparent tw:py-4 tw:px-0 tw:text-center tw:tabular-nums tw:font-data tw:font-semibold tw:group-[.compact]/tf:w-42 tw:group-[.compact]/tf:text-[12px] tw:group-[.compact]/tf:py-2 tw:group-[.compact]/tf:px-0"
       v-if="!live || editing"
       v-model="text"
       maxlength="5"
@@ -57,62 +65,7 @@ function onKey(e: KeyboardEvent): void {
       @blur="commit"
       @keydown="onKey"
     />
-    <span v-else class="live" title="Следует за текущим временем" @click="editing = true">сейчас</span>
-    <button tabindex="-1" title="+1 мин (Shift — 5)" @click="nudge($event.shiftKey ? 5 : 1)"><Icon name="chevronRight" :size="13" /></button>
+    <span v-else class="live tw:w-46 tw:border-0 tw:bg-transparent tw:py-4 tw:px-0 tw:text-center tw:tabular-nums tw:font-data tw:text-up-fg tw:cursor-text tw:font-medium tw:text-[12px] tw:group-[.compact]/tf:w-42 tw:group-[.compact]/tf:text-[12px] tw:group-[.compact]/tf:py-2 tw:group-[.compact]/tf:px-0" title="Следует за текущим временем" @click="editing = true">сейчас</span>
+    <button class="tw:inline-flex tw:items-center tw:border-0 tw:rounded-none tw:bg-transparent tw:py-4 tw:px-7 tw:text-muted tw:leading-none tw:hover:text-text tw:hover:bg-hover tw:group-[.compact]/tf:py-2 tw:group-[.compact]/tf:px-5 tw:hover:enabled:border-border-3" tabindex="-1" title="+1 мин (Shift — 5)" @click="nudge($event.shiftKey ? 5 : 1)"><Icon name="chevronRight" :size="13" /></button>
   </span>
 </template>
-
-<style scoped>
-.tf {
-  display: inline-flex;
-  align-items: center;
-  background: var(--field-bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  transition: border-color 0.15s;
-}
-.tf:focus-within {
-  border-color: var(--accent);
-}
-button {
-  display: inline-flex;
-  align-items: center;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 4px 7px;
-  color: var(--muted);
-  line-height: 1;
-}
-button:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-input,
-.live {
-  width: 46px;
-  border: 0;
-  background: transparent;
-  padding: 4px 0;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  font-weight: 600;
-}
-.live {
-  color: var(--up-fg);
-  cursor: text;
-  font-weight: 500;
-  font-size: 12px;
-}
-.compact input,
-.compact .live {
-  width: 42px;
-  font-size: 12px;
-  padding: 2px 0;
-}
-.compact button {
-  padding: 2px 5px;
-}
-</style>

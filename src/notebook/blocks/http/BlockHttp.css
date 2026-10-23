@@ -1,0 +1,9 @@
+/* BlockHttp: what its template cannot carry as utilities (scoped). */
+
+.bh-ed :deep(.cm-editor),
+.bh-out :deep(.cm-editor) {
+  max-height: 360px;
+}
+.bh-out :deep(.cm-scroller) {
+  overflow: auto;
+}

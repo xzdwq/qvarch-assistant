@@ -1,0 +1,9 @@
+/* PlanPanel: what its template cannot carry as utilities (scoped). */
+
+.kinds {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  align-self: flex-start;
+}

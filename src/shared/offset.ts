@@ -12,6 +12,16 @@ export function formatOffset(v: number): string {
   return `${v < 0 ? '−' : '+'}${body}`
 }
 
+/** The ways a span is written (sign taken off) → its minutes; the first that matches wins. */
+const OFFSET_FORMS: ReadonlyArray<[RegExp, (m: RegExpExecArray) => number]> = [
+  // 1:30
+  [/^(\d+):(\d{1,2})$/, (m) => +m[1] * 60 + +m[2]],
+  // 1ч30, 1.5h
+  [/^(\d+(?:\.\d+)?)(?:ч|h)(?:(\d+)(?:м|m|мин|min)?)?$/, (m) => +m[1] * 60 + (m[2] ? +m[2] : 0)],
+  // 90, 90м
+  [/^(\d+)(?:м|m|мин|min)?$/, (m) => +m[1]],
+]
+
 /**
  * What was typed → minutes (undefined if it is not a time): "30", "-30", "−1:30", "1ч30", "-1ч 30м",
  * "1,5ч", "90м", "2h". A bare number is minutes.
@@ -25,10 +35,13 @@ export function parseOffset(text: string): number | undefined {
     s = s.slice(1)
   }
   let min: number | undefined
-  let m: RegExpMatchArray | null
-  if ((m = s.match(/^(\d+):(\d{1,2})$/))) min = +m[1] * 60 + +m[2]
-  else if ((m = s.match(/^(\d+(?:\.\d+)?)(?:ч|h)(?:(\d+)(?:м|m|мин|min)?)?$/))) min = +m[1] * 60 + (m[2] ? +m[2] : 0)
-  else if ((m = s.match(/^(\d+)(?:м|m|мин|min)?$/))) min = +m[1]
+  for (const [re, minutes] of OFFSET_FORMS) {
+    const m = re.exec(s)
+    if (m) {
+      min = minutes(m)
+      break
+    }
+  }
   if (min === undefined || !Number.isFinite(min)) return undefined
   min = Math.round(min)
   return min ? sign * min : undefined

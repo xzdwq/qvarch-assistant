@@ -3,14 +3,15 @@
  * switch something off), and it can look into the site's answers (fetch / XHR, HTML, scripts…) for a text or a
  * regular expression, in a process of its own; what it finds is kept.
  */
-export type HookResType = 'fetch' | 'document' | 'script' | 'style' | 'other'
-export const HOOK_TYPES: Array<{ id: HookResType; label: string }> = [
+/** The kinds of answers a hook's search looks into (and what the list calls them). */
+export const HOOK_TYPES = [
   { id: 'fetch', label: 'fetch / XHR' },
   { id: 'document', label: 'HTML' },
   { id: 'script', label: 'JS' },
   { id: 'style', label: 'CSS' },
   { id: 'other', label: 'прочее' },
-]
+] as const satisfies ReadonlyArray<{ id: string; label: string }>
+export type HookResType = (typeof HOOK_TYPES)[number]['id']
 export interface HookSearch {
   on: boolean
   query: string
@@ -98,9 +99,8 @@ export function resType(cdpType: string | undefined, mime = ''): HookResType {
   if (t === 'stylesheet' || mime === 'text/css') return 'style'
   return 'other'
 }
-/** Text-like answers only (pictures, fonts, video are never looked into). */
-export const isTextual = (mime: string, type: HookResType) =>
-  type === 'fetch' || type === 'document' || type === 'script' || type === 'style' || /^text\/|json|xml|javascript|ecmascript|x-www-form|graphql|csv|yaml/i.test(mime)
+/** Text-like answers only (pictures, fonts, video are never looked into): every known kind, or a text's type. */
+export const isTextual = (mime: string, type: HookResType) => type !== 'other' || /^text\/|json|xml|javascript|ecmascript|x-www-form|graphql|csv|yaml/i.test(mime)
 
 /** The query as a RegExp (global), or what is wrong with it. */
 export function queryRegex(s: HookSearch): RegExp | string {

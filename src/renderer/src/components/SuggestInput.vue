@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { placeFloat, useAnchor } from '../lib/floating'
+import Popover from './Popover.vue'
 
 /**
  * A field with suggestions under it (instead of a native <datalist>, whose list stays where it opened when the page
@@ -14,12 +14,10 @@ const emit = defineEmits<{ 'update:modelValue': [v: string]; commit: [v: string]
 const el = ref<HTMLInputElement>()
 const open = ref(false)
 const idx = ref(-1)
-const style = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
-useAnchor(open, el, () => {
-  if (!el.value) return
-  const f = placeFloat(el.value, Math.max(180, el.value.offsetWidth + 40), true, 0)
-  style.value = { ...f.style, maxHeight: `${Math.min(280, f.maxH)}px` }
-})
+/** The list: a little wider than the field, up to 280px tall; the field owns the keys (Esc too). */
+const listWidth = (field: HTMLElement) => Math.max(180, field.offsetWidth + 40)
+const listHeight = (room: number) => Math.min(280, room)
+const listOpen = computed({ get: () => open.value && shown.value.length > 0, set: (v) => void (v || (open.value = false)) })
 const shown = computed(() => {
   const q = props.modelValue.trim().toLowerCase()
   const all = props.options.filter((o) => o.toLowerCase().includes(q))
@@ -34,22 +32,32 @@ function take(v: string): void {
   emit('commit', v)
   el.value?.blur()
 }
+/** The list opened and the pick moved by `step` (from nothing picked: ↓ — the first, ↑ — the last). */
+function movePick(step: 1 | -1): void {
+  open.value = true
+  const n = shown.value.length
+  if (n) idx.value = idx.value < 0 ? (step > 0 ? 0 : n - 1) : (idx.value + step + n) % n
+}
+/** What the field's keys do (each one handled stops its default). */
+const KEY_ACTIONS = new Map<string, () => void>([
+  ['ArrowDown', () => movePick(1)],
+  ['ArrowUp', () => movePick(-1)],
+  ['Enter', () => take(open.value && idx.value >= 0 ? (shown.value[idx.value] ?? props.modelValue) : props.modelValue)],
+  [
+    'Escape',
+    () => {
+      done = true
+      open.value = false
+      emit('cancel')
+      el.value?.blur()
+    },
+  ],
+])
 function onKey(e: KeyboardEvent): void {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault()
-    open.value = true
-    const n = shown.value.length
-    if (n) idx.value = (idx.value + (e.key === 'ArrowDown' ? 1 : n - 1) + (idx.value < 0 && e.key === 'ArrowUp' ? 1 : 0)) % n
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    take(open.value && idx.value >= 0 ? (shown.value[idx.value] ?? props.modelValue) : props.modelValue)
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    done = true
-    open.value = false
-    emit('cancel')
-    el.value?.blur()
-  }
+  const action = KEY_ACTIONS.get(e.key)
+  if (!action) return
+  e.preventDefault()
+  action()
 }
 function onBlur(): void {
   open.value = false
@@ -71,40 +79,7 @@ function onBlur(): void {
     @keydown="onKey"
     @blur="onBlur"
   />
-  <Teleport to="body">
-    <div v-if="open && shown.length" class="sg-pop" :style="style" @mousedown.prevent>
-      <button v-for="(o, i) in shown" :key="o" :class="{ cur: i === idx }" @mousemove="idx = i" @click="take(o)">{{ o }}</button>
-    </div>
-  </Teleport>
+  <Popover v-model:open="listOpen" :anchor="el" :width="listWidth" align-left :chrome="0" :max-height="listHeight" :esc="false" class="sg-pop tw:flex tw:flex-col tw:p-4 tw:overflow-y-auto tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop" @mousedown.prevent>
+      <button class="tw:flex-none tw:h-26 tw:py-0 tw:px-8 tw:overflow-hidden tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:font-data tw:text-[12px] tw:text-left tw:text-ellipsis tw:whitespace-nowrap tw:[&.cur]:bg-hover" v-for="(o, i) in shown" :key="o" :class="{ cur: i === idx }" @mousemove="idx = i" @click="take(o)">{{ o }}</button>
+  </Popover>
 </template>
-
-<style scoped>
-.sg-pop {
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  overflow-y: auto;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.sg-pop button {
-  flex: none;
-  height: 26px;
-  padding: 0 8px;
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sg-pop button.cur {
-  background: var(--hover);
-}
-</style>

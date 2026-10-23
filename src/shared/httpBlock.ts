@@ -3,7 +3,7 @@
  * its query laid out a parameter a line (`?a=1` / `&b=2` under the request line), the body (JSON laid out), its
  * Content-Type, the login of the site (its token headers, its cookies) — run as they are, from the note.
  */
-import { isName } from './runbook'
+import { isName } from '../notebook/domain/blockInfo'
 
 /** A request header that carries a login (a token, a session, a CSRF guard, an API key, the cookies). */
 export const AUTH_HEADER = /^(authorization|proxy-authorization|cookie|x-[\w-]*(token|auth|session|csrf|xsrf|api-?key)[\w-]*|api-?key)$/i

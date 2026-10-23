@@ -1,0 +1,8 @@
+/* ToolsView: what its template cannot carry as utilities (scoped). */
+
+.ti.on :deep(svg) {
+  color: var(--accent-fg);
+}
+.tbody > :deep(*) {
+  height: 100%;
+}

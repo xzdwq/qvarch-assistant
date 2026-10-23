@@ -1,6 +1,6 @@
 {
   "name": "qvarch-assistant",
-  "version": "0.182.0",
+  "version": "0.185.0",
   "description": "Desktop work-time tracker with an always-on-top timeline island",
   "main": "./out/main/index.js",
   "scripts": {
@@ -26,6 +26,7 @@
     "@fontsource/caveat": "^5.3.0",
     "@fontsource/marck-script": "^5.3.0",
     "@fontsource/neucha": "^5.3.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/pg": "^8.23.1",
     "@types/pg-cursor": "^2.7.2",
@@ -50,9 +51,11 @@
     "mysql-memory-server": "^1.17.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
+    "postcss-selector-parser": "^7.1.7",
     "prettier": "^3.9.10",
     "simple-git": "^3.36.0",
     "sql-formatter": "^15.9.0",
+    "tailwindcss": "^4.3.3",
     "thinking-orbs": "^0.3.2",
     "typescript": "^6.0.3",
     "vite": "^7.3.7",

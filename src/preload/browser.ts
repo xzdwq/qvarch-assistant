@@ -96,27 +96,30 @@ function drawRuler(): void {
   host = document.createElement('div')
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none'
   const root = host.attachShadow({ mode: 'closed' })
+  // (the site's page has none of the app's CSS: the rulers' colours are their own variables, on the host)
   root.innerHTML = `<style>
-    .bar{position:fixed;background:rgba(22,27,34,.92);pointer-events:auto;color:#adb7c6;font:10px/1 Consolas,monospace;user-select:none}
-    .top{left:0;right:0;top:0;height:${R}px;cursor:s-resize;border-bottom:1px solid #30363d}
-    .left{top:0;bottom:0;left:0;width:${R}px;cursor:e-resize;border-right:1px solid #30363d}
+    :host{--qa-ruler-bar:rgba(22,27,34,.92);--qa-ruler-text:#adb7c6;--qa-ruler-tick:#566173;--qa-ruler-line:#30363d;--qa-ruler-corner:#161b22;--qa-ruler-mark:#ff6b00;--qa-ruler-guide-v:#18e0ff;--qa-ruler-guide-h:#ff4fd8;--qa-ruler-on-guide:#0d1117}
+    .bar{position:fixed;background:var(--qa-ruler-bar);pointer-events:auto;color:var(--qa-ruler-text);font:10px/1 Consolas,monospace;user-select:none}
+    .top{left:0;right:0;top:0;height:${R}px;cursor:s-resize;border-bottom:1px solid var(--qa-ruler-line)}
+    .left{top:0;bottom:0;left:0;width:${R}px;cursor:e-resize;border-right:1px solid var(--qa-ruler-line)}
     canvas{position:absolute;inset:0}
-    .corner{position:fixed;left:0;top:0;width:${R}px;height:${R}px;background:#161b22;pointer-events:auto;cursor:pointer;color:#ff6b00;font:bold 12px/18px sans-serif;text-align:center;z-index:2;border:0;border-right:1px solid #30363d;border-bottom:1px solid #30363d}
+    .corner{position:fixed;left:0;top:0;width:${R}px;height:${R}px;background:var(--qa-ruler-corner);pointer-events:auto;cursor:pointer;color:var(--qa-ruler-mark);font:bold 12px/18px sans-serif;text-align:center;z-index:2;border:0;border-right:1px solid var(--qa-ruler-line);border-bottom:1px solid var(--qa-ruler-line)}
     .g{position:fixed;pointer-events:auto}
     .g.v{top:0;bottom:0;width:7px;margin-left:-3px;cursor:ew-resize}
     .g.h{left:0;right:0;height:7px;margin-top:-3px;cursor:ns-resize}
-    .g i{position:absolute;background:#18e0ff}
+    .g i{position:absolute;background:var(--qa-ruler-guide-v)}
     .g.v i{left:3px;top:0;bottom:0;width:1px}
-    .g.h i{top:3px;left:0;right:0;height:1px;background:#ff4fd8}
-    .g b{position:absolute;padding:1px 4px;border-radius:2px;background:#18e0ff;color:#0d1117;font:10px/1.4 Consolas,monospace;white-space:nowrap}
+    .g.h i{top:3px;left:0;right:0;height:1px;background:var(--qa-ruler-guide-h)}
+    .g b{position:absolute;padding:1px 4px;border-radius:2px;background:var(--qa-ruler-guide-v);color:var(--qa-ruler-on-guide);font:10px/1.4 Consolas,monospace;white-space:nowrap}
     .g.v b{top:${R + 4}px;left:6px}
-    .g.h b{left:${R + 4}px;top:6px;background:#ff4fd8}
-    .m{position:fixed;background:#ff6b00;pointer-events:none}
+    .g.h b{left:${R + 4}px;top:6px;background:var(--qa-ruler-guide-h)}
+    .m{position:fixed;background:var(--qa-ruler-mark);pointer-events:none}
   </style>
   <div class="bar top"><canvas></canvas></div><div class="bar left"><canvas></canvas></div>
   <button class="corner" title="Убрать линейки">×</button><i class="m mx" style="top:0;height:${R}px;width:1px"></i><i class="m my" style="left:0;width:${R}px;height:1px"></i>`
   document.documentElement.appendChild(host)
   const [top, left] = [...root.querySelectorAll<HTMLDivElement>('.bar')]
+  const rulerColor = (name: string) => getComputedStyle(top).getPropertyValue(name).trim()
   const ticks = () => {
     for (const [bar, horiz] of [[top, true], [left, false]] as const) {
       const c = bar.querySelector('canvas')!
@@ -128,8 +131,8 @@ function drawRuler(): void {
       c.style.height = `${horiz ? R : len}px`
       const g = c.getContext('2d')!
       g.scale(dpr, dpr)
-      g.strokeStyle = '#566173'
-      g.fillStyle = '#adb7c6'
+      g.strokeStyle = rulerColor('--qa-ruler-tick')
+      g.fillStyle = rulerColor('--qa-ruler-text')
       g.font = '9px Consolas, monospace'
       g.beginPath()
       for (let p = 0; p <= len; p += 5) {

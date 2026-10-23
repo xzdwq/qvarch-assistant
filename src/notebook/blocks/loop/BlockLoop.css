@@ -1,0 +1,9 @@
+/* BlockLoop: what its template cannot carry as utilities (scoped). */
+
+/* a new loop: its kinds to start from */
+.bl-ed :deep(.cm-editor) {
+  max-height: 260px;
+}
+.lg.warn {
+  border-color: #fbbf24;
+}

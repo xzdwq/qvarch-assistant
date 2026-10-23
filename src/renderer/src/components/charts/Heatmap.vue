@@ -28,76 +28,18 @@ const peak = computed(() => {
 </script>
 
 <template>
-  <div class="hm">
-    <div class="grid" :style="{ gridTemplateColumns: `28px repeat(${hours.length}, minmax(0, 1fr))` }">
+  <div class="hm tw:flex tw:flex-col tw:gap-8">
+    <div class="cells tw:grid tw:gap-2 tw:items-center" :style="{ gridTemplateColumns: `28px repeat(${hours.length}, minmax(0, 1fr))` }">
       <template v-for="(row, d) in matrix" :key="d">
-        <span class="wd" :class="{ off: d >= 5 }">{{ WD[d] }}</span>
-        <i v-for="h in hours" :key="h" class="c" :style="{ '--a': row[h] ? 0.12 + (row[h] / max) * 0.88 : 0 }" :title="`${WD[d]} ${h}:00–${h + 1}:00 — ${row[h] ? formatDuration(row[h]) : 'ничего'}`"></i>
+        <span class="wd tw:text-muted tw:font-data tw:text-[10.5px] tw:[&.off]:text-down-fg" :class="{ off: d >= 5 }">{{ WD[d] }}</span>
+        <i v-for="h in hours" :key="h" class="c tw:h-18 tw:rounded-[2px] tw:bg-[rgb(var(--accent-rgb)/var(--a))] tw:[outline:1px_solid_var(--border)] tw:[outline-offset:-1px]" :style="{ '--a': row[h] ? 0.12 + (row[h] / max) * 0.88 : 0 }" :title="`${WD[d]} ${h}:00–${h + 1}:00 — ${row[h] ? formatDuration(row[h]) : 'ничего'}`"></i>
       </template>
       <span></span>
-      <span v-for="h in hours" :key="`h${h}`" class="hl">{{ h % 2 === 0 ? h : '' }}</span>
+      <span v-for="h in hours" :key="`h${h}`" class="hl tw:text-dim tw:font-data tw:text-[10px] tw:text-center">{{ h % 2 === 0 ? h : '' }}</span>
     </div>
-    <div class="prof" :style="{ gridTemplateColumns: `28px repeat(${hours.length}, minmax(0, 1fr))` }">
-      <span class="pk">{{ peak !== undefined ? `пик ${peak}ч` : '' }}</span>
-      <i v-for="(v, i) in byHour" :key="i" :title="`${hours[i]}:00 — ${formatDuration(v)}`"><b :style="{ height: `${(v / maxHour) * 100}%` }"></b></i>
+    <div class="prof tw:grid tw:gap-2 tw:h-46 tw:items-end" :style="{ gridTemplateColumns: `28px repeat(${hours.length}, minmax(0, 1fr))` }">
+      <span class="pk tw:self-center tw:text-cyan tw:font-data tw:text-[10px]">{{ peak !== undefined ? `пик ${peak}ч` : '' }}</span>
+      <i class="tw:relative tw:h-full tw:flex tw:items-end" v-for="(v, i) in byHour" :key="i" :title="`${hours[i]}:00 — ${formatDuration(v)}`"><b class="tw:w-full tw:min-h-1 tw:rounded-[2px_2px_0_0] tw:bg-cyan tw:opacity-75" :style="{ height: `${(v / maxHour) * 100}%` }"></b></i>
     </div>
   </div>
 </template>
-
-<style scoped>
-.hm {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.grid,
-.prof {
-  display: grid;
-  gap: 2px;
-  align-items: center;
-}
-.wd {
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-}
-.wd.off {
-  color: var(--down-fg);
-}
-.c {
-  height: 18px;
-  border-radius: 2px;
-  background: rgb(var(--accent-rgb) / var(--a));
-  outline: 1px solid var(--border);
-  outline-offset: -1px;
-}
-.hl {
-  color: var(--dim);
-  font-family: var(--font-data);
-  font-size: 10px;
-  text-align: center;
-}
-.prof {
-  height: 46px;
-  align-items: end;
-}
-.prof i {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-}
-.prof b {
-  width: 100%;
-  min-height: 1px;
-  border-radius: 2px 2px 0 0;
-  background: var(--cyan);
-  opacity: 0.75;
-}
-.pk {
-  align-self: center;
-  color: var(--cyan);
-  font-family: var(--font-data);
-  font-size: 10px;
-}
-</style>

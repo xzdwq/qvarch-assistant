@@ -1,0 +1,36 @@
+/* RegexTool: what its template cannot carry as utilities (scoped). */
+
+.text :deep(.cm-editor) {
+  height: 100%;
+}
+.text :deep(.rx-m.a) {
+  background: var(--regex-match-a);
+  border-bottom: 2px solid var(--regex-match-a-line);
+}
+.text :deep(.rx-m.b) {
+  background: var(--regex-match-b);
+  border-bottom: 2px solid var(--regex-match-b-line);
+}
+.text :deep(.rx-m.cur) {
+  outline: 1px solid var(--accent);
+}
+.text :deep(.rx-g.g1) {
+  color: var(--regex-group-1);
+}
+.text :deep(.rx-g.g2) {
+  color: var(--regex-group-2);
+}
+.text :deep(.rx-g.g3) {
+  color: var(--regex-group-3);
+}
+.text :deep(.rx-g.g4) {
+  color: var(--regex-group-4);
+}
+.text :deep(.rx-empty) {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin: 0 -1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+}

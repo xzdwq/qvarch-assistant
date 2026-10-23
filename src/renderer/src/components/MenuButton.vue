@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
-import { placeFloat, useAnchor } from '../lib/floating'
+import { ref } from 'vue'
 import Icon from './Icon.vue'
+import Popover from './Popover.vue'
 
 /**
  * One button for a few variants of one action (export: Excel / CSV / copy; a plan: estimated / measured) — the room
@@ -14,106 +14,23 @@ export interface MenuItem {
   disabled?: boolean
   run: () => unknown
 }
-const props = withDefaults(defineProps<{ label?: string; icon?: string; title?: string; items: MenuItem[]; disabled?: boolean; width?: number }>(), { width: 220 })
+withDefaults(defineProps<{ label?: string; icon?: string; title?: string; items: MenuItem[]; disabled?: boolean; width?: number }>(), { width: 220 })
 const open = ref(false)
 const btn = ref<HTMLElement>()
-const style = ref<Record<string, string>>({})
-useAnchor(open, btn, () => {
-  if (!btn.value) return
-  const f = placeFloat(btn.value, props.width, false, 0)
-  style.value = { ...f.style, maxHeight: `${f.maxH}px` }
-})
 function pick(it: MenuItem): void {
   if (it.disabled) return
   open.value = false
   void it.run()
 }
-const away = (e: PointerEvent) => open.value && !btn.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.mb-pop') && (open.value = false)
-const esc = (e: KeyboardEvent) => e.key === 'Escape' && (open.value = false)
-window.addEventListener('pointerdown', away, true)
-window.addEventListener('keydown', esc)
-onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', away, true)
-  window.removeEventListener('keydown', esc)
-})
 </script>
 
 <template>
-  <button ref="btn" class="mb" :class="{ on: open, solo: !label }" :disabled="disabled" :title="title" @mousedown.prevent @click="open = !open">
+  <button ref="btn" class="mb tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-24 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-10 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:whitespace-nowrap tw:[&.solo]:justify-center tw:[&.solo]:w-26 tw:[&.solo]:h-26 tw:[&.solo]:p-0 tw:[&.solo]:not-[&.on]:border-transparent tw:[&.solo]:rounded-[6px] tw:[&.on]:border-accent tw:[&&]:hover:enabled:border-accent tw:[&.on]:text-text tw:hover:enabled:text-text tw:disabled:opacity-50 tw:hover:enabled:bg-hover" :class="{ on: open, solo: !label }" :disabled="disabled" :title="title" @mousedown.prevent @click="open = !open">
     <Icon v-if="icon" :name="icon" :size="label ? 12 : 14" /><template v-if="label">{{ label }}<Icon name="chevronDown" :size="10" /></template>
   </button>
-  <Teleport to="body">
-    <div v-if="open" class="mb-pop" :style="style">
-      <button v-for="(it, i) in items" :key="i" :disabled="it.disabled" :title="it.title" @mousedown.prevent @click="pick(it)">
+  <Popover v-model:open="open" :anchor="btn" :width="width" :chrome="0" class="mb-pop tw:flex tw:flex-col tw:p-4 tw:overflow-x-hidden tw:overflow-y-auto tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+      <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:overflow-hidden tw:text-left tw:text-ellipsis tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:opacity-45" v-for="(it, i) in items" :key="i" :disabled="it.disabled" :title="it.title" @mousedown.prevent @click="pick(it)">
         <Icon v-if="it.icon" :name="it.icon" :size="13" />{{ it.label }}
       </button>
-    </div>
-  </Teleport>
+  </Popover>
 </template>
-
-<style scoped>
-.mb {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
-/* only its icon (what it does — on hover): the room of an icon */
-.mb.solo {
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-color: transparent;
-  border-radius: 6px;
-}
-.mb.on,
-.mb:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-.mb:disabled {
-  opacity: 0.5;
-}
-.mb-pop {
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.mb-pop button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-size: 12.5px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mb-pop button:hover:not(:disabled) {
-  background: var(--hover);
-}
-.mb-pop button:disabled {
-  opacity: 0.45;
-}
-</style>

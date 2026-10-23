@@ -7,6 +7,7 @@ import '@fontsource/neucha/400.css'
 import Icon from './Icon.vue'
 import { useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { DEFAULT_INK, useInk } from '../lib/ink'
+import { cssPalette } from '../lib/cssPalette'
 
 /**
  * A signature (or anything handwritten — a date, initials): drawn with the mouse / a pen, typed in a
@@ -18,9 +19,16 @@ const emit = defineEmits<{ save: [url: string]; close: [] }>()
 useTabletLive()
 const { state: tablet } = useTablet()
 
-type Mode = 'draw' | 'type' | 'image'
+/** The ways to make a signature (the tabs), in order. */
+const MODES = [
+  { id: 'draw', label: 'Нарисовать', icon: 'signature' },
+  { id: 'type', label: 'Текст' },
+  { id: 'image', label: 'Загрузить', icon: 'upload' },
+] as const satisfies ReadonlyArray<{ id: string; label: string; icon?: string }>
+type Mode = (typeof MODES)[number]['id']
 const mode = ref<Mode>('draw')
-const COLORS = ['#111827', '#1d3fa8', '#b91c1c']
+// the ink swatches (theme CSS); the one picked goes into the signature's picture
+const COLORS = cssPalette('--sign-ink')
 const color = ref(COLORS[1])
 const width = ref(2.6)
 const FONTS = [
@@ -53,10 +61,7 @@ function setup(): void {
 onMounted(setup)
 watch(mode, async (m) => {
   await nextTick()
-  if (m === 'draw') {
-    setup()
-    drawn.value = false
-  } else if (m === 'type') textIn.value?.focus()
+  MODE_OPS[m].enter?.()
 })
 
 // ---------- drawing: smooth ink (lib/ink), the smoothing from the tablet's settings ----------
@@ -96,18 +101,6 @@ function onImageDrop(e: DragEvent): void {
   void openImage(e.dataTransfer?.files?.[0])
 }
 
-const clear = (): void => {
-  if (mode.value === 'draw') {
-    ink.snapshot()
-    canvas.value?.getContext('2d')?.clearRect(0, 0, W * DPR, H * DPR)
-    drawn.value = false
-  } else if (mode.value === 'type') text.value = ''
-  else {
-    img.value = undefined
-    imgUrl.value = ''
-  }
-}
-const ready = computed(() => (mode.value === 'draw' ? drawn.value : mode.value === 'type' ? !!text.value.trim() : !!img.value))
 
 /** Cuts a canvas to its visible pixels (+ a little air) → PNG. */
 function trimmed(c: HTMLCanvasElement, pad: number): string | undefined {
@@ -179,12 +172,48 @@ function imageCanvas(): HTMLCanvasElement {
   return c
 }
 
+/** What each mode does: on being opened, on «Очистить»; whether it has something to save, and its picture (PNG). */
+interface ModeOps {
+  enter?: () => void
+  clear: () => void
+  ready: () => boolean
+  picture: () => Promise<string | undefined>
+}
+const MODE_OPS: Record<Mode, ModeOps> = {
+  draw: {
+    enter: () => {
+      setup()
+      drawn.value = false
+    },
+    clear: () => {
+      ink.snapshot()
+      canvas.value?.getContext('2d')?.clearRect(0, 0, W * DPR, H * DPR)
+      drawn.value = false
+    },
+    ready: () => drawn.value,
+    picture: async () => (canvas.value ? trimmed(canvas.value, Math.round(6 * DPR)) : undefined),
+  },
+  type: {
+    enter: () => textIn.value?.focus(),
+    clear: () => (text.value = ''),
+    ready: () => !!text.value.trim(),
+    picture: async () => trimmed(await typedCanvas(), 10),
+  },
+  image: {
+    clear: () => {
+      img.value = undefined
+      imgUrl.value = ''
+    },
+    ready: () => !!img.value,
+    picture: async () => trimmed(imageCanvas(), 6),
+  },
+}
+const clear = (): void => MODE_OPS[mode.value].clear()
+const ready = computed(() => MODE_OPS[mode.value].ready())
+
 async function save(): Promise<void> {
   if (!ready.value) return
-  let url: string | undefined
-  if (mode.value === 'draw' && canvas.value) url = trimmed(canvas.value, Math.round(6 * DPR))
-  else if (mode.value === 'type') url = trimmed(await typedCanvas(), 10)
-  else url = trimmed(imageCanvas(), 6)
+  const url = await MODE_OPS[mode.value].picture()
   if (url) emit('save', url)
 }
 function onKey(e: KeyboardEvent): void {
@@ -197,288 +226,61 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="sp-back" @pointerdown.self="emit('close')">
-      <div class="sp">
-        <div class="sph">
+    <div class="sp-back tw:fixed tw:inset-0 tw:z-1500 tw:flex tw:items-start tw:justify-center tw:pt-80 tw:bg-bg/55" @pointerdown.self="emit('close')">
+      <div class="sp tw:pt-12 tw:pr-14 tw:pb-14 tw:pl-14 tw:rounded-r3 tw:border tw:border-white/10 tw:bg-panel tw:[box-shadow:0_24px_60px_rgba(0,0,0,0.6)] tw:text-text">
+        <div class="sph tw:flex tw:items-center tw:gap-10 tw:whitespace-nowrap tw:mb-10 tw:text-[13px]">
           <b>Подпись</b>
-          <span class="tabs">
-            <button :class="{ on: mode === 'draw' }" @click="mode = 'draw'"><Icon name="signature" :size="13" />Нарисовать</button>
-            <button :class="{ on: mode === 'type' }" @click="mode = 'type'"><span class="tt">T</span>Текст</button>
-            <button :class="{ on: mode === 'image' }" @click="mode = 'image'"><Icon name="upload" :size="13" />Загрузить</button>
+          <span class="tabs tw:inline-flex tw:gap-2 tw:ml-8 tw:p-2 tw:rounded-[4px] tw:bg-white/5">
+            <button v-for="m in MODES" :key="m.id" class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: mode === m.id }" @click="mode = m.id">
+              <Icon v-if="'icon' in m" :name="m.icon" :size="13" /><span v-else class="tt tw:font-[Georgia,serif] tw:text-[14px] tw:leading-none">T</span>{{ m.label }}
+            </button>
           </span>
-          <span class="grow"></span>
-          <button class="x" title="Закрыть" @click="emit('close')"><Icon name="x" :size="14" /></button>
+          <span class="grow tw:flex-1"></span>
+          <button class="x tw:inline-flex tw:p-5 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/8 tw:hover:enabled:border-border-3" title="Закрыть" @click="emit('close')"><Icon name="x" :size="14" /></button>
         </div>
 
-        <div class="tools">
+        <div class="tools tw:flex tw:items-center tw:gap-10 tw:whitespace-nowrap tw:h-30 tw:mb-8">
           <template v-if="mode !== 'image'">
-            <span class="cols">
-              <button v-for="c in COLORS" :key="c" class="col" :class="{ on: color === c }" :style="{ background: c }" @click="color = c"></button>
-              <label class="col pick" :class="{ on: !COLORS.includes(color) }" title="Свой цвет" :style="!COLORS.includes(color) ? { background: color } : undefined">
-                <input v-model="color" type="color" />
+            <span class="cols tw:inline-flex tw:items-center tw:gap-6">
+              <button v-for="c in COLORS" :key="c" class="col tw:relative tw:w-20 tw:h-20 tw:p-0 tw:border-2 tw:border-transparent tw:rounded-[50%] tw:[box-shadow:0_0_0_1px_rgba(255,255,255,0.35)] tw:[&.on]:border-accent-fg tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: color === c }" :style="{ background: c }" @click="color = c"></button>
+              <label class="col pick tw:relative tw:w-20 tw:h-20 tw:p-0 tw:border-2 tw:border-transparent tw:rounded-[50%] tw:[box-shadow:0_0_0_1px_rgba(255,255,255,0.35)] tw:[&.on]:border-accent-fg tw:overflow-hidden tw:[background:var(--swatch-wheel)] tw:cursor-pointer" :class="{ on: !COLORS.includes(color) }" title="Свой цвет" :style="!COLORS.includes(color) ? { background: color } : undefined">
+                <input class="tw:absolute tw:inset-0 tw:opacity-0 tw:cursor-pointer" v-model="color" type="color" />
               </label>
             </span>
-            <label v-if="mode === 'draw'" class="wd" title="Толщина"><input v-model.number="width" type="range" min="1" max="6" step="0.2" /></label>
-            <span v-else class="fonts">
-              <button v-for="f in FONTS" :key="f.id" :class="{ on: font === f.id }" :style="{ fontFamily: `'${f.id}'` }" :title="f.label" @click="font = f.id">Аа</button>
+            <label v-if="mode === 'draw'" class="wd" title="Толщина"><input class="tw:w-90 tw:[accent-color:var(--accent)]" v-model.number="width" type="range" min="1" max="6" step="0.2" /></label>
+            <span v-else class="fonts tw:inline-flex tw:gap-4">
+              <button class="tw:h-28 tw:min-w-40 tw:py-0 tw:px-8 tw:border tw:border-transparent tw:rounded-r2 tw:bg-white/6 tw:text-text tw:text-[19px] tw:leading-none tw:[&.on]:border-accent tw:[&.on]:bg-accent/18" v-for="f in FONTS" :key="f.id" :class="{ on: font === f.id }" :style="{ fontFamily: `'${f.id}'` }" :title="f.label" @click="font = f.id">Аа</button>
             </span>
           </template>
-          <label v-else class="chk"><input v-model="knockWhite" type="checkbox" />Убрать белый фон</label>
+          <label v-else class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]"><input class="tw:[accent-color:var(--accent)]" v-model="knockWhite" type="checkbox" />Убрать белый фон</label>
         </div>
 
-        <div v-if="mode === 'draw'" ref="padBox" class="pad ink" :style="{ width: `${W}px`, height: `${H}px` }">
-          <canvas ref="canvas"></canvas>
-          <canvas ref="liveCv" @pointerdown="ink.down" @pointermove="ink.move" @pointerup="ink.up" @pointercancel="ink.up"></canvas>
+        <div v-if="mode === 'draw'" ref="padBox" class="pad ink tw:block tw:rounded-[4px] tw:bg-text-hi tw:cursor-crosshair tw:touch-none tw:relative" :style="{ width: `${W}px`, height: `${H}px` }">
+          <canvas class="tw:absolute tw:inset-0 tw:w-full tw:h-full tw:rounded-[4px]" ref="canvas"></canvas>
+          <canvas class="tw:absolute tw:inset-0 tw:w-full tw:h-full tw:rounded-[4px]" ref="liveCv" @pointerdown="ink.down" @pointermove="ink.move" @pointerup="ink.up" @pointercancel="ink.up"></canvas>
         </div>
-        <div v-else-if="mode === 'type'" class="pad typed" :style="{ width: `${W}px`, height: `${H}px` }">
-          <input
+        <div v-else-if="mode === 'type'" class="pad typed tw:rounded-[4px] tw:bg-text-hi tw:touch-none tw:relative tw:flex tw:items-center tw:cursor-text" :style="{ width: `${W}px`, height: `${H}px` }">
+          <input class="tw:w-full tw:py-0 tw:px-28 tw:border-0 tw:outline-none tw:bg-transparent tw:text-center tw:placeholder:text-text-2"
             ref="textIn"
             v-model="text"
             placeholder="Иванов И.И."
             spellcheck="false"
             :style="{ fontFamily: `'${font}'`, color, fontSize: `${Math.round(56 * (FONTS.find((f) => f.id === font)?.scale ?? 1))}px` }"
           />
-          <span class="line"></span>
+          <span class="line tw:absolute tw:left-28 tw:right-28 tw:bottom-62 tw:h-1 tw:bg-accent tw:pointer-events-none"></span>
         </div>
-        <div v-else class="pad drop" :style="{ width: `${W}px`, height: `${H}px` }" @dragover.prevent @drop.prevent="onImageDrop" @click="imgIn?.click()">
-          <img v-if="imgUrl" :src="imgUrl" alt="" :class="{ knock: knockWhite }" />
-          <span v-else class="hint"><Icon name="upload" :size="20" />Перетащите картинку или нажмите</span>
+        <div v-else class="pad drop tw:rounded-[4px] tw:bg-text-hi tw:touch-none tw:flex tw:items-center tw:justify-center tw:cursor-pointer tw:[&&]:bg-[linear-gradient(45deg,var(--text-hi)_25%,transparent_25%),linear-gradient(-45deg,var(--text-hi)_25%,transparent_25%),linear-gradient(45deg,transparent_75%,var(--text-hi)_75%),linear-gradient(-45deg,transparent_75%,var(--text-hi)_75%)] tw:[&&]:bg-size-[16px_16px] tw:[&&]:bg-position-[0_0,0_8px,8px_-8px,-8px_0]" :style="{ width: `${W}px`, height: `${H}px` }" @dragover.prevent @drop.prevent="onImageDrop" @click="imgIn?.click()">
+          <img class="tw:max-w-[92%] tw:max-h-[92%] tw:[&.knock]:mix-blend-multiply" v-if="imgUrl" :src="imgUrl" alt="" :class="{ knock: knockWhite }" />
+          <span v-else class="hint tw:inline-flex tw:items-center tw:gap-8 tw:text-dim tw:text-[13px]"><Icon name="upload" :size="20" />Перетащите картинку или нажмите</span>
           <input ref="imgIn" type="file" accept="image/png,image/jpeg,image/webp" hidden @change="openImage(($event.target as HTMLInputElement).files?.[0])" />
         </div>
 
-        <div class="spf">
-          <span class="grow"></span>
-          <button class="bt" :disabled="!ready" @click="clear">Очистить</button>
-          <button class="bt pri" :disabled="!ready" @click="save">Сохранить</button>
+        <div class="spf tw:flex tw:items-center tw:gap-10 tw:whitespace-nowrap tw:mt-10">
+          <span class="grow tw:flex-1"></span>
+          <button class="bt tw:h-32 tw:py-0 tw:px-14 tw:border-0 tw:rounded-[4px] tw:bg-white/8 tw:text-text tw:text-[12.5px] tw:disabled:opacity-45 tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :disabled="!ready" @click="clear">Очистить</button>
+          <button class="bt pri tw:h-32 tw:py-0 tw:px-14 tw:border-0 tw:rounded-[4px] tw:text-[12.5px] tw:bg-accent tw:text-on-accent tw:disabled:opacity-45 tw:hover:enabled:border-border-3" :disabled="!ready" @click="save">Сохранить</button>
         </div>
       </div>
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.sp-back {
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 80px;
-  background: rgba(13, 17, 23, 0.55);
-}
-.sp {
-  padding: 12px 14px 14px;
-  border-radius: var(--r3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--panel);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-  color: var(--text);
-}
-.sph,
-.spf,
-.tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-}
-.sph {
-  margin-bottom: 10px;
-  font-size: 13px;
-}
-.tools {
-  height: 30px;
-  margin-bottom: 8px;
-}
-.spf {
-  margin-top: 10px;
-}
-.grow {
-  flex: 1;
-}
-.tabs {
-  display: inline-flex;
-  gap: 2px;
-  margin-left: 8px;
-  padding: 2px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-}
-.tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.tabs button.on {
-  background: rgb(var(--accent-rgb) / 0.22);
-  color: var(--text-hi);
-}
-.tt {
-  font-family: Georgia, serif;
-  font-size: 14px;
-  line-height: 1;
-}
-.pad {
-  display: block;
-  border-radius: 4px;
-  background: var(--text-hi);
-  cursor: crosshair;
-  touch-action: none;
-}
-.ink {
-  position: relative;
-}
-.ink canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 4px;
-}
-.typed {
-  position: relative;
-  display: flex;
-  align-items: center;
-  cursor: text;
-}
-.typed input {
-  width: 100%;
-  padding: 0 28px;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  text-align: center;
-}
-.typed input::placeholder {
-  color: var(--text-2);
-}
-.line {
-  position: absolute;
-  left: 28px;
-  right: 28px;
-  bottom: 62px;
-  height: 1px;
-  background: var(--accent);
-  pointer-events: none;
-}
-.drop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  background-image: linear-gradient(45deg, var(--text-hi) 25%, transparent 25%), linear-gradient(-45deg, var(--text-hi) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, var(--text-hi) 75%), linear-gradient(-45deg, transparent 75%, var(--text-hi) 75%);
-  background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-}
-.drop img {
-  max-width: 92%;
-  max-height: 92%;
-}
-.drop img.knock {
-  mix-blend-mode: multiply;
-}
-.hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dim);
-  font-size: 13px;
-}
-.cols {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.col {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
-}
-.col.on {
-  border-color: var(--accent-fg);
-}
-.col.pick {
-  overflow: hidden;
-  background: conic-gradient(var(--down), var(--warn), var(--warn), var(--up), #06b6d4, var(--info), var(--accent), #ec4899, var(--down));
-  cursor: pointer;
-}
-.col.pick input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.wd input {
-  width: 90px;
-  accent-color: var(--accent);
-}
-.fonts {
-  display: inline-flex;
-  gap: 4px;
-}
-.fonts button {
-  height: 28px;
-  min-width: 40px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--r2);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-  font-size: 19px;
-  line-height: 1;
-}
-.fonts button.on {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.18);
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.chk input {
-  accent-color: var(--accent);
-}
-.x {
-  display: inline-flex;
-  padding: 5px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.x:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.bt {
-  height: 32px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  font-size: 12.5px;
-}
-.bt.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.bt:disabled {
-  opacity: 0.45;
-}
-</style>

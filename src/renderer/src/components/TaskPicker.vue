@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { tasksWord, type TaskRef } from '@shared/jira'
 import { useJiraFind } from '../lib/jiraFind'
-import { placeFloat, useAnchor, type Float } from '../lib/floating'
+import { usePopover } from '../lib/usePopover'
 import { OWN_PREFIX } from '@shared/board'
 import Icon from './Icon.vue'
 
@@ -16,12 +16,14 @@ import Icon from './Icon.vue'
 const props = defineProps<{ single?: boolean; compact?: boolean }>()
 const tasks = defineModel<TaskRef[]>({ default: () => [] })
 
-const open = ref(false)
 const q = ref('')
-const root = ref<HTMLElement>()
 const search = ref<HTMLInputElement>()
-/** Where the list opens and how tall it may be (measured on open). */
-const place = ref<{ up: boolean; maxH: number }>({ up: true, maxH: 240 })
+/**
+ * The list: over everything, under or over the button (from the button itself — the wrapper may be stretched by its
+ * row, the mini island); kept by it while the page scrolls, closed when it is out of sight. `room` — the list's height.
+ */
+const btn = ref<HTMLElement>()
+const { open, panelRef, style, up, room } = usePopover(btn, { width: 440, maxHeight: 'none' })
 
 type Item = { key: string; summary: string; due?: string; own: boolean }
 /** Jira tasks only (own tasks are gone: a note becomes a "Задача" block, not a task of its own). */
@@ -32,23 +34,10 @@ const isOwn = (key?: string) => !!key?.startsWith(OWN_PREFIX)
 const chosen = (key: string) => tasks.value.some((t) => t.key === key)
 const label = computed(() => (!tasks.value.length ? 'Jira' : tasks.value.length === 1 ? tasks.value[0].key : `${tasks.value[0].key} +${tasks.value.length - 1}`))
 
-/** Where the list opens: over everything in the main window, inside the shell in the island. */
-const fl = ref<Float>({ teleport: false, up: true, maxH: 240, style: {} })
-const dd = ref<HTMLElement>()
-function measure(): void {
-  if (!root.value) return
-  // from the button itself: the wrapper may be stretched by its row (the mini island)
-  fl.value = placeFloat((root.value.firstElementChild as HTMLElement | null) ?? root.value, 440)
-  place.value = { up: fl.value.up, maxH: fl.value.maxH }
-}
-// (kept by its button while the page scrolls; the button out of sight — closed)
-useAnchor(open, root, measure)
-
 async function toggle(): Promise<void> {
   open.value = !open.value
   if (open.value) {
     q.value = ''
-    measure()
     await nextTick()
     search.value?.focus({ preventScroll: true })
   }
@@ -62,195 +51,44 @@ function pick(i: TaskRef): void {
   }
   tasks.value = chosen(i.key) ? tasks.value.filter((x) => x.key !== i.key) : [...tasks.value, t]
 }
-function onDown(e: MouseEvent): void {
-  if (open.value && !root.value?.contains(e.target as Node) && !dd.value?.contains(e.target as Node)) open.value = false
-}
-onMounted(() => window.addEventListener('mousedown', onDown, true))
-onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
 </script>
 
 <template>
-  <div ref="root" class="tp" :class="{ compact: props.compact }">
+  <div class="tp tw:relative tw:flex-none" :class="{ compact: props.compact }">
     <button
-      class="chip"
+      ref="btn"
+      class="chip tw:inline-flex tw:items-center tw:gap-6 tw:max-w-180 tw:h-36 tw:box-border tw:py-0 tw:px-12 tw:rounded-[4px] tw:border tw:border-border tw:bg-field tw:text-muted tw:text-[13px] tw:cursor-pointer tw:[transition:border-color_0.15s,color_0.15s] tw:hover:not-[&.on]:border-accent tw:hover:not-[&.on]:text-text tw:[&.on]:border-info/70 tw:[&.on]:bg-info/14 tw:[&.on]:text-info-fg tw:hover:enabled:not-[&.on]:bg-hover"
       :class="{ on: tasks.length }"
       :title="tasks.length ? tasks.map((t) => `${t.key} — ${t.summary}`).join('\n') : 'Задача'"
       @click="toggle"
     >
       <Icon :name="isOwn(tasks[0]?.key) ? 'checkSquare' : 'jira'" :size="13" />
-      <span class="lbl">{{ label }}</span>
-      <span v-if="tasks.length" class="x" title="Отвязать" @click.stop="tasks = []"><Icon name="x" :size="11" /></span>
+      <span class="lbl tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-semibold">{{ label }}</span>
+      <span v-if="tasks.length" class="x tw:inline-flex tw:opacity-70 tw:hover:opacity-100" title="Отвязать" @click.stop="tasks = []"><Icon name="x" :size="11" /></span>
     </button>
-    <Teleport to="body" :disabled="!fl.teleport">
-    <div v-if="open" ref="dd" class="dd" :class="{ up: place.up }" :style="fl.style">
-      <input
+    <Teleport to="body">
+    <div v-if="open" :ref="panelRef" class="dd tw:absolute tw:z-60 tw:top-[calc(100%+4px)] tw:right-0 tw:w-440 tw:p-6 tw:rounded-[4px] tw:bg-panel-2 tw:border tw:border-border tw:[box-shadow:var(--shadow-menu)] tw:[&.up]:top-auto tw:[&.up]:bottom-[calc(100%+4px)]" :class="{ up }" :style="style">
+      <input class="tw:w-full tw:box-border tw:mb-4 tw:py-6 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-black/25 tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12px] tw:outline-none"
         ref="search"
         v-model="q"
         :placeholder="single ? 'Найти задачу Jira' : 'Найти задачу Jira · можно отметить несколько'"
         spellcheck="false"
-        @keydown.esc.stop="open = false"
         @keydown.enter.prevent="list[0] && pick(list[0])"
       />
-      <div class="items" :style="{ maxHeight: `${place.maxH}px` }" @scroll.passive="onFindScroll">
-        <button v-for="i in list" :key="i.key" class="it" :class="{ cur: chosen(i.key) }" @click="pick(i)">
-          <span v-if="!single" class="cb" :class="{ on: chosen(i.key) }"><Icon v-if="chosen(i.key)" name="check" :size="11" :stroke="3" /></span>
-          <Icon :name="i.own ? 'checkSquare' : 'jira'" :size="11" class="src" :class="{ own: i.own }" />
-          <b :class="{ own: i.own }">{{ i.key }}</b>
-          <span class="sum">{{ i.summary }}</span>
-          <span v-if="i.due" class="due">до {{ i.due.slice(8, 10) }}.{{ i.due.slice(5, 7) }}</span>
+      <div class="items tw:overflow-auto" :style="{ maxHeight: `${room}px` }" @scroll.passive="onFindScroll">
+        <button v-for="i in list" :key="i.key" class="it tw:flex tw:items-center tw:gap-8 tw:w-full tw:py-5 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-left tw:text-[12px] tw:cursor-pointer tw:hover:not-[&.cur]:bg-info/16 tw:[&.cur]:bg-info/16 tw:hover:enabled:border-border-3" :class="{ cur: chosen(i.key) }" @click="pick(i)">
+          <span v-if="!single" class="cb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-14 tw:h-14 tw:rounded-r2 tw:border tw:border-white/35 tw:text-text-hi tw:[&.on]:bg-info tw:[&.on]:border-info" :class="{ on: chosen(i.key) }"><Icon v-if="chosen(i.key)" name="check" :size="11" :stroke="3" /></span>
+          <Icon :name="i.own ? 'checkSquare' : 'jira'" :size="11" class="src tw:[&&]:flex-none tw:text-info-fg" :class="{ own: i.own }" />
+          <b class="tw:flex-none tw:text-info-fg" :class="{ own: i.own }">{{ i.key }}</b>
+          <span class="sum tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ i.summary }}</span>
+          <span v-if="i.due" class="due tw:flex-none tw:text-muted tw:text-[11px]">до {{ i.due.slice(8, 10) }}.{{ i.due.slice(5, 7) }}</span>
         </button>
-        <p v-if="!list.length" class="empty">{{ q.trim() ? 'Не найдено' : 'Нет задач Jira — подключите Jira в настройках' }}</p>
+        <p v-if="!list.length" class="empty tw:my-6 tw:mx-8 tw:text-muted tw:text-[12px]">{{ q.trim() ? 'Не найдено' : 'Нет задач Jira — подключите Jira в настройках' }}</p>
       </div>
-      <div v-if="!single && tasks.length > 1" class="foot">{{ tasksWord(tasks.length) }} — на это время будет столько же параллельных блоков</div>
+      <div v-if="!single && tasks.length > 1" class="foot tw:mt-4 tw:mr-6 tw:mb-0 tw:ml-6 tw:text-[11px] tw:text-info-fg">{{ tasksWord(tasks.length) }} — на это время будет столько же параллельных блоков</div>
     </div>
     </Teleport>
   </div>
 </template>
 
-<style scoped>
-.tp {
-  position: relative;
-  flex: none;
-}
-/* same look as the text field next to it */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 180px;
-  height: 36px;
-  box-sizing: border-box;
-  padding: 0 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    color 0.15s;
-}
-.chip:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-.chip.on {
-  border-color: rgba(68, 138, 255, 0.7);
-  background: rgba(68, 138, 255, 0.14);
-  color: var(--info-fg);
-}
-.lbl {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.x {
-  display: inline-flex;
-  opacity: 0.7;
-}
-.x:hover {
-  opacity: 1;
-}
-.dd {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 4px);
-  right: 0;
-  width: 440px;
-  padding: 6px;
-  border-radius: 4px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
-}
-.dd.up {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
-.dd input {
-  width: 100%;
-  box-sizing: border-box;
-  margin-bottom: 4px;
-  padding: 6px 8px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  outline: none;
-}
-.items {
-  overflow: auto;
-}
-.it {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  font-size: 12px;
-  cursor: pointer;
-}
-.it:hover,
-.it.cur {
-  background: rgba(68, 138, 255, 0.16);
-}
-.cb {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--r2);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  color: var(--text-hi);
-}
-.cb.on {
-  background: var(--info);
-  border-color: var(--info);
-}
-.it b {
-  flex: none;
-  color: var(--info-fg);
-}
-.it b.own,
-.src.own,
-.it.create {
-  color: var(--accent-fg);
-}
-.src {
-  flex: none;
-  color: var(--info-fg);
-}
-.sum {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.due {
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-}
-.empty {
-  margin: 6px 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.foot {
-  margin: 4px 6px 0;
-  font-size: 11px;
-  color: var(--info-fg);
-}
-</style>
+<style scoped src="./TaskPicker.css"></style>

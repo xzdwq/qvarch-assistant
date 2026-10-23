@@ -1,0 +1,7 @@
+/* BlockSql: what its template cannot carry as utilities (scoped). */
+
+/* a component's card, as the other runnable blocks' (its colour — its own) */
+/* the rows scroll inside (both ways): a wide result never widens the note — the box's width is its parent's */
+.finds li.warn {
+  color: var(--warn-fg);
+}

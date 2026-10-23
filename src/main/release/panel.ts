@@ -1,5 +1,4 @@
-import { BranchCommitInfo, BranchDiffStat, BranchRef, ConflictSource, MainStatus, ReleasePlan, StaleBranchHint } from './core/types'
-import { ExecutorEvent } from './core/executor'
+import { BranchCommitInfo, BranchDiffStat, BranchRef, ConflictSource, MainStatus, ReleasePlan, ReleaseProgressEvent, StaleBranchHint } from './core/types'
 
 /**
  * The extension's webview panel, for the app: the same host interface and the same messages, but they go to
@@ -168,7 +167,7 @@ export class ReleasePanel {
   postPlanBuilding(): void {
     this.post({ command: 'planBuilding' })
   }
-  postProgress(event: ExecutorEvent): void {
+  postProgress(event: ReleaseProgressEvent): void {
     this.post({ command: 'progress', event })
   }
   postPublished(): void {

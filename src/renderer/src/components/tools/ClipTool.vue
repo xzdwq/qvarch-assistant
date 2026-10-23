@@ -51,33 +51,33 @@ function clearAll(): void {
 </script>
 
 <template>
-  <div class="cl">
-    <div class="bar">
-      <label class="sw" :title="state.on ? 'История ведётся' : 'История не ведётся'"><input type="checkbox" :checked="state.on" @change="setOn(($event.target as HTMLInputElement).checked)" /><i></i>Сохранять историю</label>
-      <label class="search"><Icon name="search" :size="13" /><input v-model="q" spellcheck="false" placeholder="Поиск по скопированному" /></label>
-      <span class="grow"></span>
-      <span class="muted">{{ q ? `${shown.length} из ${state.items.length}` : `${state.items.length} из 1000` }}</span>
-      <button class="ib" title="Очистить историю" :disabled="!state.items.length" @click="clearAll"><Icon name="trash" :size="14" /></button>
+  <div class="cl tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="bar tw:flex-none tw:flex tw:items-center tw:gap-14 tw:h-38 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-14 tw:border-b tw:border-b-border tw:whitespace-nowrap">
+      <label class="sw tw:inline-flex tw:items-center tw:gap-8 tw:text-text-2 tw:text-[12.5px] tw:cursor-pointer" :title="state.on ? 'История ведётся' : 'История не ведётся'"><input class="tw:hidden" type="checkbox" :checked="state.on" @change="setOn(($event.target as HTMLInputElement).checked)" /><i class="tw:relative tw:w-28 tw:h-16 tw:rounded-[8px] tw:bg-panel-3 tw:[transition:background_0.15s] tw:[.sw_input:checked+&]:bg-accent tw:after:content-[''] tw:after:absolute tw:after:top-2 tw:after:left-2 tw:after:w-12 tw:after:h-12 tw:after:rounded-[50%] tw:after:bg-text-2 tw:after:[transition:transform_0.15s] tw:[.sw_input:checked+&]:after:[transform:translateX(12px)] tw:[.sw_input:checked+&]:after:bg-white"></i>Сохранять историю</label>
+      <label class="search tw:inline-flex tw:items-center tw:gap-6 tw:w-[min(320px,40%)] tw:h-28 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-r2 tw:text-muted"><Icon name="search" :size="13" /><input class="tw:flex-1 tw:min-w-0 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent" v-model="q" spellcheck="false" placeholder="Поиск по скопированному" /></label>
+      <span class="grow tw:flex-1"></span>
+      <span class="muted tw:text-muted tw:text-[12px]">{{ q ? `${shown.length} из ${state.items.length}` : `${state.items.length} из 1000` }}</span>
+      <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Очистить историю" :disabled="!state.items.length" @click="clearAll"><Icon name="trash" :size="14" /></button>
     </div>
-    <div class="list">
+    <div class="list tw:flex-1 tw:min-h-0 tw:overflow-y-auto tw:pt-0 tw:pr-14 tw:pb-14 tw:pl-14">
       <template v-for="g in groups" :key="g.k">
-        <div class="day">{{ g.name }}</div>
-        <div v-for="x in g.items" :key="x.id" class="it" :class="{ done: copied === x.id }" title="Клик — скопировать снова" @click="copy(x)">
-          <span class="tm">{{ hm(x.at) }}</span>
-          <pre class="tx" :class="{ clip: long(x.text) && !open.has(x.id) }">{{ x.text }}</pre>
-          <span class="acts" @click.stop>
-            <b v-if="x.count > 1" class="cnt" :title="`Копировали ${x.count} раз`">×{{ x.count }}</b>
-            <button v-if="long(x.text)" class="ib sm" :title="open.has(x.id) ? 'Свернуть' : 'Показать целиком'" @click="toggle(x.id)"><Icon name="chevronDown" :size="12" :style="open.has(x.id) ? 'transform: rotate(180deg)' : ''" /></button>
-            <button class="ib sm" title="Удалить" @click="window_remove(x.id)"><Icon name="x" :size="12" /></button>
+        <div class="day tw:sticky tw:top-0 tw:z-1 tw:pt-12 tw:pr-0 tw:pb-6 tw:pl-0 tw:bg-bg tw:text-text-hi tw:text-[12.5px] tw:font-semibold tw:first-letter:uppercase">{{ g.name }}</div>
+        <div v-for="x in g.items" :key="x.id" class="it tw:group/it tw:relative tw:grid tw:grid-cols-[46px_minmax(0,1fr)_auto] tw:gap-10 tw:items-start tw:py-7 tw:px-8 tw:rounded-r2 tw:cursor-pointer tw:hover:not-[&.done]:bg-hover tw:[&.done]:bg-up/8" :class="{ done: copied === x.id }" title="Клик — скопировать снова" @click="copy(x)">
+          <span class="tm tw:pt-1 tw:text-muted tw:font-data tw:text-[11.5px]">{{ hm(x.at) }}</span>
+          <pre class="tx tw:m-0 tw:overflow-hidden tw:text-text tw:font-data tw:text-[12.5px] tw:leading-[1.5] tw:whitespace-pre-wrap tw:[word-break:break-word] tw:[&.clip]:max-h-[6em] tw:[&.clip]:[-webkit-mask-image:linear-gradient(#000_60%,transparent)] tw:[&.clip]:mask-[linear-gradient(#000_60%,transparent)]" :class="{ clip: long(x.text) && !open.has(x.id) }">{{ x.text }}</pre>
+          <span class="acts tw:flex tw:items-center tw:gap-2" @click.stop>
+            <b v-if="x.count > 1" class="cnt tw:py-0 tw:px-6 tw:text-muted tw:font-data tw:text-[11px] tw:font-medium" :title="`Копировали ${x.count} раз`">×{{ x.count }}</b>
+            <button v-if="long(x.text)" class="ib sm tw:inline-flex tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:w-22 tw:h-22 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:opacity-0 tw:group-hover/it:opacity-100 tw:hover:enabled:border-border-3" :title="open.has(x.id) ? 'Свернуть' : 'Показать целиком'" @click="toggle(x.id)"><Icon name="chevronDown" :size="12" :style="open.has(x.id) ? 'transform: rotate(180deg)' : ''" /></button>
+            <button class="ib sm tw:inline-flex tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:w-22 tw:h-22 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:opacity-0 tw:group-hover/it:opacity-100 tw:hover:enabled:border-border-3" title="Удалить" @click="window_remove(x.id)"><Icon name="x" :size="12" /></button>
           </span>
-          <span v-if="copied === x.id" class="ok">Скопировано</span>
+          <span v-if="copied === x.id" class="ok tw:absolute tw:right-70 tw:top-7 tw:text-up-fg tw:text-[11.5px]">Скопировано</span>
         </div>
       </template>
-      <p v-if="!state.items.length" class="empty">
+      <p v-if="!state.items.length" class="empty tw:my-20 tw:mx-0 tw:text-muted tw:text-[13px]">
         {{ state.on ? 'Пока пусто. Всё, что вы скопируете (Ctrl+C) в любой программе, появится здесь.' : 'История выключена — включите «Сохранять историю».' }}
       </p>
-      <p v-else-if="!shown.length" class="empty">Ничего не нашлось</p>
-      <p class="foot">Только текст. Хранятся последние 1000 записей, зашифрованно, только на этом компьютере. То, что менеджеры паролей помечают как «не сохранять в истории», не сохраняется.</p>
+      <p v-else-if="!shown.length" class="empty tw:my-20 tw:mx-0 tw:text-muted tw:text-[13px]">Ничего не нашлось</p>
+      <p class="foot tw:mt-16 tw:mr-0 tw:mb-0 tw:ml-0 tw:text-dim tw:text-[11.5px]">Только текст. Хранятся последние 1000 записей, зашифрованно, только на этом компьютере. То, что менеджеры паролей помечают как «не сохранять в истории», не сохраняется.</p>
     </div>
   </div>
 </template>
@@ -85,199 +85,3 @@ function clearAll(): void {
 <script lang="ts">
 const window_remove = (id: string) => void window.qa.clipRemove(id)
 </script>
-
-<style scoped>
-.cl {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  height: 38px;
-  padding: 0 10px 0 14px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.sw {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-2);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.sw input {
-  display: none;
-}
-.sw i {
-  position: relative;
-  width: 28px;
-  height: 16px;
-  border-radius: 8px;
-  background: var(--panel-3);
-  transition: background 0.15s;
-}
-.sw i::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--text-2);
-  transition: transform 0.15s;
-}
-.sw input:checked + i {
-  background: var(--accent);
-}
-.sw input:checked + i::after {
-  transform: translateX(12px);
-  background: #fff;
-}
-.search {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: min(320px, 40%);
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  color: var(--muted);
-}
-.search input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.grow {
-  flex: 1;
-}
-.muted {
-  color: var(--muted);
-  font-size: 12px;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib.sm {
-  width: 22px;
-  height: 22px;
-}
-.ib:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.ib:disabled {
-  opacity: 0.35;
-}
-.list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 14px 14px;
-}
-.day {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 12px 0 6px;
-  background: var(--bg);
-  color: var(--text-hi);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.day::first-letter {
-  text-transform: uppercase;
-}
-.it {
-  position: relative;
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-  padding: 7px 8px;
-  border-radius: var(--r2);
-  cursor: pointer;
-}
-.it:hover {
-  background: var(--hover);
-}
-.it.done {
-  background: rgba(0, 230, 118, 0.08);
-}
-.tm {
-  padding-top: 1px;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11.5px;
-}
-.tx {
-  margin: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.tx.clip {
-  max-height: 6em;
-  -webkit-mask-image: linear-gradient(#000 60%, transparent);
-  mask-image: linear-gradient(#000 60%, transparent);
-}
-.acts {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.cnt {
-  padding: 0 6px;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11px;
-  font-weight: 500;
-}
-.it .ib.sm {
-  opacity: 0;
-}
-.it:hover .ib.sm {
-  opacity: 1;
-}
-.ok {
-  position: absolute;
-  right: 70px;
-  top: 7px;
-  color: var(--up-fg);
-  font-size: 11.5px;
-}
-.empty {
-  margin: 20px 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-.foot {
-  margin: 16px 0 0;
-  color: var(--dim);
-  font-size: 11.5px;
-}
-</style>

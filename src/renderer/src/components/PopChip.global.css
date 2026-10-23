@@ -1,0 +1,41 @@
+/* PopChip: what its template cannot carry as utilities (global). */
+
+/* the list of a toolbar chip — teleported to <body> */
+.pcdd .pci {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--r2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pcdd .pci:hover {
+  background: rgb(var(--accent-rgb) / 0.16);
+}
+.pcdd .pci.cur {
+  background: rgb(var(--accent-rgb) / 0.24);
+  color: var(--text-hi);
+}
+.pcdd .pcsep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.pcdd .pcrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px 6px;
+  color: var(--muted);
+}
+.pcdd .pcrow input {
+  width: 64px;
+  padding: 4px 6px;
+  border-radius: var(--r2);
+  font-size: 12.5px;
+}

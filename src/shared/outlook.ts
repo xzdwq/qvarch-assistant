@@ -1,11 +1,23 @@
 import { dayEnd, dayStart, firstFreeLane } from './timeline'
 import type { DayData, Entry, KindDef, Ms } from './types'
+import { isKind } from './tracker/constants'
 
 /**
  * Outlook meetings on the timeline (calls are blocks of their own — not tied to meetings).
  *  - a meeting becomes a "Встреча" block; it follows Outlook until the user edits it (then it is theirs),
  *    a block the user deleted is not brought back, a meeting cancelled / declined in Outlook goes away;
  */
+
+/** Where meetings come from: the classic Outlook on this computer (COM) or Microsoft Graph. */
+export const OUTLOOK_SOURCES = ['local', 'graph'] as const
+export type OutlookSource = (typeof OUTLOOK_SOURCES)[number]
+/** How an event shows the time — Graph's names; the index is Outlook's OlBusyStatus (Graph alone may say "unknown"). */
+export const OUTLOOK_SHOW_AS = ['free', 'tentative', 'busy', 'oof', 'workingElsewhere', 'unknown'] as const
+export type OutlookShowAs = (typeof OUTLOOK_SHOW_AS)[number]
+/** The user's answer to an event — Graph's names; the index is Outlook's OlResponseStatus. */
+export const OUTLOOK_RESPONSES = ['none', 'organizer', 'tentativelyAccepted', 'accepted', 'declined', 'notResponded'] as const
+export type OutlookResponse = (typeof OUTLOOK_RESPONSES)[number]
+
 export interface OutlookEvent {
   id: string
   subject: string
@@ -13,10 +25,8 @@ export interface OutlookEvent {
   end: Ms
   allDay: boolean
   cancelled: boolean
-  /** free / tentative / busy / oof / workingElsewhere */
-  showAs: string
-  /** none / organizer / accepted / tentativelyAccepted / declined / notResponded */
-  response: string
+  showAs: OutlookShowAs
+  response: OutlookResponse
   organizer?: string
   online: boolean
   joinUrl?: string
@@ -26,7 +36,7 @@ export interface OutlookEvent {
 
 export interface OutlookState {
   /** local — the classic Outlook on this computer (COM); graph — Microsoft Graph (needs the org's consent). */
-  source: 'local' | 'graph'
+  source: OutlookSource
   configured: boolean
   connected: boolean
   account?: { name: string; email?: string }
@@ -44,7 +54,8 @@ export const CALL_ACTIVITIES = ['InACall', 'InAConferenceCall', 'Presenting']
 export const wanted = (e: OutlookEvent): boolean => !e.allDay && !e.cancelled && e.showAs !== 'free' && e.response !== 'declined' && e.end > e.start
 
 const sig = (start: Ms, end: Ms, label: string) => `${start}|${end}|${label}`
-const meetingKind = (kinds: KindDef[]) => kinds.find((k) => k.id === 'meeting')?.id ?? kinds.find((k) => k.id === 'call')?.id ?? kinds[0]?.id ?? 'meeting'
+/** The kind of a meeting's block: «Встреча», else «Созвон», else the first kind there is. */
+const meetingKind = (kinds: KindDef[]) => kinds.find((k) => isKind(k.id, 'meeting'))?.id ?? kinds.find((k) => isKind(k.id, 'call'))?.id ?? kinds[0]?.id ?? 'meeting'
 
 export function describe(e: OutlookEvent): string | undefined {
   const parts = [

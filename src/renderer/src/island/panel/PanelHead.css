@@ -1,0 +1,11 @@
+/* PanelHead: what its template cannot carry as utilities (scoped). */
+
+/* native window dragging: controls inside a drag region stay clickable */
+.nodrag,
+.drag button {
+  -webkit-app-region: no-drag;
+}
+.status.idle {
+  background: rgba(127, 139, 157, 0.15);
+  color: var(--text-2);
+}

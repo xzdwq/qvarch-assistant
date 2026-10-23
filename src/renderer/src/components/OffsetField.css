@@ -1,0 +1,6 @@
+/* OffsetField: what its template cannot carry as utilities (scoped). */
+
+.cap {
+  color: var(--muted);
+  font-size: 11px;
+}

@@ -89,58 +89,61 @@ export interface TermConfig {
 
 export const presetId = () => Math.random().toString(36).slice(2, 10)
 
-export function samplePresets(): TermPreset[] {
-  const p = (name: string, cmd: string, run = true): TermPreset => ({ id: presetId(), name, cmd, run })
-  return [
-    p('Статус', 'git status -sb'),
-    p('Добавить всё', 'git add .'),
-    p('Коммит с задачей из ветки', 'git commit -m "[{{ task || currentBranch.match(/\\/([^/]+)$/) || currentBranch }}] "', false),
-    p('Коммит: спросить текст', 'git commit -m "[{{ task || dir }}] {{ ask(\'Текст коммита\') }}"'),
-    p('Новая ветка задачи', 'git checkout -b {{ branchPrefix }}{{ ask(\'Ключ задачи\') }}'),
-    p('Лог: 15 последних', 'git log --oneline --graph --decorate -15'),
-    p('Отправить ветку', 'git push -u origin {{ currentBranch }}'),
-    p('Подтянуть основную ветку и влить', 'git fetch origin && git merge origin/{{ mainBranch }}'),
-    p('Отменить последний коммит (оставить правки)', 'git reset --soft HEAD~1', false),
-    p('Версии node / npm / pnpm', 'node -v; npm -v; pnpm -v'),
-    p('Установить зависимости', '{{ lockfile === "pnpm" ? "pnpm i" : lockfile === "yarn" ? "yarn" : "npm ci" }}'),
-    p('Скрипты package.json', '{{ pkg ? Object.keys(pkg.scripts ?? {}).join("  ") : "нет package.json" }}', false),
-    p('Открыть папку в проводнике', 'explorer .'),
-    p('Открыть в VS Code', 'code .'),
-    p('Сегодняшняя дата в файл', 'Add-Content notes.md "{{ date }} {{ time }} — {{ ask(\'Заметка\') }}"'),
-    p('Порт: кто занимает', 'Get-NetTCPConnection -LocalPort {{ ask(\'Порт\', \'3000\') }} | Select-Object LocalPort, OwningProcess, State', false),
-  ]
+/** The colours offered for a reaction (CSS variables, in integrations.css); a new one takes them in turn. */
+export const WATCH_COLOR_VARS = Array.from({ length: 8 }, (_, i) => `--new-watch-${i + 1}` as const)
+/**
+ * What the built-in variables are worked out from — the facts the main process gathers for the shell in front
+ * (its folder and line, the clock, the user, the project's package.json and lock file, the environment).
+ */
+export interface BuiltinVarFacts {
+  cwd: string
+  /** The folder's name. */
+  dir: string
+  info?: TermInfo
+  now: Date
+  user: string
+  /** The project's package.json (parsed), if there is one. */
+  pkg: unknown
+  /** The package manager by the lock file: pnpm / yarn / npm, or empty. */
+  lockfile: string
+  env: Record<string, string | undefined>
 }
-/** Variables to start with (the presets above use them). */
-export function sampleVars(): TermVar[] {
-  return [
-    { id: presetId(), name: 'mainBranch', value: 'main', js: false },
-    { id: presetId(), name: 'branchPrefix', value: 'feature/', js: false },
-    { id: presetId(), name: 'shortBranch', value: "currentBranch.split('/').pop()", js: true },
-  ]
+/** A built-in variable: its name, what it is (the Variables tab lists it), how it is worked out and shown short. */
+export interface BuiltinVar {
+  name: string
+  desc: string
+  resolve: (f: BuiltinVarFacts) => unknown
+  /** How the value is shown next to the variable (else as it goes into a command). */
+  show?: (v: unknown) => string
 }
-export function sampleWatches(): TermWatch[] {
-  return [{ id: presetId(), name: 'Ошибки', patterns: 'error', ignoreCase: true, word: false, color: '#ff3d3d', on: true }]
-}
-export const WATCH_COLORS = ['#ff3d3d', '#ff9100', '#ffd400', '#00e676', '#18e0ff', '#448aff', '#c792ea', '#ff4fd8'] as const
-/** The built-in variables (worked out for the shell in front), with what they are — the Variables tab lists them. */
-export const BUILTIN_VARS: Array<{ name: string; desc: string }> = [
-  { name: 'currentBranch', desc: 'ветка git в папке оболочки; пусто, если папка не в git' },
-  { name: 'branch', desc: 'то же, что currentBranch' },
-  { name: 'task', desc: 'ключ задачи из названия ветки (ABC-123); пусто, если его там нет' },
-  { name: 'cwd', desc: 'полный путь папки, где сейчас оболочка' },
-  { name: 'dir', desc: 'имя этой папки' },
-  { name: 'date', desc: 'сегодняшняя дата, ГГГГ-ММ-ДД' },
-  { name: 'time', desc: 'время сейчас, ЧЧ:ММ' },
-  { name: 'now', desc: 'дата и время (объект Date — для формул)' },
-  { name: 'user', desc: 'имя пользователя Windows' },
-  { name: 'node', desc: 'версия node в этой оболочке' },
-  { name: 'npm', desc: 'версия npm' },
-  { name: 'pnpm', desc: 'версия pnpm' },
-  { name: 'dirty', desc: 'сколько файлов изменено в git' },
-  { name: 'pkg', desc: 'package.json проекта (для формул: pkg.version, pkg.scripts…)' },
-  { name: 'lockfile', desc: 'менеджер пакетов проекта по lock-файлу: pnpm / yarn / npm' },
-  { name: 'env', desc: 'переменные окружения (для формул: env.USERPROFILE)' },
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const branchOf = (f: BuiltinVarFacts) => f.info?.branch ?? ''
+/** The built-in variables, in the order they are listed. */
+export const BUILTIN_VARS: readonly BuiltinVar[] = [
+  { name: 'currentBranch', desc: 'ветка git в папке оболочки; пусто, если папка не в git', resolve: branchOf },
+  { name: 'branch', desc: 'то же, что currentBranch', resolve: branchOf },
+  { name: 'task', desc: 'ключ задачи из названия ветки (ABC-123); пусто, если его там нет', resolve: (f) => branchOf(f).match(/[A-Z][A-Z0-9]+-\d+/)?.[0] ?? '' },
+  { name: 'cwd', desc: 'полный путь папки, где сейчас оболочка', resolve: (f) => f.cwd },
+  { name: 'dir', desc: 'имя этой папки', resolve: (f) => f.dir },
+  { name: 'date', desc: 'сегодняшняя дата, ГГГГ-ММ-ДД', resolve: ({ now }) => `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` },
+  { name: 'time', desc: 'время сейчас, ЧЧ:ММ', resolve: ({ now }) => `${pad2(now.getHours())}:${pad2(now.getMinutes())}` },
+  { name: 'now', desc: 'дата и время (объект Date — для формул)', resolve: (f) => f.now, show: (v) => (v as Date).toLocaleString('ru-RU') },
+  { name: 'user', desc: 'имя пользователя Windows', resolve: (f) => f.user },
+  { name: 'node', desc: 'версия node в этой оболочке', resolve: (f) => f.info?.node ?? '' },
+  { name: 'npm', desc: 'версия npm', resolve: (f) => f.info?.npm ?? '' },
+  { name: 'pnpm', desc: 'версия pnpm', resolve: (f) => f.info?.pnpm ?? '' },
+  { name: 'dirty', desc: 'сколько файлов изменено в git', resolve: (f) => f.info?.dirty ?? 0 },
+  {
+    name: 'pkg',
+    desc: 'package.json проекта (для формул: pkg.version, pkg.scripts…)',
+    resolve: (f) => f.pkg,
+    show: (v) => (v ? `package.json «${(v as { name?: string }).name ?? ''}»` : ''),
+  },
+  { name: 'lockfile', desc: 'менеджер пакетов проекта по lock-файлу: pnpm / yarn / npm', resolve: (f) => f.lockfile },
+  { name: 'env', desc: 'переменные окружения (для формул: env.USERPROFILE)', resolve: (f) => ({ ...f.env }), show: (v) => `${Object.keys(v as object).length} переменных окружения` },
 ]
+/** The built-in variables worked out from the facts: name → value. */
+export const builtinValues = (facts: BuiltinVarFacts): Record<string, unknown> => Object.fromEntries(BUILTIN_VARS.map((b) => [b.name, b.resolve(facts)]))
 /** A name a variable can have (a JS identifier). */
 export const VAR_NAME = /^[A-Za-z_$][\w$]*$/
 

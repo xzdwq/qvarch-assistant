@@ -1,0 +1,10 @@
+/* LookSection: what its template cannot carry as utilities (scoped). */
+
+/* ---------- the menu ---------- */
+.mrow.off .mlabel,
+.mrow.off > svg {
+  opacity: 0.4;
+}
+.mrow-move {
+  transition: transform 0.15s ease;
+}

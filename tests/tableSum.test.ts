@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellNumber, columnSum, deleteColAt, deleteRowAt, insertRowAt, mergeCells, parseTable, tableMd, type TableModel } from '../src/shared/noteBlocks'
+import { cellNumber, columnSum, deleteColAt, deleteRowAt, insertRowAt, mergeCells, parseTable, tableMd, type TableModel } from '../src/notebook/blocks/table/model'
 
 const table = (rows: string[][]): TableModel => ({ head: rows[0].map((_, i) => `C${i}`), rows, align: rows[0].map(() => undefined) })
 

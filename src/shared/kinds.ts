@@ -1,25 +1,33 @@
 import type { Entry, KindDef, Ms, WorkSchedule } from './types'
 import { atTime, mergeIntervals, subtractRanges, unionMs } from './timeline'
+import { BUILTIN_KINDS, isBuiltinKind, kindColorVar, type BuiltinKind } from './tracker/constants'
 
-export const DEFAULT_KINDS: KindDef[] = [
-  { id: 'task', label: 'Задача', color: '#6366f1', icon: 'code', productive: true },
-  { id: 'call', label: 'Созвон', color: '#14b8a6', icon: 'phone', productive: true },
-  { id: 'meeting', label: 'Встреча', color: '#0ea5e9', icon: 'users', productive: true },
-  { id: 'break', label: 'Перерыв', color: '#f59e0b', icon: 'coffee', productive: false },
-  { id: 'lunch', label: 'Обед', color: '#f97316', icon: 'utensils', productive: false },
-  { id: 'other', label: 'Другое', color: '#94a3b8', icon: 'tag', productive: true },
-]
+/** How each built-in kind starts out: its name, icon and whether it is work. */
+const BUILTIN_KIND_LOOK: Record<BuiltinKind, Omit<KindDef, 'id' | 'color'> & { productive: boolean }> = {
+  task: { label: 'Задача', icon: 'code', productive: true },
+  call: { label: 'Созвон', icon: 'phone', productive: true },
+  meeting: { label: 'Встреча', icon: 'users', productive: true },
+  break: { label: 'Перерыв', icon: 'coffee', productive: false },
+  lunch: { label: 'Обед', icon: 'utensils', productive: false },
+  other: { label: 'Другое', icon: 'tag', productive: true },
+}
+
+/**
+ * The kinds of new settings. Made by main (no CSS there), so a default colour is the CSS variable of the
+ * tracker's colours that holds it — the renderer shows it as is; a colour the user picks is stored as `#rrggbb`.
+ */
+export const DEFAULT_KINDS: KindDef[] = BUILTIN_KINDS.map((id) => ({ id, ...BUILTIN_KIND_LOOK[id], color: kindColorVar(id) }))
 
 /** Kind lookup with a safe fallback for entries whose kind was deleted from settings. */
 export function findKind(kinds: KindDef[], id: string): KindDef {
-  return kinds.find((k) => k.id === id) ?? { id, label: id, color: '#94a3b8', icon: 'tag' }
+  return kinds.find((k) => k.id === id) ?? { id, label: id, color: kindColorVar('other'), icon: 'tag' }
 }
 
 /** Breaks and lunch are not work; everything else is unless switched off in settings. */
 export function isProductive(kinds: KindDef[], id: string): boolean {
   const k = kinds.find((x) => x.id === id)
   if (k?.productive !== undefined) return k.productive
-  return id !== 'break' && id !== 'lunch'
+  return isBuiltinKind(id) ? BUILTIN_KIND_LOOK[id].productive : true
 }
 
 /** Productive time: union of productive blocks (parallel blocks counted once). */

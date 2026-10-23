@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useCloseOnScroll } from '../lib/floating'
+import { atPoint, openWhile, usePopover } from '../lib/usePopover'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from './Icon.vue'
 
@@ -44,60 +44,17 @@ async function copy(): Promise<void> {
   }
   setTimeout(() => (menu.value = undefined), 700)
 }
-useCloseOnScroll(menu, () => (menu.value = undefined), '.img-menu')
-const away = (e: Event) => menu.value && !(e.target as Element | null)?.closest?.('.img-menu') && (menu.value = undefined)
-const esc = (e: KeyboardEvent) => e.key === 'Escape' && (menu.value = undefined)
-onMounted(() => {
-  window.addEventListener('contextmenu', onCtx, true)
-  window.addEventListener('pointerdown', away, true)
-  window.addEventListener('keydown', esc)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('contextmenu', onCtx, true)
-  window.removeEventListener('pointerdown', away, true)
-  window.removeEventListener('keydown', esc)
-})
+// (its point already fitted into the window when opened)
+const { panelRef, style } = usePopover(() => menu.value, { place: atPoint }, openWhile(menu))
+onMounted(() => window.addEventListener('contextmenu', onCtx, true))
+onBeforeUnmount(() => window.removeEventListener('contextmenu', onCtx, true))
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="menu" class="img-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
-      <button v-if="!done" @click="copy"><Icon name="copy" :size="13" />Копировать изображение</button>
-      <span v-else class="done"><Icon name="check" :size="13" />{{ done }}</span>
+    <div v-if="menu" :ref="panelRef" class="img-menu tw:fixed tw:z-6000 tw:min-w-210 tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop" :style="style">
+      <button class="tw:flex tw:items-center tw:gap-8 tw:w-full tw:h-30 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-hover" v-if="!done" @click="copy"><Icon name="copy" :size="13" />Копировать изображение</button>
+      <span v-else class="done tw:flex tw:items-center tw:gap-8 tw:w-full tw:h-30 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-[12.5px] tw:text-left tw:text-up-fg"><Icon name="check" :size="13" />{{ done }}</span>
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.img-menu {
-  position: fixed;
-  z-index: 6000;
-  min-width: 210px;
-  padding: 4px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.img-menu button,
-.img-menu .done {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-size: 12.5px;
-  text-align: left;
-}
-.img-menu button:hover {
-  background: var(--hover);
-}
-.img-menu .done {
-  color: var(--up-fg);
-}
-</style>

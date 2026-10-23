@@ -10,7 +10,7 @@
     "noUnusedLocals": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "paths": { "@shared/*": ["./src/shared/*"] }
+    "paths": { "@shared/*": ["./src/shared/*"], "@nb/*": ["./src/notebook/*"], "@renderer/*": ["./src/renderer/src/*"] }
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.vue", "src/renderer/env.d.ts", "src/renderer/shims.d.ts", "src/shared/**/*"]
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.vue", "src/renderer/env.d.ts", "src/renderer/shims.d.ts", "src/shared/**/*", "src/notebook/**/*.ts", "src/notebook/**/*.vue"]
 }

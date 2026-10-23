@@ -29,11 +29,41 @@ interface Step {
    * `hold` ms at the end before the button goes up.
    */
   strokes?: Array<{ sel: string; pts: Array<[number, number]>; hold?: number }>
+  /** The js's result saved as <name>.json (not logged): a style dump of the window. */
+  save?: boolean
+  /**
+   * For every element of the window matching `selector`: the element held hovered (as under the mouse — its
+   * descendants' `:hover` rules apply too), `js` run with its index (`(i) => …`); the results saved as
+   * <name>.hover.json. (A style dump of the hover states.)
+   */
+  hover?: { selector: string; js: string }
   wait?: number
   w?: number
   h?: number
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Each element matching `selector` held in `:hover` (DevTools protocol) while `js(i)` runs in the page; the results by index. */
+async function hoverDump(w: BrowserWindow, selector: string, js: string): Promise<unknown[]> {
+  const dbg = w.webContents.debugger
+  const mine = !dbg.isAttached()
+  if (mine) dbg.attach('1.3')
+  const out: unknown[] = []
+  try {
+    await dbg.sendCommand('DOM.enable')
+    await dbg.sendCommand('CSS.enable')
+    const doc = (await dbg.sendCommand('DOM.getDocument', { depth: -1 })) as { root: { nodeId: number } }
+    const { nodeIds } = (await dbg.sendCommand('DOM.querySelectorAll', { nodeId: doc.root.nodeId, selector })) as { nodeIds: number[] }
+    for (const [i, nodeId] of nodeIds.entries()) {
+      await dbg.sendCommand('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
+      out.push(await w.webContents.executeJavaScript(`(${js})(${i})`, true))
+      await dbg.sendCommand('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
+    }
+  } finally {
+    if (mine) dbg.detach()
+  }
+  return out
+}
 
 export async function runSnap(out: string, main: BrowserWindow, island?: BrowserWindow): Promise<void> {
   mkdirSync(out, { recursive: true })
@@ -60,7 +90,12 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
     if (!w) continue
     try {
       if (s.w && s.h) w.setContentSize(s.w, s.h)
-      if (s.js) log.push(`${s.name}: ${JSON.stringify(await w.webContents.executeJavaScript(s.js, true))}`)
+      if (s.js) {
+        const r = await w.webContents.executeJavaScript(s.js, true)
+        if (s.save) writeFileSync(join(out, `${s.name}.json`), JSON.stringify(r))
+        else log.push(`${s.name}: ${JSON.stringify(r)}`)
+      }
+      if (s.hover) writeFileSync(join(out, `${s.name}.hover.json`), JSON.stringify(await hoverDump(w, s.hover.selector, s.hover.js)))
       if (s.move) {
         const [x0, y0, x1, y1, n] = s.move
         const seen: string[] = []

@@ -1,0 +1,96 @@
+/* Colours of the notebook: the editor's syntax, callouts, charts. */
+:root {
+  /* Markdown in the editor */
+  --syntax-strong: #f4f4f8;
+  --syntax-quote: #b8c0d6;
+  --syntax-meta: #6f7894;
+  /* code inside the blocks: a dark palette close to VS Code's */
+  --syntax-keyword: #c792ea;
+  --syntax-string: #c3e88d;
+  --syntax-number: #f78c6c;
+  --syntax-comment: #697098;
+  --syntax-property: #82aaff;
+  --syntax-function: #82aaff;
+  --syntax-type: #ffcb6b;
+  --syntax-punctuation: #89ddff;
+  --syntax-variable: #e6e9f2;
+  --syntax-special: #f07178;
+
+  /* the editor's own parts */
+  --editor-placeholder: #5b6275;
+  --editor-search-match: rgba(250, 204, 21, 0.22);
+  --editor-search-match-edge: rgba(250, 204, 21, 0.45);
+  --editor-search-match-current: rgba(250, 204, 21, 0.45);
+  /* the search panel and the completion list floating over the text */
+  --editor-pop-border: rgba(255, 255, 255, 0.1);
+  --editor-search-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --editor-search-label: #aab1c3;
+  --editor-button-border: rgba(255, 255, 255, 0.12);
+  --editor-completion-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  --editor-completion-text: #d6dae6;
+  --editor-completion-detail: #7d8599;
+  /* a small button's hover wash (search close, copy) */
+  --editor-hover-wash: rgba(255, 255, 255, 0.08);
+  /* live preview */
+  --editor-link-underline: rgba(255, 162, 92, 0.4);
+  --editor-rule: rgba(255, 255, 255, 0.14);
+  --editor-code-bg: rgba(255, 255, 255, 0.045);
+  --editor-code-text: #d6dae6;
+  --editor-inline-code: #fbcfe8;
+  --editor-inline-code-bg: rgba(255, 255, 255, 0.06);
+  --editor-copy-hover: #e5e7eb;
+  --editor-copy-error: #f87171;
+  /* a Jira task's chip and its icon in the «@» menu */
+  --editor-jira-chip: #2684ff;
+
+  /* a block's edge on the left, by its kind */
+  --block-code: #a78bfa;
+  --block-data: #4ade80;
+  --block-http: #38bdf8;
+  --block-ref: #fbbf24;
+  --block-sql: #f59e0b;
+  --block-tpl: #34d399;
+  /* a run's report just copied (its button lit) */
+  --run-copied: #4ade80;
+  /* the buttons over a picture */
+  --image-tool-bg: rgba(15, 17, 23, 0.78);
+  --image-tool-fg: #e6e9f2;
+  /* the open tab's top highlight */
+  --pane-tab-on-edge: rgba(255, 255, 255, 0.06);
+  /* the SQL library's popover, the notebook's toast */
+  --sql-library-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --notebook-toast-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  /* a recording's orb while it is transcribed (a canvas: read as hex) */
+  --audio-transcribing: #ffa25c;
+
+  /* callouts, by their type */
+  --callout-note: #94a3b8;
+  --callout-info: #38bdf8;
+  --callout-tip: #a78bfa;
+  --callout-success: #4ade80;
+  --callout-warning: #fbbf24;
+  --callout-danger: #f87171;
+
+  /* the colours a note / folder can be marked with (a picked one is kept in the vault as its hex) */
+  --note-mark-1: #f87171;
+  --note-mark-2: #fb923c;
+  --note-mark-3: #facc15;
+  --note-mark-4: #4ade80;
+  --note-mark-5: #38bdf8;
+  --note-mark-6: #818cf8;
+  --note-mark-7: #e879f9;
+
+  /* a board's paper: the faint fibres drawn on a dark / a light paper (alpha added when drawn) */
+  --paper-fibre-on-dark: #ffffff;
+  --paper-fibre-on-light: #5a4628;
+
+  /* a chart's series, in turn */
+  --chart-series-1: #38bdf8;
+  --chart-series-2: #fb923c;
+  --chart-series-3: #4ade80;
+  --chart-series-4: #c084fc;
+  --chart-series-5: #f87171;
+  --chart-series-6: #facc15;
+  --chart-series-7: #2dd4bf;
+  --chart-series-8: #f472b6;
+}

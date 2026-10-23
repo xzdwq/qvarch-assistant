@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useCron, type CronFormat } from '@vue-js-cron/core'
-import { placeFloat, useAnchor } from '../../lib/floating'
+import { openWhile } from '../../lib/usePopover'
 import Icon from '../Icon.vue'
+import Popover from '../Popover.vue'
 
 /**
  * The cron expression as a sentence of choices («Каждую неделю по пн-сб в 12 : 00») — @vue-js-cron/core does
@@ -29,16 +30,27 @@ const customLocale = {
  * The narrowest period that shows every field the expression sets («0 12 * * 1-6» — a week, not a year: the
  * library would take the widest one that fits).
  */
-const PERIODS = ['minute', 'hour', 'day', 'week', 'month', 'year']
+/** The library's fields of a crontab expression, in order (the other dialects put seconds first). */
+const FIELD_IDS = ['minute', 'hour', 'day', 'month', 'dayOfWeek']
+/** Each period (narrowest first) and the fields it shows. */
+const PERIOD_FIELDS: Record<string, readonly string[]> = {
+  minute: [],
+  hour: ['minute'],
+  day: ['hour', 'minute'],
+  week: ['dayOfWeek', 'hour', 'minute'],
+  month: ['day', 'dayOfWeek', 'hour', 'minute'],
+  year: ['month', 'day', 'dayOfWeek', 'hour', 'minute'],
+}
+/** The periods the library names apart in the dialects with seconds («q-minute»). */
+const SECONDS_PERIODS = new Set(['minute', 'hour'])
 function bestPeriod(expr: string): string | undefined {
   const parts = expr.trim().split(/\s+/)
-  const ids = props.format === 'crontab' ? ['minute', 'hour', 'day', 'month', 'dayOfWeek'] : ['second', 'minute', 'hour', 'day', 'month', 'dayOfWeek']
+  const withSeconds = props.format !== 'crontab'
+  const ids = withSeconds ? ['second', ...FIELD_IDS] : FIELD_IDS
   if (parts.length !== ids.length) return undefined
   const set = ids.filter((id, i) => id !== 'second' && parts[i] !== '*' && parts[i] !== '?')
-  const need = (p: string) => ({ minute: [], hour: ['minute'], day: ['hour', 'minute'], week: ['dayOfWeek', 'hour', 'minute'], month: ['day', 'dayOfWeek', 'hour', 'minute'], year: ['month', 'day', 'dayOfWeek', 'hour', 'minute'] })[p] ?? []
-  const q = props.format === 'crontab' ? '' : 'q-'
-  const hit = PERIODS.find((p) => set.every((f) => need(p).includes(f)))
-  return hit && (hit === 'minute' || hit === 'hour') ? q + hit : hit
+  const hit = Object.keys(PERIOD_FIELDS).find((p) => set.every((f) => PERIOD_FIELDS[p].includes(f)))
+  return hit && withSeconds && SECONDS_PERIODS.has(hit) ? `q-${hit}` : hit
 }
 const c = useCron({ initialValue: props.modelValue || undefined, initialPeriod: bestPeriod(props.modelValue), format: props.format, locale: 'ru', customLocale: customLocale as never })
 let echo = ''
@@ -62,11 +74,12 @@ watch(c.cron, (v) => {
 const fits = computed(() => !props.modelValue.trim() || props.modelValue.trim().split(/\s+/).length === c.segments.length)
 
 // ---------- the pickers ----------
+/** The picker open (its segment's id, or the period) and the chip it opened from. */
 const openId = ref<string>()
 const anchor = ref<HTMLElement>()
-const popStyle = ref<Record<string, string>>({})
-const isOpen = computed(() => !!openId.value)
-useAnchor(isOpen, anchor, () => anchor.value && (popStyle.value = placeFloat(anchor.value, openId.value === 'period' ? 220 : openId.value === 'minute' || openId.value === 'second' ? 340 : 300, true, 40).style))
+const isOpen = openWhile(openId)
+const POP_WIDTH: Record<string, number> = { period: 220, minute: 340, second: 340 }
+const popWidth = () => POP_WIDTH[openId.value ?? ''] ?? 300
 function toggle(id: string, e: MouseEvent): void {
   if (openId.value === id) return void (openId.value = undefined)
   anchor.value = e.currentTarget as HTMLElement
@@ -82,162 +95,35 @@ function pick(v: number): void {
   else cur.add(v)
   s.select([...cur])
 }
-function onDocDown(e: PointerEvent): void {
-  const t = e.target as HTMLElement
-  if (!t.closest('.cbpop') && !t.closest('.cbchip')) openId.value = undefined
-}
-watch(isOpen, (on) => (on ? window.addEventListener('pointerdown', onDocDown, true) : window.removeEventListener('pointerdown', onDocDown, true)))
 const NAMES: Record<string, string> = { second: 'Секунды', minute: 'Минуты', hour: 'Часы', day: 'Дни месяца', month: 'Месяцы', dayOfWeek: 'Дни недели' }
 </script>
 
 <template>
-  <div class="cb">
+  <div class="cb tw:flex tw:items-center tw:flex-wrap tw:gap-6 tw:text-[13.5px]">
     <template v-if="fits">
-      <button class="cbchip per" :class="{ on: openId === 'period' }" @click="toggle('period', $event)">{{ c.period.selected.value.text }}<Icon name="chevronDown" :size="11" /></button>
+      <button class="cbchip per tw:inline-flex tw:items-center tw:gap-5 tw:h-30 tw:py-0 tw:px-10 tw:border tw:border-accent/45 tw:rounded-r2 tw:bg-accent/8 tw:text-text-hi tw:text-[13px] tw:[&.on]:not-hover:bg-accent/20 tw:hover:bg-accent/20 tw:font-semibold tw:hover:enabled:border-border-3" :class="{ on: openId === 'period' }" @click="toggle('period', $event)">{{ c.period.selected.value.text }}<Icon name="chevronDown" :size="11" /></button>
       <template v-for="s in c.selected.value" :key="s.id">
-        <span v-if="s.prefix.value" class="w">{{ s.prefix.value }}</span>
-        <button class="cbchip" :class="{ on: openId === s.id, any: !s.selected.value.length }" :title="NAMES[s.id]" @click="toggle(s.id, $event)">{{ s.text.value || '—' }}<Icon name="chevronDown" :size="11" /></button>
-        <span v-if="s.suffix.value" class="w">{{ s.suffix.value }}</span>
+        <span v-if="s.prefix.value" class="w tw:text-text-2">{{ s.prefix.value }}</span>
+        <button class="cbchip tw:inline-flex tw:items-center tw:gap-5 tw:h-30 tw:py-0 tw:px-10 tw:border tw:border-accent/45 tw:rounded-r2 tw:bg-accent/8 tw:text-text-hi tw:text-[13px] tw:[&.any]:border-dashed tw:[&.any]:text-text-2 tw:[&.on]:not-hover:bg-accent/20 tw:hover:bg-accent/20 tw:hover:enabled:border-border-3" :class="{ on: openId === s.id, any: !s.selected.value.length }" :title="NAMES[s.id]" @click="toggle(s.id, $event)">{{ s.text.value || '—' }}<Icon name="chevronDown" :size="11" /></button>
+        <span v-if="s.suffix.value" class="w tw:text-text-2">{{ s.suffix.value }}</span>
       </template>
     </template>
-    <p v-else class="muted">Конструктор не разбирает это выражение (другое число полей — например, год в Quartz). Описание и запуски ниже — по самому выражению.</p>
-    <Teleport to="body">
-      <div v-if="openId === 'period'" class="cbpop" :style="popStyle">
-        <button v-for="p in c.period.items" :key="p.id" class="pi" :class="{ on: c.period.selected.value.id === p.id }" @click="(c.period.select(p.id), (openId = undefined))">{{ p.text }}</button>
-      </div>
-      <div v-else-if="seg" class="cbpop" :style="popStyle">
-        <div class="ph">
-          <b>{{ NAMES[seg.id] }}</b>
-          <span class="muted">можно несколько</span>
-          <span class="grow"></span>
-          <button class="lnk" :class="{ on: !seg.selected.value.length }" @click="seg.select([])">Любые</button>
+    <p v-else class="muted tw:m-0 tw:text-muted tw:text-[12.5px]">Конструктор не разбирает это выражение (другое число полей — например, год в Quartz). Описание и запуски ниже — по самому выражению.</p>
+    <Popover v-model:open="isOpen" :anchor="anchor" :width="popWidth" align-left :chrome="40" max-height="none" class="cbpop tw:flex tw:flex-col tw:gap-8 tw:max-h-420 tw:p-10 tw:overflow-auto tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+      <template v-if="openId === 'period'">
+        <button v-for="p in c.period.items" :key="p.id" class="pi tw:h-30 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-left tw:hover:not-[&.on]:bg-hover tw:[&.on]:text-accent-fg tw:[&.on]:bg-accent/12 tw:hover:enabled:border-border-3" :class="{ on: c.period.selected.value.id === p.id }" @click="(c.period.select(p.id), (openId = undefined))">{{ p.text }}</button>
+      </template>
+      <template v-else-if="seg">
+        <div class="ph tw:flex tw:items-center tw:gap-8 tw:text-[12.5px]">
+          <b class="tw:text-text-hi">{{ NAMES[seg.id] }}</b>
+          <span class="muted tw:m-0 tw:text-muted tw:text-[12.5px]">можно несколько</span>
+          <span class="grow tw:flex-1"></span>
+          <button class="lnk tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:border-accent/60 tw:[&.on]:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: !seg.selected.value.length }" @click="seg.select([])">Любые</button>
         </div>
-        <div class="grid" :style="{ gridTemplateColumns: `repeat(${COLS[seg.id] ?? 6}, minmax(0, 1fr))` }">
-          <button v-for="it in seg.items" :key="it.value" class="gi" :class="{ on: seg.selected.value.includes(it.value), wide: seg.id === 'dayOfWeek' }" @click="pick(it.value)">{{ seg.id === 'dayOfWeek' || seg.id === 'month' ? it.alt : it.text }}</button>
+        <div class="cells tw:grid tw:gap-3" :style="{ gridTemplateColumns: `repeat(${COLS[seg.id] ?? 6}, minmax(0, 1fr))` }">
+          <button v-for="it in seg.items" :key="it.value" class="gi tw:h-28 tw:py-0 tw:px-4 tw:border tw:border-transparent tw:rounded-r2 tw:bg-panel tw:text-text-2 tw:font-data tw:text-[12px] tw:[&.wide]:font-ui tw:[&.wide]:text-left tw:[&.wide]:py-0 tw:[&.wide]:px-10 tw:hover:not-[&.on]:text-text tw:hover:not-[&.on]:border-border-2 tw:[&.on]:bg-accent/25 tw:[&.on]:text-accent-fg tw:[&.on]:border-accent/60 tw:hover:enabled:not-[&.on]:bg-hover" :class="{ on: seg.selected.value.includes(it.value), wide: seg.id === 'dayOfWeek' }" @click="pick(it.value)">{{ seg.id === 'dayOfWeek' || seg.id === 'month' ? it.alt : it.text }}</button>
         </div>
-      </div>
-    </Teleport>
+      </template>
+    </Popover>
   </div>
 </template>
-
-<style scoped>
-.cb {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 6px;
-  font-size: 13.5px;
-}
-.w {
-  color: var(--text-2);
-}
-.cbchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgb(var(--accent-rgb) / 0.45);
-  border-radius: var(--r2);
-  background: rgb(var(--accent-rgb) / 0.08);
-  color: var(--text-hi);
-  font-size: 13px;
-}
-.cbchip.any {
-  border-style: dashed;
-  color: var(--text-2);
-}
-.cbchip.on,
-.cbchip:hover {
-  background: rgb(var(--accent-rgb) / 0.2);
-}
-.cbchip.per {
-  font-weight: 600;
-}
-.muted {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.cbpop {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 420px;
-  padding: 10px;
-  overflow: auto;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-}
-.cbpop .ph {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-}
-.cbpop .ph b {
-  color: var(--text-hi);
-}
-.grow {
-  flex: 1;
-}
-.lnk {
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.lnk.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  color: var(--accent-fg);
-}
-.grid {
-  display: grid;
-  gap: 3px;
-}
-.gi {
-  height: 28px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-radius: var(--r2);
-  background: var(--panel);
-  color: var(--text-2);
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-.gi.wide {
-  font-family: var(--font-ui);
-  text-align: left;
-  padding: 0 10px;
-}
-.gi:hover {
-  color: var(--text);
-  border-color: var(--border-2);
-}
-.gi.on {
-  background: rgb(var(--accent-rgb) / 0.25);
-  color: var(--accent-fg);
-  border-color: rgb(var(--accent-rgb) / 0.6);
-}
-.pi {
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-}
-.pi:hover {
-  background: var(--hover);
-}
-.pi.on {
-  color: var(--accent-fg);
-  background: rgb(var(--accent-rgb) / 0.12);
-}
-</style>

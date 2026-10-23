@@ -1,0 +1,22 @@
+/* NoteEditor: what its template cannot carry as utilities (scoped). */
+
+.lpw :deep(.chip) {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.lpw :deep(.pchip) {
+  height: 28px;
+  padding: 0 7px;
+}
+.ndate :deep(.pdate-row) {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.ndate :deep(.pdate) {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}

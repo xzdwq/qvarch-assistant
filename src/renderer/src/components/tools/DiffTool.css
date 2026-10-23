@@ -1,0 +1,5 @@
+/* DiffTool: what its template cannot carry as utilities (scoped). */
+
+.ed :deep(.cm-editor) {
+  font-size: 12.5px;
+}

@@ -1,0 +1,10 @@
+/* PaneNavBar: what its template cannot carry as utilities (scoped). */
+
+/* the zoom chip as high as the bar's buttons */
+.nav :deep(.zc) {
+  height: 28px;
+}
+/* the star of a page in the bookmarks: filled */
+.star.on :deep(svg) {
+  fill: currentColor;
+}

@@ -1,0 +1,25 @@
+/* ApiMapPanel: what its template cannot carry as utilities (scoped). */
+
+/* the view: the traffic's map / the site's Swagger */
+/* the clear asked once more — in words, red */
+.ib.warn {
+  background: rgb(239 68 68 / 0.18);
+  color: var(--down-fg);
+}
+.lnk.on {
+  text-decoration: underline;
+}
+/* the row's actions — one height */
+.m.post {
+  color: var(--accent);
+}
+.m.put,
+.m.patch {
+  color: var(--warn-fg);
+}
+.m.delete {
+  color: var(--down-fg);
+}
+/* the headers: a request's, an answer's — a name, its value (selectable, whole in the hint) */
+/* a header's value copied by its own button (a fresh token — into a request): the name, the value up to the button,
+   the button at the right edge — whatever the panel's width */

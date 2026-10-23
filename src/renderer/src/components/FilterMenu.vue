@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import Icon from './Icon.vue'
-import { placeFloat, useAnchor } from '../lib/floating'
+import Popover from './Popover.vue'
 
 /** A filter button: a list of options with checkboxes (a search when it is long); the button shows how many are on. */
 export interface FilterOption {
@@ -15,13 +15,9 @@ const model = defineModel<string[]>({ default: () => [] })
 
 const open = ref(false)
 const q = ref('')
-const root = ref<HTMLElement>()
 const search = ref<HTMLInputElement>()
-const dd = ref<HTMLElement>()
+/** The list: teleported to <body> and fixed under the button — a widget's / card's overflow never clips it. */
 const btn = ref<HTMLElement>()
-/** Teleported to <body> and fixed under the button: a widget's / card's overflow never clips it. */
-const fstyle = ref<Record<string, string>>({})
-useAnchor(open, btn, () => btn.value && (fstyle.value = placeFloat(btn.value, 260, true, 60).style))
 const shown = computed(() => {
   const s = q.value.trim().toLowerCase()
   return s ? props.options.filter((o) => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(s)) : props.options
@@ -37,169 +33,28 @@ async function flip(): Promise<void> {
     search.value?.focus()
   }
 }
-function onDown(e: MouseEvent): void {
-  if (open.value && !root.value?.contains(e.target as Node) && !dd.value?.contains(e.target as Node)) open.value = false
-}
-function onKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape') open.value = false
-}
-onMounted(() => {
-  window.addEventListener('mousedown', onDown, true)
-  window.addEventListener('keydown', onKey)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', onDown, true)
-  window.removeEventListener('keydown', onKey)
-})
 </script>
 
 <template>
-  <div ref="root" class="fm">
-    <button ref="btn" class="fb" :class="{ on: model.length, open }" :title="title ?? label" @click="flip">
+  <div class="fm tw:relative">
+    <button ref="btn" class="fb tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:whitespace-nowrap tw:hover:not-[&.open]:not-[&.on]:bg-white/5 tw:[&.open]:not-[&.on]:bg-white/5 tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/12 tw:[&.on]:text-text-hi tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: model.length, open }" :title="title ?? label" @click="flip">
       <Icon :name="icon" :size="13" />
-      <span class="fl">{{ label }}</span>
-      <b v-if="model.length" class="cnt">{{ model.length }}</b>
-      <Icon name="chevronDown" :size="12" class="cv" />
+      <span class="fl tw:max-[900px]:hidden">{{ label }}</span>
+      <b v-if="model.length" class="cnt tw:min-w-16 tw:py-0 tw:px-4 tw:rounded-[4px] tw:bg-accent tw:text-on-accent tw:text-[10.5px] tw:text-center">{{ model.length }}</b>
+      <Icon name="chevronDown" :size="12" class="cv tw:text-muted" />
     </button>
-    <Teleport to="body">
-    <div v-if="open" ref="dd" class="fd" :style="fstyle">
-      <input v-if="options.length > 8" ref="search" v-model="q" class="fs" placeholder="Поиск" />
-      <div class="fo">
-        <label v-for="o in shown" :key="o.id" class="opt">
-          <input type="checkbox" :checked="model.includes(o.id)" @change="toggle(o.id)" />
-          <i v-if="o.color" :style="{ background: o.color }"></i>
-          <span class="ol">{{ o.label }}</span>
-          <small v-if="o.hint">{{ o.hint }}</small>
+    <Popover v-model:open="open" :anchor="btn" :width="260" align-left :chrome="60" max-height="none" class="fd tw:fixed tw:z-5000 tw:w-260 tw:p-6 tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)]">
+      <input v-if="options.length > 8" ref="search" v-model="q" class="fs tw:w-full tw:box-border tw:mb-4 tw:py-5 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-panel tw:text-text tw:text-[12px]" placeholder="Поиск" />
+      <div class="fo tw:max-h-300 tw:overflow-auto">
+        <label v-for="o in shown" :key="o.id" class="opt tw:flex tw:items-center tw:gap-7 tw:py-5 tw:px-6 tw:rounded-r2 tw:text-[12.5px] tw:cursor-pointer tw:hover:bg-accent/14">
+          <input class="tw:m-0 tw:[accent-color:var(--accent)]" type="checkbox" :checked="model.includes(o.id)" @change="toggle(o.id)" />
+          <i class="tw:flex-none tw:w-9 tw:h-9 tw:rounded-r2" v-if="o.color" :style="{ background: o.color }"></i>
+          <span class="ol tw:flex-none tw:whitespace-nowrap">{{ o.label }}</span>
+          <small class="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted tw:text-[11px]" v-if="o.hint">{{ o.hint }}</small>
         </label>
-        <p v-if="!shown.length" class="none">Ничего</p>
+        <p v-if="!shown.length" class="none tw:m-6 tw:text-muted tw:text-[12px]">Ничего</p>
       </div>
-      <button v-if="model.length" class="clr" @click="model = []"><Icon name="x" :size="12" />Сбросить</button>
-    </div>
-    </Teleport>
+      <button v-if="model.length" class="clr tw:inline-flex tw:items-center tw:gap-5 tw:mt-4 tw:py-4 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:text-text tw:hover:bg-white/6 tw:hover:enabled:border-border-3" @click="model = []"><Icon name="x" :size="12" />Сбросить</button>
+    </Popover>
   </div>
 </template>
-
-<style scoped>
-.fm {
-  position: relative;
-}
-.fb {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.fb:hover,
-.fb.open {
-  background: rgba(255, 255, 255, 0.05);
-}
-.fb.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  background: rgb(var(--accent-rgb) / 0.12);
-  color: var(--text-hi);
-}
-.cnt {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 10.5px;
-  text-align: center;
-}
-.cv {
-  color: var(--muted);
-}
-.fd {
-  position: fixed;
-  z-index: 5000;
-  width: 260px;
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--panel-2);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
-}
-.fs {
-  width: 100%;
-  box-sizing: border-box;
-  margin-bottom: 4px;
-  padding: 5px 8px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
-}
-.fo {
-  max-height: 300px;
-  overflow: auto;
-}
-.opt {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 6px;
-  border-radius: var(--r2);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.opt:hover {
-  background: rgb(var(--accent-rgb) / 0.14);
-}
-.opt input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-.opt i {
-  flex: none;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--r2);
-}
-.ol {
-  flex: none;
-  white-space: nowrap;
-}
-.opt small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 11px;
-}
-.none {
-  margin: 6px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.clr {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.clr:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
-}
-@media (max-width: 900px) {
-  .fl {
-    display: none;
-  }
-}
-</style>

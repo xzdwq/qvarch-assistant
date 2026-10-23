@@ -1,7 +1,6 @@
-import { findBlocks } from '@shared/noteBlocks'
-import { parseInfo, summary } from '@shared/runbook'
+import { summary } from '@nb/domain/values'
+import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncDataBlocks, type RunItem } from '@nb/engine'
 import { doc, docs, loadTree, openFile, save, setText } from './notebook'
-import { blockReport, noteReport, noteRun, runAll, runCode, runHttp, runKey, runPw, syncData } from './runbook'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
@@ -21,6 +20,16 @@ function vars(path: string): string {
   const ctx = noteRun(path).ctx
   const keys = Object.keys(ctx)
   return keys.length ? `Переменные: ${keys.map((k) => `${k} = ${summary(ctx[k].value)}`).join('; ')}` : ''
+}
+
+/** An item's last run as a report (a loop — its passes; in a loop's pass, its block — the pass shown). */
+function itemReport(path: string, item: RunItem): string {
+  switch (item.kind) {
+    case 'loop':
+      return loopReport(noteRun(path).loops[item.key], item.loop.info.name ?? item.key)
+    default:
+      return blockReport(path, item.key, item.kind, item.info, item.body)
+  }
 }
 
 const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
@@ -54,7 +63,7 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     const text = await textOf(path)
     await runsLoaded(path)
     openFile(path)
-    syncData(path, text)
+    syncDataBlocks(path, text)
     const want = typeof a.block === 'string' && a.block ? a.block : undefined
     if (!want) {
       await runAll(path, text)
@@ -62,19 +71,11 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
       const stop = n.all?.error ? `\n\n⛔ Прогон остановился на «${n.all.at}»: ${n.all.error}` : ''
       return `${noteReport(path, text)}${stop}\n\n${vars(path)}`.trim()
     }
-    const b = findBlocks(text.split('\n'))
-      .filter((x) => x.kind === 'http' || x.kind === 'code' || x.kind === 'pw')
-      .map((x) => {
-        const lines = x.src.split('\n')
-        const info = parseInfo(lines[0].replace(/^(`{3,}|~{3,})/, ''))
-        return { kind: x.kind as 'http' | 'code' | 'pw', info, body: lines.slice(1, -1).join('\n'), key: runKey(info.name, x.kind, x.line0) }
-      })
-      .find((x) => x.info.name === want || x.key === want)
-    if (!b) throw new Error(`В заметке нет исполняемого блока «${want}» (name=…)`)
-    if (b.kind === 'http') await runHttp(path, b.key, b.info.name, b.body)
-    else if (b.kind === 'pw') await runPw(path, b.key, b.info, b.body, text)
-    else await runCode(path, b.key, b.info.name, b.info.lang, b.body, text, b.info.timeout)
-    return `${blockReport(path, b.key, b.kind, b.info, b.body)}\n\n${vars(path)}`.trim()
+    // any runnable block (HTTP, code, Playwright, SQL, a template) or a loop — by its name or key, where it stands
+    const item = runItemNamed(text, want)
+    if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
+    await runItemWhereItStands(path, text, item)
+    return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
   },
   async report(a) {
     const path = String(a.path)

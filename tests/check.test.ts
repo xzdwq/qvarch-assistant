@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { badBodyIds, badUrlId, emptyFields, keepBody, normUrl, sameSite, UNSAVED_TEXT, type CheckProblem } from '../src/shared/check'
+import { badBodyIds, badUrlId, CHECK_KINDS, emptyFields, keepBody, kindMeta, normUrl, sameSite, UNSAVED_TEXT, type CheckProblem } from '../src/shared/check'
+import { checkPageScript } from '../src/shared/checkPage'
 import { bugNote, mergeFound, stepsFromPw, whereOf } from '../src/shared/checkBug'
-import { findBlocks } from '../src/shared/noteBlocks'
-import { parseHttpText } from '../src/shared/runbook'
+import { findBlocks } from '../src/notebook/domain/findBlocks'
+import { parseHttpText } from '../src/notebook/blocks/http/httpText'
+
+describe('«Проверка»: kinds', () => {
+  it('each kind found by its id; the page script tells unsaved dialogs by the same words', () => {
+    for (const k of CHECK_KINDS) expect(kindMeta(k.id)).toBe(k)
+    expect(kindMeta('http5xx').sev).toBe('high')
+    expect(checkPageScript({ loadingMs: 1, kinds: { toast: true, dialog: true, loading: true, overflow: true, hscroll: true } })).toContain(`const UNSAVED = ${UNSAVED_TEXT}`)
+  })
+})
 
 describe('«Проверка»: requests', () => {
   it('one endpoint whatever its ids', () => {

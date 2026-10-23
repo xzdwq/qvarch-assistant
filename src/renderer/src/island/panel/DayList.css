@@ -1,0 +1,10 @@
+/* DayList: what its template cannot carry as utilities (scoped). */
+
+.lrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--r2);
+  font-size: 12px;
+}

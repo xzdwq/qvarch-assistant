@@ -21,7 +21,7 @@ import { setupLinks } from '../lib/links'
 import { startBrowser } from '../lib/browser'
 import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
-import { placeFloat, useAnchor } from '../lib/floating'
+import Popover from '../components/Popover.vue'
 setupLinks()
 // the browser's news from the start (a tab the app opens is placed even before the section is first shown)
 startBrowser()
@@ -56,28 +56,20 @@ function onSettings(s: PublicSettings): void {
 
 const offSettings = window.qa.onSettings(onSettings)
 onBeforeUnmount(offSettings)
+/** The old Таймлайн section's names: a day / a block asked for there is shown in Моя работа. */
+const DAY_VIEW_ALIASES: ReadonlySet<string> = new Set(['day', 'log'])
 const off = window.qa.onNavigate((nav) => {
   navigated = true
-  // (the old Таймлайн section: a day / a block is shown in Моя работа)
   const v = nav.view as string | undefined
-  if (!v || v === 'day' || v === 'log') {
+  if (!v || DAY_VIEW_ALIASES.has(v)) {
     if (nav.day || nav.entryId) openDay(nav.day ?? todayKey.value, nav.entryId)
     else view.value = 'work'
   } else view.value = v as View
 })
 onBeforeUnmount(off)
 
-/** The «Ещё» menu: over everything (teleported), kept by its button. */
+/** The «Ещё» menu's button (the menu — a popover by it). */
 const menuBtn = ref<HTMLElement>()
-const menuStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
-useAnchor(menuOpen, menuBtn, () => {
-  if (!menuBtn.value) return
-  const f = placeFloat(menuBtn.value, 280, false, 0)
-  menuStyle.value = { ...f.style, maxHeight: `${f.maxH}px` }
-})
-const away = (e: PointerEvent) => menuOpen.value && !menuBtn.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.tb-menu') && (menuOpen.value = false)
-onMounted(() => window.addEventListener('pointerdown', away, true))
-onBeforeUnmount(() => window.removeEventListener('pointerdown', away, true))
 
 function run(cmd: AppCommand): void {
   menuOpen.value = false
@@ -100,10 +92,11 @@ function openHttp(id: string): void {
   }
   view.value = 'http'
 }
-// a section asked for from inside one (the scenario recording: to the Браузер and back to the note)
+/** The sections one may ask for from inside another (the scenario recording: to the Браузер and back to the note). */
+const VIEWS_ASKED_FROM_INSIDE: ReadonlySet<string> = new Set<View>(['notebook', 'browser', 'work'])
 const onView = (e: Event) => {
   const v = (e as CustomEvent<string>).detail
-  if (v === 'notebook' || v === 'browser' || v === 'work') view.value = v as View
+  if (VIEWS_ASKED_FROM_INSIDE.has(v)) view.value = v as View
 }
 onMounted(() => window.addEventListener('qa:view', onView))
 onBeforeUnmount(() => window.removeEventListener('qa:view', onView))
@@ -159,340 +152,63 @@ function setAppZoom(z: number): void {
 </script>
 
 <template>
-  <div class="shell">
-    <header class="titlebar">
-      <div class="tside">
-      <div class="brand">
+  <div class="shell tw:flex tw:flex-col tw:h-screen">
+    <header class="titlebar tw:relative tw:z-50 tw:flex-none tw:h-38 tw:flex tw:items-stretch tw:gap-4 tw:pt-0 tw:pr-140 tw:pb-0 tw:pl-0 tw:bg-bg tw:select-none tw:@container">
+      <div class="tside tw:flex-[1_0_auto] tw:min-w-0 tw:flex tw:items-center tw:gap-4">
+      <div class="brand tw:[-webkit-app-region:drag] tw:flex tw:items-center tw:gap-7 tw:pt-0 tw:pr-14 tw:pb-0 tw:pl-12 tw:border-r tw:border-r-border tw:text-accent">
         <Icon name="qlogo" :size="17" :stroke="3.8" />
-        <b>QVARCH</b>
+        <b class="tw:font-data tw:text-[11.5px] tw:font-bold tw:tracking-[0.14em] tw:text-text-hi tw:@max-[980px]:hidden">QVARCH</b>
       </div>
 
-      <nav class="seg nodrag" aria-label="Разделы">
-        <button v-for="v in menu" :key="v.id" :class="{ on: view === v.id }" :title="v.label" :aria-label="v.label" @click="view = v.id">
-          <Icon :name="v.icon" :size="15" /><span v-if="view === v.id" class="vl">{{ v.label }}</span>
+      <nav class="seg nodrag tw:flex tw:items-stretch tw:gap-0" aria-label="Разделы">
+        <button class="tw:cursor-default tw:inline-flex tw:items-center tw:gap-6 tw:bg-transparent tw:text-[12.5px] tw:text-muted tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:not-[&.on]:text-text tw:relative tw:h-full tw:min-w-38 tw:py-0 tw:px-11 tw:justify-center tw:border-0 tw:rounded-none tw:[&&]:border-r tw:[&&]:border-r-border tw:[&.on]:bg-panel tw:[&.on]:text-accent-fg tw:[&.on]:after:content-[''] tw:[&.on]:after:absolute tw:[&.on]:after:left-0 tw:[&.on]:after:right-0 tw:[&.on]:after:top-0 tw:[&.on]:after:h-2 tw:[&.on]:after:bg-accent" v-for="v in menu" :key="v.id" :class="{ on: view === v.id }" :title="v.label" :aria-label="v.label" @click="view = v.id">
+          <Icon :name="v.icon" :size="15" /><span v-if="view === v.id" class="vl tw:font-data tw:text-[11px] tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:@max-[980px]:hidden">{{ v.label }}</span>
         </button>
       </nav>
 
-      <span class="dragfill"></span>
+      <span class="dragfill tw:[-webkit-app-region:drag] tw:flex-1 tw:self-stretch tw:min-w-12"></span>
       </div>
 
-      <div class="tside r">
-      <span class="dragfill"></span>
-      <button class="ico nodrag" :class="{ spin: reloading }" title="Обновить приложение (как обновление страницы) — несохранённое сохраняется" aria-label="Обновить приложение" @click="reloadApp"><Icon name="refresh" :size="15" /></button>
-      <ZoomChip class="azoom" :model-value="appZoom" :min="50" :max="200" title="Масштаб окна · колесо — изменить, клик — 100%" @update:model-value="setAppZoom" />
-      <button class="ico nodrag" :class="{ on: view === 'settings' }" title="Настройки" aria-label="Настройки" @click="view = 'settings'">
+      <div class="tside r tw:flex-[1_0_auto] tw:min-w-0 tw:flex tw:items-center tw:gap-4 tw:justify-end">
+      <span class="dragfill tw:[-webkit-app-region:drag] tw:flex-1 tw:self-stretch tw:min-w-12"></span>
+      <button class="ico nodrag tw:cursor-default tw:inline-flex tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:rounded-r2 tw:text-[12.5px] tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text tw:p-0 tw:w-28 tw:h-28 tw:justify-center" :class="{ spin: reloading }" title="Обновить приложение (как обновление страницы) — несохранённое сохраняется" aria-label="Обновить приложение" @click="reloadApp"><Icon name="refresh" :size="15" /></button>
+      <ZoomChip class="azoom tw:[&&]:cursor-default tw:[&&]:inline-flex tw:[&&]:items-center tw:[&&]:gap-6 tw:[&&]:bg-transparent tw:[&&]:not-hover:border tw:[&&]:not-hover:border-transparent tw:[&&]:rounded-r2 tw:[&&]:py-3 tw:[&&]:px-9 tw:[&&]:text-[12.5px] tw:[&&]:not-hover:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text tw:mr-6 tw:overflow-hidden" :model-value="appZoom" :min="50" :max="200" title="Масштаб окна · колесо — изменить, клик — 100%" @update:model-value="setAppZoom" />
+      <button class="ico nodrag tw:cursor-default tw:inline-flex tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:rounded-r2 tw:text-[12.5px] tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text tw:p-0 tw:w-28 tw:h-28 tw:justify-center tw:[&.on]:bg-accent-soft tw:[&.on]:text-accent-fg" :class="{ on: view === 'settings' }" title="Настройки" aria-label="Настройки" @click="view = 'settings'">
         <Icon name="settings" :size="16" />
       </button>
-      <div class="menu nodrag">
-        <button ref="menuBtn" class="ico" :class="{ on: menuOpen }" title="Ещё" aria-label="Ещё" @click="menuOpen = !menuOpen"><Icon name="more" :size="16" /></button>
-        <Teleport to="body">
-        <Transition name="pop">
-          <div v-if="menuOpen" class="dropdown tb-menu" :style="menuStyle">
-            <button @click="run('island-toggle')"><Icon name="layers" :size="14" />Показать / скрыть island</button>
-            <button @click="run('island-reset')"><Icon name="move" :size="14" />Вернуть island наверх по центру</button>
-            <div class="sep"></div>
-            <button @click="run('open-data-folder')"><Icon name="external" :size="14" />Открыть папку с данными</button>
-            <button @click="run('devtools')"><Icon name="code" :size="14" />Инструменты разработчика</button>
-            <div class="sep"></div>
-            <button @click="run('quit')"><Icon name="x" :size="14" />Выход <span class="muted">(трекинг остановится)</span></button>
-          </div>
-        </Transition>
-        </Teleport>
+      <div class="menu nodrag tw:relative">
+        <button ref="menuBtn" class="ico tw:cursor-default tw:inline-flex tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:rounded-r2 tw:text-[12.5px] tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text tw:p-0 tw:w-28 tw:h-28 tw:justify-center tw:[&.on]:bg-accent-soft tw:[&.on]:text-accent-fg" :class="{ on: menuOpen }" title="Ещё" aria-label="Ещё" @click="menuOpen = !menuOpen"><Icon name="more" :size="16" /></button>
+        <Popover v-model:open="menuOpen" :anchor="menuBtn" :width="280" :chrome="0" transition="pop" class="dropdown tb-menu tw:p-4 tw:overflow-y-auto tw:bg-pop tw:border tw:border-border-2 tw:rounded-r3 tw:shadow-pop tw:flex tw:flex-col">
+            <button class="tw:cursor-default tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:text-[12.5px] tw:text-left tw:text-text-2 tw:py-6 tw:px-10 tw:rounded-r2 tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text" @click="run('island-toggle')"><Icon name="layers" :size="14" />Показать / скрыть island</button>
+            <button class="tw:cursor-default tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:text-[12.5px] tw:text-left tw:text-text-2 tw:py-6 tw:px-10 tw:rounded-r2 tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text" @click="run('island-reset')"><Icon name="move" :size="14" />Вернуть island наверх по центру</button>
+            <div class="sep tw:h-1 tw:my-4 tw:mx-6 tw:bg-border"></div>
+            <button class="tw:cursor-default tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:text-[12.5px] tw:text-left tw:text-text-2 tw:py-6 tw:px-10 tw:rounded-r2 tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text" @click="run('open-data-folder')"><Icon name="external" :size="14" />Открыть папку с данными</button>
+            <button class="tw:cursor-default tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:text-[12.5px] tw:text-left tw:text-text-2 tw:py-6 tw:px-10 tw:rounded-r2 tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text" @click="run('devtools')"><Icon name="code" :size="14" />Инструменты разработчика</button>
+            <div class="sep tw:h-1 tw:my-4 tw:mx-6 tw:bg-border"></div>
+            <button class="tw:cursor-default tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:bg-transparent tw:border tw:border-transparent tw:text-[12.5px] tw:text-left tw:text-text-2 tw:py-6 tw:px-10 tw:rounded-r2 tw:hover:enabled:bg-hover tw:hover:enabled:border-transparent tw:hover:enabled:text-text" @click="run('quit')"><Icon name="x" :size="14" />Выход <span class="muted">(трекинг остановится)</span></button>
+        </Popover>
       </div>
       </div>
     </header>
 
     <SeriesAsk />
-    <main v-if="settings" :style="{ zoom: appZoom / 100 }">
+    <main class="tw:flex-1 tw:overflow-auto tw:min-h-0 tw:[&:has(>_.tools)]:not-[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.termslot)]:overflow-hidden" v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
         <NotebookView v-if="view === 'notebook'" />
         <WorkView v-else-if="view === 'work'" :settings="settings" :focus="focus" @settings="view = 'settings'" />
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
-        <div v-else-if="view === 'terminal'" class="termslot"></div>
-        <div v-else-if="view === 'browser'" class="termslot"></div>
+        <div v-else-if="view === 'terminal'" class="termslot tw:hidden"></div>
+        <div v-else-if="view === 'browser'" class="termslot tw:hidden"></div>
         <ToolsView v-else-if="view === 'tools'" />
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
-      <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep" />
-      <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep" :active="view === 'browser'" @open-http="openHttp" />
+      <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep tw:[&&]:h-full" />
+      <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep tw:[&&]:h-full" :active="view === 'browser'" @open-http="openHttp" />
     </main>
     <StatusBar :section="sectionName" @terminal="view = 'terminal'" @browser="view = 'browser'" />
       <ImageMenu />
   </div>
 </template>
 
-<style scoped>
-.ico.spin :deep(svg) {
-  animation: qa-spin 0.6s linear infinite;
-}
-@keyframes qa-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-.titlebar {
-  position: relative;
-  z-index: 50;
-  flex: none;
-  height: 38px;
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
-  padding: 0 140px 0 0; /* room for the native window controls */
-  background: var(--bg);
-  user-select: none;
-  container-type: inline-size;
-}
-/* the window moves by the logo and the empty stretches only — buttons never sit inside a drag area
-   (Electron cuts holes for them, and on Windows some of those holes go missing: clicks were lost) */
-.brand,
-.dragfill {
-  -webkit-app-region: drag;
-}
-.dragfill {
-  flex: 1;
-  align-self: stretch;
-  min-width: 12px;
-}
-.nodrag,
-.titlebar button,
-.titlebar input {
-  -webkit-app-region: no-drag;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 14px 0 12px;
-  border-right: 1px solid var(--border);
-  color: var(--accent);
-}
-.brand b {
-  font-family: var(--font-data);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--text-hi);
-}
-.titlebar button {
-  cursor: default;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r2);
-  padding: 3px 9px;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.titlebar button:hover:not(:disabled) {
-  background: var(--hover);
-  border-color: transparent;
-  color: var(--text);
-}
-.titlebar button.ico {
-  padding: 0;
-  width: 28px;
-  height: 28px;
-  justify-content: center;
-}
-.titlebar button.on {
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-}
-.menu {
-  position: relative;
-}
-/* the section's actions: in the middle of the bar */
-.tside {
-  /* never narrower than its content: an overflowing left side slid under the right one, whose empty drag
-     stretch then took the clicks of the date's buttons */
-  flex: 1 0 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.tside.r {
-  justify-content: flex-end;
-}
-/* the «Ещё» menu — teleported to <body> (placed by placeFloat) */
-.dropdown {
-  padding: 4px;
-  overflow-y: auto;
-  background: var(--pop);
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-}
-/* (out of the title bar: its button look is given here) */
-.dropdown button {
-  cursor: default;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  font-size: 12.5px;
-  text-align: left;
-  color: var(--text-2);
-  padding: 6px 10px;
-  border-radius: var(--r2);
-}
-.dropdown button:hover:not(:disabled) {
-  background: var(--hover);
-  border-color: transparent;
-  color: var(--text);
-}
-.dropdown .sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
-/* the sections: terminal tabs — the open one is lit and named */
-.seg {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-}
-.seg button {
-  position: relative;
-  height: 100%;
-  min-width: 38px;
-  padding: 0 11px;
-  justify-content: center;
-  border: 0;
-  border-radius: 0;
-  border-right: 1px solid var(--border);
-}
-.titlebar .seg button.on {
-  background: var(--panel);
-  color: var(--accent-fg);
-}
-.titlebar .seg button.on::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 2px;
-  background: var(--accent);
-}
-.vl {
-  font-family: var(--font-data);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-@container (max-width: 980px) {
-  .vl,
-  .brand b {
-    display: none;
-  }
-}
-.date {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--r2);
-  font-size: 12.5px;
-  cursor: pointer;
-  text-transform: capitalize;
-  white-space: nowrap;
-  -webkit-app-region: no-drag;
-}
-.titlebar .date {
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-/* the native date picker opens under the date button */
-.picker {
-  width: 0;
-  height: 0;
-  padding: 0;
-  margin: 0 0 0 -2px;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-  align-self: flex-end;
-}
-.titlebar .today {
-  color: var(--accent-fg);
-  border-color: var(--accent-line);
-  height: 24px;
-  font-size: 12px;
-}
-.grow {
-  flex: 1;
-}
-main {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-}
-main:has(> .tools),
-main:has(> .nb),
-main:has(> .rep),
-main:has(> .sh),
-main:has(> .rel),
-main:has(> .ps),
-main:has(> .tv),
-main:has(> .hv),
-main:has(> .termslot) {
-  overflow: hidden;
-}
-.termslot {
-  display: none;
-}
-.termkeep {
-  height: 100%;
-}
-.azoom {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 6px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-.azoom button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 22px;
-  min-width: 20px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: default;
-}
-.azoom button:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.titlebar .azoom .zv {
-  min-width: 42px;
-  padding: 0 4px;
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-2);
-}
-</style>
+<style scoped src="./App.css"></style>

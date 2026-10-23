@@ -5,9 +5,11 @@ import { diffArrays, diffWordsWithSpace } from 'diff'
  * moves nothing else — only real changes are marked. Lines changed in place are paired and the changed words
  * inside them lit. JSON is formatted first (keys sorted if asked), so its layout never counts as a change.
  */
+/** auto — JSON when both sides parse; json — must be JSON; text — as is. */
+export const DIFF_MODES = ['auto', 'json', 'text'] as const
+export type DiffMode = (typeof DIFF_MODES)[number]
 export interface DiffOptions {
-  /** auto — JSON when both sides parse; json — must be JSON; text — as is. */
-  mode: 'auto' | 'json' | 'text'
+  mode: DiffMode
   /** Spaces at the line ends / their count inside a line do not count. */
   ignoreSpace: boolean
   /** Letter case does not count. */
@@ -27,8 +29,11 @@ export interface Side {
   n: number
   segs: Seg[]
 }
+/** A row of the comparison: the same on both sides, taken out, put in, changed in place. */
+export const ROW_KINDS = ['same', 'del', 'add', 'mod'] as const
+export type RowKind = (typeof ROW_KINDS)[number]
 export interface Row {
-  kind: 'same' | 'del' | 'add' | 'mod'
+  kind: RowKind
   l?: Side
   r?: Side
 }

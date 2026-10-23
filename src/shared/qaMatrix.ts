@@ -6,6 +6,8 @@
  * nobody was told of).
  */
 
+import type { QaMark } from './browser/constants'
+
 /** What a field is (looked at in the page before the tries). */
 export interface FieldInfo {
   tag: string
@@ -22,7 +24,9 @@ export interface FieldInfo {
   /** Its label as the page shows it. */
   label: string
 }
-export type FieldKind = 'text' | 'number' | 'date' | 'email' | 'phone'
+/** What a field takes — each kind has its typical set of values to try. */
+export const FIELD_KINDS = ['text', 'number', 'date', 'email', 'phone'] as const
+export type FieldKind = (typeof FIELD_KINDS)[number]
 export interface MatrixCase {
   /** What it is, in words («Пусто», «На 1 больше максимума (51)»…). */
   label: string
@@ -52,57 +56,67 @@ const long = (n: number) => {
   const base = 'Длинный текст для проверки '
   return base.repeat(Math.ceil(n / base.length)).slice(0, n)
 }
-/** The values to try: by kind, the field's own limits (maxlength, min / max) first; at most a dozen. */
-export function casesFor(kind: FieldKind, info: Partial<FieldInfo>, recorded: string): MatrixCase[] {
-  const empty: MatrixCase[] = [
-    { label: 'Пусто', value: '', bad: false, empty: true },
-    { label: 'Только пробелы', value: '   ', bad: false, empty: true },
-  ]
-  const out: MatrixCase[] = [...empty]
-  if (kind === 'number') {
-    if (info.min !== undefined) out.push({ label: `Меньше минимума (${info.min - 1})`, value: String(info.min - 1), bad: true })
-    if (info.max !== undefined) out.push({ label: `Больше максимума (${info.max + 1})`, value: String(info.max + 1), bad: true })
-    out.push(
-      { label: 'Ноль', value: '0', bad: false },
-      { label: 'Отрицательное', value: '-1', bad: false },
-      { label: 'Дробь через запятую', value: '1,5', bad: false },
-      { label: 'Дробь через точку', value: '1.5', bad: false },
-      { label: 'Очень большое', value: '99999999999999', bad: false },
-      { label: 'Буквы', value: 'abc', bad: true },
-      { label: 'Пробелы по краям', value: ` ${recorded.trim() || '5'} `, bad: false },
-    )
-  } else if (kind === 'date') {
+/** The values of each kind of field, after the empty ones: its own limits (min / max, maxlength) first. */
+const CASES_BY_KIND: Record<FieldKind, (info: Partial<FieldInfo>, recorded: string) => MatrixCase[]> = {
+  number: (info, recorded) => [
+    ...(info.min !== undefined ? [{ label: `Меньше минимума (${info.min - 1})`, value: String(info.min - 1), bad: true }] : []),
+    ...(info.max !== undefined ? [{ label: `Больше максимума (${info.max + 1})`, value: String(info.max + 1), bad: true }] : []),
+    { label: 'Ноль', value: '0', bad: false },
+    { label: 'Отрицательное', value: '-1', bad: false },
+    { label: 'Дробь через запятую', value: '1,5', bad: false },
+    { label: 'Дробь через точку', value: '1.5', bad: false },
+    { label: 'Очень большое', value: '99999999999999', bad: false },
+    { label: 'Буквы', value: 'abc', bad: true },
+    { label: 'Пробелы по краям', value: ` ${recorded.trim() || '5'} `, bad: false },
+  ],
+  date: (_info, recorded) => {
+    // (in the format the scenario typed: 31.12.2099 or 2099-12-31)
     const dmy = !/^\d{4}-/.test(recorded)
     const d = (dd: string, mm: string, yy: string) => (dmy ? `${dd}.${mm}.${yy}` : `${yy}-${mm}-${dd}`)
-    out.push(
+    return [
       { label: 'Несуществующая дата (31 февраля)', value: d('31', '02', '2024'), bad: true },
       { label: 'Нули', value: d('00', '00', '0000'), bad: true },
       { label: 'Давняя (1900)', value: d('01', '01', '1900'), bad: false },
       { label: 'Далёкая (2099)', value: d('31', '12', '2099'), bad: false },
       { label: 'Буквы', value: 'abc', bad: true },
-    )
-  } else if (kind === 'email') {
-    out.push(
-      { label: 'Без домена', value: 'test@', bad: true },
-      { label: 'Без точки в домене', value: 'test@example', bad: true },
-      { label: 'Без @', value: 'test.example.com', bad: true },
-      { label: 'Пробелы по краям', value: ' test@example.com ', bad: false },
-      { label: 'Кириллица', value: 'тест@пример.рф', bad: false },
-    )
-  } else if (kind === 'phone') {
-    out.push(
-      { label: 'Слишком короткий', value: '123', bad: true },
-      { label: 'Слишком длинный', value: '+7999123456789012', bad: true },
-      { label: 'Со скобками и дефисами', value: '+7 (999) 123-45-67', bad: false },
-      { label: 'Буквы', value: 'abc', bad: true },
-    )
-  } else {
+    ]
+  },
+  email: () => [
+    { label: 'Без домена', value: 'test@', bad: true },
+    { label: 'Без точки в домене', value: 'test@example', bad: true },
+    { label: 'Без @', value: 'test.example.com', bad: true },
+    { label: 'Пробелы по краям', value: ' test@example.com ', bad: false },
+    { label: 'Кириллица', value: 'тест@пример.рф', bad: false },
+  ],
+  phone: () => [
+    { label: 'Слишком короткий', value: '123', bad: true },
+    { label: 'Слишком длинный', value: '+7999123456789012', bad: true },
+    { label: 'Со скобками и дефисами', value: '+7 (999) 123-45-67', bad: false },
+    { label: 'Буквы', value: 'abc', bad: true },
+  ],
+  text: (info, recorded) => {
     const max = info.maxlength
-    out.push({ label: 'Пробелы по краям', value: `  ${recorded.trim() || 'Тест'}  `, bad: false }, { label: 'Один символ', value: 'А', bad: false })
-    if (max !== undefined && max > 0 && max < 100_000) out.push({ label: `Ровно максимум (${max})`, value: long(max), expr: `gen.text(${max})`, bad: false }, { label: `На 1 больше максимума (${max + 1})`, value: long(max + 1), expr: `gen.text(${max + 1})`, bad: true })
-    else out.push({ label: 'Длинный (256)', value: long(256), expr: 'gen.text(256)', bad: false }, { label: 'Очень длинный (1000)', value: long(1000), expr: 'gen.text(1000)', bad: false })
-    out.push({ label: 'Кириллица, латиница, знаки', value: 'Ёлка Test «кавычки» — №1 / 50% &', bad: false }, { label: 'Эмодзи', value: 'Тест 😀', bad: false }, { label: 'Ведущие нули', value: '007', bad: false })
-  }
+    const lengths: MatrixCase[] =
+      max !== undefined && max > 0 && max < 100_000
+        ? [{ label: `Ровно максимум (${max})`, value: long(max), expr: `gen.text(${max})`, bad: false }, { label: `На 1 больше максимума (${max + 1})`, value: long(max + 1), expr: `gen.text(${max + 1})`, bad: true }]
+        : [{ label: 'Длинный (256)', value: long(256), expr: 'gen.text(256)', bad: false }, { label: 'Очень длинный (1000)', value: long(1000), expr: 'gen.text(1000)', bad: false }]
+    return [
+      { label: 'Пробелы по краям', value: `  ${recorded.trim() || 'Тест'}  `, bad: false },
+      { label: 'Один символ', value: 'А', bad: false },
+      ...lengths,
+      { label: 'Кириллица, латиница, знаки', value: 'Ёлка Test «кавычки» — №1 / 50% &', bad: false },
+      { label: 'Эмодзи', value: 'Тест 😀', bad: false },
+      { label: 'Ведущие нули', value: '007', bad: false },
+    ]
+  },
+}
+/** The values to try: by kind, the field's own limits (maxlength, min / max) first; at most a dozen. */
+export function casesFor(kind: FieldKind, info: Partial<FieldInfo>, recorded: string): MatrixCase[] {
+  const out: MatrixCase[] = [
+    { label: 'Пусто', value: '', bad: false, empty: true },
+    { label: 'Только пробелы', value: '   ', bad: false, empty: true },
+    ...CASES_BY_KIND[kind](info, recorded),
+  ]
   // the same value twice (min − 1 = 0 and «Ноль») — once, under its first name
   return out.filter((c, i) => out.findIndex((x) => x.value === c.value) === i).slice(0, 12)
 }
@@ -172,7 +186,7 @@ const asNum = (s: string) => {
   return /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(t) ? Number(t) : undefined
 }
 export interface MatrixVerdict {
-  state: 'ok' | 'warn' | 'fail'
+  state: QaMark
   /** Принято / Форма не пустила / Сервер отказал / Ошибка сервера / Не сохранилось. */
   result: string
   /** Why / what was said / what went. */

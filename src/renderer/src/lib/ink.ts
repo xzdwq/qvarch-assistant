@@ -112,14 +112,19 @@ export function useInk(opts: {
     put(next)
     opts.onHistory?.(undoStack.length)
   }
+  /** Ctrl+<physical key> → what it does (Shift held or not). */
+  const historyKeys = new Map<string, (shift: boolean) => void>([
+    ['KeyZ', (shift) => (shift ? redo() : undo())],
+    ['KeyY', () => redo()],
+  ])
   /** By the physical key — the Russian layout gives "я" for Z. */
   const onKey = (e: KeyboardEvent): void => {
     if (!opts.keys?.() || !(e.ctrlKey || e.metaKey) || e.altKey) return
     const t = e.target
     if (t instanceof HTMLElement && t.closest('input:not([type=range]):not([type=checkbox]):not([type=color]), textarea, [contenteditable="true"], .cm-editor')) return
-    if (e.code === 'KeyZ') e.shiftKey ? redo() : undo()
-    else if (e.code === 'KeyY') redo()
-    else return
+    const act = historyKeys.get(e.code)
+    if (!act) return
+    act(e.shiftKey)
     e.preventDefault()
     e.stopPropagation()
   }
@@ -201,6 +206,8 @@ function rgb(c: string): [number, number, number] {
   const v = m ? parseInt(m[1], 16) : 0
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255]
 }
+/** The colour `t` (0…1) of the way from `a` to `b`, as a canvas colour. */
+const mixRgb = (a: readonly number[], b: readonly number[], t: number): string => `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * t)).join(',')})`
 
 /**
  * A gradient line: the colour follows the pressure — light → \`c1\`, firm → \`c2\`. Drawn as short round segments
@@ -211,7 +218,7 @@ export function drawGradientStroke(g: CanvasRenderingContext2D, points: number[]
   if (!sp.length) return
   const a = rgb(s.color)
   const b = rgb(c2)
-  const col = (p: number) => `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * Math.min(1, Math.max(0, p)))).join(',')})`
+  const col = (p: number) => mixRgb(a, b, Math.min(1, Math.max(0, p)))
   // perfect-freehand's radius at a pressure
   const width = (p: number) => Math.max(0.3, 2 * s.size * (0.5 - s.thinning * (0.5 - p)))
   g.lineCap = 'round'

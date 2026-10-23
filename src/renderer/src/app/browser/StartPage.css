@@ -1,0 +1,9 @@
+/* StartPage: what its template cannot carry as utilities (scoped). */
+
+.st-h :deep(svg) {
+  color: var(--accent);
+}
+.tile :deep(svg) {
+  grid-row: span 2;
+  color: var(--warn);
+}

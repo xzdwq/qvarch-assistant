@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { ipcRenderer, webUtils } from 'electron'
-import { q, textOf, fieldLocator, rowFieldLocator, listFieldLocator, locatorFor, placeOf, fileInputLocator, whatOf, qt, sayClick, fieldWords, say, targetOf } from './recorderDom'
+import { PAGE_MARK } from '../shared/browser/pageMarks'
+import { CHECKABLE_INPUT_TYPES, TEXT_INPUT_TYPES, q, textOf, fieldLocator, rowFieldLocator, listFieldLocator, locatorFor, placeOf, fileInputLocator, whatOf, qt, sayClick, fieldWords, say, targetOf } from './recorderDom'
 
 /**
  * Recording a Playwright scenario in the app's browser: clicks, typing, Enter / Escape, choices in lists — each
@@ -42,7 +43,7 @@ function onClick(e: MouseEvent): void {
   const el = targetOf(e)
   // the page itself (an empty spot): nothing to repeat
   if (el === document.documentElement || el === document.body) return
-  if (el instanceof HTMLInputElement && /^(text|email|search|tel|url|number|password|)$/.test(el.type)) {
+  if (el instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(el.type)) {
     // a typing field: its click is nothing to repeat (the typing is) — unless it opens a list (a select with a search
     // box): without that click a replay finds the list shut and its option nowhere
     if (!opensList(el)) return
@@ -58,7 +59,7 @@ function onClick(e: MouseEvent): void {
   if (typing && typing.el !== el) flush()
   const loc = locatorFor(el)
   const words = sayClick(el)
-  if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) send({ code: say(`await ${loc}.${el.checked ? 'check' : 'uncheck'}()`, words) })
+  if (el instanceof HTMLInputElement && CHECKABLE_INPUT_TYPES.has(el.type)) send({ code: say(`await ${loc}.${el.checked ? 'check' : 'uncheck'}()`, words) })
   else send({ code: say(`await ${loc}.click()`, words) })
   // a field opened: remembered; one of its options picked — the field must show it before the next step
   if (el.closest('.q-field')) ((lastField = fieldLocator(el) ?? rowFieldLocator(el)), (lastFieldEl = el.closest('.q-field') ?? undefined))
@@ -153,10 +154,10 @@ function ui(show: boolean): void {
   if (!show) return
   box = document.createElement('div')
   box.id = 'qa-pwrec'
-  box.style.cssText = 'position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #ef4444;border-radius:3px;background:rgba(239,68,68,.08);display:none'
+  box.style.cssText = `position:fixed;z-index:2147483646;pointer-events:none;border:2px solid ${PAGE_MARK.line};border-radius:3px;background:${PAGE_MARK.faintFill};display:none`
   badge = document.createElement('div')
   badge.id = 'qa-pwrec'
-  badge.style.cssText = 'position:fixed;z-index:2147483647;right:10px;bottom:10px;padding:5px 10px;border-radius:14px;background:#ef4444;color:#fff;font:600 12px system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);pointer-events:none'
+  badge.style.cssText = `position:fixed;z-index:2147483647;right:10px;bottom:10px;padding:5px 10px;border-radius:14px;background:${PAGE_MARK.line};color:${PAGE_MARK.onLine};font:600 12px system-ui,sans-serif;box-shadow:0 2px 8px ${PAGE_MARK.shadow};pointer-events:none`
   badge.textContent = '● Запись'
   document.documentElement.append(box, badge)
 }

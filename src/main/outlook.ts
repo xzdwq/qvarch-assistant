@@ -4,8 +4,9 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { CALL_ACTIVITIES, type OutlookEvent, type OutlookState } from '../shared/outlook'
+import { CALL_ACTIVITIES, type OutlookEvent, type OutlookResponse, type OutlookShowAs, type OutlookSource, type OutlookState } from '../shared/outlook'
 import { readLocalOutlook } from './outlookLocal'
+import { signInOutcomePage } from './signInPage'
 
 /**
  * Outlook / Teams over Microsoft Graph with the user's own app registration (a public client: sign-in in
@@ -20,7 +21,7 @@ const BACK_DAYS = 2
 const AHEAD_DAYS = 60
 
 export interface OutlookConfig {
-  source: 'local' | 'graph'
+  source: OutlookSource
   clientId?: string
   tenantId?: string
   syncMin: number
@@ -153,7 +154,7 @@ export class Outlook {
         }
         const page = (title: string, text: string) => {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-          res.end(`<!doctype html><meta charset="utf-8"><title>Qvarch</title><body style="font:16px system-ui;background:#11131a;color:#e2e8f0;display:grid;place-items:center;height:90vh"><div><h2>${title}</h2><p>${text}</p></div>`)
+          res.end(signInOutcomePage(title, text))
         }
         if (url.searchParams.get('state') !== state) {
           page('Не получилось', 'Неверный state — попробуйте войти ещё раз из приложения.')
@@ -280,8 +281,8 @@ export class Outlook {
         end: { dateTime: string }
         isAllDay?: boolean
         isCancelled?: boolean
-        showAs?: string
-        responseStatus?: { response?: string }
+        showAs?: OutlookShowAs
+        responseStatus?: { response?: OutlookResponse }
         organizer?: { emailAddress?: { name?: string; address?: string } }
         isOnlineMeeting?: boolean
         onlineMeeting?: { joinUrl?: string } | null

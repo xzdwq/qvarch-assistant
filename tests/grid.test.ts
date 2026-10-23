@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { asGrid } from '../src/shared/gridData'
-import { parseTable, tableHash, tableMd, valueTable } from '../src/shared/noteBlocks'
+import { parseTable, tableHash, tableMd, valueTable } from '../src/notebook/blocks/table/model'
 
 describe('a value as a table', () => {
   it('a list of plain values — one column', () => {

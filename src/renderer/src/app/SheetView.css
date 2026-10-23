@@ -1,0 +1,33 @@
+/* SheetView: what its template cannot carry as utilities (scoped). */
+
+/* the table: the task column and the header stay put while it scrolls */
+.sheet.one {
+  min-width: 0;
+  max-width: 640px;
+}
+/* one line: "пн 13"; a narrow column keeps only the date (never a second line) */
+/* the dashboard's: tighter */
+.sh.widget .sheet,
+.sh.widget .sheet.one {
+  min-width: 0;
+  max-width: none;
+  font-size: 12px;
+}
+/* the period label opens the calendar */
+button.pl.now :deep(svg) {
+  color: var(--accent);
+}
+button.pl :deep(svg) {
+  color: var(--muted);
+}
+/* fixed columns, each edge drags */
+/* the dashboard's bar: one line */
+.sh.widget .bl,
+.sh.widget :deep(.fl) {
+  display: none;
+}
+.sh.widget :deep(.fb) {
+  height: 24px;
+  padding: 0 6px;
+}
+/* per kind, under the total */

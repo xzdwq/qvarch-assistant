@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 import type { Note } from '@shared/types'
+import type { AudioNoteKind } from '@shared/tracker/constants'
 
 /**
  * Recording in the renderer:
@@ -14,6 +15,8 @@ export interface Recording {
   level(): number
   cancel(): void
 }
+/** A finished recording: its sound, length, start and kind. */
+export type Dictation = { blob: Blob; durationSec: number; at: number; kind: AudioNoteKind }
 
 /** The microphone picked in the settings; an unplugged one → the system's default. */
 async function openMic(echoCancellation: boolean): Promise<MediaStream> {
@@ -29,7 +32,7 @@ async function openMic(echoCancellation: boolean): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({ audio: base })
 }
 
-export async function startRecording(kind: 'voice' | 'call'): Promise<Recording> {
+export async function startRecording(kind: AudioNoteKind): Promise<Recording> {
   const ctx = new AudioContext()
   const dest = ctx.createMediaStreamDestination()
   const analyser = ctx.createAnalyser()
@@ -130,13 +133,13 @@ export async function transcribeNote(day: string, noteId: string, file: string):
 
 /** A recording with its live state (level meter, timer) — the same in every place that records. */
 export function useRecorder() {
-  const rec = shallowRef<{ r: Recording; kind: 'voice' | 'call'; at: number }>()
+  const rec = shallowRef<{ r: Recording; kind: AudioNoteKind; at: number }>()
   const sec = ref(0)
   const level = ref(0)
   const error = ref('')
   let timer: ReturnType<typeof setInterval> | undefined
 
-  async function start(kind: 'voice' | 'call', at = Date.now()): Promise<boolean> {
+  async function start(kind: AudioNoteKind, at = Date.now()): Promise<boolean> {
     if (rec.value) return false
     error.value = ''
     try {
@@ -154,7 +157,7 @@ export function useRecorder() {
     }
   }
   /** Stops; undefined if nothing was recorded (or under a second). */
-  async function stop(): Promise<{ blob: Blob; durationSec: number; at: number; kind: 'voice' | 'call' } | undefined> {
+  async function stop(): Promise<Dictation | undefined> {
     const cur = rec.value
     if (!cur) return undefined
     rec.value = undefined
@@ -177,7 +180,7 @@ export function useRecorder() {
  */
 export async function saveRecording(
   day: string,
-  r: { blob: Blob; durationSec: number; at: number; kind: 'voice' | 'call' },
+  r: Dictation,
   opts: { id?: string; text?: string; entryId?: string } = {},
 ): Promise<Note> {
   const id = opts.id ?? crypto.randomUUID()

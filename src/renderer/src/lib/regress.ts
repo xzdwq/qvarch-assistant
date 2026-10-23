@@ -1,9 +1,9 @@
 import { reactive } from 'vue'
-import { findBlocks } from '@shared/noteBlocks'
-import { parseInfo, type BlockInfo } from '@shared/runbook'
-import { REGRESS_KEEP, swapStand, type RegressCfg, type RegressItem, type RegressRun } from '@shared/regress'
+import type { BlockInfo } from '@nb/domain/blockInfo'
+import { fencedBlocksOf } from '@nb/domain/noteBlocks'
+import { noteRun, runBlockInNote, saveRunsSoon, stopBlockInNote } from '@nb/engine'
+import { REGRESS_KEEP, swapStand, tallyChecks, type RegressCfg, type RegressItem, type RegressRun } from '@shared/regress'
 import type { VaultNode } from '@shared/vault'
-import { noteRun, runKey, runPw, saveRuns, stopBlock } from './runbook'
 
 /**
  * «Регрессия» running: the Playwright tests of a folder one after another (each one's result also goes to its own
@@ -16,8 +16,10 @@ interface Test {
   info: BlockInfo
   code: string
   text: string
+  /** Its first line in its note. */
+  line: number
 }
-const live = reactive(new Map<string, { done: number; total: number; current?: string; stop?: boolean; curNote?: string; curKey?: string }>())
+const live = reactive(new Map<string, { done: number; total: number; current?: string; stop?: boolean; cur?: Test }>())
 export const regressLive = (path: string, key: string) => live.get(`${path}#${key}`)
 
 const notesIn = (tree: VaultNode[], cfg: RegressCfg) => {
@@ -34,14 +36,11 @@ export async function testsOf(cfg: RegressCfg): Promise<Test[]> {
   const out: Test[] = []
   for (const n of notesIn(await window.qa.vaultTree(), cfg)) {
     const text = await window.qa.vaultRead(n.path).catch(() => '')
-    for (const b of findBlocks(text.split('\n'))) {
+    for (const b of fencedBlocksOf(text)) {
       if (b.kind !== 'pw') continue
-      const lines = b.src.split('\n')
-      const info = parseInfo(lines[0].replace(/^(`{3,}|~{3,})/, ''))
-      const code = lines.slice(1, -1).join('\n')
       // a name a person reads: the block's own, else its first step's words
-      const step = /\/\/ шаг: (.+)$/m.exec(code.split('\n').find((l) => /\/\/ шаг: (?!-|Окно браузера)/.test(l)) ?? '')?.[1]
-      out.push({ note: n.path, key: runKey(info.name, 'pw', b.line0), name: info.name ?? step ?? 'Сценарий', info, code, text })
+      const step = /\/\/ шаг: (.+)$/m.exec(b.body.split('\n').find((l) => /\/\/ шаг: (?!-|Окно браузера)/.test(l)) ?? '')?.[1]
+      out.push({ note: n.path, key: b.key, name: b.info.name ?? step ?? 'Сценарий', info: b.info, code: b.body, text, line: b.line0 })
     }
   }
   return out
@@ -55,7 +54,7 @@ export async function runRegression(path: string, key: string, cfg: RegressCfg):
   // the history saved before must be in first (it is read from the disk a moment after the note opens)
   for (let i = 0; i < 40 && !n.loaded; i++) await new Promise((r) => setTimeout(r, 50))
   const tests = await testsOf(cfg)
-  const st = reactive({ done: 0, total: tests.length } as { done: number; total: number; current?: string; stop?: boolean; curNote?: string; curKey?: string })
+  const st = reactive({ done: 0, total: tests.length } as { done: number; total: number; current?: string; stop?: boolean; cur?: Test })
   live.set(id, st)
   const before = historyOf(path, key)
   n.runs[key] = { state: 'run', at: Date.now(), value: { history: before }, hasValue: false }
@@ -65,10 +64,9 @@ export async function runRegression(path: string, key: string, cfg: RegressCfg):
     for (const t of tests) {
       if (st.stop) break
       st.current = `${t.note.split('/').pop()!.replace(/\.md$/i, '')} · ${t.name}`
-      st.curNote = t.note
-      st.curKey = t.key
+      st.cur = t
       const s0 = Date.now()
-      const ok = await runPw(t.note, t.key, t.info, swapStand(t.code, cfg.from, cfg.to), t.text)
+      const ok = await runBlockInNote(t.note, t.text, { kind: 'pw', info: t.info, body: swapStand(t.code, cfg.from, cfg.to), line: t.line })
       if (st.stop && !ok) break
       const r = noteRun(t.note).runs[t.key]
       const ch = r?.checks ?? []
@@ -79,7 +77,7 @@ export async function runRegression(path: string, key: string, cfg: RegressCfg):
         state: ok ? 'ok' : 'fail',
         ms: Date.now() - s0,
         ...(ok ? {} : { error: (r?.error ?? 'ошибка').split('\n')[0].slice(0, 300) }),
-        ...(ch.length ? { checks: { ok: ch.filter((c) => c.state === 'ok').length, fail: ch.filter((c) => c.state === 'fail').length, warn: ch.filter((c) => c.state === 'warn').length } } : {}),
+        ...(ch.length ? { checks: tallyChecks(ch) } : {}),
         ...(t.info.soft ? { soft: true } : {}),
       })
       st.done++
@@ -89,13 +87,14 @@ export async function runRegression(path: string, key: string, cfg: RegressCfg):
     const history = [...before, run].slice(-REGRESS_KEEP)
     const failed = items.some((i) => i.state === 'fail' && !i.soft)
     n.runs[key] = { state: failed ? 'error' : 'ok', at: Date.now(), ms: run.ms, value: { history }, hasValue: false }
-    saveRuns(path)
+    saveRunsSoon(path)
     live.delete(id)
   }
 }
+/** The regression stopped: no next test, the current one stopped. */
 export function stopRegression(path: string, key: string): void {
   const x = live.get(`${path}#${key}`)
   if (!x) return
   x.stop = true
-  if (x.curNote && x.curKey) stopBlock(x.curNote, x.curKey)
+  if (x.cur) stopBlockInNote(x.cur.note, { kind: 'pw', info: x.cur.info, line: x.cur.line })
 }

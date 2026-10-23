@@ -21,6 +21,10 @@ import type { ApiMapStore } from './apiMap'
 
 const MAX = 500
 const BODY = 20000
+/** The protocol's resource types watched: the API calls and the page's own load. */
+const WATCHED_TYPES: ReadonlySet<string> = new Set(['XHR', 'Fetch', 'Document'])
+/** The page's own address (its route), not a request to the API. */
+const isPageLoad = (f: { type: string }) => f.type === 'Document'
 /** A request of a watched tab, from its start to its end. */
 export interface Flight {
   method: string
@@ -158,13 +162,13 @@ export class CheckWatch {
     return /^https?:/i.test(url) && (this.settings.allSites || sameSite(page, url))
   }
   started(tabId: string, page: string, id: string, f: Flight): void {
-    if (!/^(XHR|Fetch|Document)$/.test(f.type) || !this.mine(page || f.url, f.url)) return
+    if (!WATCHED_TYPES.has(f.type) ||!this.mine(page || f.url, f.url)) return
     let m = this.flights.get(tabId)
     if (!m) this.flights.set(tabId, (m = new Map()))
     if (m.size > 2000) m.clear()
     m.set(id, f)
     // (the page's own address — its route, not a request to the API)
-    const bad = f.type === 'Document' ? undefined : badUrlId(f.url)
+    const bad = isPageLoad(f) ? undefined : badUrlId(f.url)
     if (bad) this.add('emptyId', tabId, page, `${normUrl(f.url)}|${bad}`, `Пустой id: ${reqLine({ method: f.method, url: f.url })}`, { detail: bad, req: { method: f.method, url: f.url, ...keepBody(f.postData) } })
   }
   answered(tabId: string, id: string, status: number, mime?: string, resHeaders?: Record<string, string>): void {
@@ -181,7 +185,7 @@ export class CheckWatch {
     if (failed) {
       // a page left / a request cancelled — not a fault
       if (/ERR_ABORTED|canceled|cancelled/i.test(failed)) return
-      if (f.type !== 'Document') this.map?.add({ method: f.method, url: f.url, page, status: 0, ms, at: f.start, reqBody: f.postData, contentType: f.reqType, reqHeaders: f.reqHeaders })
+      if (!isPageLoad(f)) this.map?.add({ method: f.method, url: f.url, page, status: 0, ms, at: f.start, reqBody: f.postData, contentType: f.reqType, reqHeaders: f.reqHeaders })
       return this.add('netfail', tabId, page, normUrl(f.url), `Запрос не дошёл: ${reqLine(f)} (${failed})`, { detail: failed, req: { method: f.method, url: f.url, ms, ...keepBody(f.postData) } })
     }
     const status = f.status ?? 0
@@ -190,7 +194,7 @@ export class CheckWatch {
     const bad4 = status >= 400 && status < 500 && status !== 401
     const slow = ms >= this.settings.slowMs
     const textual = /json|text|xml|javascript|html|problem/i.test(f.mime ?? '')
-    const forMap = !!this.map && f.type !== 'Document'
+    const forMap = !!this.map && !isPageLoad(f)
     const needRes = textual && ((bad5 || bad4) || (forMap && this.map!.wants(f.method, f.url, status, f.postData)))
     const needPost = !!f.hasPostData && f.postData === undefined
     const b = needRes || needPost ? await bodies(needPost, needRes).catch(() => ({}) as { post?: string; res?: string }) : {}
@@ -205,8 +209,8 @@ export class CheckWatch {
         p.detail = `${p.detail ?? ''}\nОтвет пришёл через ${(ms / 1000).toFixed(1)} с: ${status}`.trim()
         this.changed()
       }
-    if (bad5) this.add('http5xx', tabId, page, `${f.method} ${nu}|${status}`, reqLine(req), { req, detail: errText(b.res) })
-    else if (bad4) this.add('http4xx', tabId, page, `${f.method} ${nu}|${status}`, reqLine(req), { req, detail: errText(b.res) })
+    const httpKind = bad5 ? 'http5xx' : bad4 ? 'http4xx' : undefined
+    if (httpKind) this.add(httpKind, tabId, page, `${f.method} ${nu}|${status}`, reqLine(req), { req, detail: errText(b.res) })
     if (slow) this.add('slow', tabId, page, `${f.method} ${nu}`, `Медленно: ${reqLine(req)} — ${(ms / 1000).toFixed(1)} с`, { req })
     if (mut && post) {
       const ids = badBodyIds(post)
@@ -228,43 +232,55 @@ export class CheckWatch {
   /** The requests a tab still waits for, the longest first (a spinner that stays — what it waits for). */
   private waiting(tabId: string): Flight[] {
     const now = Date.now()
-    return [...(this.flights.get(tabId)?.values() ?? [])].filter((f) => f.type !== 'Document' && now - f.start > 1000).sort((a, b) => a.start - b.start)
+    return [...(this.flights.get(tabId)?.values() ?? [])].filter((f) => !isPageLoad(f) && now - f.start > 1000).sort((a, b) => a.start - b.start)
   }
 
   // ---------- the page (the watcher in it; the console) ----------
   page(tabId: string, page: string, x: PageFinding): void {
     const path = pathOf(page)
-    if (x.t === 'toast') {
-      // the request that failed just before, if any
-      const last = [...(this.recent.get(tabId) ?? [])].reverse().find((d) => d.status >= 400 && Date.now() - d.at < 10000)
-      this.add('toast', tabId, page, `${path}|${x.text.slice(0, 80)}`, `Сообщение об ошибке: «${x.text.slice(0, 120)}»`, { detail: x.text, selector: x.sel, req: last?.req })
-    } else if (x.t === 'dialog') {
-      const list = this.recent.get(tabId) ?? []
-      const okAt = [...list].reverse().find((d) => d.ok)
-      const failAfter = okAt && list.some((d) => !d.ok && d.at > okAt.at)
-      if (okAt && !failAfter && Date.now() - okAt.at < 120000)
-        this.add('unsaved', tabId, page, `${path}`, `«Несохранённые изменения» после успешного сохранения`, {
-          detail: `Окно: «${x.text.slice(0, 200)}»\nПеред этим сохранение прошло: ${reqLine(okAt.req)} (${Math.round((Date.now() - okAt.at) / 1000)} с назад)`,
+    switch (x.t) {
+      case 'toast': {
+        // the request that failed just before, if any
+        const last = [...(this.recent.get(tabId) ?? [])].reverse().find((d) => d.status >= 400 && Date.now() - d.at < 10000)
+        return this.add('toast', tabId, page, `${path}|${x.text.slice(0, 80)}`, `Сообщение об ошибке: «${x.text.slice(0, 120)}»`, { detail: x.text, selector: x.sel, req: last?.req })
+      }
+      case 'dialog': {
+        const list = this.recent.get(tabId) ?? []
+        const okAt = [...list].reverse().find((d) => d.ok)
+        const failAfter = okAt && list.some((d) => !d.ok && d.at > okAt.at)
+        if (okAt && !failAfter && Date.now() - okAt.at < 120000)
+          this.add('unsaved', tabId, page, `${path}`, `«Несохранённые изменения» после успешного сохранения`, {
+            detail: `Окно: «${x.text.slice(0, 200)}»\nПеред этим сохранение прошло: ${reqLine(okAt.req)} (${Math.round((Date.now() - okAt.at) / 1000)} с назад)`,
+            selector: x.sel,
+            req: okAt.req,
+          })
+        return
+      }
+      case 'loading': {
+        // one finding per request waited for (several spinners of one wait — one finding), the request itself shown
+        const w = this.waiting(tabId)
+        const now = Date.now()
+        const main = w[0]
+        const secs = Math.round(x.ms / 1000)
+        const detail = w.length
+          ? `Индикатор загрузки виден ${secs} с. Страница ждёт ответа:\n${w.slice(0, 10).map((f) => `${reqLine(f)} — уже ${Math.round((now - f.start) / 1000)} с`).join('\n')}`
+          : `Индикатор загрузки виден ${secs} с, но запросов в ожидании нет — загрузка не связана с сетью (зависло на странице).`
+        return this.add('loading', tabId, page, `${path}|${main ? `${main.method} ${normUrl(main.url)}` : 'без сети'}`, main ? `Загрузка дольше ${secs} с: ждём ${reqLine(main)}` : `Загрузка дольше ${secs} с без запросов в сети`, {
+          detail,
           selector: x.sel,
-          req: okAt.req,
+          req: main ? { method: main.method, url: main.url, ...keepBody(main.postData), contentType: main.reqType } : undefined,
         })
-    } else if (x.t === 'loading') {
-      // one finding per request waited for (several spinners of one wait — one finding), the request itself shown
-      const w = this.waiting(tabId)
-      const now = Date.now()
-      const main = w[0]
-      const secs = Math.round(x.ms / 1000)
-      const detail = w.length
-        ? `Индикатор загрузки виден ${secs} с. Страница ждёт ответа:\n${w.slice(0, 10).map((f) => `${reqLine(f)} — уже ${Math.round((now - f.start) / 1000)} с`).join('\n')}`
-        : `Индикатор загрузки виден ${secs} с, но запросов в ожидании нет — загрузка не связана с сетью (зависло на странице).`
-      this.add('loading', tabId, page, `${path}|${main ? `${main.method} ${normUrl(main.url)}` : 'без сети'}`, main ? `Загрузка дольше ${secs} с: ждём ${reqLine(main)}` : `Загрузка дольше ${secs} с без запросов в сети`, {
-        detail,
-        selector: x.sel,
-        req: main ? { method: main.method, url: main.url, ...keepBody(main.postData), contentType: main.reqType } : undefined,
-      })
+      }
+      case 'overflow':
+        return this.add('overflow', tabId, page, `${path}|${x.sel}`, `Текст вылезает из ячейки: «${x.text.slice(0, 60)}»`, { detail: `Шире ячейки на ${x.over}px: «${x.text}»`, selector: x.sel })
+      case 'hscroll':
+        return this.add('hscroll', tabId, page, path, `Горизонтальная прокрутка: страница шире окна на ${x.over}px`)
+      default: {
+        // a finding from a newer page script — ignored
+        const unknown: never = x
+        return void unknown
+      }
     }
-    else if (x.t === 'overflow') this.add('overflow', tabId, page, `${path}|${x.sel}`, `Текст вылезает из ячейки: «${x.text.slice(0, 60)}»`, { detail: `Шире ячейки на ${x.over}px: «${x.text}»`, selector: x.sel })
-    else if (x.t === 'hscroll') this.add('hscroll', tabId, page, path, `Горизонтальная прокрутка: страница шире окна на ${x.over}px`)
   }
   console(tabId: string, page: string, text: string, where?: string): void {
     const t = text.replace(/\s+/g, ' ').trim()

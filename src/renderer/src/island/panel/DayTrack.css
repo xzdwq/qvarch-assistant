@@ -1,0 +1,11 @@
+/* DayTrack: what its template cannot carry as utilities (scoped). */
+
+.track > .sch-work,
+.track > .sch-lunch {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+}
+.row-main {
+  position: relative;
+}

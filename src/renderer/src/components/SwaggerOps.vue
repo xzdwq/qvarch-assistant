@@ -92,203 +92,51 @@ async function toNote(path: string | null): Promise<void> {
     err.value = e instanceof Error ? e.message : String(e)
   }
 }
-const mColor = (m: string) => ({ GET: '#22c55e', POST: '#f59e0b', PUT: '#38bdf8', PATCH: '#a78bfa', DELETE: '#ef4444' })[m.toUpperCase()] ?? 'var(--text-2)'
+/** An operation's method colour (other methods — the plain text's). */
+const METHOD_VAR: Record<string, string> = { GET: 'var(--api-method-get)', POST: 'var(--api-method-post)', PUT: 'var(--api-method-put)', PATCH: 'var(--api-method-patch)', DELETE: 'var(--api-method-delete)' }
+const mColor = (m: string) => (Object.hasOwn(METHOD_VAR, m.toUpperCase()) ? METHOD_VAR[m.toUpperCase()] : 'var(--text-2)')
 </script>
 
 <template>
-  <div class="sw">
-    <div class="sw-top">
-      <button class="primary sm" :disabled="busy || !canFind" title="Посмотреть, что показывает страница, и проверить обычные адреса описания API — /v3/api-docs, /swagger.json, /openapi.json, /api-json и другие" @click="emit('find')"><Icon name="search" :size="12" />{{ busy ? 'Ищу…' : api ? 'Искать заново' : 'Найти на этом сайте' }}</button>
-      <span class="grow"></span>
+  <div class="sw tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-6">
+    <div class="sw-top tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap">
+      <button class="primary sm tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-12 tw:whitespace-nowrap" :disabled="busy || !canFind" title="Посмотреть, что показывает страница, и проверить обычные адреса описания API — /v3/api-docs, /swagger.json, /openapi.json, /api-json и другие" @click="emit('find')"><Icon name="search" :size="12" />{{ busy ? 'Ищу…' : api ? 'Искать заново' : 'Найти на этом сайте' }}</button>
+      <span class="grow tw:flex-1"></span>
       <button class="ib" title="Забыть найденное описание" :disabled="!api && !error" @click="emit('clear')"><Icon name="trash" :size="13" /></button>
     </div>
-    <p v-if="error" class="sw-err">{{ error }}<template v-if="tried.length"> · проверено адресов: {{ tried.length }}</template></p>
-    <p v-if="err" class="sw-err">{{ err }}</p>
+    <p v-if="error" class="sw-err tw:m-0 tw:text-down-fg tw:text-[12px]">{{ error }}<template v-if="tried.length"> · проверено адресов: {{ tried.length }}</template></p>
+    <p v-if="err" class="sw-err tw:m-0 tw:text-down-fg tw:text-[12px]">{{ err }}</p>
     <template v-if="api">
-      <div class="sw-h" :title="api.url">
-        <b>{{ api.info.title }}</b><span class="muted">{{ api.info.version }} · {{ api.info.kind }}</span>
+      <div class="sw-h tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap" :title="api.url">
+        <b class="tw:overflow-hidden tw:text-ellipsis">{{ api.info.title }}</b><span class="muted tw:text-muted tw:overflow-hidden tw:text-ellipsis">{{ api.info.version }} · {{ api.info.kind }}</span>
       </div>
-      <div class="sw-flt">
-        <button :class="{ on: !only }" @click="only = false">Все <b>{{ api.info.ops.length }}</b></button>
-        <button v-if="notCalled" :class="{ on: only }" title="Операции описания, которые страницы сайта ни разу не вызвали — непроверенное" @click="only = !only">Не вызывались <b>{{ notCalled.size }}</b></button>
+      <div class="sw-flt tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap">
+        <button class="tw:h-24 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:border-accent tw:[&.on]:bg-accent/14 tw:[&.on]:text-text" :class="{ on: !only }" @click="only = false">Все <b>{{ api.info.ops.length }}</b></button>
+        <button class="tw:h-24 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:border-accent tw:[&.on]:bg-accent/14 tw:[&.on]:text-text" v-if="notCalled" :class="{ on: only }" title="Операции описания, которые страницы сайта ни разу не вызвали — непроверенное" @click="only = !only">Не вызывались <b>{{ notCalled.size }}</b></button>
       </div>
-      <label class="sw-q"><Icon name="search" :size="12" /><input v-model="q" placeholder="Метод, путь, описание, тег" spellcheck="false" /></label>
-      <div class="sw-pick">
-        <label :title="allShown ? 'Снять отметку с показанных' : 'Отметить все показанные'"><input type="checkbox" :checked="allShown" :indeterminate.prop="!allShown && shown.some((o) => picked.has(o.id))" @change="setPicked(shown, !allShown)" /><span>{{ picked.size ? `Выбрано: ${picked.size}` : 'Выбрать' }}</span></label>
+      <label class="sw-q tw:flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[6px] tw:bg-field tw:text-muted"><Icon name="search" :size="12" /><input class="tw:flex-1 tw:min-w-0 tw:border-0 tw:bg-transparent tw:text-text tw:[font:inherit] tw:outline-none" v-model="q" placeholder="Метод, путь, описание, тег" spellcheck="false" /></label>
+      <div class="sw-pick tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap">
+        <label class="tw:flex tw:items-center tw:gap-6" :title="allShown ? 'Снять отметку с показанных' : 'Отметить все показанные'"><input type="checkbox" :checked="allShown" :indeterminate.prop="!allShown && shown.some((o) => picked.has(o.id))" @change="setPicked(shown, !allShown)" /><span>{{ picked.size ? `Выбрано: ${picked.size}` : 'Выбрать' }}</span></label>
         <template v-if="picked.size">
-          <span class="grow"></span>
-          <button class="ib" :title="copied ? 'Скопировано' : 'Копировать выбранные как HTTP-блоки (с входом сайта) — вставьте в любую заметку'" @click="copyPicked"><Icon :name="copied ? 'check' : 'copy'" :size="14" /></button>
-          <NotePicker class="sm" title="Выбранные операции — новой заметкой (папка «Карты API») или в конец заметки, что есть" new-label="Новая заметка (папка «Карты API»)" @pick="toNote" />
-          <button class="primary sm" title="В раздел HTTP: папка с запросами, переменные для адреса и входа" @click="emit('toHttp', [...picked])">В HTTP</button>
+          <span class="grow tw:flex-1"></span>
+          <button class="ib tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:whitespace-nowrap tw:justify-center tw:w-28 tw:p-0" :title="copied ? 'Скопировано' : 'Копировать выбранные как HTTP-блоки (с входом сайта) — вставьте в любую заметку'" @click="copyPicked"><Icon :name="copied ? 'check' : 'copy'" :size="14" /></button>
+          <NotePicker class="sm tw:[&&]:inline-flex tw:[&&]:items-center tw:[&&]:gap-5 tw:[&&]:h-28 tw:[&&]:whitespace-nowrap" title="Выбранные операции — новой заметкой (папка «Карты API») или в конец заметки, что есть" new-label="Новая заметка (папка «Карты API»)" @pick="toNote" />
+          <button class="primary sm tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:whitespace-nowrap" title="В раздел HTTP: папка с запросами, переменные для адреса и входа" @click="emit('toHttp', [...picked])">В HTTP</button>
         </template>
       </div>
-      <div class="sw-list">
+      <div class="sw-list tw:min-h-0 tw:flex-1 tw:overflow-y-auto">
         <template v-for="g in groups" :key="g.tag">
-          <label class="sw-tag"><input type="checkbox" :checked="g.ops.every((o) => picked.has(o.id))" @change="setPicked(g.ops, !g.ops.every((o) => picked.has(o.id)))" /><span class="tn">{{ g.tag }}</span><span class="muted">{{ g.ops.length }}</span></label>
-          <label v-for="o in g.ops" :key="o.id" class="sw-op" :class="{ dep: o.deprecated }" :title="`${o.method.toUpperCase()} ${o.path}${o.summary ? ` — ${o.summary}` : ''}`">
+          <label class="sw-tag tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:h-28 tw:py-0 tw:px-4 tw:whitespace-nowrap tw:mt-4 tw:border-b tw:border-b-border tw:font-semibold"><input type="checkbox" :checked="g.ops.every((o) => picked.has(o.id))" @change="setPicked(g.ops, !g.ops.every((o) => picked.has(o.id)))" /><span class="tn tw:overflow-hidden tw:text-ellipsis">{{ g.tag }}</span><span class="muted tw:text-muted">{{ g.ops.length }}</span></label>
+          <label v-for="o in g.ops" :key="o.id" class="sw-op tw:group/sw-op tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:h-28 tw:py-0 tw:px-4 tw:whitespace-nowrap tw:border-b tw:border-b-border tw:cursor-pointer tw:hover:bg-hover" :class="{ dep: o.deprecated }" :title="`${o.method.toUpperCase()} ${o.path}${o.summary ? ` — ${o.summary}` : ''}`">
             <input type="checkbox" :checked="picked.has(o.id)" @change="toggle(o)" />
-            <b class="m" :style="{ color: mColor(o.method) }">{{ o.method.toUpperCase() }}</b>
-            <code class="p">{{ o.path }}</code>
-            <span v-if="o.summary" class="s">{{ o.summary }}</span>
+            <b class="m tw:flex-none tw:w-52 tw:font-data tw:text-[11.5px]" :style="{ color: mColor(o.method) }">{{ o.method.toUpperCase() }}</b>
+            <code class="p tw:group-[.dep]/sw-op:line-through tw:flex-none tw:max-w-[60%] tw:overflow-hidden tw:text-[12px] tw:text-ellipsis">{{ o.path }}</code>
+            <span v-if="o.summary" class="s tw:overflow-hidden tw:text-muted tw:text-[12px] tw:text-ellipsis">{{ o.summary }}</span>
           </label>
         </template>
-        <p v-if="!shown.length" class="muted sw-none">Ничего не подходит.</p>
+        <p v-if="!shown.length" class="muted sw-none tw:text-muted tw:my-8 tw:mx-4 tw:whitespace-normal">Ничего не подходит.</p>
       </div>
     </template>
-    <p v-else-if="!busy && !error" class="muted sw-none">Откройте сайт (или его Swagger UI) и нажмите «Найти»: Qvarch посмотрит, что показывает страница, и проверит обычные адреса описания API.</p>
+    <p v-else-if="!busy && !error" class="muted sw-none tw:text-muted tw:my-8 tw:mx-4 tw:whitespace-normal">Откройте сайт (или его Swagger UI) и нажмите «Найти»: Qvarch посмотрит, что показывает страница, и проверит обычные адреса описания API.</p>
   </div>
 </template>
-
-<style scoped>
-.sw {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 6px;
-}
-.sw-top,
-.sw-pick,
-.sw-flt,
-.sw-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  white-space: nowrap;
-}
-.grow {
-  flex: 1;
-}
-.muted {
-  color: var(--muted);
-}
-.sw-top .primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-.sw-err {
-  margin: 0;
-  color: var(--down-fg);
-  font-size: 12px;
-}
-.sw-h b,
-.sw-h span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sw-flt button {
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.sw-flt button.on {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.14);
-  color: var(--text);
-}
-.sw-q {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--field-bg);
-  color: var(--muted);
-}
-.sw-q input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  outline: none;
-}
-/* the row's actions — one height */
-.sw-pick > button,
-.sw-pick .np {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  white-space: nowrap;
-}
-.sw-pick > .ib {
-  justify-content: center;
-  width: 28px;
-  padding: 0;
-}
-.sw-pick label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.sw-list {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-}
-.sw-tag,
-.sw-op {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 28px;
-  padding: 0 4px;
-  white-space: nowrap;
-}
-.sw-tag {
-  margin-top: 4px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-}
-.sw-tag .tn {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sw-op {
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-}
-.sw-op:hover {
-  background: var(--hover);
-}
-.sw-op.dep .p {
-  text-decoration: line-through;
-}
-.sw-op .m {
-  flex: none;
-  width: 52px;
-  font-family: var(--font-data);
-  font-size: 11.5px;
-}
-.sw-op .p {
-  flex: none;
-  max-width: 60%;
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-.sw-op .s {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-.sw-none {
-  margin: 8px 4px;
-  white-space: normal;
-}
-</style>

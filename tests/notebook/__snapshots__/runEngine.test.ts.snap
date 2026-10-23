@@ -1,0 +1,76 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`run engine: reports > a block report per kind and the note report > code 1`] = `
+"✅ Код «total» — выполнен за N мс
+Код: return 1
+Лог:
+  [warn] careful
+Результат: {
+  "a": 1
+}
+Запуск: 02.01.2026, 03:04"
+`;
+
+exports[`run engine: reports > a block report per kind and the note report > http 1`] = `
+"✅ HTTP-запрос «user» — 200 OK за N мс
+GET https://x.test/u
+Ответ: 8 Б, application/json
+Тело (начало):
+  {"id":7}
+Запуск: 02.01.2026, 03:04"
+`;
+
+exports[`run engine: reports > a block report per kind and the note report > pw 1`] = `
+"❌ Тест «shot» — упал за 1.5 с
+Шаги:
+  ✅ open — 20 мс
+  ❌ click
+    timeout
+Ошибка:
+  locator failed
+(браузер msedge · трассировка есть · скриншот есть)
+Запуск: 02.01.2026, 03:04"
+`;
+
+exports[`run engine: reports > a block report per kind and the note report > sql 1`] = `
+"✅ Запрос к БД «rows» — строк 1 за N мс · main
+Запрос:
+  select 1
+Запуск: 02.01.2026, 03:04"
+`;
+
+exports[`run engine: reports > a block report per kind and the note report > tpl 1`] = `
+"⚠️ Текст по шаблону «msg» — ошибка
+Ошибка:
+  Нет значения: {{nope}} — выполните блок, который его даёт
+Запуск: 02.01.2026, 03:04"
+`;
+
+exports[`run engine: reports > a block report per kind and the note report 1`] = `
+"📋 Проверка
+❌ Есть ошибки — успешно 3 из 5, ожидаемых падений 1, ошибок 1
+Тесты в браузере: 0 из 1
+Последний запуск: 02.01.2026, 03:04
+
+✅ HTTP-запрос «user» — 200 OK за N мс
+GET https://x.test/u
+
+✅ Код «total» — выполнен за N мс
+
+⚠️ Текст по шаблону «msg» — ошибка
+Ошибка:
+  Нет значения: {{nope}} — выполните блок, который его даёт
+Запуск: 02.01.2026, 03:04
+
+✅ Запрос к БД «rows» — строк 1 за N мс · main
+
+❌ Тест «shot» — упал за 1.5 с
+Шаги:
+  ✅ open — 20 мс
+  ❌ click
+    timeout
+Ошибка:
+  locator failed
+(браузер msedge · трассировка есть · скриншот есть)
+Запуск: 02.01.2026, 03:04"
+`;

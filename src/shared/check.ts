@@ -5,10 +5,11 @@
  * may be turned off or one finding muted. What the tester picks becomes a bug note in the notebook.
  */
 
-export type CheckKind = 'http5xx' | 'http4xx' | 'netfail' | 'emptyId' | 'double' | 'slow' | 'nulls' | 'console' | 'toast' | 'unsaved' | 'loading' | 'overflow' | 'hscroll'
-export type CheckSev = 'high' | 'mid' | 'low'
+export const CHECK_SEVS = ['high', 'mid', 'low'] as const
+export type CheckSev = (typeof CHECK_SEVS)[number]
 
-export const CHECK_KINDS: Array<{ id: CheckKind; label: string; sev: CheckSev; hint: string }> = [
+/** The kinds of findings, in the order they are shown (the most severe first). */
+const CHECK_KIND_LIST = [
   { id: 'http5xx', label: 'Ошибка сервера (5xx)', sev: 'high', hint: 'Ответ 500–599 на запрос страницы' },
   { id: 'unsaved', label: '«Несохранённые изменения» после сохранения', sev: 'high', hint: 'Окно о несохранённых изменениях, хотя сохранение только что прошло (ответ 2xx)' },
   { id: 'http4xx', label: 'Отказ сервера (4xx)', sev: 'mid', hint: 'Ответ 400–499 (кроме 401 — вход)' },
@@ -22,8 +23,18 @@ export const CHECK_KINDS: Array<{ id: CheckKind; label: string; sev: CheckSev; h
   { id: 'nulls', label: 'Пустые поля в отправленной форме', sev: 'low', hint: 'null / "" в теле POST / PUT / PATCH — сверить с тем, что было на экране' },
   { id: 'overflow', label: 'Текст вылезает из ячейки', sev: 'low', hint: 'Содержимое ячейки таблицы шире ячейки и выходит за её край' },
   { id: 'hscroll', label: 'Горизонтальная прокрутка страницы', sev: 'low', hint: 'Страница шире окна' },
-]
-export const kindMeta = (k: CheckKind) => CHECK_KINDS.find((x) => x.id === k)!
+] as const satisfies ReadonlyArray<{ id: string; label: string; sev: CheckSev; hint: string }>
+
+export type CheckKind = (typeof CHECK_KIND_LIST)[number]['id']
+export interface CheckKindMeta {
+  id: CheckKind
+  label: string
+  sev: CheckSev
+  hint: string
+}
+export const CHECK_KINDS: readonly CheckKindMeta[] = CHECK_KIND_LIST
+const KIND_META = Object.fromEntries(CHECK_KINDS.map((k) => [k.id, k])) as Record<CheckKind, CheckKindMeta>
+export const kindMeta = (k: CheckKind): CheckKindMeta => KIND_META[k]
 
 export interface CheckSettings {
   /** Watching all tabs. */
@@ -114,6 +125,11 @@ export function sameSite(a: string, b: string): boolean {
 }
 export const isMutation = (method: string) => /^(POST|PUT|PATCH|DELETE)$/i.test(method)
 
+/** A JS value printed where an id should be. */
+const NOT_AN_ID = /^(undefined|null|NaN|\[object Object\])$/
+/** The values of a body's …Id field that hold no id. */
+const EMPTY_BODY_IDS: ReadonlySet<unknown> = new Set(['', 'undefined', 'null'])
+
 /** An id that is not one in the address: …/undefined, ?id=null, ?productId=, a double slash. */
 export function badUrlId(url: string): string | undefined {
   let u: URL
@@ -122,11 +138,11 @@ export function badUrlId(url: string): string | undefined {
   } catch {
     return undefined
   }
-  const seg = u.pathname.split('/').find((s) => /^(undefined|null|NaN|\[object Object\])$/.test(decodeURIComponent(s)))
+  const seg = u.pathname.split('/').find((s) => NOT_AN_ID.test(decodeURIComponent(s)))
   if (seg) return `в адресе «${decodeURIComponent(seg)}»`
   if (/[^:]\/\//.test(u.pathname)) return 'в адресе пустой сегмент (//)'
   for (const [k, v] of u.searchParams) {
-    if (/^(undefined|null|NaN|\[object Object\])$/.test(v)) return `параметр ${k}=${v}`
+    if (NOT_AN_ID.test(v)) return `параметр ${k}=${v}`
     if (/id$/i.test(k) && v === '') return `параметр ${k} пустой`
   }
   return undefined
@@ -155,7 +171,7 @@ export function badBodyIds(body?: string): string[] {
   const all: Array<[string, unknown]> = []
   walk(j, '', all, 5000)
   return all
-    .filter(([p, v]) => /(^|\.|\])(ids?|\w+Ids?|\w+_ids?)(\[\d+\])?$/.test(p) && (v === '' || v === 'undefined' || v === 'null'))
+    .filter(([p, v]) => /(^|\.|\])(ids?|\w+Ids?|\w+_ids?)(\[\d+\])?$/.test(p) && EMPTY_BODY_IDS.has(v))
     .map(([p, v]) => `${p} = ${JSON.stringify(v)}`)
     .slice(0, 20)
 }

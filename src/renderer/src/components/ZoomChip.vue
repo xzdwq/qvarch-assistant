@@ -21,40 +21,8 @@ function onWheel(e: WheelEvent): void {
 </script>
 
 <template>
-  <button class="zc" :class="{ off: Math.round(modelValue) !== 100 }" :title="title ?? 'Масштаб · колесо — изменить, клик — 100%'" @wheel="onWheel" @click="set(100)">
+  <button class="zc tw:group/zc tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:text-muted tw:font-data tw:text-[11px] tw:tabular-nums tw:cursor-ns-resize tw:[-webkit-app-region:no-drag] tw:hover:border-accent tw:hover:text-accent-fg tw:hover:enabled:bg-hover" :class="{ off: Math.round(modelValue) !== 100 }" :title="title ?? 'Масштаб · колесо — изменить, клик — 100%'" @wheel="onWheel" @click="set(100)">
     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-    <span>{{ Math.round(modelValue) }}%</span>
+    <span class="tw:min-w-34 tw:text-right tw:text-text-2 tw:group-[.off]/zc:text-accent-fg">{{ Math.round(modelValue) }}%</span>
   </button>
 </template>
-
-<style scoped>
-.zc {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--field-bg);
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  cursor: ns-resize;
-  -webkit-app-region: no-drag;
-}
-.zc span {
-  min-width: 34px;
-  text-align: right;
-  color: var(--text-2);
-}
-.zc:hover {
-  border-color: var(--accent);
-  color: var(--accent-fg);
-}
-.zc.off span {
-  color: var(--accent-fg);
-}
-</style>

@@ -123,7 +123,7 @@ export class Mcp {
     if (origin && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin)) return json(403, { error: 'origin' })
     if (!(req.url ?? '').startsWith('/mcp')) return json(404)
     if (req.headers.authorization !== `Bearer ${this.cfg.token}`) return json(401, { error: 'Нужен токен Qvarch (Настройки → AI-ассистенты)' })
-    if (req.method === 'GET' || req.method === 'DELETE') return json(405)
+    // (no server-sent stream, no session to end: only POST)
     if (req.method !== 'POST') return json(405)
     let raw = ''
     for await (const chunk of req) {

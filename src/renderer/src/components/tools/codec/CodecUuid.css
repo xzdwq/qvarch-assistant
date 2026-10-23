@@ -1,0 +1,10 @@
+/* CodecUuid: what its template cannot carry as utilities (scoped). */
+
+/* a made UUID's copy icon: shown on hover only */
+.uu :deep(svg) {
+  color: var(--muted);
+  opacity: 0;
+}
+.uu:hover :deep(svg) {
+  opacity: 1;
+}

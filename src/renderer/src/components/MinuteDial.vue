@@ -74,7 +74,7 @@ function onMove(e: PointerEvent): void {
 </script>
 
 <template>
-  <div class="dial" title="Последние N минут">
+  <div class="dial tw:inline-flex tw:cursor-ew-resize tw:select-none" title="Последние N минут">
     <svg
       ref="svg"
       :width="W"
@@ -86,62 +86,12 @@ function onMove(e: PointerEvent): void {
       @pointerup="(dragging = false), emit('commit')"
       @lostpointercapture="dragging = false"
     >
-      <line v-for="(t, i) in ticks" :key="i" :x1="t.a.x" :y1="t.a.y" :x2="t.b.x" :y2="t.b.y" class="tick" />
-      <path :d="track" class="track" />
-      <path v-if="filled" :d="filled" class="fill" />
-      <circle :cx="knob.x" :cy="knob.y" r="5" class="knob" :class="{ active: dragging }" />
-      <text :x="cx" :y="cy - 8" class="val">{{ text }}</text>
-      <text :x="cx" :y="cy + 2" class="cap">последние</text>
+      <line v-for="(t, i) in ticks" :key="i" :x1="t.a.x" :y1="t.a.y" :x2="t.b.x" :y2="t.b.y" class="tick tw:stroke-white/18 tw:stroke-1" />
+      <path :d="track" class="track tw:fill-none tw:stroke-white/10 tw:stroke-6 tw:[stroke-linecap:round]" />
+      <path v-if="filled" :d="filled" class="fill tw:fill-none tw:[stroke:var(--accent)] tw:stroke-6 tw:[stroke-linecap:round] tw:[transition:d_0.12s_ease]" />
+      <circle :cx="knob.x" :cy="knob.y" r="5" class="knob tw:[fill:var(--text-hi)] tw:[stroke:var(--accent)] tw:stroke-2 tw:[transition:cx_0.12s_ease,cy_0.12s_ease,r_0.12s] tw:[&.active]:[r:6]" :class="{ active: dragging }" />
+      <text :x="cx" :y="cy - 8" class="val tw:[fill:var(--text)] tw:text-[12px] tw:font-bold tw:[text-anchor:middle] tw:tabular-nums tw:font-data">{{ text }}</text>
+      <text :x="cx" :y="cy + 2" class="cap tw:[fill:var(--muted)] tw:text-[8px] tw:[text-anchor:middle]">последние</text>
     </svg>
   </div>
 </template>
-
-<style scoped>
-.dial {
-  display: inline-flex;
-  cursor: ew-resize;
-  user-select: none;
-}
-.track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 6;
-  stroke-linecap: round;
-}
-.fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 6;
-  stroke-linecap: round;
-  transition: d 0.12s ease;
-}
-.tick {
-  stroke: rgba(255, 255, 255, 0.18);
-  stroke-width: 1;
-}
-.knob {
-  fill: var(--text-hi);
-  stroke: var(--accent);
-  stroke-width: 2;
-  transition:
-    cx 0.12s ease,
-    cy 0.12s ease,
-    r 0.12s;
-}
-.knob.active {
-  r: 6;
-}
-.val {
-  fill: var(--text);
-  font-size: 12px;
-  font-weight: 700;
-  text-anchor: middle;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-.cap {
-  fill: var(--muted);
-  font-size: 8px;
-  text-anchor: middle;
-}
-</style>

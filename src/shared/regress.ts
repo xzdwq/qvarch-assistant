@@ -1,3 +1,5 @@
+import { QA_MARKS, type QaMark } from './browser/constants'
+
 /**
  * «Регрессия» — a notebook component: every Playwright test of a folder run one after another, on the stand
  * chosen (an address swapped for another — dev → qa — in the tests' code at run time, not in the notes); a table
@@ -16,6 +18,14 @@ export interface RegressCfg {
   to?: string
 }
 export type RegressState = 'ok' | 'fail' | 'skip'
+/** A test's ready checks: how many of each verdict. */
+export type CheckTally = Record<QaMark, number>
+/** A test's ready checks counted by verdict (others — not counted). */
+export function tallyChecks(checks: ReadonlyArray<{ state: string }>): CheckTally {
+  const tally = Object.fromEntries(QA_MARKS.map((s) => [s, 0])) as CheckTally
+  for (const c of checks) if (Object.hasOwn(tally, c.state)) tally[c.state as keyof CheckTally]++
+  return tally
+}
 export interface RegressItem {
   /** The note (vault path) and the block's run key in it. */
   note: string
@@ -26,7 +36,7 @@ export interface RegressItem {
   ms?: number
   error?: string
   /** The ready checks (qa.…): how many passed / failed / warned. */
-  checks?: { ok: number; fail: number; warn: number }
+  checks?: CheckTally
   /** «не останавливать»: an expected / unstable test — its failure does not fail the run. */
   soft?: boolean
 }

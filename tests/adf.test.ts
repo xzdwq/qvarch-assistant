@@ -11,6 +11,15 @@ describe('adfToMarkdown', () => {
       'Нужно **срочно** см. [тут](https://x.y)',
     )
   })
+  it('every mark, nested in order; unknown marks and links without href leave the text', () => {
+    const marks = [{ type: 'strong' }, { type: 'em' }, { type: 'code' }, { type: 'strike' }]
+    expect(adfToMarkdown(doc(p(t('x', marks))))).toBe('~~`***x***`~~')
+    expect(adfToMarkdown(doc(p(t('y', [{ type: 'underline' }, { type: 'link' }, { type: 'constructor' }]))))).toBe('y')
+  })
+  it('quotes and panels', () => {
+    expect(adfToMarkdown(doc({ type: 'panel', content: [p(t('a')), p(t('b'))] }))).toBe('> a\n> \n> b')
+    expect(adfToMarkdown(doc({ type: 'blockquote', content: [p(t('q'))] }))).toBe('> q')
+  })
   it('lists, headings, code', () => {
     const md = adfToMarkdown(
       doc(

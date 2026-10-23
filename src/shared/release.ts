@@ -58,6 +58,11 @@ export interface ProjectProfile extends ReleaseConfig {
  */
 export type MainStatus = 'none' | 'partial' | 'full';
 
+/** A branch's status by how many of its own commits are already in main. */
+export function mainStatusOf(matched: number, total: number): MainStatus {
+  return matched === 0 ? 'none' : matched === total ? 'full' : 'partial';
+}
+
 export interface BranchRef {
   /** Полное имя ref'а, например origin/feature/PROJ-1234 или feature/PROJ-1234 (для локальных) */
   ref: string;
@@ -170,9 +175,11 @@ export interface ConflictCause {
  * - 'near-identical' — отличия только в пробелах/пустых строках (git diff -w между ними пуст);
  * - 'different' — реальные отличия остаются, возможно разное поведение — разрешать вручную.
  */
+export type ContentMatch = 'identical' | 'near-identical' | 'different';
+
 export interface TaskDivergence {
   taskKey: string;
-  contentMatch: 'identical' | 'near-identical' | 'different';
+  contentMatch: ContentMatch;
   otherSha: string;
   otherSubject: string;
   otherAuthorName: string;
@@ -343,9 +350,15 @@ export interface StaleBranchHint {
   commitUrl: string | null;
 }
 
+/** A step of building the release branch, as main reports it to the panel. */
+export type ReleaseProgressEvent =
+  | { type: 'applied'; item: PlanItem; index: number; total: number }
+  | { type: 'conflict'; item: PlanItem; index: number; total: number }
+  | { type: 'done' };
+
 export interface DryRunResult {
   sha: string;
-  status: 'ok' | 'conflict' | 'conditional' | 'empty' | 'untested';
+  status: DryRunStatus;
   /**
    * Для 'conflict' — реально конфликтующие файлы (из git-маркеров). Для 'conditional' — файлы,
    * из-за пересечения с которыми коммит не пробовался: они уже трогает более ранний неразрешённый

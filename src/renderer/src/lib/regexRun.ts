@@ -64,6 +64,8 @@ self.onmessage = (e) => {
 let worker: Worker | undefined
 let url: string | undefined
 let seq = 0
+/** The rejection message of a run dropped because a newer one started. */
+export const REGEX_SUPERSEDED = 'superseded'
 const waiting = new Map<number, { res: (r: RxResult) => void; rej: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
 function start(): Worker {
   url ??= URL.createObjectURL(new Blob([WORKER], { type: 'text/javascript' }))
@@ -85,7 +87,7 @@ export function runRegex(source: string, flags: string, text: string, opts: { re
   // only the newest run matters: an older one still waiting is dropped
   for (const [k, p] of waiting) {
     clearTimeout(p.timer)
-    p.rej(new Error('superseded'))
+    p.rej(new Error(REGEX_SUPERSEDED))
     waiting.delete(k)
   }
   return new Promise((res, rej) => {
@@ -125,19 +127,48 @@ export function groupNames(source: string): string[] {
   }
   return out
 }
+export const REGEX_LANGS = ['js', 'java', 'python', 'csharp'] as const
+export type RegexLang = (typeof REGEX_LANGS)[number]
+
+/** A language's option names for the JS flags it has (the flags it lacks are left out). */
+const optionList = (flags: string, options: Record<string, string>): string =>
+  Object.entries(options)
+    .filter(([flag]) => flags.includes(flag))
+    .map(([, option]) => option)
+    .join(' | ')
+
+/** Each language: its title and how the pattern is written in it (escaped for its string literals). */
+export const REGEX_LANG_INFO: Record<RegexLang, { title: string; code: (source: string, flags: string) => string }> = {
+  js: {
+    title: 'JavaScript',
+    code: (source, flags) => `const re = /${source.replace(/\//g, '\\/')}/${flags}\nconst all = [...text.matchAll(${flags.includes('g') ? 're' : `new RegExp(re.source, re.flags + 'g')`})]`,
+  },
+  java: {
+    title: 'Java',
+    code: (source, flags) => {
+      const javaStr = source.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const f = optionList(flags, { i: 'Pattern.CASE_INSENSITIVE', m: 'Pattern.MULTILINE', s: 'Pattern.DOTALL', u: 'Pattern.UNICODE_CASE' })
+      return `Pattern p = Pattern.compile("${javaStr}"${f ? `, ${f}` : ''});\nMatcher m = p.matcher(text);\nwhile (m.find()) {\n    String found = m.group();\n}`
+    },
+  },
+  python: {
+    title: 'Python',
+    code: (source, flags) => {
+      const f = optionList(flags, { i: 're.IGNORECASE', m: 're.MULTILINE', s: 're.DOTALL' })
+      const py = source.replace(/\(\?<(?![=!])/g, '(?P<').replace(/\\k<(\w+)>/g, '(?P=$1)')
+      return `import re\n\npattern = re.compile(r"${py.replace(/"/g, '\\"')}"${f ? `, ${f}` : ''})\nfor m in pattern.finditer(text):\n    found = m.group(0)`
+    },
+  },
+  csharp: {
+    title: 'C#',
+    code: (source, flags) => {
+      const f = optionList(flags, { i: 'RegexOptions.IgnoreCase', m: 'RegexOptions.Multiline', s: 'RegexOptions.Singleline' })
+      return `var re = new Regex(@"${source.replace(/"/g, '""')}"${f ? `, ${f}` : ''});\nforeach (Match m in re.Matches(text))\n{\n    var found = m.Value;\n}`
+    },
+  },
+}
+
 /** The pattern written as code in a language (escaped for its string literals). */
-export function regexCode(source: string, flags: string, lang: 'js' | 'java' | 'python' | 'csharp'): string {
-  if (lang === 'js') return `const re = /${source.replace(/\//g, '\\/')}/${flags}\nconst all = [...text.matchAll(${flags.includes('g') ? 're' : `new RegExp(re.source, re.flags + 'g')`})]`
-  const javaStr = source.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  if (lang === 'java') {
-    const f = [flags.includes('i') && 'Pattern.CASE_INSENSITIVE', flags.includes('m') && 'Pattern.MULTILINE', flags.includes('s') && 'Pattern.DOTALL', flags.includes('u') && 'Pattern.UNICODE_CASE'].filter(Boolean).join(' | ')
-    return `Pattern p = Pattern.compile("${javaStr}"${f ? `, ${f}` : ''});\nMatcher m = p.matcher(text);\nwhile (m.find()) {\n    String found = m.group();\n}`
-  }
-  if (lang === 'python') {
-    const f = [flags.includes('i') && 're.IGNORECASE', flags.includes('m') && 're.MULTILINE', flags.includes('s') && 're.DOTALL'].filter(Boolean).join(' | ')
-    const py = source.replace(/\(\?<(?![=!])/g, '(?P<').replace(/\\k<(\w+)>/g, '(?P=$1)')
-    return `import re\n\npattern = re.compile(r"${py.replace(/"/g, '\\"')}"${f ? `, ${f}` : ''})\nfor m in pattern.finditer(text):\n    found = m.group(0)`
-  }
-  const f = [flags.includes('i') && 'RegexOptions.IgnoreCase', flags.includes('m') && 'RegexOptions.Multiline', flags.includes('s') && 'RegexOptions.Singleline'].filter(Boolean).join(' | ')
-  return `var re = new Regex(@"${source.replace(/"/g, '""')}"${f ? `, ${f}` : ''});\nforeach (Match m in re.Matches(text))\n{\n    var found = m.Value;\n}`
+export function regexCode(source: string, flags: string, lang: RegexLang): string {
+  return REGEX_LANG_INFO[lang].code(source, flags)
 }

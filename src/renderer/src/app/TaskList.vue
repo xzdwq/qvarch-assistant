@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { priorityRank, type JiraIssue, type JiraListQuery, type TaskRef } from '@shared/jira'
+import { JIRA_DUE_FILTERS, JIRA_SORTS, priorityRank, type JiraDueFilter, type JiraIssue, type JiraListQuery, type JiraSort, type TaskRef } from '@shared/jira'
 import { formatDuration } from '@shared/timeline'
 import Icon from '../components/Icon.vue'
 import { formatSec, useJira } from '../lib/jira'
@@ -42,23 +42,14 @@ watch(
   },
   { deep: true },
 )
-const SORTS: Array<{ id: NonNullable<JiraListQuery['sort']>; label: string }> = [
-  { id: 'created', label: 'Дата создания' },
-  { id: 'due', label: 'Срок' },
-  { id: 'priority', label: 'Приоритет' },
-  { id: 'status', label: 'Статус' },
-  { id: 'updated', label: 'Обновлено' },
-]
+const SORT_LABELS: Record<JiraSort, string> = { created: 'Дата создания', due: 'Срок', priority: 'Приоритет', status: 'Статус', updated: 'Обновлено' }
+const SORTS = JIRA_SORTS.map((id) => ({ id, label: SORT_LABELS[id] }))
 const ASSIGNEE = [
   { id: 'mine', label: 'На мне' },
   { id: 'other', label: 'Не на мне' },
 ]
-const DUE = [
-  { id: 'late', label: 'Просрочен' },
-  { id: 'week', label: 'Ближайшие 7 дней' },
-  { id: 'set', label: 'Срок указан' },
-  { id: 'none', label: 'Без срока' },
-]
+const DUE_LABELS: Record<JiraDueFilter, string> = { late: 'Просрочен', week: 'Ближайшие 7 дней', set: 'Срок указан', none: 'Без срока' }
+const DUE = JIRA_DUE_FILTERS.map((id) => ({ id, label: DUE_LABELS[id] }))
 /** A filter's list as the menu's model (an empty one — off). */
 const fq = <K extends 'statuses' | 'assignee' | 'priorities' | 'due' | 'labels'>(k: K) =>
   computed<string[]>({ get: () => (query.value[k] ?? []) as string[], set: (v) => (query.value = { ...query.value, [k]: v.length ? v : undefined }) })
@@ -221,402 +212,81 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 </script>
 
 <template>
-  <div ref="listEl" class="tasks" @scroll.passive="onScroll">
-    <div class="topbar">
-      <input v-model="q" class="search" placeholder="Поиск по задачам" spellcheck="false" />
+  <div ref="listEl" class="tasks tw:pt-12 tw:pr-14 tw:pb-16 tw:pl-14 tw:overflow-auto tw:flex tw:flex-col tw:gap-14" @scroll.passive="onScroll">
+    <div class="topbar tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
+      <input v-model="q" class="search tw:w-260 tw:py-5 tw:px-9 tw:rounded-[4px] tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px]" placeholder="Поиск по задачам" spellcheck="false" />
       <template v-if="jira.connected">
         <FilterMenu v-model="fStatus" label="Статус" icon="layers" :options="statusOpts" />
         <FilterMenu v-model="fAssignee" label="Исполнитель" icon="users" :options="ASSIGNEE" />
         <FilterMenu v-model="fPriority" label="Приоритет" icon="flag" :options="priorityOpts" />
         <FilterMenu v-model="fDue" label="Срок" icon="calendar" :options="DUE" />
         <FilterMenu v-model="fLabels" label="Метки" icon="tag" :options="labelOpts" />
-        <button v-if="anyFilter" class="ico" title="Сбросить фильтры" @click="resetFilters"><Icon name="x" :size="13" /></button>
-        <span class="spacer"></span>
-        <span class="sortbox">
-          <select v-model="query.sort" title="Сортировка (внутри проекта)">
+        <button v-if="anyFilter" class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:inline-flex tw:py-5 tw:px-7" title="Сбросить фильтры" @click="resetFilters"><Icon name="x" :size="13" /></button>
+        <span class="spacer tw:flex-1"></span>
+        <span class="sortbox tw:inline-flex tw:items-center tw:gap-2">
+          <select class="tw:h-28 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px]" v-model="query.sort" title="Сортировка (внутри проекта)">
             <option v-for="o in SORTS" :key="o.id" :value="o.id">{{ o.label }}</option>
           </select>
-          <button class="ico" :title="query.desc !== false ? 'По убыванию · нажмите — по возрастанию' : 'По возрастанию · нажмите — по убыванию'" @click="query.desc = query.desc === false"><Icon :name="query.desc !== false ? 'sortDesc' : 'sortAsc'" :size="14" /></button>
+          <button class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:inline-flex tw:py-5 tw:px-7" :title="query.desc !== false ? 'По убыванию · нажмите — по возрастанию' : 'По возрастанию · нажмите — по убыванию'" @click="query.desc = query.desc === false"><Icon :name="query.desc !== false ? 'sortDesc' : 'sortAsc'" :size="14" /></button>
         </span>
       </template>
     </div>
 
-    <div v-if="!jira.connected" class="connect">
+    <div v-if="!jira.connected" class="connect tw:flex tw:flex-col tw:items-center tw:gap-10 tw:p-40 tw:text-muted tw:text-center">
       <Icon name="link" :size="22" />
       <p>Jira не подключена. Укажите Client ID и Secret своего приложения Atlassian и войдите — в настройках.</p>
-      <button class="primary" @click="emit('settings')">Открыть настройки</button>
+      <button class="primary tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:hover:enabled:bg-accent-hi tw:hover:enabled:border-accent-hi" @click="emit('settings')">Открыть настройки</button>
     </div>
 
     <template v-else>
-      <div class="bar">
-        <span class="muted small">Все незакрытые задачи · {{ total }}<template v-if="items.length < total"> · показано {{ items.length }}</template></span>
-        <span class="spacer"></span>
-        <span class="muted small" :title="jira.error ? `Последняя попытка ${hm(jira.errorAt)}: ${jira.error}
+      <div class="bar tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
+        <span class="muted small tw:text-[12px]">Все незакрытые задачи · {{ total }}<template v-if="items.length < total"> · показано {{ items.length }}</template></span>
+        <span class="spacer tw:flex-1"></span>
+        <span class="muted small tw:text-[12px]" :title="jira.error ? `Последняя попытка ${hm(jira.errorAt)}: ${jira.error}
 Задачи — из последней удачной синхронизации (${syncedText}). Следующая попытка — по расписанию или кнопкой.` : ''">
           <template v-if="jira.syncing || spinning">синхронизация…</template>
-          <template v-else-if="jira.error">синхр. {{ syncedText }} · <span class="err">{{ hm(jira.errorAt) }} ошибка: {{ jira.error }}</span></template>
+          <template v-else-if="jira.error">синхр. {{ syncedText }} · <span class="err tw:text-down-fg">{{ hm(jira.errorAt) }} ошибка: {{ jira.error }}</span></template>
           <template v-else>синхр. {{ syncedText }} · каждые 10 мин</template>
         </span>
-        <button class="ico" :class="{ on: anyOpen }" :title="anyOpen ? 'Свернуть все задачи' : 'Раскрыть все задачи — описание и поля'" @click="anyOpen ? ((allOpen = false), (openSet = new Set())) : toggleAll()"><Icon :name="anyOpen ? 'collapse' : 'expand'" :size="14" /></button>
-        <button v-if="groups.length > 1" class="ico" :title="allFolded ? 'Развернуть все проекты' : 'Свернуть все проекты'" @click="foldAll"><Icon :name="allFolded ? 'chevronDown' : 'collapse'" :size="14" /></button>
-        <button class="ico" title="Синхронизировать сейчас" :disabled="jira.syncing || spinning" @click="sync"><Icon name="refresh" :size="14" :class="{ spin: jira.syncing || spinning }" /></button>
+        <button class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:not-[&.on]:text-muted tw:[.seg_&]:[&.on]:bg-accent/25 tw:[.seg_&]:[&.on]:text-text tw:inline-flex tw:py-5 tw:px-7 tw:[&.on]:text-accent-fg" :class="{ on: anyOpen }" :title="anyOpen ? 'Свернуть все задачи' : 'Раскрыть все задачи — описание и поля'" @click="anyOpen ? ((allOpen = false), (openSet = new Set())) : toggleAll()"><Icon :name="anyOpen ? 'collapse' : 'expand'" :size="14" /></button>
+        <button v-if="groups.length > 1" class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:inline-flex tw:py-5 tw:px-7" :title="allFolded ? 'Развернуть все проекты' : 'Свернуть все проекты'" @click="foldAll"><Icon :name="allFolded ? 'chevronDown' : 'collapse'" :size="14" /></button>
+        <button class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:inline-flex tw:py-5 tw:px-7" title="Синхронизировать сейчас" :disabled="jira.syncing || spinning" @click="sync"><Icon class="tw:[&.spin]:animate-[TaskList-spin_0.9s_linear_infinite]" name="refresh" :size="14" :class="{ spin: jira.syncing || spinning }" /></button>
       </div>
 
-      <section v-for="[key, g] in groups" :key="key" class="proj" :class="{ folded: folded.has(key) }">
-        <h3 :title="folded.has(key) ? 'Развернуть' : 'Свернуть'" @click="fold(key)">
-          <Icon name="chevronRight" :size="12" class="fchev" />{{ g.name }} <span class="muted">{{ key }}</span><span class="cnt">{{ g.items.length }}</span>
+      <section v-for="[key, g] in groups" :key="key" class="proj tw:group/proj tw:bg-panel tw:border tw:border-border tw:rounded-[4px] tw:py-10 tw:px-14" :class="{ folded: folded.has(key) }">
+        <h3 class="tw:flex tw:items-center tw:gap-6 tw:cursor-pointer tw:select-none tw:mt-2 tw:mr-0 tw:mb-8 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2 tw:group-[.folded]/proj:mb-2" :title="folded.has(key) ? 'Развернуть' : 'Свернуть'" @click="fold(key)">
+          <Icon name="chevronRight" :size="12" class="fchev tw:[transform:rotate(90deg)] tw:[transition:transform_0.15s] tw:text-muted tw:group-[.folded]/proj:transform-none" />{{ g.name }} <span class="muted tw:font-normal tw:text-[12px]">{{ key }}</span><span class="cnt tw:ml-auto tw:py-0 tw:px-7 tw:rounded-[9px] tw:bg-hover tw:text-muted tw:font-normal">{{ g.items.length }}</span>
         </h3>
         <template v-for="i in folded.has(key) ? [] : g.items" :key="i.key">
-        <div class="row" :class="{ done: isDone(i), open: isOpen(i.key) }">
-          <button class="chev" :title="isOpen(i.key) ? 'Свернуть' : 'Описание и поля'" @click="toggleOpen(i.key)"><Icon name="chevronRight" :size="13" /></button>
-          <span class="mine" :title="i.mine ? 'Назначена на вас' : i.assignee ? `Исполнитель: ${i.assignee}` : 'Без исполнителя'"><Icon v-if="i.mine" name="users" :size="13" /></span>
-          <a class="key" href="#" :title="`Открыть ${i.key} в Jira`" @click.prevent="open(i)">{{ i.key }}</a>
-          <span class="sum" :title="i.summary" @click="toggleOpen(i.key)">
-            <span class="sumt">{{ i.summary }}</span>
-            <i v-for="c in (i.components ?? []).slice(0, 2)" :key="`c${c}`" class="tg comp">{{ c }}</i>
-            <i v-for="l in (i.labels ?? []).slice(0, 3)" :key="`l${l}`" class="tg">{{ l }}</i>
+        <div class="row tw:group/row tw:grid tw:grid-cols-[18px_18px_84px_minmax(0,1fr)_96px_120px_76px_64px_48px_60px_150px_28px] tw:items-center tw:gap-10 tw:py-5 tw:px-4 tw:border-t tw:border-t-white/4 tw:text-[13px] tw:[&.done]:opacity-50 tw:[&.open]:bg-panel-2" :class="{ done: isDone(i), open: isOpen(i.key) }">
+          <button class="chev tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:not-group-[.open]/row:text-muted tw:inline-flex tw:p-2 tw:border-0 tw:bg-transparent tw:text-muted tw:[transition:transform_0.12s] tw:group-[.open]/row:[transform:rotate(90deg)] tw:group-[.open]/row:text-accent-fg tw:hover:enabled:not-[.seg_&]:bg-hover tw:hover:enabled:not-[.seg_&]:border-border-3" :title="isOpen(i.key) ? 'Свернуть' : 'Описание и поля'" @click="toggleOpen(i.key)"><Icon name="chevronRight" :size="13" /></button>
+          <span class="mine tw:inline-flex tw:justify-center tw:text-accent-fg" :title="i.mine ? 'Назначена на вас' : i.assignee ? `Исполнитель: ${i.assignee}` : 'Без исполнителя'"><Icon v-if="i.mine" name="users" :size="13" /></span>
+          <a class="key tw:text-info-fg tw:font-semibold tw:no-underline tw:hover:underline" href="#" :title="`Открыть ${i.key} в Jira`" @click.prevent="open(i)">{{ i.key }}</a>
+          <span class="sum tw:flex tw:items-center tw:gap-5 tw:min-w-0 tw:cursor-default tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap" :title="i.summary" @click="toggleOpen(i.key)">
+            <span class="sumt tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">{{ i.summary }}</span>
+            <i v-for="c in (i.components ?? []).slice(0, 2)" :key="`c${c}`" class="tg comp tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:not-italic tw:font-data tw:text-[10.5px] tw:bg-info/16 tw:text-info-fg">{{ c }}</i>
+            <i v-for="l in (i.labels ?? []).slice(0, 3)" :key="`l${l}`" class="tg tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-panel-3 tw:text-text-2 tw:not-italic tw:font-data tw:text-[10.5px]">{{ l }}</i>
           </span>
-          <span class="type muted">{{ i.type }}</span>
-          <span class="st" :class="i.category">{{ i.status }}</span>
-          <span class="prio" :class="prioClass(i)" :title="i.priority ? `Приоритет: ${i.priority}` : 'Без приоритета'">{{ i.priority ?? '' }}</span>
+          <span class="type muted tw:text-[11px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ i.type }}</span>
+          <span class="st tw:[&.mine]:inline-flex tw:[&.mine]:justify-center tw:[&.created]:not-[&.due]:font-data tw:[&.created]:not-[&.due]:tabular-nums tw:[justify-self:start] tw:max-w-full tw:py-1 tw:px-8 tw:rounded-r2 tw:text-[11px] tw:font-semibold tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:bg-muted/18 tw:text-text-2 tw:[&.done]:bg-up/18 tw:[&.done]:text-up-fg tw:[&.due]:tabular-nums tw:[&.due]:font-data tw:[&.due]:text-[12px] tw:[&.due]:not-[&.done]:text-muted tw:[&&]:[&.due]:[&.late]:text-down-fg tw:[&.due]:[&.late]:font-bold" :class="i.category">{{ i.status }}</span>
+          <span class="prio tw:[&.mine]:inline-flex tw:[&.mine]:justify-center tw:overflow-hidden tw:text-muted tw:text-[11.5px] tw:text-ellipsis tw:whitespace-nowrap tw:[&.p1]:not-[&.p2]:not-[&.p3]:text-down-fg tw:[&.p1]:not-[&.p2]:font-bold tw:[&.p2]:not-[&.p3]:text-warn-fg tw:[&.p2]:font-semibold tw:[&.p3]:text-text-2 tw:[&.created]:not-[&.p1]:not-[&.p2]:not-[&.p3]:not-[&.due]:text-muted tw:[&.created]:not-[&.due]:font-data tw:[&.created]:not-[&.due]:text-[11.5px] tw:[&.created]:not-[&.due]:tabular-nums tw:[&.due]:tabular-nums tw:[&.due]:font-data tw:[&.due]:text-[12px] tw:[&.due]:not-[&.p1]:not-[&.p2]:not-[&.p3]:text-muted tw:[&&&&]:[&.due]:[&.late]:text-down-fg tw:[&&]:[&.due]:[&.late]:font-bold" :class="prioClass(i)" :title="i.priority ? `Приоритет: ${i.priority}` : 'Без приоритета'">{{ i.priority ?? '' }}</span>
           <TaskWorked :blocks="worked[i.key] ?? []" />
-          <span class="due" :class="{ late: i.due && i.due < today && !isDone(i) }" :title="i.due ? `Срок выполнения ${i.due.split('-').reverse().join('.')}` : 'Без срока'">{{ i.due ? fmtDue(i.due) : '' }}</span>
-          <span class="created" :title="i.created ? `Создана ${new Date(i.created).toLocaleString('ru-RU')}` : ''">{{ fmtCreated(i.created) }}</span>
-          <span class="est" :title="`Оценка ${formatSec(i.estimateSec)} · размечено в приложении ${formatDuration(tracked[i.key] ?? 0)} · списано в Jira ${formatSec(i.spentSec)}`">
+          <span class="due tw:tabular-nums tw:font-data tw:text-[12px] tw:text-muted tw:[&.late]:text-down-fg tw:[&.late]:font-bold" :class="{ late: i.due && i.due < today && !isDone(i) }" :title="i.due ? `Срок выполнения ${i.due.split('-').reverse().join('.')}` : 'Без срока'">{{ i.due ? fmtDue(i.due) : '' }}</span>
+          <span class="created tw:text-muted tw:font-data tw:text-[11.5px] tw:tabular-nums" :title="i.created ? `Создана ${new Date(i.created).toLocaleString('ru-RU')}` : ''">{{ fmtCreated(i.created) }}</span>
+          <span class="est tw:flex tw:flex-col tw:gap-3 tw:text-[11px] tw:text-muted tw:tabular-nums tw:font-data" :title="`Оценка ${formatSec(i.estimateSec)} · размечено в приложении ${formatDuration(tracked[i.key] ?? 0)} · списано в Jira ${formatSec(i.spentSec)}`">
             <span class="nums">{{ formatDuration(tracked[i.key] ?? 0) }} / {{ formatSec(i.estimateSec) }}</span>
-            <span v-if="i.estimateSec" class="ebar"><span :class="{ over: ratio(i) > 1 }" :style="{ width: `${Math.min(100, ratio(i) * 100)}%` }"></span></span>
+            <span v-if="i.estimateSec" class="ebar tw:h-4 tw:rounded-[2px] tw:bg-white/8 tw:overflow-hidden"><span class="tw:block tw:h-full tw:bg-up tw:[&.over]:bg-down" :class="{ over: ratio(i) > 1 }" :style="{ width: `${Math.min(100, ratio(i) * 100)}%` }"></span></span>
           </span>
-          <button class="work" title="В работу — новое событие по задаче (выберите день и время)" @click="workTask = { key: i.key, summary: i.summary }"><Icon name="play" :size="13" /></button>
+          <button class="work tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:not-hover:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:not-hover:text-muted tw:inline-flex tw:justify-center tw:p-4 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-accent/18 tw:hover:text-accent-fg tw:hover:enabled:not-[.seg_&]:border-border-3" title="В работу — новое событие по задаче (выберите день и время)" @click="workTask = { key: i.key, summary: i.summary }"><Icon name="play" :size="13" /></button>
         </div>
-        <JiraDetails v-if="isOpen(i.key)" class="det" :issue="full[i.key] ?? i" />
+        <JiraDetails v-if="isOpen(i.key)" class="det tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-18 tw:border-l-2 tw:border-l-accent tw:bg-panel-2" :issue="full[i.key] ?? i" />
         </template>
       </section>
-      <p v-if="loading" class="muted small">Загрузка…</p>
+      <p v-if="loading" class="muted small tw:text-[12px]">Загрузка…</p>
       <p v-else-if="!groups.length" class="muted">{{ anyFilter ? 'Под фильтры ничего не подходит.' : 'Задач нет.' }}</p>
     </template>
     <EventModal v-if="workTask" text="" :task="workTask" @created="(workTask = undefined), loadTracked()" @close="workTask = undefined" />
   </div>
 </template>
 
-<style scoped>
-.tasks {
-  padding: 12px 14px 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.connect {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 40px;
-  color: var(--muted);
-  text-align: center;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.seg button {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 5px 12px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.25);
-  color: var(--text);
-}
-.search {
-  width: 260px;
-  padding: 5px 9px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.spacer {
-  flex: 1;
-}
-.small {
-  font-size: 12px;
-}
-.err {
-  color: var(--down-fg);
-}
-.ico {
-  display: inline-flex;
-  padding: 5px 7px;
-}
-.proj {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px 14px;
-}
-h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  user-select: none;
-  margin: 2px 0 8px;
-  font-size: 11px;
-  font-family: var(--font-data);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-.fchev {
-  transform: rotate(90deg);
-  transition: transform 0.15s;
-  color: var(--muted);
-}
-.proj.folded .fchev {
-  transform: none;
-}
-.proj.folded h3 {
-  margin-bottom: 2px;
-}
-h3 .cnt {
-  margin-left: auto;
-  padding: 0 7px;
-  border-radius: 9px;
-  background: var(--hover);
-  color: var(--muted);
-  font-weight: 400;
-}
-h3 .muted {
-  font-weight: 400;
-  font-size: 12px;
-}
-.row {
-  display: grid;
-  grid-template-columns: 18px 18px 84px minmax(0, 1fr) 96px 120px 76px 64px 48px 60px 150px 28px;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  font-size: 13px;
-}
-.row.done {
-  opacity: 0.5;
-}
-.row.open {
-  background: var(--panel-2);
-}
-.chev {
-  display: inline-flex;
-  padding: 2px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  transition: transform 0.12s;
-}
-.row.open .chev {
-  transform: rotate(90deg);
-  color: var(--accent-fg);
-}
-.sum {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  cursor: default;
-}
-.sumt {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tg {
-  flex: none;
-  padding: 0 6px;
-  border-radius: var(--r2);
-  background: var(--panel-3);
-  color: var(--text-2);
-  font-style: normal;
-  font-family: var(--font-data);
-  font-size: 10.5px;
-}
-.tg.comp {
-  background: rgba(68, 138, 255, 0.16);
-  color: var(--info-fg);
-}
-.det {
-  margin: 0 0 6px 18px;
-  border-left: 2px solid var(--accent);
-  background: var(--panel-2);
-}
-.mine {
-  display: inline-flex;
-  justify-content: center;
-  color: var(--accent-fg);
-}
-.prio {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.prio.p1 {
-  color: var(--down-fg);
-  font-weight: 700;
-}
-.prio.p2 {
-  color: var(--warn-fg);
-  font-weight: 600;
-}
-.prio.p3 {
-  color: var(--text-2);
-}
-.created {
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-}
-.work {
-  display: inline-flex;
-  justify-content: center;
-  padding: 4px;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.work:hover {
-  background: rgb(var(--accent-rgb) / 0.18);
-  color: var(--accent-fg);
-}
-.topbar {
-  flex-wrap: wrap;
-}
-.sortbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.sortbox select {
-  height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-}
-.spin {
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.ico.on {
-  color: var(--accent-fg);
-}
-.key {
-  color: var(--info-fg);
-  font-weight: 600;
-  text-decoration: none;
-}
-.key:hover {
-  text-decoration: underline;
-}
-.sum {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.type {
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.st {
-  justify-self: start;
-  max-width: 100%;
-  padding: 1px 8px;
-  border-radius: var(--r2);
-  font-size: 11px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: rgba(127, 139, 157, 0.18);
-  color: var(--text-2);
-}
-.st.indeterminate {
-  background: rgba(68, 138, 255, 0.2);
-  color: var(--info-fg);
-}
-.st.done {
-  background: rgba(0, 230, 118, 0.18);
-  color: var(--up-fg);
-}
-.due {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-  font-size: 12px;
-  color: var(--muted);
-}
-.due.late {
-  color: var(--down-fg);
-  font-weight: 700;
-}
-.est {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-data);
-}
-.ebar {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.ebar span {
-  display: block;
-  height: 100%;
-  background: var(--up);
-}
-.ebar span.over {
-  background: var(--down);
-}
-</style>
+<style scoped src="./TaskList.css"></style>

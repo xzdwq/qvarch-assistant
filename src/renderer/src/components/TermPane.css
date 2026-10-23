@@ -1,0 +1,8 @@
+/* TermPane: what its template cannot carry as utilities (scoped). */
+
+.xt :deep(.xterm) {
+  height: 100%;
+}
+.xt :deep(.xterm-viewport) {
+  background: transparent !important;
+}

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import type { OutlookEvent } from '../shared/outlook'
+import { OUTLOOK_RESPONSES, OUTLOOK_SHOW_AS, type OutlookEvent } from '../shared/outlook'
 
 /**
  * Meetings straight from the classic Outlook running on this computer (its COM object model), read-only:
@@ -47,9 +47,7 @@ interface Raw {
   organizer?: string
   location?: string
 }
-// Outlook enums → the Graph words the rest of the app uses
-const SHOW_AS = ['free', 'tentative', 'busy', 'oof', 'workingElsewhere']
-const RESPONSE = ['none', 'organizer', 'tentativelyAccepted', 'accepted', 'declined', 'notResponded']
+// Outlook enums → the Graph words the rest of the app uses (OUTLOOK_SHOW_AS / OUTLOOK_RESPONSES are in their order)
 /** olMeetingCanceled = 5, olMeetingReceivedAndCanceled = 7 */
 const CANCELLED = [5, 7]
 
@@ -79,8 +77,8 @@ export function readLocalOutlook(backDays: number, aheadDays: number): Promise<O
             end: Date.parse(r.end),
             allDay: !!r.allDay,
             cancelled: CANCELLED.includes(r.status ?? 0),
-            showAs: SHOW_AS[r.busy ?? 2] ?? 'busy',
-            response: RESPONSE[r.response ?? 0] ?? 'none',
+            showAs: OUTLOOK_SHOW_AS[r.busy ?? 2] ?? 'busy',
+            response: OUTLOOK_RESPONSES[r.response ?? 0] ?? 'none',
             organizer: r.organizer || undefined,
             online: /teams|skype|zoom/i.test(r.location ?? ''),
             location: r.location || undefined,

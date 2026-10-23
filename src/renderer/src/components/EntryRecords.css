@@ -1,0 +1,18 @@
+/* EntryRecords: what its template cannot carry as utilities (scoped). */
+
+/* records: icon | when (time + duration) | what */
+/* the header stays put while the list scrolls */
+.srt.on :deep(svg) {
+  transform: scaleY(-1);
+}
+.lnk {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--accent-fg);
+}
+/* the plan: dashed, ticked "по плану" once */
+/* finished — faded; going on — a red line left of the icon */
+/* the dashboard's: smaller type, tighter rows */

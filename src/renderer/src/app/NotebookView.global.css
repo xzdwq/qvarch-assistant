@@ -1,0 +1,16 @@
+/* NotebookView: what its template cannot carry as utilities (global). */
+
+/* the right-click menu of the notebook's tree — teleported to <body> */
+.crumbs .leaf {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* (an emoji is a bit wider than an icon: the name stays where the others are) */
+.ndate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 10.5px;
+}

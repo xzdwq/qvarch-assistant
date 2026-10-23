@@ -2,27 +2,41 @@
  * Jira's rich text (Atlassian Document Format) → Markdown, to show a task's description with the app's own
  * Markdown view. Unknown nodes give their text; media and other embeds give nothing. The result is cut at `max`.
  */
-interface Node {
+type Attrs = Record<string, unknown>
+/** A mark on a text node (bold, link…); its type is any string Jira sends, known ones are rendered. */
+interface AdfMark {
+  type: string
+  attrs?: Attrs
+}
+/** A node of the document tree, inline or block. */
+interface AdfNode {
   type: string
   text?: string
-  content?: Node[]
-  attrs?: Record<string, any>
-  marks?: Array<{ type: string; attrs?: Record<string, any> }>
+  content?: AdfNode[]
+  attrs?: Attrs
+  marks?: AdfMark[]
 }
 
-function inline(n: Node): string {
+/** Wraps a text into a mark's Markdown; a mark it can't render leaves the text as it is. */
+type MarkHandler = (text: string, attrs: Attrs | undefined) => string
+const markHandlers = {
+  strong: (t) => `**${t}**`,
+  em: (t) => `*${t}*`,
+  code: (t) => `\`${t}\``,
+  strike: (t) => `~~${t}~~`,
+  link: (t, attrs) => (attrs?.href ? `[${t}](${String(attrs.href)})` : t),
+} satisfies Record<string, MarkHandler>
+type MarkType = keyof typeof markHandlers
+const isMarkType = (type: string): type is MarkType => Object.hasOwn(markHandlers, type)
+
+/** A text node with its marks applied, innermost first. */
+const markedText = (n: AdfNode): string =>
+  (n.marks ?? []).reduce((t, m) => (isMarkType(m.type) ? markHandlers[m.type](t, m.attrs) : t), n.text ?? '')
+
+function inline(n: AdfNode): string {
   switch (n.type) {
-    case 'text': {
-      let t = n.text ?? ''
-      for (const m of n.marks ?? []) {
-        if (m.type === 'strong') t = `**${t}**`
-        else if (m.type === 'em') t = `*${t}*`
-        else if (m.type === 'code') t = `\`${t}\``
-        else if (m.type === 'strike') t = `~~${t}~~`
-        else if (m.type === 'link' && m.attrs?.href) t = `[${t}](${m.attrs.href})`
-      }
-      return t
-    }
+    case 'text':
+      return markedText(n)
     case 'hardBreak':
       return '  \n'
     case 'mention':
@@ -40,7 +54,16 @@ function inline(n: Node): string {
   }
 }
 
-function block(n: Node, indent = ''): string {
+/** A quote-like block (quote, panel): its children with «> » before every line. */
+const quoted = (kids: AdfNode[]): string =>
+  kids
+    .map((k) => block(k))
+    .join('\n\n')
+    .split('\n')
+    .map((l) => `> ${l}`)
+    .join('\n')
+
+function block(n: AdfNode, indent = ''): string {
   const kids = n.content ?? []
   switch (n.type) {
     case 'doc':
@@ -63,9 +86,8 @@ function block(n: Node, indent = ''): string {
     case 'codeBlock':
       return `\`\`\`${n.attrs?.language ?? ''}\n${kids.map((k) => k.text ?? '').join('')}\n\`\`\``
     case 'blockquote':
-      return kids.map((k) => block(k)).join('\n\n').split('\n').map((l) => `> ${l}`).join('\n')
     case 'panel':
-      return kids.map((k) => block(k)).join('\n\n').split('\n').map((l) => `> ${l}`).join('\n')
+      return quoted(kids)
     case 'rule':
       return '---'
     case 'table': {
@@ -88,7 +110,7 @@ export function adfToMarkdown(doc: unknown, max = 4000): string {
   if (!doc) return ''
   if (typeof doc === 'string') return doc.slice(0, max)
   try {
-    const md = block(doc as Node).replace(/\n{3,}/g, '\n\n').trim()
+    const md = block(doc as AdfNode).replace(/\n{3,}/g, '\n\n').trim()
     return md.length > max ? `${md.slice(0, max).trimEnd()}…` : md
   } catch {
     return ''

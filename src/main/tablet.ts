@@ -145,21 +145,7 @@ export class TabletService {
     rl.on('line', (line) => {
       if (!line.startsWith('{')) return
       try {
-        const m = JSON.parse(line) as { t: string } & Record<string, unknown>
-        if (m.t === 's') this.send({ type: 'sample', s: m as unknown as TabletSample })
-        else if (m.t === 'keys') this.send({ type: 'keys', mask: Number(m.mask) || 0 })
-        else if (m.t === 'aux') this.send({ type: 'aux', raw: String(m.raw ?? '') })
-        else if (m.t === 'monitors') {
-          this.monitors = (m.list as TabletMonitor[]) ?? []
-          this.push()
-        } else if (m.t === 'status') {
-          const st = m.state as string
-          if (st === 'connected') {
-            this.restartDelay = 2000
-            this.setStatus({ state: 'connected', device: String(m.device ?? 'Планшет') })
-          } else if (st === 'searching') this.setStatus({ state: 'searching' })
-          else this.setStatus({ state: 'error', message: String(m.message ?? 'Ошибка') })
-        }
+        this.onHelper(JSON.parse(line) as HelperLine)
       } catch {
         // a broken line — skip
       }
@@ -174,4 +160,39 @@ export class TabletService {
     })
     this.configure()
   }
+
+  /** What each line type of the helper does. */
+  private readonly helperHandlers: Record<HelperLineType, (m: HelperLine) => void> = {
+    s: (m) => this.send({ type: 'sample', s: m as unknown as TabletSample }),
+    keys: (m) => this.send({ type: 'keys', mask: Number(m.mask) || 0 }),
+    aux: (m) => this.send({ type: 'aux', raw: String(m.raw ?? '') }),
+    monitors: (m) => {
+      this.monitors = (m.list as TabletMonitor[]) ?? []
+      this.push()
+    },
+    status: (m) => this.onHelperStatus(m),
+  }
+  /** A line from the helper, by its type (an unknown type is ignored). */
+  private onHelper(m: HelperLine): void {
+    if (isHelperLineType(m.t)) this.helperHandlers[m.t](m)
+  }
+
+  /** The helper's device state: found (the restart back-off resets), still searching, or an error. */
+  private onHelperStatus(m: HelperLine): void {
+    switch (m.state) {
+      case 'connected':
+        this.restartDelay = 2000
+        return this.setStatus({ state: 'connected', device: String(m.device ?? 'Планшет') })
+      case 'searching':
+        return this.setStatus({ state: 'searching' })
+      default:
+        return this.setStatus({ state: 'error', message: String(m.message ?? 'Ошибка') })
+    }
+  }
 }
+
+/** What the helper prints, one JSON per line: a pen sample, the express keys, raw aux bytes, the monitors, its state. */
+const HELPER_LINE_TYPES = ['s', 'keys', 'aux', 'monitors', 'status'] as const
+type HelperLineType = (typeof HELPER_LINE_TYPES)[number]
+type HelperLine = { t: string } & Record<string, unknown>
+const isHelperLineType = (t: string): t is HelperLineType => (HELPER_LINE_TYPES as readonly string[]).includes(t)

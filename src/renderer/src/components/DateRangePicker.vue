@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useFollow } from '../lib/floating'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { usePopover, type Placement } from '../lib/usePopover'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from './Icon.vue'
 
 /**
@@ -62,192 +62,51 @@ function apply(): void {
   if (!tooLong.value) emit('apply', r[0], r[1])
 }
 
-// placed under the anchor, inside the window
-const el = ref<HTMLElement>()
-const pos = ref({ left: 0, top: 0 })
-function place(): void {
-  const r = props.anchor?.getBoundingClientRect()
-  const w = el.value?.offsetWidth ?? 300
-  const h = el.value?.offsetHeight ?? 360
-  if (!r) return
+/** Centred under its anchor (over it when there is no room under), inside the window. */
+const centredUnder: Placement = ({ rect: r }, panel) => {
+  const w = panel?.offsetWidth ?? 300
+  const h = panel?.offsetHeight ?? 360
   let top = r.bottom + 6
   if (top + h > window.innerHeight - 6) top = Math.max(6, r.top - h - 6)
-  pos.value = { left: Math.max(6, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 6)), top }
+  return { style: { left: `${Math.max(6, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 6))}px`, top: `${top}px` } }
 }
-// kept under its anchor while the page scrolls; closed when the anchor is out of sight
-useFollow(ref(true), () => props.anchor, () => place(), () => emit('close'))
-function onDown(e: MouseEvent): void {
-  if (!el.value?.contains(e.target as Node) && !props.anchor?.contains(e.target as Node)) emit('close')
-}
-function onKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape') emit('close')
-  if (e.key === 'Enter') apply()
-}
-onMounted(() => {
-  void nextTick(place)
-  window.addEventListener('mousedown', onDown, true)
-  window.addEventListener('keydown', onKey)
-  window.addEventListener('resize', place)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', onDown, true)
-  window.removeEventListener('keydown', onKey)
-  window.removeEventListener('resize', place)
-})
+const open = computed({ get: () => true, set: (on) => void (on || emit('close')) })
+const { panelRef, style } = usePopover(() => props.anchor, { place: centredUnder }, open)
+// Enter — the period taken
+const onKey = (e: KeyboardEvent) => e.key === 'Enter' && apply()
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 </script>
 
 <template>
   <Teleport to="body">
-    <div ref="el" class="drp" :style="{ left: `${pos.left}px`, top: `${pos.top}px` }" @mouseleave="hover = undefined" @wheel.prevent="shiftMonth($event.deltaY > 0 ? 1 : -1)">
-      <div class="mh">
-        <button class="nb" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="16" /></button>
+    <div :ref="panelRef" class="drp tw:fixed tw:z-5000 tw:w-296 tw:pt-12 tw:pr-14 tw:pb-14 tw:pl-14 tw:rounded-r3 tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-dialog)] tw:text-text tw:select-none" :style="style" @mouseleave="hover = undefined" @wheel.prevent="shiftMonth($event.deltaY > 0 ? 1 : -1)">
+      <div class="mh tw:flex tw:items-center tw:justify-between tw:mb-8 tw:text-[14px]">
+        <button class="nb tw:inline-flex tw:p-4 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:hover:enabled:border-border-3" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="16" /></button>
         <b>{{ title }}</b>
-        <button class="nb" @click="shiftMonth(1)"><Icon name="chevronRight" :size="16" /></button>
+        <button class="nb tw:inline-flex tw:p-4 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:hover:enabled:border-border-3" @click="shiftMonth(1)"><Icon name="chevronRight" :size="16" /></button>
       </div>
-      <div class="grid">
-        <span v-for="w in WD" :key="w" class="wd">{{ w }}</span>
+      <div class="days tw:grid tw:grid-cols-[repeat(7,1fr)] tw:gap-y-3">
+        <span v-for="w in WD" :key="w" class="wd tw:pt-4 tw:pr-0 tw:pb-6 tw:pl-0 tw:text-dim tw:text-[11px] tw:text-center">{{ w }}</span>
         <button
           v-for="c in cells"
           :key="c.day"
-          class="dd"
+          class="dd tw:group/dd tw:h-34 tw:m-0 tw:p-0 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text tw:text-[13px] tw:[&.out]:not-[&.today]:text-dim tw:[&.today]:text-accent-fg tw:[&.today]:font-semibold tw:[&.in]:bg-accent/16 tw:[&.in]:nth-[7n+1]:rounded-[4px_0_0_4px] tw:[&.in]:nth-[7n]:not-nth-[7n+1]:rounded-[0_4px_4px_0] tw:hover:enabled:not-[&.in]:bg-hover tw:hover:enabled:border-border-3"
           :class="{ out: c.out, in: inRange(c.day), edge: isEdge(c.day), today: c.day === today }"
           @click="pick(c.day)"
           @mouseenter="b === undefined && (hover = c.day)"
         >
-          <span>{{ c.n }}</span>
+          <span class="tw:inline-flex tw:items-center tw:justify-center tw:w-32 tw:h-32 tw:rounded-[4px] tw:group-hover/dd:not-group-[.edge]/dd:bg-white/8 tw:group-[.edge]/dd:bg-accent tw:group-[.edge]/dd:text-on-accent tw:group-[.edge]/dd:font-semibold">{{ c.n }}</span>
         </button>
       </div>
-      <div class="ft">
-        <span :class="{ warn: tooLong }">Дней выбрано: {{ count }}<template v-if="tooLong"> (до {{ max }})</template></span>
+      <div class="ft tw:my-10 tw:mx-2 tw:text-text-2 tw:text-[12.5px]">
+        <span class="tw:[&.warn]:text-down-fg" :class="{ warn: tooLong }">Дней выбрано: {{ count }}<template v-if="tooLong"> (до {{ max }})</template></span>
       </div>
-      <div class="acts">
-        <button class="bt" @click="emit('close')">Отмена</button>
-        <button class="bt pri" :disabled="tooLong" @click="apply">Применить</button>
+      <div class="acts tw:flex tw:gap-8">
+        <button class="bt tw:flex-1 tw:h-34 tw:border-0 tw:rounded-[4px] tw:bg-white/8 tw:text-text tw:text-[13px] tw:hover:enabled:bg-white/12 tw:disabled:opacity-45 tw:hover:enabled:border-border-3" @click="emit('close')">Отмена</button>
+        <button class="bt pri tw:flex-1 tw:h-34 tw:border-0 tw:rounded-[4px] tw:text-[13px] tw:hover:enabled:bg-white/12 tw:bg-accent tw:text-on-accent tw:font-semibold tw:hover:enabled:filter-[brightness(1.1)] tw:disabled:opacity-45 tw:hover:enabled:border-border-3" :disabled="tooLong" @click="apply">Применить</button>
       </div>
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.drp {
-  position: fixed;
-  z-index: 5000;
-  width: 296px;
-  padding: 12px 14px 14px;
-  border-radius: var(--r3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--panel-2);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
-  color: var(--text);
-  user-select: none;
-}
-.mh {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-.nb {
-  display: inline-flex;
-  padding: 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-}
-.nb:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--text);
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  row-gap: 3px;
-}
-.wd {
-  padding: 4px 0 6px;
-  color: var(--dim);
-  font-size: 11px;
-  text-align: center;
-}
-.dd {
-  height: 34px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
-}
-.dd span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
-}
-.dd:hover span {
-  background: rgba(255, 255, 255, 0.08);
-}
-.dd.out {
-  color: var(--dim);
-}
-.dd.today {
-  color: var(--accent-fg);
-  font-weight: 600;
-}
-/* the period: a band across the days, the ends filled */
-.dd.in {
-  background: rgb(var(--accent-rgb) / 0.16);
-}
-.dd.in:nth-child(7n + 1) {
-  border-radius: 4px 0 0 4px;
-}
-.dd.in:nth-child(7n) {
-  border-radius: 0 4px 4px 0;
-}
-.dd.edge span {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-.ft {
-  margin: 10px 2px 10px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.ft .warn {
-  color: var(--down-fg);
-}
-.acts {
-  display: flex;
-  gap: 8px;
-}
-.bt {
-  flex: 1;
-  height: 34px;
-  border: 0;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  font-size: 13px;
-}
-.bt:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-}
-.bt.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-.bt.pri:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-.bt:disabled {
-  opacity: 0.45;
-}
-</style>

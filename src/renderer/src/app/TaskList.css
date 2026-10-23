@@ -1,0 +1,19 @@
+/* TaskList: what its template cannot carry as utilities (scoped). */
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.st.indeterminate {
+  background: rgba(68, 138, 255, 0.2);
+  color: var(--info-fg);
+}

@@ -148,13 +148,18 @@ export class Hooks {
   private ensureWorker(): UtilityProcess {
     if (this.worker) return this.worker
     const w = utilityProcess.fork(this.workerPath, [], { serviceName: 'Qvarch Hooks', execArgv: ['--max-old-space-size=1024'] })
-    w.on('message', (m: { type: string; id: string; done?: number; hits?: Array<{ line: number; col: number; snippet: string; mAt: number; mLen: number }>; skipped?: boolean; error?: string }) => {
+    w.on('message', (m: { type: 'progress' | 'done'; id: string; done?: number; hits?: Array<{ line: number; col: number; snippet: string; mAt: number; mLen: number }>; skipped?: boolean; error?: string }) => {
       const c = this.cur
       if (!c || m.id !== c.id) return
-      if (m.type === 'progress') {
-        c.done = m.done ?? c.done
-        this.status()
-      } else if (m.type === 'done') this.finish(m.hits ?? [], m.skipped, m.error)
+      switch (m.type) {
+        case 'progress':
+          c.done = m.done ?? c.done
+          this.status()
+          break
+        case 'done':
+          this.finish(m.hits ?? [], m.skipped, m.error)
+          break
+      }
     })
     w.on('exit', () => {
       // an old one killed (skipped / stopped) — the new one stays

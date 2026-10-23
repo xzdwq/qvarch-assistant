@@ -1,5 +1,7 @@
 import { computed, reactive, shallowRef, watch } from 'vue'
+import type { ITheme } from '@xterm/xterm'
 import type { TermAlert, TermSession } from '@shared/terminal'
+import { cssColor } from './cssColor'
 
 /** The shells (their state comes from the main process), shared by the section and the status bar. */
 const sessions = shallowRef<TermSession[]>([])
@@ -140,31 +142,32 @@ export function splitTermWith(from: number, id: string, side: 'left' | 'right'):
   }
 }
 
-/** The app's colours for xterm (read from the theme's variables, so a theme change shows on the next open). */
-export function termTheme(): Record<string, string> {
-  const css = getComputedStyle(document.documentElement)
-  const v = (n: string, d: string) => css.getPropertyValue(n).trim() || d
-  return {
-    background: v('--bg', '#0d1117'),
-    foreground: v('--text', '#d7dde7'),
-    cursor: v('--accent', '#ff6b00'),
-    cursorAccent: v('--bg', '#0d1117'),
-    selectionBackground: 'rgba(255, 107, 0, 0.3)',
-    black: '#1a212b',
-    brightBlack: v('--dim', '#566173'),
-    red: '#ff5c57',
-    brightRed: '#ff7a75',
-    green: '#00d26a',
-    brightGreen: '#5af78e',
-    yellow: '#ffb74d',
-    brightYellow: '#ffd480',
-    blue: '#448aff',
-    brightBlue: '#82b1ff',
-    magenta: '#c792ea',
-    brightMagenta: '#e0aaff',
-    cyan: '#18e0ff',
-    brightCyan: '#8cf5ff',
-    white: v('--text-2', '#adb7c6'),
-    brightWhite: v('--text-hi', '#f0f3f6'),
-  }
+/** Which CSS variable each of xterm's colours is (the ANSI ones: styles/colors/integrations.css). */
+const XTERM_COLOR_VARS = {
+  background: '--bg',
+  foreground: '--text',
+  cursor: '--accent',
+  cursorAccent: '--bg',
+  selectionBackground: '--ansi-selection',
+  black: '--ansi-black',
+  brightBlack: '--ansi-bright-black',
+  red: '--ansi-red',
+  brightRed: '--ansi-bright-red',
+  green: '--ansi-green',
+  brightGreen: '--ansi-bright-green',
+  yellow: '--ansi-yellow',
+  brightYellow: '--ansi-bright-yellow',
+  blue: '--ansi-blue',
+  brightBlue: '--ansi-bright-blue',
+  magenta: '--ansi-magenta',
+  brightMagenta: '--ansi-bright-magenta',
+  cyan: '--ansi-cyan',
+  brightCyan: '--ansi-bright-cyan',
+  white: '--ansi-white',
+  brightWhite: '--ansi-bright-white',
+} as const satisfies Partial<Record<keyof ITheme, `--${string}`>>
+
+/** The app's colours for xterm, concrete (read from the theme's variables, so a theme change shows on the next open). */
+export function termTheme(): ITheme {
+  return Object.fromEntries(Object.entries(XTERM_COLOR_VARS).map(([key, cssVar]) => [key, cssColor(cssVar)]))
 }

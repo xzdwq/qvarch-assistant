@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { McpInfoView } from '@shared/api'
+import { remoteError } from '../../../shared/remoteError'
+import type { McpClient, McpInfoView } from '@shared/api'
 import Icon from './Icon.vue'
 
 /**
@@ -27,13 +28,13 @@ const codeCmd = computed(() => (info.value ? `claude mcp add --transport http --
 const desktopJson = computed(() =>
   info.value ? JSON.stringify({ mcpServers: { qvarch: { command: info.value.exe, args: [info.value.bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } } }, null, 2) : '',
 )
-async function install(c: 'desktop' | 'code'): Promise<void> {
+async function install(c: McpClient): Promise<void> {
   msg.value = ''
   err.value = ''
   try {
     msg.value = await window.qa.mcpInstall(c)
   } catch (e) {
-    err.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
+    err.value = remoteError(e)
   }
 }
 async function copy(t: string, what: string): Promise<void> {
@@ -50,33 +51,33 @@ async function copy(t: string, what: string): Promise<void> {
     <p class="muted small">
       Qvarch становится MCP-сервером: ассистент (Claude Code в VS Code и терминале, Claude Desktop) может создавать папки задач и заметки, писать и запускать HTTP-запросы, код и тесты Playwright, читать отчёты, смотреть задачи Jira и вести учёт времени в «Моей работе». Чтение и запуск — всегда; заметки и время — без вопросов (время только создаётся и продлевается, никогда не удаляется и не переносится); тесты против стендов не из списка ниже — с вашим подтверждением.
     </p>
-    <p class="st" :class="{ ok: info.listening, bad: info.on && !info.listening }">
-      <i></i>{{ !info.on ? 'Выключено' : info.listening ? `Работает: ${info.url}` : 'Не запустился' }}<span v-if="info.error" class="muted"> · {{ info.error }}</span>
+    <p class="st tw:group/st tw:flex tw:items-center tw:gap-7 tw:my-6 tw:mx-0 tw:text-[13px]" :class="{ ok: info.listening, bad: info.on && !info.listening }">
+      <i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-muted tw:group-[.ok]/st:not-group-[.bad]/st:bg-[var(--mcp-ok)] tw:group-[.bad]/st:bg-[var(--mcp-bad)]"></i>{{ !info.on ? 'Выключено' : info.listening ? `Работает: ${info.url}` : 'Не запустился' }}<span v-if="info.error" class="muted"> · {{ info.error }}</span>
     </p>
 
     <h3 class="mt">Подключить</h3>
-    <div class="cl">
-      <div class="ci">
+    <div class="cl tw:flex tw:flex-col tw:gap-8">
+      <div class="ci tw:flex tw:items-center tw:gap-10">
         <b>Claude Code</b><span class="muted">VS Code и терминал — одна настройка</span>
-        <span class="grow"></span>
-        <button @click="install('code')"><Icon name="plus" :size="12" />Подключить</button>
+        <span class="grow tw:flex-1"></span>
+        <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text" @click="install('code')"><Icon name="plus" :size="12" />Подключить</button>
       </div>
-      <div class="cmd"><code>{{ codeCmd }}</code><button title="Скопировать команду" @click="copy(codeCmd, 'Команда')"><Icon name="copy" :size="12" /></button></div>
-      <div class="ci">
+      <div class="cmd tw:flex tw:items-start tw:gap-6"><code class="tw:flex-1 tw:min-w-0 tw:py-6 tw:px-8 tw:border tw:border-border tw:rounded-[6px] tw:bg-bg tw:font-data tw:text-[11.5px] tw:break-all">{{ codeCmd }}</code><button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text" title="Скопировать команду" @click="copy(codeCmd, 'Команда')"><Icon name="copy" :size="12" /></button></div>
+      <div class="ci tw:flex tw:items-center tw:gap-10">
         <b>Claude Desktop</b><span class="muted">через мост (stdio) — exe самого Qvarch</span>
-        <span class="grow"></span>
-        <button @click="install('desktop')"><Icon name="plus" :size="12" />Подключить</button>
+        <span class="grow tw:flex-1"></span>
+        <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text" @click="install('desktop')"><Icon name="plus" :size="12" />Подключить</button>
       </div>
       <details class="muted small">
         <summary>Настройка вручную (claude_desktop_config.json)</summary>
-        <div class="cmd"><code class="pre">{{ desktopJson }}</code><button title="Скопировать" @click="copy(desktopJson, 'Фрагмент')"><Icon name="copy" :size="12" /></button></div>
+        <div class="cmd tw:flex tw:items-start tw:gap-6"><code class="pre tw:flex-1 tw:min-w-0 tw:py-6 tw:px-8 tw:border tw:border-border tw:rounded-[6px] tw:bg-bg tw:font-data tw:text-[11.5px] tw:whitespace-pre tw:overflow-auto tw:break-normal">{{ desktopJson }}</code><button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text" title="Скопировать" @click="copy(desktopJson, 'Фрагмент')"><Icon name="copy" :size="12" /></button></div>
       </details>
-      <p v-if="msg" class="okm">{{ msg }}</p>
-      <p v-if="err" class="errm">{{ err }}</p>
+      <p v-if="msg" class="okm tw:m-0 tw:text-[var(--mcp-ok)] tw:text-[12.5px]">{{ msg }}</p>
+      <p v-if="err" class="errm tw:m-0 tw:text-down-fg tw:text-[12.5px]">{{ err }}</p>
     </div>
 
     <h3 class="mt">Стенды без подтверждения</h3>
-    <div class="grid">
+    <div class="fields">
       <label class="span2">
         Адреса через запятую (* — любое)
         <input v-model="allowText" spellcheck="false" @change="saveAllow" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" />
@@ -85,116 +86,21 @@ async function copy(t: string, what: string): Promise<void> {
     <p class="muted small">Тест или запрос к другому адресу ассистент запустит только после вашего «Разрешить» (на этот сеанс приложения).</p>
 
     <h3 class="mt">Доступ</h3>
-    <div class="grid">
+    <div class="fields">
       <label>
         Порт
         <input type="number" :value="info.port" min="1024" max="65535" @change="set({ port: Number(($event.target as HTMLInputElement).value) })" />
       </label>
       <label>
         Токен
-        <span class="tok">
-          <code>{{ showToken ? info.token : '•'.repeat(24) }}</code>
-          <button :title="showToken ? 'Скрыть' : 'Показать'" @click="showToken = !showToken"><Icon :name="showToken ? 'eyeOff' : 'eye'" :size="12" /></button>
-          <button title="Скопировать" @click="copy(info.token, 'Токен')"><Icon name="copy" :size="12" /></button>
-          <button title="Новый токен (подключённые клиенты нужно будет подключить заново)" @click="set({ newToken: true })"><Icon name="refresh" :size="12" /></button>
+        <span class="tok tw:flex tw:items-center tw:gap-4">
+          <code class="tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:font-data tw:text-[12px] tw:text-ellipsis">{{ showToken ? info.token : '•'.repeat(24) }}</code>
+          <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:py-0 tw:px-7" :title="showToken ? 'Скрыть' : 'Показать'" @click="showToken = !showToken"><Icon :name="showToken ? 'eyeOff' : 'eye'" :size="12" /></button>
+          <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:py-0 tw:px-7" title="Скопировать" @click="copy(info.token, 'Токен')"><Icon name="copy" :size="12" /></button>
+          <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:py-0 tw:px-7" title="Новый токен (подключённые клиенты нужно будет подключить заново)" @click="set({ newToken: true })"><Icon name="refresh" :size="12" /></button>
         </span>
       </label>
     </div>
     <p class="muted small">Сервер слушает только этот компьютер (127.0.0.1) и пускает только с токеном; страницы сайтов к нему не обратятся.</p>
   </div>
 </template>
-
-<style scoped>
-.st {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 6px 0;
-  font-size: 13px;
-}
-.st i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-.st.ok i {
-  background: #4ade80;
-}
-.st.bad i {
-  background: #f87171;
-}
-.cl {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ci {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.grow {
-  flex: 1;
-}
-.ci button,
-.cmd button,
-.tok button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-}
-.cmd {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-.cmd code {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  font-family: var(--font-data);
-  font-size: 11.5px;
-  word-break: break-all;
-}
-.cmd code.pre {
-  white-space: pre;
-  overflow: auto;
-  word-break: normal;
-}
-.tok {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.tok code {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--font-data);
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-.tok button {
-  padding: 0 7px;
-}
-.okm {
-  margin: 0;
-  color: #4ade80;
-  font-size: 12.5px;
-}
-.errm {
-  margin: 0;
-  color: var(--down-fg);
-  font-size: 12.5px;
-}
-</style>

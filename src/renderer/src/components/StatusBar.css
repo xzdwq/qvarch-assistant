@@ -1,0 +1,12 @@
+/* StatusBar: what its template cannot carry as utilities (scoped). */
+
+.term.alert {
+  color: var(--text-hi);
+}
+.led.run {
+  background: var(--up);
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.6);
+}
+.led.alert {
+  animation: StatusBar-blink-fast 0.36s steps(2) infinite;
+}

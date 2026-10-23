@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch, type Ref } from 'vue'
 import { compareTexts, foldRows, type DiffOptions, type View } from '@shared/textDiff'
 import { canFormat, detectKind, formatKind, kindTitle, type CodeKind } from '../../lib/codeLang'
 import CodeArea from '../CodeArea.vue'
@@ -103,10 +103,28 @@ function clearAll(): void {
   left.value = ''
   right.value = ''
 }
-async function paste(side: 'l' | 'r'): Promise<void> {
-  const t = await navigator.clipboard.readText()
-  if (side === 'l') left.value = t
-  else right.value = t
+type Side = 'l' | 'r'
+/** Each input (left to right): its title and placeholder, its text, why it does not format / is not JSON. */
+interface SideSpec {
+  label: string
+  placeholder: string
+  text: Ref<string>
+  formatError: () => string | undefined
+  jsonError: () => string | undefined
+}
+const SIDES: Record<Side, SideSpec> = {
+  l: { label: 'Было', placeholder: 'Вставьте первый текст: JSON, SQL, XML, YAML…', text: left, formatError: () => fmtErr.value.l, jsonError: () => result.value.error?.left },
+  r: { label: 'Стало', placeholder: 'Вставьте второй текст', text: right, formatError: () => fmtErr.value.r, jsonError: () => result.value.error?.right },
+}
+const SIDE_ORDER = Object.keys(SIDES) as Side[]
+/** How the texts are compared (the bar's switch). */
+const MODES: Array<{ id: DiffOptions['mode']; label: string; title?: string }> = [
+  { id: 'auto', label: 'Авто', title: 'Формат определяется по тексту: JSON (сравнение по структуре), SQL, XML, HTML, YAML, JS… или просто текст' },
+  { id: 'json', label: 'JSON' },
+  { id: 'text', label: 'Текст' },
+]
+async function paste(side: Side): Promise<void> {
+  SIDES[side].text.value = await navigator.clipboard.readText()
 }
 const lines = (s: string) => (s ? s.split('\n').length : 0)
 const area = ref<HTMLElement>()
@@ -127,69 +145,68 @@ function dragSplit(e: PointerEvent): void {
 </script>
 
 <template>
-  <div class="dt">
-    <div class="bar">
-      <span class="seg">
-        <button v-for="m in [{ id: 'auto', l: 'Авто' }, { id: 'json', l: 'JSON' }, { id: 'text', l: 'Текст' }] as const" :key="m.id" :class="{ on: opt.mode === m.id }" :title="m.id === 'auto' ? 'Формат определяется по тексту: JSON (сравнение по структуре), SQL, XML, HTML, YAML, JS… или просто текст' : ''" @click="opt.mode = m.id">{{ m.l }}</button>
+  <div class="dt tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="bar tw:flex-none tw:flex tw:items-center tw:gap-12 tw:h-38 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-14 tw:border-b tw:border-b-border tw:whitespace-nowrap tw:overflow-hidden">
+      <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-r2 tw:overflow-hidden">
+        <button class="tw:h-26 tw:py-0 tw:px-12 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="m in MODES" :key="m.id" :class="{ on: opt.mode === m.id }" :title="m.title ?? ''" @click="opt.mode = m.id">{{ m.label }}</button>
       </span>
-      <span v-if="opt.mode === 'auto'" class="kind" :class="{ none: !kind }" :title="kind ? 'Формат определён по тексту' : 'Формат не определён — сравнение как текст'">{{ kind ? kindTitle(kind) : 'текст' }}</span>
-      <label v-if="kind === 'json' || kind === 'yaml'" class="chk" title="Порядок ключей в объектах не считается изменением"><input v-model="opt.sortKeys" type="checkbox" />Сортировать ключи</label>
-      <label class="chk" title="Пробелы в начале / конце строк и их количество не считаются"><input v-model="opt.ignoreSpace" type="checkbox" />Без пробелов</label>
-      <label class="chk"><input v-model="opt.ignoreCase" type="checkbox" />Без регистра</label>
-      <span class="grow"></span>
-      <button class="fmt" :disabled="!canFormat(kind)" :title="canFormat(kind) ? `Отформатировать ${kindTitle(kind)} в обоих полях` : 'Формат не определён — форматировать нечего'" @click="formatBoth"><Icon name="code" :size="13" />Форматировать</button>
-      <button class="ib" title="Поменять местами" @click="swap"><Icon name="repeat" :size="14" /></button>
-      <button class="ib" title="Очистить оба поля" :disabled="!left && !right" @click="clearAll"><Icon name="trash" :size="14" /></button>
+      <span v-if="opt.mode === 'auto'" class="kind tw:flex-none tw:py-2 tw:px-8 tw:border tw:border-accent/45 tw:rounded-r2 tw:text-accent-fg tw:font-data tw:text-[11px] tw:[&.none]:border-border-2 tw:[&.none]:text-muted" :class="{ none: !kind }" :title="kind ? 'Формат определён по тексту' : 'Формат не определён — сравнение как текст'">{{ kind ? kindTitle(kind) : 'текст' }}</span>
+      <label v-if="kind === 'json' || kind === 'yaml'" class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]" title="Порядок ключей в объектах не считается изменением"><input v-model="opt.sortKeys" type="checkbox" />Сортировать ключи</label>
+      <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]" title="Пробелы в начале / конце строк и их количество не считаются"><input v-model="opt.ignoreSpace" type="checkbox" />Без пробелов</label>
+      <label class="chk tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2 tw:text-[12.5px]"><input v-model="opt.ignoreCase" type="checkbox" />Без регистра</label>
+      <span class="grow tw:flex-1"></span>
+      <button class="fmt tw:flex-none tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" :disabled="!canFormat(kind)" :title="canFormat(kind) ? `Отформатировать ${kindTitle(kind)} в обоих полях` : 'Формат не определён — форматировать нечего'" @click="formatBoth"><Icon name="code" :size="13" />Форматировать</button>
+      <button class="ib tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Поменять местами" @click="swap"><Icon name="repeat" :size="14" /></button>
+      <button class="ib tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Очистить оба поля" :disabled="!left && !right" @click="clearAll"><Icon name="trash" :size="14" /></button>
     </div>
 
-    <div ref="area" class="area" :style="{ gridTemplateRows: `${split * 100}% 6px minmax(0, 1fr)` }">
-      <div class="ins">
-        <div v-for="side in ['l', 'r'] as const" :key="side" class="in">
-          <div class="ih">
-            <b>{{ side === 'l' ? 'Было' : 'Стало' }}</b>
-            <span class="muted">{{ lines(side === 'l' ? left : right) }} стр.</span>
-            <span v-if="side === 'l' ? fmtErr.l : fmtErr.r" class="err" :title="side === 'l' ? fmtErr.l : fmtErr.r">не форматируется: {{ side === 'l' ? fmtErr.l : fmtErr.r }}</span>
-            <span v-else-if="side === 'l' ? result.error?.left : result.error?.right" class="err" :title="side === 'l' ? result.error?.left : result.error?.right">не JSON: {{ side === 'l' ? result.error?.left : result.error?.right }}</span>
-            <span class="grow"></span>
-            <button class="ib sm" title="Вставить из буфера" @click="paste(side)"><Icon name="clipboard" :size="12" /></button>
+    <div ref="area" class="area tw:flex-1 tw:min-h-0 tw:grid" :style="{ gridTemplateRows: `${split * 100}% 6px minmax(0, 1fr)` }">
+      <div class="ins tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] tw:gap-1 tw:min-h-0 tw:bg-border">
+        <div v-for="side in SIDE_ORDER" :key="side" class="in tw:flex tw:flex-col tw:min-w-0 tw:min-h-0 tw:bg-bg">
+          <div class="ih tw:flex-none tw:flex tw:items-center tw:gap-8 tw:h-30 tw:pt-0 tw:pr-6 tw:pb-0 tw:pl-12 tw:text-[12px] tw:whitespace-nowrap tw:overflow-hidden">
+            <b class="tw:text-text-hi">{{ SIDES[side].label }}</b>
+            <span class="muted tw:text-muted">{{ lines(SIDES[side].text.value) }} стр.</span>
+            <span v-if="SIDES[side].formatError()" class="err tw:overflow-hidden tw:text-ellipsis tw:text-down-fg" :title="SIDES[side].formatError()">не форматируется: {{ SIDES[side].formatError() }}</span>
+            <span v-else-if="SIDES[side].jsonError()" class="err tw:overflow-hidden tw:text-ellipsis tw:text-down-fg" :title="SIDES[side].jsonError()">не JSON: {{ SIDES[side].jsonError() }}</span>
+            <span class="grow tw:flex-1"></span>
+            <button class="ib sm tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:w-24 tw:h-24 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Вставить из буфера" @click="paste(side)"><Icon name="clipboard" :size="12" /></button>
           </div>
-          <div class="ed">
-            <CodeArea v-if="side === 'l'" v-model="left" :lang="lang" fill :min-height="0" placeholder="Вставьте первый текст: JSON, SQL, XML, YAML…" />
-            <CodeArea v-else v-model="right" :lang="lang" fill :min-height="0" placeholder="Вставьте второй текст" />
+          <div class="ed tw:flex-1 tw:min-h-0 tw:pt-0 tw:pr-6 tw:pb-6 tw:pl-6">
+            <CodeArea v-model="SIDES[side].text.value" :lang="lang" fill :min-height="0" :placeholder="SIDES[side].placeholder" />
           </div>
         </div>
       </div>
-      <div class="hsplit" title="Потяните — высота полей" @pointerdown="dragSplit"></div>
+      <div class="hsplit tw:bg-border tw:cursor-row-resize tw:hover:bg-accent/85" title="Потяните — высота полей" @pointerdown="dragSplit"></div>
 
-      <div class="res">
-        <div class="rh">
-          <b>Различия</b>
+      <div class="res tw:flex tw:flex-col tw:min-h-0">
+        <div class="rh tw:flex-none tw:flex tw:items-center tw:gap-10 tw:h-32 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-14 tw:border-b tw:border-b-border tw:text-[12.5px] tw:whitespace-nowrap">
+          <b class="tw:text-text-hi">Различия</b>
           <template v-if="!empty">
-            <span v-if="result.json" class="tag">JSON</span>
-            <span v-if="result.stats.same" class="ok">Тексты одинаковые</span>
+            <span v-if="result.json" class="tag tw:py-1 tw:px-6 tw:rounded-r1 tw:bg-panel-3 tw:text-text-2 tw:font-data tw:text-[10.5px]">JSON</span>
+            <span v-if="result.stats.same" class="ok tw:text-up-fg">Тексты одинаковые</span>
             <template v-else>
-              <span class="st add" title="Добавлено строк">+{{ result.stats.added }}</span>
-              <span class="st del" title="Удалено строк">−{{ result.stats.removed }}</span>
-              <span class="st mod" title="Изменено строк">~{{ result.stats.changed }}</span>
+              <span class="st add tw:font-data tw:font-semibold tw:text-up-fg" title="Добавлено строк">+{{ result.stats.added }}</span>
+              <span class="st del tw:font-data tw:font-semibold tw:text-down-fg" title="Удалено строк">−{{ result.stats.removed }}</span>
+              <span class="st mod tw:font-data tw:font-semibold tw:text-warn-fg" title="Изменено строк">~{{ result.stats.changed }}</span>
             </template>
           </template>
-          <span class="grow"></span>
+          <span class="grow tw:flex-1"></span>
           <template v-if="changes.length">
-            <span class="muted">{{ at < 0 ? changes.length : `${at + 1} / ${changes.length}` }} изм.</span>
-            <button class="ib sm" title="Предыдущее изменение" @click="goChange(-1)"><Icon name="chevronLeft" :size="13" style="transform: rotate(90deg)" /></button>
-            <button class="ib sm" title="Следующее изменение" @click="goChange(1)"><Icon name="chevronRight" :size="13" style="transform: rotate(90deg)" /></button>
+            <span class="muted tw:text-muted">{{ at < 0 ? changes.length : `${at + 1} / ${changes.length}` }} изм.</span>
+            <button class="ib sm tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:w-24 tw:h-24 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Предыдущее изменение" @click="goChange(-1)"><Icon name="chevronLeft" :size="13" style="transform: rotate(90deg)" /></button>
+            <button class="ib sm tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:w-24 tw:h-24 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" title="Следующее изменение" @click="goChange(1)"><Icon name="chevronRight" :size="13" style="transform: rotate(90deg)" /></button>
           </template>
         </div>
-        <div ref="out" class="dv">
-          <p v-if="empty" class="hint">Вставьте два текста сверху — различия появятся здесь. JSON сравнивается по смыслу: форматирование и порядок ключей не считаются изменениями.</p>
+        <div ref="out" class="dv tw:flex-1 tw:min-h-0 tw:overflow-auto tw:font-data tw:text-[12.5px] tw:leading-[1.55]">
+          <p v-if="empty" class="hint tw:m-16 tw:text-muted tw:font-ui">Вставьте два текста сверху — различия появятся здесь. JSON сравнивается по смыслу: форматирование и порядок ключей не считаются изменениями.</p>
           <template v-else>
             <template v-for="(v, k) in view" :key="k">
-              <button v-if="'fold' in v" class="fold" @click="unfold(v.from, v.to)">⋯ {{ v.fold }} одинаковых строк — показать</button>
-              <div v-else class="row" :class="[v.row.kind, { cur: v.i === current }]" :data-i="v.i">
-                <span class="n">{{ v.row.l?.n ?? '' }}</span>
-                <span class="t l" :class="{ none: !v.row.l }"><template v-for="(s, j) in v.row.l?.segs ?? []" :key="j"><mark v-if="s.hl && v.row.kind === 'mod'">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template></span>
-                <span class="n">{{ v.row.r?.n ?? '' }}</span>
-                <span class="t r" :class="{ none: !v.row.r }"><template v-for="(s, j) in v.row.r?.segs ?? []" :key="j"><mark v-if="s.hl && v.row.kind === 'mod'">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template></span>
+              <button v-if="'fold' in v" class="fold tw:block tw:w-full tw:h-26 tw:py-0 tw:px-14 tw:border-0 tw:rounded-none tw:[&&]:border-t tw:[&&]:[border-top-style:dashed] tw:[&&]:border-t-border-2 tw:[&&]:border-b tw:[&&]:[border-bottom-style:dashed] tw:[&&]:border-b-border-2 tw:bg-panel tw:text-muted tw:font-ui tw:text-[12px] tw:text-left tw:hover:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="unfold(v.from, v.to)">⋯ {{ v.fold }} одинаковых строк — показать</button>
+              <div v-else class="row tw:grid tw:grid-cols-[46px_minmax(0,1fr)_46px_minmax(0,1fr)] tw:[&.cur]:[outline:1px_solid_var(--accent)] tw:[&.cur]:[outline-offset:-1px]" :class="[v.row.kind, { cur: v.i === current }]" :data-i="v.i">
+                <span class="n tw:py-0 tw:px-8 tw:text-dim tw:text-right tw:select-none tw:border-r tw:border-r-border tw:[.row.del_&]:first:bg-down/13 tw:[&&]:[.row.add_&]:nth-3:bg-up/11">{{ v.row.l?.n ?? '' }}</span>
+                <span class="t l tw:py-0 tw:px-10 tw:whitespace-pre-wrap tw:break-all tw:min-h-[1.55em] tw:[&.none]:not-[.row.del_&]:not-[.row.mod_&]:[background:repeating-linear-gradient(-45deg,transparent_0_5px,rgba(255,255,255,0.025)_5px_10px)] tw:[.row.del_&]:not-[.row.mod_&]:bg-down/13 tw:[.row.mod_&]:bg-down/7" :class="{ none: !v.row.l }"><template v-for="(s, j) in v.row.l?.segs ?? []" :key="j"><mark class="tw:[.row.mod_&]:bg-down/35 tw:[.row.mod_&]:text-text-hi tw:[.row.mod_&]:rounded-[2px]" v-if="s.hl && v.row.kind === 'mod'">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template></span>
+                <span class="n tw:py-0 tw:px-8 tw:text-dim tw:text-right tw:select-none tw:border-r tw:border-r-border tw:[.row.del_&]:first:bg-down/13 tw:[&&]:[.row.add_&]:nth-3:bg-up/11">{{ v.row.r?.n ?? '' }}</span>
+                <span class="t r tw:py-0 tw:px-10 tw:whitespace-pre-wrap tw:break-all tw:min-h-[1.55em] tw:border-l tw:border-l-border tw:[&.none]:not-[.row.add_&]:not-[.row.mod_&]:[background:repeating-linear-gradient(-45deg,transparent_0_5px,rgba(255,255,255,0.025)_5px_10px)] tw:[.row.add_&]:not-[.row.mod_&]:bg-up/11 tw:[.row.mod_&]:bg-up/6" :class="{ none: !v.row.r }"><template v-for="(s, j) in v.row.r?.segs ?? []" :key="j"><mark class="tw:[.row.mod_&]:bg-up/30 tw:[.row.mod_&]:text-text-hi tw:[.row.mod_&]:rounded-[2px]" v-if="s.hl && v.row.kind === 'mod'">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template></span>
               </div>
             </template>
           </template>
@@ -199,289 +216,4 @@ function dragSplit(e: PointerEvent): void {
   </div>
 </template>
 
-<style scoped>
-.kind {
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid rgb(var(--accent-rgb) / 0.45);
-  border-radius: var(--r2);
-  color: var(--accent-fg);
-  font-family: var(--font-data);
-  font-size: 11px;
-}
-.kind.none {
-  border-color: var(--border-2);
-  color: var(--muted);
-}
-.fmt {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.fmt:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.fmt:disabled {
-  opacity: 0.4;
-}
-.dt {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 38px;
-  padding: 0 10px 0 14px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.seg button {
-  height: 26px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.seg button.on {
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent-fg);
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.grow {
-  flex: 1;
-}
-.ib {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib.sm {
-  width: 24px;
-  height: 24px;
-}
-.ib:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.ib:disabled {
-  opacity: 0.35;
-}
-.area {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-}
-.ins {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1px;
-  min-height: 0;
-  background: var(--border);
-}
-.in {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: var(--bg);
-}
-.ih {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 6px 0 12px;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.ih b {
-  color: var(--text-hi);
-}
-.err {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--down-fg);
-}
-.ed {
-  flex: 1;
-  min-height: 0;
-  padding: 0 6px 6px;
-}
-.ed :deep(.cm-editor) {
-  font-size: 12.5px;
-}
-.hsplit {
-  background: var(--border);
-  cursor: row-resize;
-}
-.hsplit:hover {
-  background: rgb(var(--accent-rgb) / 0.85);
-}
-.res {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.rh {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 32px;
-  padding: 0 8px 0 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.rh b {
-  color: var(--text-hi);
-}
-.tag {
-  padding: 1px 6px;
-  border-radius: var(--r1);
-  background: var(--panel-3);
-  color: var(--text-2);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-}
-.ok {
-  color: var(--up-fg);
-}
-.st {
-  font-family: var(--font-data);
-  font-weight: 600;
-}
-.st.add {
-  color: var(--up-fg);
-}
-.st.del {
-  color: var(--down-fg);
-}
-.st.mod {
-  color: var(--warn-fg);
-}
-.muted {
-  color: var(--muted);
-}
-.dv {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.hint {
-  margin: 16px;
-  color: var(--muted);
-  font-family: var(--font-ui);
-}
-.row {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 46px minmax(0, 1fr);
-}
-.row.cur {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-}
-.n {
-  padding: 0 8px;
-  color: var(--dim);
-  text-align: right;
-  user-select: none;
-  border-right: 1px solid var(--border);
-}
-.t {
-  padding: 0 10px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  min-height: 1.55em;
-}
-.t.r {
-  border-left: 1px solid var(--border);
-}
-.t.none {
-  background: repeating-linear-gradient(-45deg, transparent 0 5px, rgba(255, 255, 255, 0.025) 5px 10px);
-}
-.row.del .t.l,
-.row.del .n:first-child {
-  background: rgba(255, 61, 61, 0.13);
-}
-.row.add .t.r,
-.row.add .n:nth-child(3) {
-  background: rgba(0, 230, 118, 0.11);
-}
-.row.mod .t.l {
-  background: rgba(255, 61, 61, 0.07);
-}
-.row.mod .t.r {
-  background: rgba(0, 230, 118, 0.06);
-}
-.row.mod .t.l mark {
-  background: rgba(255, 61, 61, 0.35);
-  color: var(--text-hi);
-  border-radius: 2px;
-}
-.row.mod .t.r mark {
-  background: rgba(0, 230, 118, 0.3);
-  color: var(--text-hi);
-  border-radius: 2px;
-}
-.fold {
-  display: block;
-  width: 100%;
-  height: 26px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 0;
-  border-top: 1px dashed var(--border-2);
-  border-bottom: 1px dashed var(--border-2);
-  background: var(--panel);
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  text-align: left;
-}
-.fold:hover {
-  color: var(--accent-fg);
-}
-</style>
+<style scoped src="./DiffTool.css"></style>

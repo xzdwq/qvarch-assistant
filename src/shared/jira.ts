@@ -1,10 +1,13 @@
+/** Jira's status categories the app knows, in their order: new / indeterminate (in progress) / done. */
+export const JIRA_STATUS_CATEGORIES = ['new', 'indeterminate', 'done'] as const
+export type JiraStatusCategory = (typeof JIRA_STATUS_CATEGORIES)[number]
+
 /** A Jira issue as kept locally (only what the task list and the pickers need). */
 export interface JiraIssue {
   key: string
   summary: string
   status: string
-  /** Jira status category: new / indeterminate (in progress) / done. */
-  category: 'new' | 'indeterminate' | 'done'
+  category: JiraStatusCategory
   project: { key: string; name: string }
   type: string
   priority?: string
@@ -97,14 +100,19 @@ export function pickableTasks(s: Pick<JiraState, 'issues' | 'starred' | 'myStatu
 }
 
 /** How the task list is filtered and sorted (several values of one filter — any of them). */
+export const JIRA_SORTS = ['created', 'due', 'priority', 'status', 'updated'] as const
+export type JiraSort = (typeof JIRA_SORTS)[number]
+/** By due date: overdue, due within a week, has a date, has none. */
+export const JIRA_DUE_FILTERS = ['late', 'week', 'set', 'none'] as const
+export type JiraDueFilter = (typeof JIRA_DUE_FILTERS)[number]
 export interface JiraListQuery {
-  sort?: 'created' | 'due' | 'priority' | 'status' | 'updated'
+  sort?: JiraSort
   /** Newest / latest / highest first (the default). */
   desc?: boolean
   statuses?: string[]
   assignee?: Array<'mine' | 'other'>
   priorities?: string[]
-  due?: Array<'late' | 'week' | 'set' | 'none'>
+  due?: JiraDueFilter[]
   /** Jira labels: a task with any of them. */
   labels?: string[]
 }
@@ -135,9 +143,14 @@ export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string):
   const week = new Date(`${today}T12:00:00`)
   week.setDate(week.getDate() + 7)
   const weekEnd = week.toLocaleDateString('sv-SE')
-  const dueOk = (i: JiraIssue) =>
-    !q.due?.length ||
-    q.due.some((d) => (d === 'none' ? !i.due : d === 'set' ? !!i.due : d === 'late' ? !!i.due && i.due < today : !!i.due && i.due >= today && i.due <= weekEnd))
+  /** Each due filter: no date, any date, overdue, due within a week. */
+  const DUE: Record<JiraDueFilter, (due?: string) => boolean> = {
+    none: (due) => !due,
+    set: (due) => !!due,
+    late: (due) => !!due && due < today,
+    week: (due) => !!due && due >= today && due <= weekEnd,
+  }
+  const dueOk = (i: JiraIssue) => !q.due?.length || q.due.some((d) => (DUE[d] ?? DUE.week)(i.due))
   const list = issues.filter(
     (i) =>
       (!q.statuses?.length || q.statuses.includes(i.status)) &&
@@ -147,22 +160,18 @@ export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string):
       dueOk(i),
   )
   const dir = q.desc === false ? 1 : -1
-  const CAT = { new: 0, indeterminate: 1, done: 2 } as const
   const cmp = (a: number | string | undefined, b: number | string | undefined) =>
     a === undefined ? (b === undefined ? 0 : 1) : b === undefined ? -1 : (a < b ? -1 : a > b ? 1 : 0) * dir
-  const by = q.sort ?? 'created'
-  const key = (i: JiraIssue): number | string | undefined =>
-    by === 'created'
-      ? i.created
-      : by === 'updated'
-        ? i.updated
-        : by === 'due'
-          ? i.due
-          : by === 'priority'
-            ? priorityRank(i) === 6
-              ? undefined
-              : -priorityRank(i)
-            : `${CAT[i.category]}${i.status}`
+  /** The sort value of each order (undefined — no value, last). */
+  const SORT_KEYS: Record<JiraSort, (i: JiraIssue) => number | string | undefined> = {
+    created: (i) => i.created,
+    updated: (i) => i.updated,
+    due: (i) => i.due,
+    priority: (i) => (priorityRank(i) === 6 ? undefined : -priorityRank(i)),
+    status: (i) => `${JIRA_STATUS_CATEGORIES.indexOf(i.category)}${i.status}`,
+  }
+  // a sort stored by an older version that is gone — by status, as before
+  const key = SORT_KEYS[q.sort ?? 'created'] ?? SORT_KEYS.status
   return list.sort((a, b) => a.project.key.localeCompare(b.project.key) || cmp(key(a), key(b)) || b.updated - a.updated)
 }
 

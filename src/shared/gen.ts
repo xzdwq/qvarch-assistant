@@ -52,7 +52,7 @@ export const gen = {
   },
   /** By a pattern: # — a digit, A — a capital letter, a — a small one, * — a letter or a digit; the rest as is. */
   pattern(fmt: string): string {
-    return fmt.replace(/[#Aa*]/g, (c) => (c === '#' ? gen.text(1, 'digits') : c === 'A' ? gen.text(1, 'en').toUpperCase() : c === 'a' ? gen.text(1, 'en').toLowerCase() : gen.text(1, 'mixed')))
+    return fmt.replace(PATTERN_MARK, (c) => PATTERN_CHARS[c as PatternMark]())
   },
   phone(fmt = '+7 (9##) ###-##-##'): string {
     return gen.pattern(fmt)
@@ -96,16 +96,35 @@ export const gen = {
 }
 export type Gen = typeof gen
 
-/** The generators a person picks from (the matrix's editor): what they make, their parameters, an example call. */
-export interface GenKind {
+/** The marks of a pattern and the character each one makes. */
+const PATTERN_CHARS = {
+  '#': () => gen.text(1, 'digits'),
+  A: () => gen.text(1, 'en').toUpperCase(),
+  a: () => gen.text(1, 'en').toLowerCase(),
+  '*': () => gen.text(1, 'mixed'),
+} satisfies Record<string, () => string>
+type PatternMark = keyof typeof PATTERN_CHARS
+// (the marks are plain inside a character class)
+const PATTERN_MARK = new RegExp(`[${Object.keys(PATTERN_CHARS).join('')}]`, 'g')
+
+/** A generator parameter's kind: how its text is written into a call and read as a value. */
+export type GenParamKind = 'num' | 'text' | 'json' | 'choice'
+export interface GenParam {
+  name: string
+  kind: GenParamKind
+  def: string
+  choices?: ReadonlyArray<readonly [string, string]>
+}
+interface GenKindDef {
   id: string
   title: string
   /** The parameters: their names and kinds (a text one written quoted). */
-  params: Array<{ name: string; kind: 'num' | 'text' | 'json' | 'choice'; def: string; choices?: Array<[string, string]> }>
-  /** The call (no parameters — a literal). */
+  params: readonly GenParam[]
+  /** The call (none — a literal or code, not a generator). */
   call?: keyof Gen
 }
-export const GEN_KINDS: GenKind[] = [
+/** The generators a person picks from (the matrix's editor): what they make, their parameters, an example call. */
+const GEN_KIND_LIST = [
   { id: 'value', title: 'Своё значение', params: [{ name: 'значение', kind: 'text', def: '' }] },
   { id: 'empty', title: 'Пусто', params: [] },
   { id: 'spaces', title: 'Пробелы', call: 'spaces', params: [{ name: 'сколько', kind: 'num', def: '3' }] },
@@ -148,7 +167,32 @@ export const GEN_KINDS: GenKind[] = [
   { id: 'unique', title: 'Уникальная строка', call: 'unique', params: [{ name: 'начало', kind: 'text', def: 'test' }] },
   { id: 'json', title: 'JSON-объект', call: 'json', params: [{ name: 'объект', kind: 'json', def: '{ "id": 1, "name": "test" }' }] },
   { id: 'code', title: 'Выражение JS', params: [{ name: 'код', kind: 'text', def: "gen.text(10) + '!'" }] },
-]
+] as const satisfies readonly GenKindDef[]
+export type GenId = (typeof GEN_KIND_LIST)[number]['id']
+export interface GenKind extends GenKindDef {
+  id: GenId
+}
+export const GEN_KINDS: readonly GenKind[] = GEN_KIND_LIST
+const genKindOf = (id: string): GenKind | undefined => GEN_KINDS.find((g) => g.id === id)
+
+/** Each parameter kind: its text as written into a call, and as the value the generator takes. */
+const PARAM_KINDS: Record<GenParamKind, { toExpr: (a: string) => string; toValue: (a: string) => unknown }> = {
+  num: { toExpr: (a) => String(Number(a) || 0), toValue: (a) => Number(a) || 0 },
+  text: { toExpr: (a) => q(a), toValue: (a) => a },
+  json: {
+    toExpr: (a) => a.trim() || '{}',
+    toValue: (a) => {
+      try {
+        return JSON.parse(a) as unknown
+      } catch {
+        return a
+      }
+    },
+  },
+  // a yes / no one is written bare; any other choice — quoted
+  choice: { toExpr: (a) => (isBoolText(a) ? a : q(a)), toValue: (a) => (isBoolText(a) ? a === 'true' : a) },
+}
+const isBoolText = (a: string) => a === 'true' || a === 'false'
 
 // ---------- a value's expression ↔ the generator picked ----------
 const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`
@@ -156,8 +200,10 @@ const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").repla
 export function unquote(lit: string): string | undefined {
   const m = /^(['"`])([\s\S]*)\1$/.exec(lit.trim())
   if (!m || (m[1] === '`' && m[2].includes('${'))) return undefined
-  return m[2].replace(/\\(n|t|\\|'|"|`)/g, (_a, c: string) => (c === 'n' ? '\n' : c === 't' ? '\t' : c))
+  return m[2].replace(/\\(n|t|\\|'|"|`)/g, (_a, c: string) => ESCAPED[c] ?? c)
 }
+/** The escapes standing for another character (the rest stand for themselves). */
+const ESCAPED: Record<string, string> = { n: '\n', t: '\t' }
 /** The arguments of a call, split at the top-level commas (strings, brackets kept whole). */
 function splitArgs(s: string): string[] {
   const out: string[] = []
@@ -186,7 +232,7 @@ function splitArgs(s: string): string[] {
   return out
 }
 /** The generator and its parameters' texts of an expression (one not made by the editor — «Выражение JS»). */
-export function exprToGen(expr: string): { id: string; args: string[] } {
+export function exprToGen(expr: string): { id: GenId; args: string[] } {
   const e = expr.trim()
   const lit = unquote(e)
   if (lit !== undefined) return lit === '' ? { id: 'empty', args: [] } : { id: 'value', args: [lit] }
@@ -198,60 +244,56 @@ export function exprToGen(expr: string): { id: string; args: string[] } {
     const args = k.params.map((p, i) => {
       const a = raw[i]
       if (a === undefined) return p.def
-      if (p.kind === 'json') return a
-      return unquote(a) ?? a
+      return p.kind === 'json' ? a : (unquote(a) ?? a)
     })
     if (raw.length <= k.params.length) return { id: k.id, args }
   }
   return { id: 'code', args: [e] }
 }
-/** The expression of a generator picked with its parameters. */
+
+/** The kinds with no generator call: a literal, nothing, code. Their expression and their value now. */
+const NON_CALLS: Partial<Record<GenId, { expr: (args: string[]) => string; sample: (args: string[]) => string | undefined }>> = {
+  value: { expr: (args) => q(args[0] ?? ''), sample: (args) => args[0] },
+  empty: { expr: () => "''", sample: () => '' },
+  code: { expr: (args) => args[0]?.trim() || "''", sample: () => undefined },
+}
+
+/** The expression of a generator picked with its parameters (an unknown one — as code). */
 export function genToExpr(id: string, args: string[]): string {
-  const k = GEN_KINDS.find((g) => g.id === id)
-  if (!k || id === 'code') return args[0]?.trim() || "''"
-  if (id === 'value') return q(args[0] ?? '')
-  if (id === 'empty') return "''"
-  const lit = (p: GenKind['params'][number], a: string) => {
-    if (p.kind === 'num') return String(Number(a) || 0)
-    if (p.kind === 'json') return a.trim() || '{}'
-    if (p.kind === 'choice' && (a === 'true' || a === 'false')) return a
-    return q(a)
-  }
+  const k = genKindOf(id)
+  if (!k?.call) return (NON_CALLS[k?.id ?? 'code'] ?? NON_CALLS.code!).expr(args)
+  const lit = (p: GenParam, a: string) => PARAM_KINDS[p.kind].toExpr(a)
   const parts = k.params.map((p, i) => lit(p, args[i] ?? p.def))
   // the trailing ones left as they are by default dropped: gen.text(255), not gen.text(255, 'ru')
   while (parts.length > 1 && parts[parts.length - 1] === lit(k.params[parts.length - 1], k.params[parts.length - 1].def)) parts.pop()
   return `gen.${k.call}(${parts.join(', ')})`
 }
+
+type LabelOf = (k: GenKind, args: string[]) => string
+const rangeLabel: LabelOf = (k, args) => `${k.title} ${args[0] ?? ''}…${args[1] ?? ''}`
+const countLabel: LabelOf = (k, args) => `${k.title}: ${args[0] ?? k.params[0].def}`
+/** The labels that say more than the kind's title. */
+const GEN_LABELS: Partial<Record<GenId, LabelOf>> = {
+  value: (_k, args) => `«${(args[0] ?? '').slice(0, 20)}»`,
+  text: (k, args) => `Строка ${args[0] ?? 255}${args[1] && args[1] !== 'ru' ? ` (${k.params[1].choices!.find((c) => c[0] === args[1])?.[1] ?? args[1]})` : ''}`,
+  int: rangeLabel,
+  number: rangeLabel,
+  date: (_k, args) => (Number(args[0] ?? 0) ? `Дата ${Number(args[0]) > 0 ? '+' : '−'}${Math.abs(Number(args[0]))} дн.` : 'Дата сегодня'),
+  spaces: countLabel,
+  words: countLabel,
+  digits: countLabel,
+}
 /** A label for a value made: «Строка 255 (латиница)», «UUID», «Дата −1 дн.». */
 export function genLabel(id: string, args: string[]): string {
-  const k = GEN_KINDS.find((g) => g.id === id)
+  const k = genKindOf(id)
   if (!k) return 'Значение'
-  if (id === 'value') return `«${(args[0] ?? '').slice(0, 20)}»`
-  if (id === 'text') return `Строка ${args[0] ?? 255}${args[1] && args[1] !== 'ru' ? ` (${k.params[1].choices!.find((c) => c[0] === args[1])?.[1] ?? args[1]})` : ''}`
-  if (id === 'int' || id === 'number') return `${k.title} ${args[0] ?? ''}…${args[1] ?? ''}`
-  if (id === 'date') return Number(args[0] ?? 0) ? `Дата ${Number(args[0]) > 0 ? '+' : '−'}${Math.abs(Number(args[0]))} дн.` : 'Дата сегодня'
-  if (id === 'spaces' || id === 'words' || id === 'digits') return `${k.title}: ${args[0] ?? k.params[0].def}`
-  return k.title
+  return GEN_LABELS[k.id]?.(k, args) ?? k.title
 }
 /** An expression's value now (the editor's example): the generators run here, an expression of code — not run. */
 export function sampleOf(expr: string): string | undefined {
   const g = exprToGen(expr)
-  if (g.id === 'code') return undefined
-  if (g.id === 'value') return g.args[0]
-  if (g.id === 'empty') return ''
-  const k = GEN_KINDS.find((x) => x.id === g.id)!
-  const args = k.params.map((p, i) => {
-    const a = g.args[i] ?? p.def
-    if (p.kind === 'num') return Number(a) || 0
-    if (p.kind === 'json') {
-      try {
-        return JSON.parse(a) as unknown
-      } catch {
-        return a
-      }
-    }
-    if (p.kind === 'choice' && (a === 'true' || a === 'false')) return a === 'true'
-    return a
-  })
-  return (gen[k.call!] as (...a: unknown[]) => string)(...args)
+  const k = genKindOf(g.id)!
+  if (!k.call) return NON_CALLS[k.id]?.sample(g.args)
+  const args = k.params.map((p, i) => PARAM_KINDS[p.kind].toValue(g.args[i] ?? p.def))
+  return (gen[k.call] as (...a: unknown[]) => string)(...args)
 }

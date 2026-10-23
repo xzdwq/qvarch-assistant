@@ -35,23 +35,40 @@ export function b64ToBytes(s: string): { bytes: Uint8Array; mime?: string } {
   const bin = atob(clean + '='.repeat((4 - (clean.length % 4)) % 4))
   return { bytes: Uint8Array.from(bin, (c) => c.charCodeAt(0)), mime: m?.[1]?.toLowerCase() }
 }
+export interface FileType {
+  mime: string
+  ext: string
+  image: boolean
+}
+/** The bytes of a file being looked at: `at` — these bytes from `i`; `txt` — this ASCII from `i`; `head` — its start as text. */
+interface FileHead {
+  at: (i: number, ...v: number[]) => boolean
+  txt: (i: number, s: string) => boolean
+  head: () => string
+}
+/** The file types known by their first bytes, checked in this order. */
+const FILE_SIGNATURES: Array<FileType & { match: (f: FileHead) => boolean }> = [
+  { mime: 'image/png', ext: 'png', image: true, match: (f) => f.at(0, 0x89, 0x50, 0x4e, 0x47) },
+  { mime: 'image/jpeg', ext: 'jpg', image: true, match: (f) => f.at(0, 0xff, 0xd8, 0xff) },
+  { mime: 'image/gif', ext: 'gif', image: true, match: (f) => f.txt(0, 'GIF8') },
+  { mime: 'image/webp', ext: 'webp', image: true, match: (f) => f.txt(0, 'RIFF') && f.txt(8, 'WEBP') },
+  { mime: 'image/bmp', ext: 'bmp', image: true, match: (f) => f.txt(0, 'BM') },
+  { mime: 'image/x-icon', ext: 'ico', image: true, match: (f) => f.at(0, 0, 0, 1, 0) },
+  { mime: 'image/avif', ext: 'avif', image: true, match: (f) => f.txt(4, 'ftypavif') },
+  { mime: 'image/svg+xml', ext: 'svg', image: true, match: (f) => /^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(f.head()) },
+  { mime: 'application/pdf', ext: 'pdf', image: false, match: (f) => f.txt(0, '%PDF') },
+  { mime: 'application/zip', ext: 'zip', image: false, match: (f) => f.at(0, 0x50, 0x4b, 3, 4) },
+  { mime: 'application/gzip', ext: 'gz', image: false, match: (f) => f.at(0, 0x1f, 0x8b) },
+]
 /** A file's type by its first bytes (pictures, PDF, archives…); undefined — not known. */
-export function sniffMime(b: Uint8Array): { mime: string; ext: string; image: boolean } | undefined {
-  const at = (i: number, ...v: number[]) => v.every((x, k) => b[i + k] === x)
-  const txt = (i: number, s: string) => [...s].every((c, k) => b[i + k] === c.charCodeAt(0))
-  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return { mime: 'image/png', ext: 'png', image: true }
-  if (at(0, 0xff, 0xd8, 0xff)) return { mime: 'image/jpeg', ext: 'jpg', image: true }
-  if (txt(0, 'GIF8')) return { mime: 'image/gif', ext: 'gif', image: true }
-  if (txt(0, 'RIFF') && txt(8, 'WEBP')) return { mime: 'image/webp', ext: 'webp', image: true }
-  if (txt(0, 'BM')) return { mime: 'image/bmp', ext: 'bmp', image: true }
-  if (at(0, 0, 0, 1, 0)) return { mime: 'image/x-icon', ext: 'ico', image: true }
-  if (txt(4, 'ftypavif')) return { mime: 'image/avif', ext: 'avif', image: true }
-  const head = new TextDecoder().decode(b.subarray(0, 300)).trimStart()
-  if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(head)) return { mime: 'image/svg+xml', ext: 'svg', image: true }
-  if (txt(0, '%PDF')) return { mime: 'application/pdf', ext: 'pdf', image: false }
-  if (at(0, 0x50, 0x4b, 3, 4)) return { mime: 'application/zip', ext: 'zip', image: false }
-  if (at(0, 0x1f, 0x8b)) return { mime: 'application/gzip', ext: 'gz', image: false }
-  return undefined
+export function sniffMime(b: Uint8Array): FileType | undefined {
+  const file: FileHead = {
+    at: (i, ...v) => v.every((x, k) => b[i + k] === x),
+    txt: (i, s) => [...s].every((c, k) => b[i + k] === c.charCodeAt(0)),
+    head: () => new TextDecoder().decode(b.subarray(0, 300)).trimStart(),
+  }
+  const hit = FILE_SIGNATURES.find((t) => t.match(file))
+  return hit && { mime: hit.mime, ext: hit.ext, image: hit.image }
 }
 /** Bytes as UTF-8 text, or undefined when they are not (binary data). */
 export function asText(b: Uint8Array): string | undefined {
@@ -81,6 +98,13 @@ export interface Sniffed {
   /** What it decodes to (text). */
   decoded?: string
 }
+/** Password-hash schemes by their `$id$` (bcrypt's 2 / 2a / 2b… and the others — by their own name). */
+const CRYPT_NAMES: Record<string, string> = { '1': 'MD5-crypt', '5': 'SHA-256-crypt', '6': 'SHA-512-crypt', y: 'yescrypt' }
+const cryptName = (id: string) => (id.startsWith('2') ? 'bcrypt' : Object.hasOwn(CRYPT_NAMES, id) ? CRYPT_NAMES[id] : id)
+/** The titles of the hash algorithms a digest of `n` units may be (`unit` — its bits: 4 hex, 8 bytes). */
+const digestAlgs = (n: number, unit: number) => HASH_ALGS.filter((a) => a.bits / unit === n)
+const algTitles = (algs: typeof HASH_ALGS) => algs.map((a) => a.title).join(' / ')
+
 /** What a pasted string may already be: a hash (by its length), bcrypt / argon2, JWT, UUID, Base64, hex, %-encoding. */
 export function sniffEncoded(input: string): Sniffed[] {
   const s = input.trim()
@@ -88,15 +112,14 @@ export function sniffEncoded(input: string): Sniffed[] {
   const out: Sniffed[] = []
   const crypt = /^\$(2[abxy]?|argon2(?:id|i|d)|1|5|6|y|scrypt|pbkdf2[\w-]*)\$/.exec(s)
   if (crypt) {
-    const name = crypt[1].startsWith('2') ? 'bcrypt' : crypt[1].startsWith('argon2') ? crypt[1] : crypt[1] === '1' ? 'MD5-crypt' : crypt[1] === '5' ? 'SHA-256-crypt' : crypt[1] === '6' ? 'SHA-512-crypt' : crypt[1] === 'y' ? 'yescrypt' : crypt[1]
-    out.push({ kind: 'crypt', title: `Хэш пароля ${name}`, note: 'Со своей солью и числом раундов: необратим, проверяется только самой системой входа.' })
+    out.push({ kind: 'crypt', title: `Хэш пароля ${cryptName(crypt[1])}`, note: 'Со своей солью и числом раундов: необратим, проверяется только самой системой входа.' })
     return out
   }
   if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(s) && s.startsWith('eyJ')) out.push({ kind: 'jwt', title: 'JWT', note: 'Токен: заголовок, данные и подпись — откройте во вкладке JWT.' })
   if (/^[{(]?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}[)}]?$/i.test(s) && s.includes('-')) out.push({ kind: 'uuid', title: 'UUID', note: 'Идентификатор — подробности во вкладке UUID.' })
   if (/^[0-9a-f]+$/i.test(s)) {
-    const algs = HASH_ALGS.filter((a) => a.bits / 4 === s.length).map((a) => a.id)
-    if (algs.length) out.push({ kind: 'hash', title: `Похоже на ${algs.map((a) => HASH_ALGS.find((x) => x.id === a)!.title).join(' / ')}`, note: `${s.length} шестнадцатеричных символов = ${s.length * 4} бит. Хэш необратим: исходный текст из него не получить, но можно проверить догадку.`, algs })
+    const algs = digestAlgs(s.length, 4)
+    if (algs.length) out.push({ kind: 'hash', title: `Похоже на ${algTitles(algs)}`, note: `${s.length} шестнадцатеричных символов = ${s.length * 4} бит. Хэш необратим: исходный текст из него не получить, но можно проверить догадку.`, algs: algs.map((a) => a.id) })
     else if (s.length % 2 === 0 && s.length >= 4) {
       const t = asText(Uint8Array.from(s.match(/../g)!, (h) => parseInt(h, 16)))
       if (t && t.trim()) out.push({ kind: 'hex', title: 'Hex (байты в шестнадцатеричном виде)', note: 'Это текст:', decoded: t })
@@ -113,9 +136,9 @@ export function sniffEncoded(input: string): Sniffed[] {
   if (!out.some((x) => x.kind === 'jwt' || x.kind === 'hash') && s.length >= 8 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(s.replace(/\s+/g, ''))) {
     try {
       const { bytes } = b64ToBytes(s)
-      const algs = HASH_ALGS.filter((a) => a.bits / 8 === bytes.length).map((a) => a.id)
+      const algs = digestAlgs(bytes.length, 8)
       const t = asText(bytes)
-      if (algs.length && !t) out.push({ kind: 'hash', title: `Похоже на ${algs.map((a) => HASH_ALGS.find((x) => x.id === a)!.title).join(' / ')} в Base64`, note: `${bytes.length} байт = ${bytes.length * 8} бит. Хэш необратим, но догадку можно проверить.`, algs })
+      if (algs.length && !t) out.push({ kind: 'hash', title: `Похоже на ${algTitles(algs)} в Base64`, note: `${bytes.length} байт = ${bytes.length * 8} бит. Хэш необратим, но догадку можно проверить.`, algs: algs.map((a) => a.id) })
       else if (t && /[\p{L}\p{N}]{2}/u.test(t)) out.push({ kind: 'base64', title: 'Base64', note: 'Это текст:', decoded: t })
       else if (sniffMime(bytes)) out.push({ kind: 'base64', title: `Base64 — файл ${sniffMime(bytes)!.ext.toUpperCase()}`, note: 'Откройте во вкладке Base64, чтобы увидеть или сохранить.' })
     } catch {
@@ -176,15 +199,21 @@ export async function jwtVerify(token: string, secret: string): Promise<boolean 
   if (!JWT_ALGS.includes(alg) || !secret) return undefined
   return (await hmac(alg, secret, j.signed)) === j.signature
 }
+/** The time claims of a token, in their order: what each one says about now (ms). */
+const TIME_CLAIMS: Record<string, (at: number, now: number) => string> = {
+  iat: () => '',
+  nbf: (at, now) => (at > now ? 'ещё не действует' : ''),
+  exp: (at, now) => (at < now ? 'истёк' : 'действует'),
+  auth_time: () => '',
+}
 /** The time claims of a payload, readable. */
 export function jwtTimes(payload: Record<string, unknown>, now = Date.now()): Array<{ key: string; at: number; note: string }> {
   const out: Array<{ key: string; at: number; note: string }> = []
-  for (const key of ['iat', 'nbf', 'exp', 'auth_time']) {
+  for (const [key, noteOf] of Object.entries(TIME_CLAIMS)) {
     const v = payload[key]
     if (typeof v !== 'number') continue
     const at = v * 1000
-    const note = key === 'exp' ? (at < now ? 'истёк' : 'действует') : key === 'nbf' ? (at > now ? 'ещё не действует' : '') : ''
-    out.push({ key, at, note })
+    out.push({ key, at, note: noteOf(at, now) })
   }
   return out
 }
@@ -197,22 +226,24 @@ const rnd = (n: number) => crypto.getRandomValues(new Uint8Array(n))
 const GREG = 122192928000000000n
 let lastV1 = 0n
 let seqV1 = Number(new DataView(rnd(2).buffer).getUint16(0) & 0x3fff)
-export function uuid(version: 1 | 4 | 7, now = Date.now()): string {
-  if (version === 4) {
-    const b = rnd(16)
-    b[6] = (b[6] & 0x0f) | 0x40
-    b[8] = (b[8] & 0x3f) | 0x80
-    return fmt(hex(b))
-  }
-  if (version === 7) {
-    const b = rnd(16)
-    const ms = BigInt(now)
-    for (let i = 0; i < 6; i++) b[i] = Number((ms >> BigInt(8 * (5 - i))) & 0xffn)
-    b[6] = (b[6] & 0x0f) | 0x70
-    b[8] = (b[8] & 0x3f) | 0x80
-    return fmt(hex(b))
-  }
-  // v1: the time in 100 ns since 1582, a clock sequence, a random node (multicast bit set — not a real MAC)
+/** v4: random. */
+function uuidV4(): string {
+  const b = rnd(16)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  return fmt(hex(b))
+}
+/** v7: the Unix time in ms first, then random. */
+function uuidV7(now: number): string {
+  const b = rnd(16)
+  const ms = BigInt(now)
+  for (let i = 0; i < 6; i++) b[i] = Number((ms >> BigInt(8 * (5 - i))) & 0xffn)
+  b[6] = (b[6] & 0x0f) | 0x70
+  b[8] = (b[8] & 0x3f) | 0x80
+  return fmt(hex(b))
+}
+/** v1: the time in 100 ns since 1582, a clock sequence, a random node (multicast bit set — not a real MAC). */
+function uuidV1(now: number): string {
   let t = BigInt(now) * 10000n + GREG
   if (t <= lastV1) t = lastV1 + 1n
   lastV1 = t
@@ -224,6 +255,10 @@ export function uuid(version: 1 | 4 | 7, now = Date.now()): string {
   node[0] |= 0x01
   return `${tl.toString(16).padStart(8, '0')}-${tm.toString(16).padStart(4, '0')}-${th.toString(16).padStart(4, '0')}-${(0x8000 | seqV1).toString(16)}-${hex(node)}`
 }
+/** The versions made, each by its maker. */
+const UUID_MAKERS = { 1: uuidV1, 4: uuidV4, 7: uuidV7 } satisfies Record<number, (now: number) => string>
+export type UuidVersion = keyof typeof UUID_MAKERS
+export const uuid = (version: UuidVersion, now = Date.now()): string => UUID_MAKERS[version](now)
 export interface UuidInfo {
   valid: boolean
   /** The canonical form (lower case, dashes). */
@@ -233,6 +268,12 @@ export interface UuidInfo {
   /** When it was made (v1 / v6 / v7). */
   time?: number
   note?: string
+}
+/** When a time-based UUID was made (ms), by its version; `h` — its 32 hex digits. */
+const UUID_TIMES: Partial<Record<number, (h: string) => number>> = {
+  1: (h) => Number((((BigInt(`0x${h.slice(13, 16)}`) << 48n) | (BigInt(`0x${h.slice(8, 12)}`) << 32n) | BigInt(`0x${h.slice(0, 8)}`)) - GREG) / 10000n),
+  6: (h) => Number((((BigInt(`0x${h.slice(0, 8)}`) << 28n) | (BigInt(`0x${h.slice(8, 12)}`) << 12n) | BigInt(`0x${h.slice(13, 16)}`)) - GREG) / 10000n),
+  7: (h) => Number(BigInt(`0x${h.slice(0, 12)}`)),
 }
 export function uuidInfo(input: string): UuidInfo {
   const s = input.trim().replace(/^urn:uuid:/i, '').replace(/^\{|\}$/g, '')
@@ -244,10 +285,7 @@ export function uuidInfo(input: string): UuidInfo {
   const version = parseInt(h[12], 16)
   const v = parseInt(h[16], 16)
   const variant = (v & 0x8) === 0 ? 'NCS (устаревший)' : (v & 0xc) === 0x8 ? 'RFC 9562 (стандартный)' : (v & 0xe) === 0xc ? 'Microsoft (GUID старого вида)' : 'зарезервированный'
-  let time: number | undefined
-  if (version === 7) time = Number(BigInt(`0x${h.slice(0, 12)}`))
-  else if (version === 1) time = Number((((BigInt(`0x${h.slice(13, 16)}`) << 48n) | (BigInt(`0x${h.slice(8, 12)}`) << 32n) | BigInt(`0x${h.slice(0, 8)}`)) - GREG) / 10000n)
-  else if (version === 6) time = Number((((BigInt(`0x${h.slice(0, 8)}`) << 28n) | (BigInt(`0x${h.slice(8, 12)}`) << 12n) | BigInt(`0x${h.slice(13, 16)}`)) - GREG) / 10000n)
+  const time = UUID_TIMES[version]?.(h)
   const known = version >= 1 && version <= 8
   return { valid: known && variant.startsWith('RFC'), canonical, version, variant, time, note: known ? undefined : `Версия ${version} не определена стандартом` }
 }

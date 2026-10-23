@@ -1,21 +1,21 @@
 import { emptyFuzz, fuzzLines } from './fuzz'
+import type { QaMark } from './browser/constants'
 /**
  * «Проверить ▾» of a Playwright block: the recorded actions wrapped into a ready check (the `qa` object of the
  * runner does it). The result of each check — passed / failed / a warning, a sentence, a table «до / после»,
  * pictures (the layout's sizes).
  */
-export type QaCheckKind = 'leave' | 'reload' | 'double' | 'repeat' | 'layout' | 'load' | 'context' | 'compare' | 'matrix' | 'files' | 'fuzz'
 export interface QaCheck {
   kind: QaCheckKind
   name: string
-  state: 'ok' | 'fail' | 'warn'
+  state: QaMark
   /** One sentence: what was done, what came. */
   summary: string
   /** A table: its head and rows (what / before / after…). */
   head?: string[]
   rows?: string[][]
   /** Each row's own verdict (a row to look at is marked). */
-  marks?: Array<'ok' | 'warn' | 'fail'>
+  marks?: QaMark[]
   /** The rows go in groups by their first cell (shown once per group). */
   group?: boolean
   /** Pictures the check left in the run's folder (layout-<w>x<h>-<zoom>.png), with what each is. */
@@ -25,7 +25,8 @@ export interface QaCheck {
 /** The snapshot's name the context check remembers. */
 export const BEFORE_SWITCH = 'до смены'
 
-export const QA_CHECKS: Array<{ id: QaCheckKind; label: string; hint: string }> = [
+/** The checks of «Проверить ▾», in the menu's order. */
+const QA_CHECK_LIST = [
   { id: 'leave', label: 'Сохранить и уйти', hint: 'Последнее действие — сохранение. После ответа сервера страница уходит назад: окна «несохранённые изменения» быть не должно' },
   { id: 'reload', label: 'Сравнить с перезагрузкой', hint: 'После действий запоминаются поля формы и строки таблиц, страница перезагружается — всё должно остаться как было' },
   { id: 'double', label: 'Двойной клик по сохранению', hint: 'Последний клик делается дважды подряд: на сервер не должны уйти два одинаковых запроса (дубли)' },
@@ -37,7 +38,9 @@ export const QA_CHECKS: Array<{ id: QaCheckKind; label: string; hint: string }> 
   { id: 'fuzz', label: 'Перебор параметров запроса', hint: 'Запрос, который отправил сценарий (поиск, фильтр, выгрузка), отправляется ещё раз с перебором выбранных параметров: массивы из 0 / 1 / 20 / 21 / 100 элементов, пусто, null, длинные строки, числа… Видно: статус, время, сколько найдено; где ломается («с 21 элемента») и где больше значений дали меньше найденных. Вход — как у сценария' },
   { id: 'context', label: 'Сменить контекст: запомнить «до смены»', hint: 'Контекст — то, от чего зависит форма: выбранная компания, раздел, категория, проект, язык, вкладка. Шаг 1: запоминаются все поля сейчас. Шаг 2: «Записать» — переключите контекст. Шаг 3: «Сравнить с «до смены»»' },
   { id: 'compare', label: 'Сравнить с «до смены»', hint: 'Шаг 3: поля после смены контекста сравниваются с запомненными. Значение, которое осталось прежним, показывается — проверьте, должно ли оно было остаться или «протекло» из прошлого контекста' },
-]
+] as const satisfies ReadonlyArray<{ id: string; label: string; hint: string }>
+export type QaCheckKind = (typeof QA_CHECK_LIST)[number]['id']
+export const QA_CHECKS: ReadonlyArray<{ id: QaCheckKind; label: string; hint: string }> = QA_CHECK_LIST
 /** The checks that fit the code now («Сравнить с «до смены»» — when something was remembered). */
 export const checksFor = (code: string) => QA_CHECKS.filter((c) => (c.id !== 'compare' || /\bqa\.snapshot\(/.test(code)) && (c.id !== 'files' || /\bqa\.(file|eachFile)\(/.test(code)))
 
@@ -55,6 +58,11 @@ const CALL: Record<QaCheckKind, string> = {
   files: 'eachFile',
   fuzz: 'fuzz',
 }
+/** Every call a check puts into the code → its check (the layout over the whole scenario is the layout check too). */
+const KIND_OF_CALL = new Map<string, QaCheckKind>([...(Object.entries(CALL) as Array<[QaCheckKind, string]>).map(([kind, call]): [string, QaCheckKind] => [call, kind]), ['layoutEach', 'layout']])
+/** The calls of a check in the code. */
+const callsOf = (kind: QaCheckKind) => [...KIND_OF_CALL].filter(([, k]) => k === kind).map(([call]) => call)
+const NO_ACTIONS = 'В сценарии нет действий — сначала запишите их (кнопка «Записать»)'
 /** A typed field's line: its indent, its locator, the value as written (with its quotes), its comment. */
 const FILL = /^(\s*)await\s+(.+)\.fill\((('|"|`)(?:\\.|(?!\4).)*\4)\)(\s*\/\/.*)?$/
 /** The field's name a person reads: the step's words («в поле «…»»), its label / placeholder, else its number. */
@@ -76,7 +84,7 @@ function matrixWrap(lines: string[]): { code: string } | { error: string } {
   if (lines.some((l) => /\bqa\.eachFile\(/.test(l))) return { error: 'Сценарий уже идёт с каждым файлом набора — матрица с этим не сочетается' }
   if (lines.some((l) => /\bqa\.layoutEach\(/.test(l))) return { error: 'Сценарий уже идёт на каждом экране (вёрстка «весь сценарий») — матрица с этим не сочетается. Переключите вёрстку на «на этой странице»' }
   const start = lines.findIndex((l) => /^\s*await\s+page\./.test(l))
-  if (start < 0) return { error: 'В сценарии нет действий — сначала запишите их (кнопка «Записать»)' }
+  if (start < 0) return { error: NO_ACTIONS }
   const fields: string[] = []
   const body = lines.slice(start).map((l) => {
     const m = FILL.exec(l)
@@ -169,7 +177,7 @@ export function setLayoutMode(code: string, mode: LayoutMode): { code: string } 
   if (/\bqa\.fieldMatrix\(/.test(plain)) return { error: 'Матрица значений полей уже прогоняет сценарий много раз — весь сценарий на каждом экране с ней не сочетается. Уберите матрицу или оставьте вёрстку «на этой странице»' }
   const lines = plain.replace(/\s+$/, '').split('\n')
   const start = lines.findIndex((l) => /^\s*await\s+page\./.test(l))
-  if (start < 0) return { error: 'В сценарии нет действий — сначала запишите их (кнопка «Записать»)' }
+  if (start < 0) return { error: NO_ACTIONS }
   const out = [...lines.slice(0, start), 'await qa.layoutEach({ widths: [375, 768, 1280, 1920], zooms: [100] }, async () => {', ...indent(lines.slice(start)), '}) // шаг: Весь сценарий на каждом экране — вёрстка там, где он кончился']
   return { code: out.join('\n') }
 }
@@ -200,82 +208,82 @@ export function checksIn(code: string): QaCheckKind[] {
   const out: QaCheckKind[] = []
   for (const l of code.split('\n')) {
     const m = /^\s*await\s+qa\.(\w+)\(/.exec(l)
-    // (the layout over the whole scenario — the layout check too)
-    const k = m && (m[1] === 'layoutEach' ? 'layout' : (Object.keys(CALL) as QaCheckKind[]).find((x) => CALL[x] === m[1]))
+    const k = m && KIND_OF_CALL.get(m[1])
     if (k) out.push(k)
   }
   return out
 }
+
+// ---------- taking a check out ----------
+/**
+ * Takes a check's line (and what belongs to it) out of `lines` at `i`, writing what stays into `out`; returns the
+ * last line it took. `pad` — the check line's indent.
+ */
+type Unwrap = (lines: string[], i: number, pad: string, out: string[]) => number
+/** A wrapped body's line a level out. */
+const outdent = (l: string, pad: string) => (l.startsWith(`${pad}  `) ? pad + l.slice(pad.length + 2) : l)
+/** The line that closes a wrapper opened at `pad` («})»), from `from` on. */
+const closingAt = (lines: string[], from: number, pad: string) => {
+  let k = from
+  while (k < lines.length && !new RegExp(`^${pad}\\}\\)`).test(lines[k])) k++
+  return k
+}
+/** The checks taken out their own way; any other — a wrapper's body back, or a line of its own gone. */
+const UNWRAPS: Partial<Record<QaCheckKind, Unwrap>> = {
+  // await qa.doubleSubmit(<locator>) — the click back
+  double: (lines, i, _pad, out) => {
+    const d = /^(\s*)await\s+qa\.doubleSubmit\((.+)\)\s*(\/\/.*)?$/.exec(lines[i])
+    if (d) out.push(`${d[1]}await ${d[2]}.click()`)
+    return i
+  },
+  // the file recorded back into its line; the body a level out
+  files: (lines, i, pad, out) => {
+    const rec = /recorded: ('(?:\\.|[^'])*')/.exec(lines[i])?.[1]
+    const k = closingAt(lines, i + 1, pad)
+    for (const l of lines.slice(i + 1, k)) out.push(outdent(rec ? l.replace(/(\.setInputFiles\(|qa\.dropFiles\(.+?, )file\)/, `$1qa.file(${rec}))`) : l, pad))
+    return k
+  },
+  // the fields' recorded values back into their lines; the body a level out
+  matrix: (lines, i, pad, out) => {
+    const vals: Record<string, string> = {}
+    let j = i + 1
+    for (; j < lines.length && !/^\s*\}, async \(v\) => \{\s*$/.test(lines[j]); j++) {
+      const f = /^\s*(f\d+): \{ name: '(?:\\.|[^'])*', value: (('|"|`)(?:\\.|(?!\3).)*\3), field:/.exec(lines[j])
+      if (f) vals[f[1]] = f[2]
+    }
+    const k = closingAt(lines, j + 1, pad)
+    for (const l of lines.slice(j + 1, k)) out.push(outdent(l.replace(/\.fill\(v\.(f\d+)\)/, (all, id: string) => (vals[id] ? `.fill(${vals[id]})` : all)), pad))
+    return k
+  },
+  // its JSON lines, to its closing «)»
+  fuzz: (lines, i) => {
+    let j = i + 1
+    while (j < lines.length && !/^\s*\)\s*(\/\/.*)?$/.test(lines[j])) j++
+    return j
+  },
+  // its hint line under it goes too
+  context: (lines, i) => (/^\s*\/\/ ↓ запишите здесь смену/.test(lines[i + 1] ?? '') ? i + 1 : i),
+}
+const unwrapPlain: Unwrap = (lines, i, pad, out) => {
+  // a line of its own — gone
+  if (!/=>\s*\{\s*$/.test(lines[i])) return i
+  // a wrapper: its body back, a level out, till its closing line
+  let j = i + 1
+  while (j < lines.length && !new RegExp(`^${pad}\\}`).test(lines[j])) j++
+  for (const l of lines.slice(i + 1, j)) out.push(outdent(l, pad))
+  return j
+}
+
 /** The code without a check (all its lines): a wrapping one — its actions back as they were recorded. */
 export function unwrapCheck(code: string, kind: QaCheckKind): string {
   const lines = code.split('\n')
-  const call = new RegExp(`^(\\s*)await\\s+qa\\.(?:${kind === 'layout' ? 'layout|layoutEach' : CALL[kind]})\\(`)
+  const call = new RegExp(`^(\\s*)await\\s+qa\\.(?:${callsOf(kind).join('|')})\\(`)
+  const unwrap = UNWRAPS[kind] ?? unwrapPlain
   const out: string[] = []
   for (let i = 0; i < lines.length; i++) {
     const m = call.exec(lines[i])
-    if (!m) {
-      out.push(lines[i])
-      continue
-    }
-    if (kind === 'double') {
-      // await qa.doubleSubmit(<locator>) — the click back
-      const d = /^(\s*)await\s+qa\.doubleSubmit\((.+)\)\s*(\/\/.*)?$/.exec(lines[i])
-      if (d) out.push(`${d[1]}await ${d[2]}.click()`)
-      continue
-    }
-    if (kind === 'files') {
-      // the file recorded back into its line; the body a level out
-      const rec = /recorded: ('(?:\\.|[^'])*')/.exec(lines[i])?.[1]
-      const pad = m[1]
-      let k = i + 1
-      while (k < lines.length && !new RegExp(`^${pad}\\}\\)`).test(lines[k])) k++
-      for (const l of lines.slice(i + 1, k)) {
-        const back = rec ? l.replace(/(\.setInputFiles\(|qa\.dropFiles\(.+?, )file\)/, `$1qa.file(${rec}))`) : l
-        out.push(back.startsWith(`${pad}  `) ? pad + back.slice(pad.length + 2) : back)
-      }
-      i = k
-      continue
-    }
-    if (kind === 'matrix') {
-      // the fields' recorded values back into their lines; the body a level out
-      const vals: Record<string, string> = {}
-      let j = i + 1
-      for (; j < lines.length && !/^\s*\}, async \(v\) => \{\s*$/.test(lines[j]); j++) {
-        const f = /^\s*(f\d+): \{ name: '(?:\\.|[^'])*', value: (('|"|`)(?:\\.|(?!\3).)*\3), field:/.exec(lines[j])
-        if (f) vals[f[1]] = f[2]
-      }
-      const pad = m[1]
-      let k = j + 1
-      while (k < lines.length && !new RegExp(`^${pad}\\}\\)`).test(lines[k])) k++
-      for (const l of lines.slice(j + 1, k)) {
-        const back = l.replace(/\.fill\(v\.(f\d+)\)/, (all, id: string) => (vals[id] ? `.fill(${vals[id]})` : all))
-        out.push(back.startsWith(`${pad}  `) ? pad + back.slice(pad.length + 2) : back)
-      }
-      i = k
-      continue
-    }
-    if (kind === 'fuzz') {
-      // its JSON lines, to its closing «)»
-      let j = i + 1
-      while (j < lines.length && !/^\s*\)\s*(\/\/.*)?$/.test(lines[j])) j++
-      i = j
-      continue
-    }
-    if (kind === 'context') {
-      // its hint line under it goes too
-      if (/^\s*\/\/ ↓ запишите здесь смену/.test(lines[i + 1] ?? '')) i++
-      continue
-    }
-    if (/=>\s*\{\s*$/.test(lines[i])) {
-      // a wrapper: its body back, a level out, till its closing line
-      const pad = m[1]
-      let j = i + 1
-      while (j < lines.length && !new RegExp(`^${pad}\\}`).test(lines[j])) j++
-      for (const l of lines.slice(i + 1, j)) out.push(l.startsWith(`${pad}  `) ? pad + l.slice(pad.length + 2) : l)
-      i = j
-      continue
-    }
-    // a line of its own — gone
+    if (m) i = unwrap(lines, i, m[1], out)
+    else out.push(lines[i])
   }
   // «до смены» gone — its comparison means nothing
   return kind === 'context' ? unwrapCheck(out.join('\n'), 'compare') : out.join('\n')
@@ -290,51 +298,88 @@ const lastAction = (lines: string[]) => {
 }
 const indent = (ls: string[]) => ls.map((l) => (l.trim() ? `  ${l}` : l))
 
+// ---------- putting a check in ----------
+type Wrapped = { code: string } | { error: string }
+interface CheckWrap {
+  /** Put around the actions — one such check per scenario; else added after the actions, any time. */
+  around: boolean
+  /** The code with the check (`all` — its lines joined). */
+  wrap: (lines: string[], all: string) => Wrapped
+}
+/** The scenario's last action made into something; none — the person is told to record first. */
+const atLastAction = (lines: string[], make: (last: number) => Wrapped): Wrapped => {
+  const last = lastAction(lines)
+  return last < 0 ? { error: NO_ACTIONS } : make(last)
+}
+/** The last action put inside a call: its opening line, the action, its closing line. */
+const aroundLast = (lines: string[], last: number, open: string, close: string): Wrapped => ({
+  code: [...lines.slice(0, last), open, ...indent([lines[last]]), close, ...lines.slice(last + 1)].join('\n'),
+})
+const WRAPS: Record<QaCheckKind, CheckWrap> = {
+  reload: { around: false, wrap: (_, all) => ({ code: `${all}\nawait qa.sameAfterReload() // шаг: Перезагрузить страницу и сравнить, что осталось как было` }) },
+  layout: { around: false, wrap: (_, all) => ({ code: `${all}\nawait qa.layout() // шаг: Проверить вёрстку на разных экранах и масштабах` }) },
+  context: {
+    around: false,
+    wrap: (_, all) => ({
+      code: `${all}\nawait qa.snapshot('${BEFORE_SWITCH}') // шаг: Запомнить поля до смены контекста\n// ↓ запишите здесь смену контекста (компании, раздела, категории…) (кнопка «Записать» допишет сюда), затем «Проверить ▾ → Сравнить с «до смены»»`,
+    }),
+  },
+  fuzz: {
+    around: false,
+    wrap: (_, all) => (/\bqa\.fuzz\(/.test(all) ? { error: 'Перебор уже есть в сценарии — его параметры в «Параметры перебора»' } : { code: [all, ...fuzzLines(emptyFuzz())].join('\n') }),
+  },
+  compare: {
+    around: false,
+    wrap: (_, all) =>
+      /\bqa\.snapshot\(/.test(all)
+        ? { code: `${all}\nawait qa.compareWith('${BEFORE_SWITCH}') // шаг: Сравнить поля с тем, что было до смены` }
+        : { error: 'Сначала «Сменить контекст: запомнить «до смены»», потом запись смены — и только тогда сравнение' },
+  },
+  // (these find their own lines: a typing, an upload — an upload by qa.dropFiles is no page action)
+  matrix: { around: true, wrap: (lines) => matrixWrap(lines) },
+  files: { around: true, wrap: (lines) => filesWrap(lines) },
+  leave: {
+    around: true,
+    wrap: (lines) => atLastAction(lines, (last) => aroundLast(lines, last, 'await qa.saveAndLeave(async () => {', '}) // шаг: Сохранить и уйти со страницы — окна о несохранённых изменениях быть не должно')),
+  },
+  double: {
+    around: true,
+    wrap: (lines) =>
+      atLastAction(lines, (last) => {
+        const m = /^(\s*)await\s+(.+)\.click\(\)(\s*\/\/.*)?$/.exec(lines[last])
+        if (!m) return { error: 'Последнее действие — не клик. Двойной клик проверяется на кнопке сохранения: запишите сценарий, который кончается нажатием на неё' }
+        return { code: [...lines.slice(0, last), `${m[1]}await qa.doubleSubmit(${m[2]}) // шаг: Нажать дважды подряд — второй одинаковый запрос не должен уйти`, ...lines.slice(last + 1)].join('\n') }
+      }),
+  },
+  load: {
+    around: true,
+    wrap: (lines) => atLastAction(lines, (last) => aroundLast(lines, last, 'await qa.manyRows(async () => {', '}, { upTo: 300 }) // шаг: Повторить действие до 300 раз и замерить, как держится страница')),
+  },
+  // the actions after the page's opening (their checks too), twice
+  repeat: {
+    around: true,
+    wrap: (lines) =>
+      atLastAction(lines, () => {
+        const first = lines.findIndex(isAction)
+        let end = lines.length - 1
+        while (end > first && !isAction(lines[end])) end--
+        return { code: [...lines.slice(0, first), 'await qa.repeat(async () => {', ...indent(lines.slice(first, end + 1)), '}) // шаг: Повторить эти действия дважды', ...lines.slice(end + 1)].join('\n') }
+      }),
+  },
+}
+/** A check put around the actions is in the code already. */
+const AROUND_IN_CODE = new RegExp(
+  `\\bqa\\.(${(Object.keys(WRAPS) as QaCheckKind[])
+    .filter((k) => WRAPS[k].around)
+    .map((k) => CALL[k])
+    .join('|')})\\(`,
+)
+
 /** The code with a check put around its actions (or after them); an error — why it cannot be (said to the person). */
-export function wrapCheck(code: string, kind: QaCheckKind): { code: string } | { error: string } {
+export function wrapCheck(code: string, kind: QaCheckKind): Wrapped {
   const lines = code.replace(/\s+$/, '').split('\n')
   const all = lines.join('\n')
-  // added after the actions — any time
-  if (kind === 'reload') return { code: `${all}\nawait qa.sameAfterReload() // шаг: Перезагрузить страницу и сравнить, что осталось как было` }
-  if (kind === 'layout') return { code: `${all}\nawait qa.layout() // шаг: Проверить вёрстку на разных экранах и масштабах` }
-  if (kind === 'context')
-    return {
-      code: `${all}\nawait qa.snapshot('${BEFORE_SWITCH}') // шаг: Запомнить поля до смены контекста\n// ↓ запишите здесь смену контекста (компании, раздела, категории…) (кнопка «Записать» допишет сюда), затем «Проверить ▾ → Сравнить с «до смены»»`,
-    }
-  if (kind === 'fuzz') {
-    if (/\bqa\.fuzz\(/.test(all)) return { error: 'Перебор уже есть в сценарии — его параметры в «Параметры перебора»' }
-    return { code: [all, ...fuzzLines(emptyFuzz())].join('\n') }
-  }
-  if (kind === 'compare') {
-    if (!/\bqa\.snapshot\(/.test(all)) return { error: 'Сначала «Сменить контекст: запомнить «до смены»», потом запись смены — и только тогда сравнение' }
-    return { code: `${all}\nawait qa.compareWith('${BEFORE_SWITCH}') // шаг: Сравнить поля с тем, что было до смены` }
-  }
-  // put around the actions — one such check per scenario
-  if (/\bqa\.(saveAndLeave|doubleSubmit|repeat|manyRows|fieldMatrix|eachFile)\(/.test(all)) return { error: 'В сценарии уже есть проверка, которая оборачивает действия, — уберите её или начните с чистой записи' }
-  // (these find their own lines: a typing, an upload — an upload by qa.dropFiles is no page action)
-  if (kind === 'matrix') return matrixWrap(lines)
-  if (kind === 'files') return filesWrap(lines)
-  const last = lastAction(lines)
-  if (last < 0) return { error: 'В сценарии нет действий — сначала запишите их (кнопка «Записать»)' }
-  if (kind === 'leave') {
-    const out = [...lines.slice(0, last), 'await qa.saveAndLeave(async () => {', ...indent([lines[last]]), '}) // шаг: Сохранить и уйти со страницы — окна о несохранённых изменениях быть не должно', ...lines.slice(last + 1)]
-    return { code: out.join('\n') }
-  }
-  if (kind === 'double') {
-    const m = /^(\s*)await\s+(.+)\.click\(\)(\s*\/\/.*)?$/.exec(lines[last])
-    if (!m) return { error: 'Последнее действие — не клик. Двойной клик проверяется на кнопке сохранения: запишите сценарий, который кончается нажатием на неё' }
-    const out = [...lines.slice(0, last), `${m[1]}await qa.doubleSubmit(${m[2]}) // шаг: Нажать дважды подряд — второй одинаковый запрос не должен уйти`, ...lines.slice(last + 1)]
-    return { code: out.join('\n') }
-  }
-  if (kind === 'load') {
-    const out = [...lines.slice(0, last), 'await qa.manyRows(async () => {', ...indent([lines[last]]), '}, { upTo: 300 }) // шаг: Повторить действие до 300 раз и замерить, как держится страница', ...lines.slice(last + 1)]
-    return { code: out.join('\n') }
-  }
-  // repeat: the actions after the page's opening (their checks too), twice
-  const first = lines.findIndex(isAction)
-  let end = lines.length - 1
-  while (end > first && !isAction(lines[end])) end--
-  const body = lines.slice(first, end + 1)
-  const out = [...lines.slice(0, first), 'await qa.repeat(async () => {', ...indent(body), '}) // шаг: Повторить эти действия дважды', ...lines.slice(end + 1)]
-  return { code: out.join('\n') }
+  const w = WRAPS[kind]
+  if (w.around && AROUND_IN_CODE.test(all)) return { error: 'В сценарии уже есть проверка, которая оборачивает действия, — уберите её или начните с чистой записи' }
+  return w.wrap(lines, all)
 }

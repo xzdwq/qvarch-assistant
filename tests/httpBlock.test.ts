@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { httpBlocks, httpRequestText, namesIn, requestName } from '../src/shared/httpBlock'
-import { parseHttpText } from '../src/shared/runbook'
+import { parseHttpText } from '../src/notebook/blocks/http/httpText'
 
 describe('a request of the site as a block of the notebook', () => {
   it('the query a parameter a line, the body laid out, its type, the login', () => {

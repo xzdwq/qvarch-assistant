@@ -60,100 +60,24 @@ function onMove(e: MouseEvent): void {
 </script>
 
 <template>
-  <div ref="el" class="ar" @mousemove="onMove" @mouseleave="hov = undefined">
-    <svg :width="width" :height="height">
+  <div ref="el" class="ar tw:relative tw:w-full" @mousemove="onMove" @mouseleave="hov = undefined">
+    <svg class="tw:block" :width="width" :height="height">
       <g v-for="v in ticks" :key="v">
-        <line :x1="PL" :x2="PL + plotW" :y1="y(v)" :y2="y(v)" class="gl" />
-        <text :x="PL - 6" :y="y(v) + 3" class="yl">{{ v ? `${v / HOUR}ч` : '0' }}</text>
+        <line :x1="PL" :x2="PL + plotW" :y1="y(v)" :y2="y(v)" class="gl tw:[stroke:var(--border)] tw:[stroke-dasharray:2_3]" />
+        <text :x="PL - 6" :y="y(v) + 3" class="yl tw:[fill:var(--dim)] tw:font-data tw:text-[10px] tw:[text-anchor:end]">{{ v ? `${v / HOUR}ч` : '0' }}</text>
       </g>
       <g v-for="l in layers" :key="l.key">
-        <polygon :points="l.area" :style="{ fill: l.color }" class="fa" />
-        <polyline :points="l.line" :style="{ stroke: l.color }" class="ln" />
+        <polygon :points="l.area" :style="{ fill: l.color }" class="fa tw:opacity-[0.28]" />
+        <polyline :points="l.line" :style="{ stroke: l.color }" class="ln tw:fill-none tw:stroke-[1.5] tw:[stroke-linejoin:round]" />
       </g>
       <template v-for="(lb, i) in labels" :key="i">
-        <text v-if="i % every === 0" :x="x(i)" :y="height - 4" class="xl">{{ lb }}</text>
+        <text v-if="i % every === 0" :x="x(i)" :y="height - 4" class="xl tw:[fill:var(--dim)] tw:font-data tw:text-[10px] tw:[text-anchor:middle]">{{ lb }}</text>
       </template>
-      <line v-if="hov !== undefined" :x1="x(hov)" :x2="x(hov)" :y1="PT" :y2="PT + plotH" class="cross" />
+      <line v-if="hov !== undefined" :x1="x(hov)" :x2="x(hov)" :y1="PT" :y2="PT + plotH" class="cross tw:[stroke:var(--text-2)] tw:[stroke-dasharray:3_3]" />
     </svg>
-    <div v-if="hov !== undefined" class="tip" :style="{ left: `${Math.min(x(hov) + 10, width - 190)}px` }">
-      <b>{{ labels[hov] }} · {{ formatDuration(totals[hov]) }}</b>
-      <span v-for="s in series.filter((s) => rows[hov!]?.[s.key])" :key="s.key"><i :style="{ background: s.color }"></i>{{ s.label }}<em>{{ formatDuration(rows[hov!][s.key]) }}</em></span>
+    <div v-if="hov !== undefined" class="tip tw:absolute tw:top-4 tw:z-2 tw:flex tw:flex-col tw:gap-2 tw:min-w-170 tw:py-6 tw:px-8 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-pop tw:shadow-pop tw:text-[11.5px] tw:pointer-events-none" :style="{ left: `${Math.min(x(hov) + 10, width - 190)}px` }">
+      <b class="tw:font-data tw:text-[11.5px] tw:text-text-hi">{{ labels[hov] }} · {{ formatDuration(totals[hov]) }}</b>
+      <span class="tw:flex tw:items-center tw:gap-6 tw:text-text-2" v-for="s in series.filter((s) => rows[hov!]?.[s.key])" :key="s.key"><i class="tw:w-7 tw:h-7 tw:rounded-[2px]" :style="{ background: s.color }"></i>{{ s.label }}<em class="tw:ml-auto tw:not-italic tw:font-data tw:text-text">{{ formatDuration(rows[hov!][s.key]) }}</em></span>
     </div>
   </div>
 </template>
-
-<style scoped>
-.ar {
-  position: relative;
-  width: 100%;
-}
-svg {
-  display: block;
-}
-.gl {
-  stroke: var(--border);
-  stroke-dasharray: 2 3;
-}
-.yl {
-  fill: var(--dim);
-  font-family: var(--font-data);
-  font-size: 10px;
-  text-anchor: end;
-}
-.xl {
-  fill: var(--dim);
-  font-family: var(--font-data);
-  font-size: 10px;
-  text-anchor: middle;
-}
-.fa {
-  opacity: 0.28;
-}
-.ln {
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-}
-.cross {
-  stroke: var(--text-2);
-  stroke-dasharray: 3 3;
-}
-.tip {
-  position: absolute;
-  top: 4px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 170px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-  font-size: 11.5px;
-  pointer-events: none;
-}
-.tip b {
-  font-family: var(--font-data);
-  font-size: 11.5px;
-  color: var(--text-hi);
-}
-.tip span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-}
-.tip i {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-}
-.tip em {
-  margin-left: auto;
-  font-style: normal;
-  font-family: var(--font-data);
-  color: var(--text);
-}
-</style>

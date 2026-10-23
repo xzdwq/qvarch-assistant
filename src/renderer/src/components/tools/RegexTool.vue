@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { EditorView, Decoration, keymap, placeholder, WidgetType, type DecorationSet } from '@codemirror/view'
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { regexCode, runRegex, type RxResult } from '../../lib/regexRun'
+import { REGEX_LANG_INFO, REGEX_LANGS, REGEX_SUPERSEDED, regexCode, runRegex, type RxResult } from '../../lib/regexRun'
 import Icon from '../Icon.vue'
 
 /**
@@ -19,11 +19,18 @@ const saved = (() => {
     return {}
   }
 })()
-const src = ref(saved.src ?? '(?<user>[\\w.+-]+)@(?<domain>[\\w-]+\\.[\\w.]+)')
+const src = ref(saved.src ?? '')
 const flags = ref(saved.flags ?? 'gm')
-const text = ref(saved.text ?? 'Пишите: ivan.petrov@example.com, support@qvant.ru\nи ещё team-lead@corp.example.org')
-const repl = ref(saved.repl ?? '$<user> at $<domain>')
-const tab = ref<'matches' | 'replace' | 'code'>((saved.tab as 'matches') ?? 'matches')
+const text = ref(saved.text ?? '')
+const repl = ref(saved.repl ?? '')
+/** The side panel's tabs, in order. */
+const TABS = [
+  { id: 'matches', label: 'Совпадения' },
+  { id: 'replace', label: 'Замена' },
+  { id: 'code', label: 'Код' },
+] as const
+type Tab = (typeof TABS)[number]['id']
+const tab = ref<Tab>(TABS.find((t) => t.id === saved.tab)?.id ?? 'matches')
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 watch([src, flags, text, repl, tab], () => {
   clearTimeout(saveTimer)
@@ -81,7 +88,7 @@ async function run(): Promise<void> {
     error.value = ''
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e)
-    if (m === 'superseded') return
+    if (m === REGEX_SUPERSEDED) return
     res.value = undefined
     error.value = m.startsWith('TIMEOUT:')
       ? `Остановлено: дольше ${Number(m.slice(8)) / 1000} с. Скорее всего, «катастрофический перебор» — вложенные повторы вроде (a+)+ или (.*)*. Уточните выражение.`
@@ -162,7 +169,7 @@ function goMatch(i: number): void {
   paint()
 }
 
-const code = computed(() => (['js', 'java', 'python', 'csharp'] as const).map((l) => ({ l, title: { js: 'JavaScript', java: 'Java', python: 'Python', csharp: 'C#' }[l], code: regexCode(src.value, flags.value, l) })))
+const code = computed(() => REGEX_LANGS.map((l) => ({ l, title: REGEX_LANG_INFO[l].title, code: regexCode(src.value, flags.value, l) })))
 const copied = ref('')
 async function copy(t: string, what: string): Promise<void> {
   await navigator.clipboard.writeText(t)
@@ -192,388 +199,63 @@ const CHEAT: Array<[string, string]> = [
 </script>
 
 <template>
-  <div class="rx">
-    <div class="top">
-      <div class="pat" :class="{ bad: !!error }">
-        <span class="sl">/</span>
-        <input :value="src" spellcheck="false" placeholder="выражение, например \d{4}-\d{2}-\d{2}" @input="onSrcInput(($event.target as HTMLInputElement).value)" />
-        <span class="sl">/{{ flags }}</span>
-        <button class="ib" title="Копировать как /…/флаги" :disabled="!src" @click="copy(`/${src}/${flags}`, 'Выражение скопировано')"><Icon name="copy" :size="13" /></button>
+  <div class="rx tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="top tw:flex-none tw:flex tw:items-center tw:gap-10 tw:pt-12 tw:pr-14 tw:pb-6 tw:pl-14">
+      <div class="pat tw:flex-1 tw:min-w-0 tw:flex tw:items-center tw:h-40 tw:pt-0 tw:pr-4 tw:pb-0 tw:pl-12 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:font-data tw:focus-within:not-[&.bad]:border-accent tw:[&.bad]:border-down" :class="{ bad: !!error }">
+        <span class="sl tw:text-muted tw:text-[15px]">/</span>
+        <input class="tw:flex-1 tw:min-w-0 tw:h-38 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-text-hi tw:font-data tw:text-[15px] tw:outline-none" :value="src" spellcheck="false" placeholder="выражение, например \d{4}-\d{2}-\d{2}" @input="onSrcInput(($event.target as HTMLInputElement).value)" />
+        <span class="sl tw:text-muted tw:text-[15px]">/{{ flags }}</span>
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" title="Копировать как /…/флаги" :disabled="!src" @click="copy(`/${src}/${flags}`, 'Выражение скопировано')"><Icon name="copy" :size="13" /></button>
       </div>
-      <span class="flags">
-        <button v-for="x in FLAGS" :key="x.f" :class="{ on: flags.includes(x.f) }" :title="x.t" @click="toggleFlag(x.f)">{{ x.f }}</button>
+      <span class="flags tw:flex-none tw:inline-flex tw:gap-2">
+        <button class="tw:w-30 tw:h-30 tw:p-0 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:font-data tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" v-for="x in FLAGS" :key="x.f" :class="{ on: flags.includes(x.f) }" :title="x.t" @click="toggleFlag(x.f)">{{ x.f }}</button>
       </span>
     </div>
-    <div class="status">
-      <span v-if="error" class="err">{{ error }}</span>
+    <div class="status tw:flex-none tw:flex tw:items-center tw:gap-12 tw:min-h-26 tw:pt-0 tw:pr-16 tw:pb-8 tw:pl-16 tw:text-[12.5px] tw:border-b tw:border-b-border">
+      <span v-if="error" class="err tw:text-down-fg">{{ error }}</span>
       <template v-else-if="res">
-        <b :class="{ none: !res.matches.length }">{{ res.matches.length ? `Совпадений: ${res.matches.length}${res.truncated ? '+' : ''}` : 'Совпадений нет' }}</b>
-        <span v-if="res.matches[0]?.groups.length" class="muted">групп: {{ res.matches[0].groups.length }}</span>
-        <span class="muted">{{ res.ms < 1 ? '< 1' : Math.round(res.ms) }} мс</span>
+        <b class="tw:text-up-fg tw:[&.none]:text-muted" :class="{ none: !res.matches.length }">{{ res.matches.length ? `Совпадений: ${res.matches.length}${res.truncated ? '+' : ''}` : 'Совпадений нет' }}</b>
+        <span v-if="res.matches[0]?.groups.length" class="muted tw:text-muted tw:text-[12px]">групп: {{ res.matches[0].groups.length }}</span>
+        <span class="muted tw:text-muted tw:text-[12px]">{{ res.ms < 1 ? '< 1' : Math.round(res.ms) }} мс</span>
       </template>
-      <span v-if="busy" class="muted">…</span>
-      <span class="grow"></span>
-      <span v-if="copied" class="ok">{{ copied }}</span>
+      <span v-if="busy" class="muted tw:text-muted tw:text-[12px]">…</span>
+      <span class="grow tw:flex-1"></span>
+      <span v-if="copied" class="ok tw:text-up-fg">{{ copied }}</span>
     </div>
-    <div class="body">
-      <div ref="host" class="text"></div>
-      <aside class="side">
-        <div class="tabs">
-          <button :class="{ on: tab === 'matches' }" @click="tab = 'matches'">Совпадения</button>
-          <button :class="{ on: tab === 'replace' }" @click="tab = 'replace'">Замена</button>
-          <button :class="{ on: tab === 'code' }" @click="tab = 'code'">Код</button>
+    <div class="body tw:flex-1 tw:min-h-0 tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
+      <div ref="host" class="text tw:min-w-0 tw:min-h-0 tw:overflow-hidden"></div>
+      <aside class="side tw:flex tw:flex-col tw:min-w-0 tw:min-h-0 tw:border-l tw:border-l-border">
+        <div class="tabs tw:flex-none tw:flex tw:h-36 tw:py-0 tw:px-8 tw:border-b tw:border-b-border">
+          <button v-for="t in TABS" :key="t.id" class="tw:h-36 tw:py-0 tw:px-12 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12.5px] tw:[&.on]:text-text-hi tw:[&.on]:[box-shadow:var(--shadow-underline)]" :class="{ on: tab === t.id }" @click="tab = t.id">{{ t.label }}</button>
         </div>
-        <div v-if="tab === 'matches'" class="list">
-          <div v-for="(m, i) in res?.matches ?? []" :key="i" class="mt" :class="{ cur: sel === i }" @click="goMatch(i)">
-            <div class="mh"><span class="no">{{ i + 1 }}</span><code>{{ show(m.text) }}</code><span class="pos">{{ m.index }}–{{ m.end }}</span></div>
-            <div v-for="g in m.groups" :key="g.n" class="gr">
-              <span class="gn" :class="`g${((g.n - 1) % 4) + 1}`">{{ g.name ? g.name : `$${g.n}` }}</span>
-              <code>{{ show(g.value) }}</code>
+        <div v-if="tab === 'matches'" class="list tw:flex-1 tw:min-h-0 tw:flex tw:flex-col tw:gap-6 tw:py-10 tw:px-12 tw:overflow-auto">
+          <div v-for="(m, i) in res?.matches ?? []" :key="i" class="mt tw:flex-none tw:flex tw:flex-col tw:gap-3 tw:py-6 tw:px-8 tw:border tw:border-border tw:rounded-r2 tw:bg-panel tw:cursor-pointer tw:[&.cur]:border-accent/60" :class="{ cur: sel === i }" @click="goMatch(i)">
+            <div class="mh tw:flex tw:items-baseline tw:gap-8 tw:min-w-0"><span class="no tw:text-muted tw:font-data tw:text-[11px]">{{ i + 1 }}</span><code class="tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-text-hi tw:font-data tw:text-[12.5px] tw:text-ellipsis tw:whitespace-nowrap">{{ show(m.text) }}</code><span class="pos tw:text-dim tw:font-data tw:text-[11px]">{{ m.index }}–{{ m.end }}</span></div>
+            <div v-for="g in m.groups" :key="g.n" class="gr tw:grid tw:grid-cols-[80px_minmax(0,1fr)] tw:gap-8 tw:pl-18 tw:text-[12px]">
+              <span class="gn tw:[&.grow]:flex-1 tw:[&.gr]:grid tw:[&.gr]:grid-cols-[80px_minmax(0,1fr)] tw:[&.gr]:gap-8 tw:[&.gr]:pl-18 tw:[&.gr]:text-[12px] tw:overflow-hidden tw:font-data tw:text-ellipsis" :style="{ color: `var(--regex-group-${((g.n - 1) % 4) + 1})` }">{{ g.name ? g.name : `$${g.n}` }}</span>
+              <code class="tw:overflow-hidden tw:text-text tw:font-data tw:text-ellipsis tw:whitespace-nowrap">{{ show(g.value) }}</code>
             </div>
           </div>
-          <details class="cheat">
-            <summary>Шпаргалка</summary>
-            <div v-for="c in CHEAT" :key="c[0]" class="ch"><code>{{ c[0] }}</code><span>{{ c[1] }}</span></div>
+          <details class="cheat tw:mt-8 tw:text-[12px]">
+            <summary class="tw:text-text-2 tw:cursor-pointer">Шпаргалка</summary>
+            <div v-for="c in CHEAT" :key="c[0]" class="ch tw:grid tw:grid-cols-[110px_minmax(0,1fr)] tw:gap-8 tw:py-3 tw:px-0"><code class="tw:text-accent-fg tw:font-data">{{ c[0] }}</code><span class="tw:text-text-2">{{ c[1] }}</span></div>
           </details>
         </div>
-        <div v-else-if="tab === 'replace'" class="list">
-          <label class="fld">Заменить на <span class="muted">$1, $&lt;имя&gt;, $&amp; — всё совпадение</span><input v-model="repl" spellcheck="false" /></label>
-          <div class="ph"><b>Результат</b><span class="grow"></span><button class="ib" title="Копировать" :disabled="res?.replaced === undefined" @click="copy(res?.replaced ?? '', 'Результат скопирован')"><Icon name="copy" :size="13" /></button></div>
-          <pre class="out">{{ res?.replaced ?? '' }}</pre>
+        <div v-else-if="tab === 'replace'" class="list tw:flex-1 tw:min-h-0 tw:flex tw:flex-col tw:gap-6 tw:py-10 tw:px-12 tw:overflow-auto">
+          <label class="fld tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12.5px]">Заменить на <span class="muted tw:text-muted tw:text-[12px]">$1, $&lt;имя&gt;, $&amp; — всё совпадение</span><input class="tw:font-data" v-model="repl" spellcheck="false" /></label>
+          <div class="ph tw:flex tw:items-center tw:gap-8 tw:text-[12.5px]"><b class="tw:text-text-hi">Результат</b><span class="grow tw:flex-1"></span><button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" title="Копировать" :disabled="res?.replaced === undefined" @click="copy(res?.replaced ?? '', 'Результат скопирован')"><Icon name="copy" :size="13" /></button></div>
+          <pre class="out tw:m-0 tw:py-8 tw:px-10 tw:overflow-auto tw:border tw:border-border tw:rounded-r2 tw:bg-panel tw:text-text tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]">{{ res?.replaced ?? '' }}</pre>
         </div>
-        <div v-else class="list">
-          <div v-for="c in code" :key="c.l" class="code">
-            <div class="ph"><b>{{ c.title }}</b><span class="grow"></span><button class="ib" title="Копировать" @click="copy(c.code, `${c.title} скопирован`)"><Icon name="copy" :size="13" /></button></div>
-            <pre class="out">{{ c.code }}</pre>
+        <div v-else class="list tw:flex-1 tw:min-h-0 tw:flex tw:flex-col tw:gap-6 tw:py-10 tw:px-12 tw:overflow-auto">
+          <div v-for="c in code" :key="c.l" class="code tw:flex tw:flex-col tw:gap-4">
+            <div class="ph tw:flex tw:items-center tw:gap-8 tw:text-[12.5px]"><b class="tw:text-text-hi">{{ c.title }}</b><span class="grow tw:flex-1"></span><button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:hover:enabled:border-border-3" title="Копировать" @click="copy(c.code, `${c.title} скопирован`)"><Icon name="copy" :size="13" /></button></div>
+            <pre class="out tw:m-0 tw:py-8 tw:px-10 tw:overflow-auto tw:border tw:border-border tw:rounded-r2 tw:bg-panel tw:text-text tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]">{{ c.code }}</pre>
           </div>
-          <p class="muted">Проверка идёт движком JavaScript. В Java, Python и C# почти всё так же; отличия — в редких конструкциях (\p{…}, ленивые и притяжательные квантификаторы, lookbehind переменной длины).</p>
+          <p class="muted tw:text-muted tw:text-[12px]">Проверка идёт движком JavaScript. В Java, Python и C# почти всё так же; отличия — в редких конструкциях (\p{…}, ленивые и притяжательные квантификаторы, lookbehind переменной длины).</p>
         </div>
       </aside>
     </div>
   </div>
 </template>
 
-<style scoped>
-.rx {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.top {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px 6px;
-}
-.pat {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 0 4px 0 12px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--field-bg);
-  font-family: var(--font-data);
-}
-.pat:focus-within {
-  border-color: var(--accent);
-}
-.pat.bad {
-  border-color: var(--down);
-}
-.pat input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 15px;
-  outline: none;
-}
-.sl {
-  color: var(--muted);
-  font-size: 15px;
-}
-.flags {
-  flex: none;
-  display: inline-flex;
-  gap: 2px;
-}
-.flags button {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-data);
-}
-.flags button.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  background: rgb(var(--accent-rgb) / 0.18);
-  color: var(--accent-fg);
-}
-.status {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 26px;
-  padding: 0 16px 8px;
-  font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
-}
-.status b {
-  color: var(--up-fg);
-}
-.status b.none {
-  color: var(--muted);
-}
-.err {
-  color: var(--down-fg);
-}
-.ok {
-  color: var(--up-fg);
-}
-.muted {
-  color: var(--muted);
-  font-size: 12px;
-}
-.grow {
-  flex: 1;
-}
-.body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
-}
-.text {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.text :deep(.cm-editor) {
-  height: 100%;
-}
-.text :deep(.rx-m.a) {
-  background: rgba(56, 189, 248, 0.22);
-  border-bottom: 2px solid rgba(56, 189, 248, 0.8);
-}
-.text :deep(.rx-m.b) {
-  background: rgba(250, 204, 21, 0.18);
-  border-bottom: 2px solid rgba(250, 204, 21, 0.75);
-}
-.text :deep(.rx-m.cur) {
-  outline: 1px solid var(--accent);
-}
-.text :deep(.rx-g.g1) {
-  color: #86efac;
-}
-.text :deep(.rx-g.g2) {
-  color: #f9a8d4;
-}
-.text :deep(.rx-g.g3) {
-  color: #c4b5fd;
-}
-.text :deep(.rx-g.g4) {
-  color: #fdba74;
-}
-.text :deep(.rx-empty) {
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  margin: 0 -1px;
-  vertical-align: text-bottom;
-  background: var(--accent);
-}
-.side {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  border-left: 1px solid var(--border);
-}
-.tabs {
-  flex: none;
-  display: flex;
-  height: 36px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
-}
-.tabs button {
-  height: 36px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.tabs button.on {
-  color: var(--text-hi);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-.list {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  overflow: auto;
-}
-.mt {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--panel);
-  cursor: pointer;
-}
-.mt.cur {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-}
-.mh {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.no {
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11px;
-}
-.mh code {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pos {
-  color: var(--dim);
-  font-family: var(--font-data);
-  font-size: 11px;
-}
-.gr {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  gap: 8px;
-  padding-left: 18px;
-  font-size: 12px;
-}
-.gn {
-  overflow: hidden;
-  font-family: var(--font-data);
-  text-overflow: ellipsis;
-}
-.gn.g1 {
-  color: #86efac;
-}
-.gn.g2 {
-  color: #f9a8d4;
-}
-.gn.g3 {
-  color: #c4b5fd;
-}
-.gn.g4 {
-  color: #fdba74;
-}
-.gr code {
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-data);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fld {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.fld input {
-  font-family: var(--font-data);
-}
-.ph {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-}
-.ph b {
-  color: var(--text-hi);
-}
-.out {
-  margin: 0;
-  padding: 8px 10px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.code {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.ib:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-.cheat {
-  margin-top: 8px;
-  font-size: 12px;
-}
-.cheat summary {
-  color: var(--text-2);
-  cursor: pointer;
-}
-.ch {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 8px;
-  padding: 3px 0;
-}
-.ch code {
-  color: var(--accent-fg);
-  font-family: var(--font-data);
-}
-.ch span {
-  color: var(--text-2);
-}
-</style>
+<style scoped src="./RegexTool.css"></style>

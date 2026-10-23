@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { CHECK_KINDS, CHECK_STEPS, kindMeta, reqLine, type CheckKind, type CheckProblem, type CheckSev } from '@shared/check'
+import { CHECK_KINDS, CHECK_SEVS, CHECK_STEPS, kindMeta, reqLine, type CheckKind, type CheckProblem, type CheckSev } from '@shared/check'
 import { bugFileName, bugNote, stepsFromPw } from '@shared/checkBug'
 import { checkSteps, pwRec, stopPwRec, watchPwRec } from '../lib/pwrec'
 import type { VaultNode } from '@shared/vault'
@@ -20,11 +20,8 @@ const set = (p: Partial<typeof st.value>) => void window.qa.browser('checkSet', 
 const blockedHere = computed(() => !!props.tabId && checkState.value.blocked.includes(props.tabId))
 
 // ---------- the list: by importance, this tab or all, a search ----------
-const SEV: Array<{ id: CheckSev; label: string }> = [
-  { id: 'high', label: 'Важные' },
-  { id: 'mid', label: 'Средние' },
-  { id: 'low', label: 'Мелкие' },
-]
+const SEV_LABEL: Record<CheckSev, string> = { high: 'Важные', mid: 'Средние', low: 'Мелкие' }
+const SEV = CHECK_SEVS.map((id) => ({ id, label: SEV_LABEL[id] }))
 const sev = ref<CheckSev | ''>('')
 const onlyTab = ref(false)
 const q = ref('')
@@ -157,66 +154,66 @@ async function makeBug(): Promise<void> {
 </script>
 
 <template>
-  <div class="ck">
+  <div class="ck tw:flex tw:flex-col tw:min-h-0 tw:gap-8 tw:p-10 tw:text-[12.5px]">
     <!-- on / off -->
-    <div class="ck-top" :class="{ on: st.on }">
-      <button class="ck-sw" role="switch" :aria-checked="st.on" :title="st.on ? 'Выключить слежение' : 'Включить слежение'" @click="set({ on: !st.on })"><i></i></button>
-      <div class="ck-st">
-        <b>{{ st.on ? 'Слежу за вкладками' : 'Слежение выключено' }}</b>
-        <small>{{ st.on ? 'Работайте как обычно — найденное появится ниже' : 'Включите — и ошибки сети, страницы и консоли будут ловиться сами' }}</small>
+    <div class="ck-top tw:group/ck-top tw:flex tw:items-center tw:gap-10 tw:py-8 tw:px-10 tw:border tw:border-border tw:rounded-r3 tw:bg-panel-2 tw:[&.on]:border-accent/50" :class="{ on: st.on }">
+      <button class="ck-sw tw:relative tw:flex-none tw:w-36 tw:h-20 tw:p-0 tw:border-0 tw:rounded-[10px] tw:bg-panel-3 tw:group-[.on]/ck-top:bg-accent tw:hover:enabled:not-group-[.on]/ck-top:bg-hover tw:hover:enabled:border-border-3" role="switch" :aria-checked="st.on" :title="st.on ? 'Выключить слежение' : 'Включить слежение'" @click="set({ on: !st.on })"><i class="tw:absolute tw:top-3 tw:left-3 tw:w-14 tw:h-14 tw:rounded-[50%] tw:bg-muted tw:[transition:left_0.15s] tw:group-[.on]/ck-top:left-19 tw:group-[.on]/ck-top:bg-white"></i></button>
+      <div class="ck-st tw:flex tw:flex-1 tw:flex-col tw:min-w-0">
+        <b class="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ st.on ? 'Слежу за вкладками' : 'Слежение выключено' }}</b>
+        <small class="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted tw:text-[11px]">{{ st.on ? 'Работайте как обычно — найденное появится ниже' : 'Включите — и ошибки сети, страницы и консоли будут ловиться сами' }}</small>
       </div>
-      <button class="ib" :class="{ on: gear }" title="Что проверять" @click="gear = !gear"><Icon name="settings" :size="14" /></button>
-      <button class="ib" :disabled="!shown.length" title="Очистить показанные" @click="clearAll"><Icon name="trash" :size="14" /></button>
+      <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:[&.on]:text-text tw:hover:enabled:text-text tw:[&.on]:bg-hover tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :class="{ on: gear }" title="Что проверять" @click="gear = !gear"><Icon name="settings" :size="14" /></button>
+      <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:text-text tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :disabled="!shown.length" title="Очистить показанные" @click="clearAll"><Icon name="trash" :size="14" /></button>
     </div>
-    <div class="ck-steps">
+    <div class="ck-steps tw:flex tw:items-center tw:gap-6">
       <template v-if="stepsOn">
-        <span class="ck-rec"><i></i>Записываю шаги: {{ pwRec?.count ?? 0 }}</span>
-        <span class="grow"></span>
-        <button @click="stopPwRec(true)">Отменить</button>
-        <button class="primary" @click="stopPwRec()">Стоп</button>
+        <span class="ck-rec tw:inline-flex tw:items-center tw:gap-6 tw:text-down-fg tw:font-semibold"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-down tw:animate-[CheckPanel-ckblink_1s_infinite]"></i>Записываю шаги: {{ pwRec?.count ?? 0 }}</span>
+        <span class="grow tw:flex-1"></span>
+        <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" @click="stopPwRec(true)">Отменить</button>
+        <button class="primary tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" @click="stopPwRec()">Стоп</button>
       </template>
       <template v-else-if="checkSteps">
-        <span class="ck-ok"><Icon name="check" :size="12" />Шаги записаны: {{ checkSteps.lines.length }} — войдут в запись журнала</span>
-        <span class="grow"></span>
-        <button class="lnk" @click="checkSteps = undefined">убрать</button>
-        <button v-if="!bug && !picked.size" class="primary" @click="startBug"><Icon name="note" :size="12" />В журнал</button>
+        <span class="ck-ok tw:inline-flex tw:items-center tw:gap-6 tw:text-up-fg"><Icon name="check" :size="12" />Шаги записаны: {{ checkSteps.lines.length }} — войдут в запись журнала</span>
+        <span class="grow tw:flex-1"></span>
+        <button class="lnk tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px] tw:border-0 tw:bg-transparent tw:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="checkSteps = undefined">убрать</button>
+        <button v-if="!bug && !picked.size" class="primary tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" @click="startBug"><Icon name="note" :size="12" />В журнал</button>
       </template>
       <template v-else>
-        <button :disabled="!canRecord" :title="canRecord ? 'Записать, что вы делаете на этой вкладке, — шаги и сценарий войдут в запись журнала' : pwRec ? 'Уже идёт запись' : 'Откройте страницу сайта'" @click="recordSteps"><i class="ck-dot"></i>Записать шаги</button>
-        <span class="grow"></span>
-        <button title="Новая запись в журнал (без найденного) — сценарий, наблюдение, баг" @click="startBug"><Icon name="plus" :size="12" />Новая запись</button>
+        <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" :disabled="!canRecord" :title="canRecord ? 'Записать, что вы делаете на этой вкладке, — шаги и сценарий войдут в запись журнала' : pwRec ? 'Уже идёт запись' : 'Откройте страницу сайта'" @click="recordSteps"><i class="ck-dot tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-down"></i>Записать шаги</button>
+        <span class="grow tw:flex-1"></span>
+        <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" title="Новая запись в журнал (без найденного) — сценарий, наблюдение, баг" @click="startBug"><Icon name="plus" :size="12" />Новая запись</button>
       </template>
     </div>
-    <p v-if="blockedHere && st.on" class="ck-warn"><Icon name="lock" :size="12" />На этой вкладке открыты инструменты разработчика — слежение начнётся, когда их закроете.</p>
+    <p v-if="blockedHere && st.on" class="ck-warn tw:flex tw:items-center tw:gap-6 tw:m-0 tw:text-warn-fg tw:text-[11.5px]"><Icon name="lock" :size="12" />На этой вкладке открыты инструменты разработчика — слежение начнётся, когда их закроете.</p>
 
     <!-- what is checked -->
-    <div v-if="gear" class="ck-set">
-      <div v-for="s in SEV" :key="s.id" class="ck-grp">
-        <span class="ck-gl" :class="s.id">{{ s.label }}</span>
-        <label v-for="k in CHECK_KINDS.filter((x) => x.sev === s.id)" :key="k.id" :title="k.hint"><input type="checkbox" :checked="!st.off.includes(k.id)" @change="toggleKind(k.id)" />{{ k.label }}</label>
+    <div v-if="gear" class="ck-set tw:flex tw:flex-col tw:gap-8 tw:py-8 tw:px-10 tw:border tw:border-border tw:rounded-r3">
+      <div v-for="s in SEV" :key="s.id" class="ck-grp tw:flex tw:flex-col tw:gap-3">
+        <span class="ck-gl tw:text-[10.5px] tw:font-semibold tw:tracking-[0.06em] tw:uppercase tw:[&.high]:not-[&.mid]:not-[&.low]:text-down-fg tw:[&.mid]:not-[&.low]:text-warn-fg tw:[&.low]:text-info-fg" :class="s.id">{{ s.label }}</span>
+        <label class="tw:flex tw:items-center tw:gap-6" v-for="k in CHECK_KINDS.filter((x) => x.sev === s.id)" :key="k.id" :title="k.hint"><input type="checkbox" :checked="!st.off.includes(k.id)" @change="toggleKind(k.id)" />{{ k.label }}</label>
       </div>
-      <div class="ck-nums">
-        <label>Медленный запрос, с <input type="number" min="1" max="120" :value="st.slowMs / 1000" @change="set({ slowMs: Math.max(1, Number(($event.target as HTMLInputElement).value)) * 1000 })" /></label>
-        <label>Долгая загрузка, с <input type="number" min="2" max="300" :value="st.loadingMs / 1000" @change="set({ loadingMs: Math.max(2, Number(($event.target as HTMLInputElement).value)) * 1000 })" /></label>
-        <label title="Счётчики, карты, шрифты и прочие чужие сайты"><input type="checkbox" :checked="st.allSites" @change="set({ allSites: !st.allSites })" />Запросы других сайтов тоже</label>
-        <button v-if="st.mutes.length" class="lnk" title="Снова показывать всё скрытое" @click="set({ mutes: [] })">Скрыто: {{ st.mutes.length }} — вернуть</button>
+      <div class="ck-nums tw:flex tw:flex-wrap tw:gap-y-6 tw:gap-x-14">
+        <label class="tw:flex tw:items-center tw:gap-6">Медленный запрос, с <input class="tw:w-56" type="number" min="1" max="120" :value="st.slowMs / 1000" @change="set({ slowMs: Math.max(1, Number(($event.target as HTMLInputElement).value)) * 1000 })" /></label>
+        <label class="tw:flex tw:items-center tw:gap-6">Долгая загрузка, с <input class="tw:w-56" type="number" min="2" max="300" :value="st.loadingMs / 1000" @change="set({ loadingMs: Math.max(2, Number(($event.target as HTMLInputElement).value)) * 1000 })" /></label>
+        <label class="tw:flex tw:items-center tw:gap-6" title="Счётчики, карты, шрифты и прочие чужие сайты"><input type="checkbox" :checked="st.allSites" @change="set({ allSites: !st.allSites })" />Запросы других сайтов тоже</label>
+        <button v-if="st.mutes.length" class="lnk tw:p-0 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:text-[11.5px] tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Снова показывать всё скрытое" @click="set({ mutes: [] })">Скрыто: {{ st.mutes.length }} — вернуть</button>
       </div>
     </div>
 
     <!-- importance, this tab, search -->
-    <div class="ck-flt">
-      <button :class="{ on: !sev }" @click="sev = ''">Все <b>{{ base.length }}</b></button>
-      <button v-for="s in SEV" :key="s.id" :class="[s.id, { on: sev === s.id }]" @click="sev = sev === s.id ? '' : s.id"><i></i>{{ s.label }} <b>{{ countOf(s.id) }}</b></button>
-      <span class="grow"></span>
-      <button :class="{ on: onlyTab }" title="Только эта вкладка" @click="onlyTab = !onlyTab"><Icon name="browser" :size="12" /></button>
+    <div class="ck-flt tw:flex tw:items-center tw:gap-4">
+      <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/14 tw:[&.on]:text-text" :class="{ on: !sev }" @click="sev = ''">Все <b class="tw:font-semibold">{{ base.length }}</b></button>
+      <button class="tw:group/g25 tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/14 tw:[&.on]:text-text" v-for="s in SEV" :key="s.id" :class="[s.id, { on: sev === s.id }]" @click="sev = sev === s.id ? '' : s.id"><i class="tw:group-[.high]/g25:not-group-[.mid]/g25:not-group-[.low]/g25:text-down-fg tw:group-[.mid]/g25:not-group-[.low]/g25:text-warn-fg tw:group-[.low]/g25:text-info-fg tw:w-7 tw:h-7 tw:rounded-[50%] tw:bg-current"></i>{{ s.label }} <b class="tw:font-semibold">{{ countOf(s.id) }}</b></button>
+      <span class="grow tw:flex-1"></span>
+      <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/14 tw:[&.on]:text-text" :class="{ on: onlyTab }" title="Только эта вкладка" @click="onlyTab = !onlyTab"><Icon name="browser" :size="12" /></button>
     </div>
-    <label class="ck-q"><Icon name="search" :size="12" /><input v-model="q" placeholder="Поиск по найденному" spellcheck="false" /></label>
+    <label class="ck-q tw:flex tw:items-center tw:gap-6 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-muted"><Icon name="search" :size="12" /><input class="tw:flex-1 tw:h-26 tw:border-0 tw:bg-transparent tw:text-text tw:outline-none" v-model="q" placeholder="Поиск по найденному" spellcheck="false" /></label>
 
-    <p v-if="made" class="ck-made"><Icon name="check" :size="12" />Записано в журнал: <a href="#" @click.prevent="openNote(made.path)">{{ made.name }}</a><button class="ib" @click="made = undefined"><Icon name="x" :size="11" /></button></p>
+    <p v-if="made" class="ck-made tw:flex tw:items-center tw:gap-6 tw:m-0 tw:text-up-fg"><Icon name="check" :size="12" />Записано в журнал: <a href="#" @click.prevent="openNote(made.path)">{{ made.name }}</a><button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:text-text tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="made = undefined"><Icon name="x" :size="11" /></button></p>
 
     <!-- the findings -->
-    <div class="ck-list">
-      <div v-if="!shown.length" class="ck-empty">
+    <div class="ck-list tw:flex tw:flex-1 tw:flex-col tw:gap-4 tw:min-h-0 tw:overflow-auto">
+      <div v-if="!shown.length" class="ck-empty tw:flex tw:flex-col tw:items-center tw:gap-10 tw:py-24 tw:px-12 tw:text-muted tw:text-center tw:leading-[1.5]">
         <Icon name="bug" :size="26" />
         <template v-if="!st.on">
           <p>Включите слежение и работайте с сайтом как обычно. Сюда попадут ошибки сервера, пустые id в запросах, двойные отправки, сообщения об ошибках, «несохранённые изменения» после сохранения, вечные загрузки, вылезающий текст и ошибки консоли.</p>
@@ -224,528 +221,63 @@ async function makeBug(): Promise<void> {
         </template>
         <p v-else>Пока всё чисто.</p>
       </div>
-      <div v-for="p in shown" :key="p.id" class="ck-it" :class="[p.sev, { open: open === p.id, done: !!p.note }]">
-        <div class="ck-row" @click="open = open === p.id ? undefined : p.id">
+      <div v-for="p in shown" :key="p.id" class="ck-it tw:group/ck-it tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-border-2 tw:rounded-[4px] tw:bg-panel tw:[&.high]:not-[&.mid]:not-[&.low]:border-l-down tw:[&.mid]:not-[&.low]:border-l-warn tw:[&&]:[&.low]:border-l-info tw:[&.done]:opacity-60" :class="[p.sev, { open: open === p.id, done: !!p.note }]">
+        <div class="ck-row tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:cursor-pointer tw:hover:bg-hover" @click="open = open === p.id ? undefined : p.id">
           <input type="checkbox" :checked="picked.has(p.id)" :title="'Выбрать для журнала'" @click.stop="pick(p.id)" />
-          <span class="ck-ic"><Icon :name="ICON[p.kind]" :size="13" /></span>
-          <span class="ck-tx">
-            <span class="ck-t">{{ p.title }}</span>
-            <small>{{ kindMeta(p.kind).label }} · {{ where(p.page) }} · {{ time(p.last) }}</small>
+          <span class="ck-ic tw:group-[.high]/ck-it:not-group-[.mid]/ck-it:not-group-[.low]/ck-it:text-down-fg tw:group-[.mid]/ck-it:not-group-[.low]/ck-it:text-warn-fg tw:group-[.low]/ck-it:text-info-fg tw:inline-flex tw:flex-none"><Icon :name="ICON[p.kind]" :size="13" /></span>
+          <span class="ck-tx tw:flex tw:flex-1 tw:flex-col tw:min-w-0">
+            <span class="ck-t tw:overflow-hidden tw:font-medium tw:text-ellipsis tw:whitespace-nowrap">{{ p.title }}</span>
+            <small class="tw:overflow-hidden tw:text-muted tw:text-[11px] tw:text-ellipsis tw:whitespace-nowrap">{{ kindMeta(p.kind).label }} · {{ where(p.page) }} · {{ time(p.last) }}</small>
           </span>
-          <b v-if="p.count > 1" class="ck-n" :title="`Повторялось ${p.count} раз`">×{{ p.count }}</b>
-          <a v-if="p.note" href="#" class="ck-bug" title="Открыть запись журнала" @click.stop.prevent="openNote(p.note)"><Icon name="note" :size="11" />в журнале</a>
+          <b v-if="p.count > 1" class="ck-n tw:flex-none tw:py-0 tw:px-6 tw:rounded-[9px] tw:bg-hover tw:text-text-2 tw:text-[11px]" :title="`Повторялось ${p.count} раз`">×{{ p.count }}</b>
+          <a v-if="p.note" href="#" class="ck-bug tw:inline-flex tw:flex-none tw:items-center tw:gap-3 tw:text-accent-fg tw:text-[11px]" title="Открыть запись журнала" @click.stop.prevent="openNote(p.note)"><Icon name="note" :size="11" />в журнале</a>
         </div>
-        <div v-if="open === p.id" class="ck-det">
-          <pre v-if="p.detail" class="ck-d">{{ p.detail }}</pre>
+        <div v-if="open === p.id" class="ck-det tw:flex tw:flex-col tw:gap-6 tw:pt-4 tw:pr-10 tw:pb-10 tw:pl-30">
+          <pre v-if="p.detail" class="ck-d tw:m-0 tw:py-6 tw:px-8 tw:rounded-[4px] tw:bg-panel-2 tw:font-data tw:text-[11.5px] tw:whitespace-pre-wrap tw:[word-break:break-word]">{{ p.detail }}</pre>
           <template v-if="p.req">
-            <div class="ck-req"><b>{{ reqLine(p.req) }}</b><span v-if="p.req.ms !== undefined">{{ p.req.ms }} мс</span></div>
-            <div class="ck-url" :title="p.req.url">{{ p.req.url }}</div>
-            <div v-if="p.req.reqBody || p.req.resBody" class="ck-bt">
-              <button :class="{ on: bodyTab === 'req' }" :disabled="!p.req.reqBody" @click="bodyTab = 'req'">Запрос</button>
-              <button :class="{ on: bodyTab === 'res' }" :disabled="!p.req.resBody" @click="bodyTab = 'res'">Ответ</button>
+            <div class="ck-req tw:flex tw:gap-10 tw:font-data"><b>{{ reqLine(p.req) }}</b><span class="tw:text-muted tw:text-[11px]" v-if="p.req.ms !== undefined">{{ p.req.ms }} мс</span></div>
+            <div class="ck-url tw:text-muted tw:text-[11px] tw:overflow-hidden tw:font-data tw:text-ellipsis tw:whitespace-nowrap" :title="p.req.url">{{ p.req.url }}</div>
+            <div v-if="p.req.reqBody || p.req.resBody" class="ck-bt tw:flex tw:gap-2">
+              <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px] tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" :class="{ on: bodyTab === 'req' }" :disabled="!p.req.reqBody" @click="bodyTab = 'req'">Запрос</button>
+              <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px] tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" :class="{ on: bodyTab === 'res' }" :disabled="!p.req.resBody" @click="bodyTab = 'res'">Ответ</button>
             </div>
-            <pre v-if="bodyTab === 'req' && p.req.reqBody" class="ck-body">{{ pretty(p.req.reqBody) }}</pre>
-            <pre v-else-if="p.req.resBody" class="ck-body">{{ pretty(p.req.resBody) }}</pre>
+            <pre v-if="bodyTab === 'req' && p.req.reqBody" class="ck-body tw:m-0 tw:py-6 tw:px-8 tw:rounded-[4px] tw:bg-panel-2 tw:font-data tw:text-[11.5px] tw:whitespace-pre-wrap tw:[word-break:break-word] tw:max-h-240 tw:overflow-auto">{{ pretty(p.req.reqBody) }}</pre>
+            <pre v-else-if="p.req.resBody" class="ck-body tw:m-0 tw:py-6 tw:px-8 tw:rounded-[4px] tw:bg-panel-2 tw:font-data tw:text-[11.5px] tw:whitespace-pre-wrap tw:[word-break:break-word] tw:max-h-240 tw:overflow-auto">{{ pretty(p.req.resBody) }}</pre>
           </template>
-          <div class="ck-acts">
-            <button @click="show(p)"><Icon name="eye" :size="12" />{{ p.selector ? 'Показать на странице' : 'К вкладке' }}</button>
-            <button @click="pick(p.id)"><Icon name="note" :size="12" />{{ picked.has(p.id) ? 'Не в журнал' : 'В журнал' }}</button>
-            <span class="grow"></span>
-            <button title="Больше не показывать такие находки" @click="mute(p)"><Icon name="eyeOff" :size="12" />Не показывать такие</button>
-            <button title="Убрать из списка" @click="forget(p)"><Icon name="x" :size="12" /></button>
+          <div class="ck-acts tw:flex tw:flex-wrap tw:gap-4">
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px]" @click="show(p)"><Icon name="eye" :size="12" />{{ p.selector ? 'Показать на странице' : 'К вкладке' }}</button>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px]" @click="pick(p.id)"><Icon name="note" :size="12" />{{ picked.has(p.id) ? 'Не в журнал' : 'В журнал' }}</button>
+            <span class="grow tw:flex-1"></span>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px]" title="Больше не показывать такие находки" @click="mute(p)"><Icon name="eyeOff" :size="12" />Не показывать такие</button>
+            <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[11.5px]" title="Убрать из списка" @click="forget(p)"><Icon name="x" :size="12" /></button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- a bug from the picked -->
-    <div v-if="picked.size && !bug" class="ck-foot">
+    <div v-if="picked.size && !bug" class="ck-foot tw:flex tw:items-center tw:gap-8 tw:pt-8 tw:border-t tw:border-t-border">
       <span>Выбрано: <b>{{ picked.size }}</b></span>
-      <button class="lnk" @click="picked = new Set()">снять</button>
-      <span class="grow"></span>
-      <button class="primary" @click="startBug"><Icon name="note" :size="13" />В журнал</button>
+      <button class="lnk tw:p-0 tw:border-0 tw:bg-transparent tw:text-accent-fg tw:text-[11.5px] tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="picked = new Set()">снять</button>
+      <span class="grow tw:flex-1"></span>
+      <button class="primary tw:inline-flex tw:items-center tw:gap-6" @click="startBug"><Icon name="note" :size="13" />В журнал</button>
     </div>
-    <div v-if="bug" class="ck-form">
-      <div class="ck-fh"><Icon name="note" :size="14" /><b>Запись в журнал</b><span class="grow"></span><button class="ib" @click="bug = undefined"><Icon name="x" :size="13" /></button></div>
-      <label>Название<input v-model="bug.title" spellcheck="false" /></label>
-      <label>Шаги<textarea v-model="bug.steps" rows="3"></textarea></label>
-      <label>Ожидаемый результат <small>необязательно</small><textarea v-model="bug.expected" rows="2" placeholder="Что должно было произойти"></textarea></label>
-      <label>Фактический результат <small>необязательно</small><textarea v-model="bug.actual" rows="3"></textarea></label>
-      <div class="ck-fr">
-        <label class="ck-fold">Папка<input v-model="bug.folder" spellcheck="false" /></label>
-        <label class="chk"><input v-model="bug.shot" type="checkbox" />Скриншот страницы</label>
-        <label class="chk"><input v-model="bug.openAfter" type="checkbox" />Открыть</label>
+    <div v-if="bug" class="ck-form tw:flex tw:flex-col tw:gap-6 tw:p-10 tw:border tw:border-accent/50 tw:rounded-r3 tw:bg-panel-2">
+      <div class="ck-fh tw:flex tw:items-center tw:gap-6"><Icon name="note" :size="14" /><b>Запись в журнал</b><span class="grow tw:flex-1"></span><button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:text-text tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="bug = undefined"><Icon name="x" :size="13" /></button></div>
+      <label class="tw:flex tw:flex-col tw:gap-3 tw:text-text-2 tw:text-[11.5px]">Название<input class="tw:[&:not([type='checkbox'])]:py-5 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font-style:inherit] tw:[&:not([type='checkbox'])]:[font-variant:inherit] tw:[&:not([type='checkbox'])]:[font-weight:inherit] tw:[&:not([type='checkbox'])]:font-stretch-[inherit] tw:[&:not([type='checkbox'])]:[line-height:inherit] tw:[&:not([type='checkbox'])]:font-[inherit] tw:[&&]:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:resize-y" v-model="bug.title" spellcheck="false" /></label>
+      <label class="tw:flex tw:flex-col tw:gap-3 tw:text-text-2 tw:text-[11.5px]">Шаги<textarea class="tw:py-5 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:resize-y" v-model="bug.steps" rows="3"></textarea></label>
+      <label class="tw:flex tw:flex-col tw:gap-3 tw:text-text-2 tw:text-[11.5px]">Ожидаемый результат <small>необязательно</small><textarea class="tw:py-5 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:resize-y" v-model="bug.expected" rows="2" placeholder="Что должно было произойти"></textarea></label>
+      <label class="tw:flex tw:flex-col tw:gap-3 tw:text-text-2 tw:text-[11.5px]">Фактический результат <small>необязательно</small><textarea class="tw:py-5 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:resize-y" v-model="bug.actual" rows="3"></textarea></label>
+      <div class="ck-fr tw:flex tw:items-end tw:flex-wrap tw:gap-10">
+        <label class="ck-fold tw:flex tw:flex-1 tw:flex-col tw:gap-3 tw:min-w-120 tw:text-text-2 tw:text-[11.5px]">Папка<input class="tw:[&:not([type='checkbox'])]:py-5 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font-style:inherit] tw:[&:not([type='checkbox'])]:[font-variant:inherit] tw:[&:not([type='checkbox'])]:[font-weight:inherit] tw:[&:not([type='checkbox'])]:font-stretch-[inherit] tw:[&:not([type='checkbox'])]:[line-height:inherit] tw:[&:not([type='checkbox'])]:font-[inherit] tw:[&&]:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:resize-y" v-model="bug.folder" spellcheck="false" /></label>
+        <label class="chk tw:inline-flex tw:items-center tw:gap-5"><input class="tw:[&:not([type='checkbox'])]:py-5 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font-style:inherit] tw:[&:not([type='checkbox'])]:[font-variant:inherit] tw:[&:not([type='checkbox'])]:[font-weight:inherit] tw:[&:not([type='checkbox'])]:font-stretch-[inherit] tw:[&:not([type='checkbox'])]:[line-height:inherit] tw:[&:not([type='checkbox'])]:font-[inherit] tw:[&&]:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:resize-y" v-model="bug.shot" type="checkbox" />Скриншот страницы</label>
+        <label class="chk tw:inline-flex tw:items-center tw:gap-5"><input class="tw:[&:not([type='checkbox'])]:py-5 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-field tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:[font-style:inherit] tw:[&:not([type='checkbox'])]:[font-variant:inherit] tw:[&:not([type='checkbox'])]:[font-weight:inherit] tw:[&:not([type='checkbox'])]:font-stretch-[inherit] tw:[&:not([type='checkbox'])]:[line-height:inherit] tw:[&:not([type='checkbox'])]:font-[inherit] tw:[&&]:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:resize-y" v-model="bug.openAfter" type="checkbox" />Открыть</label>
       </div>
-      <p class="ck-hint">В запись войдут: найденное ({{ pickedList.length }}), запросы — блоками, которые можно запустить снова, ответы{{ bug.shot ? ', скриншот' : '' }}. Дальше историю ведите в этой же заметке.</p>
-      <div class="ck-fb">
+      <p class="ck-hint tw:m-0 tw:text-muted tw:text-[11px] tw:leading-[1.45]">В запись войдут: найденное ({{ pickedList.length }}), запросы — блоками, которые можно запустить снова, ответы{{ bug.shot ? ', скриншот' : '' }}. Дальше историю ведите в этой же заметке.</p>
+      <div class="ck-fb tw:flex tw:justify-end tw:gap-6">
         <button @click="bug = undefined">Отмена</button>
-        <button class="primary" :disabled="busy || !bug.title.trim()" @click="makeBug">{{ busy ? 'Создаю…' : 'Создать' }}</button>
+        <button class="primary tw:inline-flex tw:items-center tw:gap-6" :disabled="busy || !bug.title.trim()" @click="makeBug">{{ busy ? 'Создаю…' : 'Создать' }}</button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.ck {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 8px;
-  padding: 10px;
-  font-size: 12.5px;
-}
-.ck-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-  background: var(--panel-2);
-}
-.ck-top.on {
-  border-color: rgb(var(--accent-rgb) / 0.5);
-}
-.ck-sw {
-  position: relative;
-  flex: none;
-  width: 36px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  background: var(--panel-3);
-}
-.ck-sw i {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--muted);
-  transition: left 0.15s;
-}
-.ck-top.on .ck-sw {
-  background: var(--accent);
-}
-.ck-top.on .ck-sw i {
-  left: 19px;
-  background: #fff;
-}
-.ck-st {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-.ck-st b,
-.ck-st small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ck-st small {
-  color: var(--muted);
-  font-size: 11px;
-}
-.ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.ib.on,
-.ib:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--hover);
-}
-.ck-steps {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ck-steps button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-.ck-dot,
-.ck-rec i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--down);
-}
-.ck-rec {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--down-fg);
-  font-weight: 600;
-}
-.ck-rec i {
-  animation: ckblink 1s infinite;
-}
-@keyframes ckblink {
-  50% {
-    opacity: 0.25;
-  }
-}
-.ck-ok {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--up-fg);
-}
-.ck-warn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--warn-fg);
-  font-size: 11.5px;
-}
-.ck-set {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-}
-.ck-grp {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.ck-grp label,
-.ck-nums label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ck-gl {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.ck-gl.high,
-.ck-flt .high i,
-.ck-it.high .ck-ic {
-  color: var(--down-fg);
-}
-.ck-gl.mid,
-.ck-flt .mid i,
-.ck-it.mid .ck-ic {
-  color: var(--warn-fg);
-}
-.ck-gl.low,
-.ck-flt .low i,
-.ck-it.low .ck-ic {
-  color: var(--info-fg);
-}
-.ck-nums {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-}
-.ck-nums input[type='number'] {
-  width: 56px;
-}
-.ck-flt {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.ck-flt button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-.ck-flt button i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.ck-flt button.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  background: rgb(var(--accent-rgb) / 0.14);
-  color: var(--text);
-}
-.ck-flt b {
-  font-weight: 600;
-}
-.grow {
-  flex: 1;
-}
-.ck-q {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--field-bg);
-  color: var(--muted);
-}
-.ck-q input {
-  flex: 1;
-  height: 26px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  outline: none;
-}
-.ck-made {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--up-fg);
-}
-.ck-list {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 0;
-  overflow: auto;
-}
-.ck-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 24px 12px;
-  color: var(--muted);
-  text-align: center;
-  line-height: 1.5;
-}
-.ck-it {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border-2);
-  border-radius: 4px;
-  background: var(--panel);
-}
-.ck-it.high {
-  border-left-color: var(--down);
-}
-.ck-it.mid {
-  border-left-color: var(--warn);
-}
-.ck-it.low {
-  border-left-color: var(--info, #448aff);
-}
-.ck-it.done {
-  opacity: 0.6;
-}
-.ck-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.ck-row:hover {
-  background: var(--hover);
-}
-.ck-ic {
-  display: inline-flex;
-  flex: none;
-}
-.ck-tx {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-.ck-t {
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ck-tx small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ck-n {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: var(--hover);
-  color: var(--text-2);
-  font-size: 11px;
-}
-.ck-bug {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 3px;
-  color: var(--accent-fg);
-  font-size: 11px;
-}
-.ck-det {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px 10px 10px 30px;
-}
-.ck-d,
-.ck-body {
-  margin: 0;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--panel-2);
-  font-family: var(--font-data);
-  font-size: 11.5px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.ck-body {
-  max-height: 240px;
-  overflow: auto;
-}
-.ck-req {
-  display: flex;
-  gap: 10px;
-  font-family: var(--font-data);
-}
-.ck-req span,
-.ck-url {
-  color: var(--muted);
-  font-size: 11px;
-}
-.ck-url {
-  overflow: hidden;
-  font-family: var(--font-data);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ck-bt {
-  display: flex;
-  gap: 2px;
-}
-.ck-bt button,
-.ck-acts button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  font-size: 11.5px;
-}
-.ck-bt button.on {
-  background: rgb(var(--accent-rgb) / 0.18);
-  color: var(--accent-fg);
-}
-.ck-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.ck-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.ck-foot .primary,
-.ck-fb .primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.lnk {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent-fg);
-  font-size: 11.5px;
-}
-.ck-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid rgb(var(--accent-rgb) / 0.5);
-  border-radius: var(--r3);
-  background: var(--panel-2);
-}
-.ck-fh {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ck-form > label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-.ck-form input:not([type='checkbox']),
-.ck-form textarea {
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  resize: vertical;
-}
-.ck-fr {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.ck-fold {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 120px;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-.chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.ck-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-.ck-fb {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-</style>

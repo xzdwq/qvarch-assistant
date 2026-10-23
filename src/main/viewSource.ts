@@ -6,10 +6,13 @@
 export const SOURCE_SCHEME = 'qa-source'
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** A token's class in the page's stylesheet: tag, attribute name / value, punctuation, comment, doctype. */
+type TokenClass = 't' | 'an' | 'av' | 'p' | 'c' | 'd'
+
 /** Coloured HTML: a token's class wraps each of its lines on its own (a line is a row of the table). */
 function paint(src: string, base: string, html: boolean): string[] {
   const out: string[] = []
-  const put = (text: string, cls?: string, href?: string) => {
+  const put = (text: string, cls?: TokenClass, href?: string) => {
     const parts = text.split('\n')
     parts.forEach((p, i) => {
       if (i) out.push('\n')
@@ -83,16 +86,19 @@ export async function sourcePage(target: string, fetcher: (url: string) => Promi
   const lines = paint(text, target, html)
   const rows = lines.map((l, i) => `<tr><td class="n">${i + 1}</td><td class="l">${l || ' '}</td></tr>`).join('')
   const page = `<!doctype html><html><head><meta charset="utf-8"><title>view-source:${esc(target)}</title><style>
-  :root{color-scheme:dark}
-  body{margin:0;background:#0d1117;color:#c9d1d9;font:12.5px/1.55 "Cascadia Mono","JetBrains Mono",Consolas,monospace}
-  .bar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:16px;padding:6px 14px;background:#161b22;border-bottom:1px solid #30363d;font:12.5px "Segoe UI",sans-serif;color:#adb7c6}
+  :root{color-scheme:dark;
+    --src-bg:#0d1117;--src-fg:#c9d1d9;--src-bar-bg:#161b22;--src-bar-line:#30363d;--src-bar-fg:#adb7c6;--src-muted:#6e7681;
+    --src-line-no:#566173;--src-gutter-line:#21262d;
+    --src-tag:#7ee787;--src-attr-name:#79c0ff;--src-attr-value:#a5d6ff;--src-punct:#6e7681;--src-comment:#8b949e;--src-doctype:#d2a8ff}
+  body{margin:0;background:var(--src-bg);color:var(--src-fg);font:12.5px/1.55 "Cascadia Mono","JetBrains Mono",Consolas,monospace}
+  .bar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:16px;padding:6px 14px;background:var(--src-bar-bg);border-bottom:1px solid var(--src-bar-line);font:12.5px "Segoe UI",sans-serif;color:var(--src-bar-fg)}
   .bar label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
-  .bar span{color:#6e7681}
+  .bar span{color:var(--src-muted)}
   table{border-collapse:collapse}
-  td.n{position:sticky;left:0;padding:0 12px 0 14px;text-align:right;vertical-align:top;color:#566173;background:#0d1117;user-select:none;border-right:1px solid #21262d}
+  td.n{position:sticky;left:0;padding:0 12px 0 14px;text-align:right;vertical-align:top;color:var(--src-line-no);background:var(--src-bg);user-select:none;border-right:1px solid var(--src-gutter-line)}
   td.l{padding:0 14px;white-space:pre;vertical-align:top}
   body.wrap td.l{white-space:pre-wrap;word-break:break-all}
-  .t{color:#7ee787}.an{color:#79c0ff}.av{color:#a5d6ff}.p{color:#6e7681}.c{color:#8b949e;font-style:italic}.d{color:#d2a8ff}
+  .t{color:var(--src-tag)}.an{color:var(--src-attr-name)}.av{color:var(--src-attr-value)}.p{color:var(--src-punct)}.c{color:var(--src-comment);font-style:italic}.d{color:var(--src-doctype)}
   a{text-decoration:none}a:hover{text-decoration:underline}
   </style></head><body><div class="bar"><label><input type="checkbox" id="w">Переносить строки</label><span>${lines.length} строк · ${esc(type || 'text')}</span></div>
   <table>${rows}</table>

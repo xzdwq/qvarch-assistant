@@ -17,10 +17,24 @@ function ensure(): void {
   started = true
   void window.qa.tabletState().then((s) => (state.value = s))
   window.qa.onTablet((m) => {
-    if (m.type === 'state') state.value = m.state
-    else if (m.type === 'keys') keysMask.value = m.mask
-    else if (m.type === 'aux') auxRaw.value = m.raw
-    else sample.value = { ...m.s, at: performance.now() }
+    switch (m.type) {
+      case 'state':
+        state.value = m.state
+        return
+      case 'keys':
+        keysMask.value = m.mask
+        return
+      case 'aux':
+        auxRaw.value = m.raw
+        return
+      case 'sample':
+        sample.value = { ...m.s, at: performance.now() }
+        return
+      default: {
+        const never: never = m
+        return never
+      }
+    }
   })
 }
 

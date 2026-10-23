@@ -1,5 +1,11 @@
 /** The notebook (Markdown files): a node of the tree, a search hit, and the helpers both sides use. */
 
+/** What can be made in the vault's tree. */
+export const VAULT_ENTRY_KINDS = ['note', 'folder', 'board'] as const
+export type VaultEntryKind = (typeof VAULT_ENTRY_KINDS)[number]
+/** A kind from outside (IPC): a known one as is, anything else — a note. */
+export const toVaultEntryKind = (v: unknown): VaultEntryKind => VAULT_ENTRY_KINDS.find((k) => k === v) ?? 'note'
+
 export interface VaultNode {
   /** Relative to the vault, "/" separated, with ".md" for notes. */
   path: string
@@ -19,9 +25,6 @@ export interface VaultNode {
   pair?: string
   children?: VaultNode[]
 }
-
-/** The colours a note / folder can be marked with. */
-export const MARK_COLORS = ['#f87171', '#fb923c', '#facc15', '#4ade80', '#38bdf8', '#818cf8', '#e879f9'] as const
 
 /** The recordings a text embeds. */
 export function audiosOf(text: string): string[] {

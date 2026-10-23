@@ -79,7 +79,7 @@ const level = computed(() => {
 </script>
 
 <template>
-  <svg class="wave" :class="mode" :viewBox="`0 0 100 ${H}`" preserveAspectRatio="none" :style="{ '--lv': level }">
+  <svg class="wave tw:group/wave tw:block tw:w-full tw:h-full tw:overflow-visible tw:filter-[drop-shadow(0_0_calc(2px+var(--lv)*4px)_rgb(var(--accent-rgb)/calc(0.45+var(--lv)*0.4)))] tw:[&.day]:filter-[drop-shadow(0_0_3px_rgb(var(--accent-rgb)/0.55))]" :class="mode" :viewBox="`0 0 100 ${H}`" preserveAspectRatio="none" :style="{ '--lv': level }">
     <defs>
       <linearGradient :id="`wg-${mode}`" gradientUnits="userSpaceOnUse" x1="0" x2="100" y1="0" y2="0">
         <stop offset="0" style="stop-color: var(--accent); stop-opacity: 0.3" />
@@ -87,32 +87,6 @@ const level = computed(() => {
         <stop offset="1" style="stop-color: var(--accent-fg)" />
       </linearGradient>
     </defs>
-    <path class="line" :style="{ d: `path('${path}')` }" :stroke="`url(#wg-${mode})`" vector-effect="non-scaling-stroke" />
+    <path class="line tw:fill-none tw:stroke-2 tw:[stroke-linecap:round] tw:[stroke-linejoin:round] tw:[transition:d_0.5s_linear] tw:group-[.day]/wave:[transition:d_0.25s_ease]" :style="{ d: `path('${path}')` }" :stroke="`url(#wg-${mode})`" vector-effect="non-scaling-stroke" />
   </svg>
 </template>
-
-<style scoped>
-/* the glow is on the whole picture, not on the line: a filter on a perfectly flat line (no activity —
-   e.g. the future) has a zero-high box and draws nothing, a nearly flat one gets its glow cut */
-.wave {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  /* the glow grows with the current activity */
-  filter: drop-shadow(0 0 calc(2px + var(--lv) * 4px) rgb(var(--accent-rgb) / calc(0.45 + var(--lv) * 0.4)));
-}
-.wave.day {
-  filter: drop-shadow(0 0 3px rgb(var(--accent-rgb) / 0.55));
-}
-.line {
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: d 0.5s linear;
-}
-.day .line {
-  transition: d 0.25s ease;
-}
-</style>

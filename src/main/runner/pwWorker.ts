@@ -75,11 +75,15 @@ let stopped = false
 
 port.on('message', (e: { data: { type: 'run'; job: Job } | { type: 'stop' } }) => {
   const m = e.data
-  if (m.type === 'run') void run(m.job)
-  else if (m.type === 'stop') {
-    stopped = true
-    // the actions going on fail at once; the run ends with what it has
-    void browser?.close().catch(() => undefined)
+  switch (m.type) {
+    case 'run':
+      void run(m.job)
+      break
+    case 'stop':
+      stopped = true
+      // the actions going on fail at once; the run ends with what it has
+      void browser?.close().catch(() => undefined)
+      break
   }
 })
 

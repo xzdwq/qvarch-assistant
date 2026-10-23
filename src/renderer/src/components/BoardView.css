@@ -1,0 +1,32 @@
+/* BoardView: what its template cannot carry as utilities (scoped). */
+
+.chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.zoom .zv {
+  min-width: 44px;
+  justify-content: center;
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
+}
+/* narrow: the words go, the icons stay — one line always */
+@container (max-width: 620px) {
+  .zoom .zv {
+    display: none;
+  }
+}
+/* the shape menu / the options (teleported) */
+/* the background panel (teleported) */

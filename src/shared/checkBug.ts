@@ -145,6 +145,27 @@ function target(loc: string): string {
   if (dlg && unq(dlg[1]) !== text) s += ` в окне «${unq(dlg[1])}»`
   return s
 }
+/** What a pointer action is called in a step. */
+const POINTER_WORDS: Record<string, string> = { click: 'Нажать', dblclick: 'Дважды нажать', check: 'Отметить', uncheck: 'Снять отметку' }
+/** A recorded line's shape → the step in words (`raw` — the line as written, with its comment); the first match wins. */
+const STEP_RULES: ReadonlyArray<readonly [RegExp, (m: RegExpExecArray, raw: string) => string]> = [
+  [new RegExp(String.raw`^page\.goto\(${LIT}`), (m) => `Открыть ${unq(m[1])}`],
+  [new RegExp(String.raw`^page\.waitForURL\(${LIT}`), (m) => `Дождаться перехода на ${unq(m[1])}`],
+  [new RegExp(String.raw`^page\.keyboard\.press\(${LIT}`), (m) => `Нажать клавишу ${unq(m[1])}`],
+  [new RegExp(String.raw`^expect\((.+)\)\.toContainText\(${LIT}`), (m) => `Убедиться, что в ${target(m[1])} — «${unq(m[2])}»`],
+  [/^(.+)\.(click|dblclick|check|uncheck)\(\)/, (m) => `${POINTER_WORDS[m[2]]} ${target(m[1])}`],
+  [new RegExp(String.raw`^(.+)\.fill\(${LIT}\)`), (m, raw) => (/пароль/.test(raw) ? `Ввести пароль в ${target(m[1])}` : unq(m[2]) ? `Ввести «${unq(m[2])}» в ${target(m[1])}` : `Очистить ${target(m[1])}`)],
+  [new RegExp(String.raw`^(.+)\.selectOption\(${LIT}\)`), (m) => `Выбрать «${unq(m[2])}» в ${target(m[1])}`],
+  [new RegExp(String.raw`^(.+)\.press\(${LIT}\)`), (m) => `Нажать клавишу ${unq(m[2])} в ${target(m[1])}`],
+]
+/** One recorded line in words; a line of no known shape — as is. */
+function stepOf(line: string, raw: string): string {
+  for (const [re, say] of STEP_RULES) {
+    const m = re.exec(line)
+    if (m) return say(m, raw)
+  }
+  return line.replace(/;$/, '')
+}
 /** Playwright lines (as recorded) → numbered steps a person reads. */
 export function stepsFromPw(lines: string[]): string {
   const out: string[] = []
@@ -158,16 +179,7 @@ export function stepsFromPw(lines: string[]): string {
       if (said[1].trim() !== '-') out.push(said[1].trim())
       continue
     }
-    let m: RegExpExecArray | null
-    if ((m = new RegExp(String.raw`^page\.goto\(${LIT}`).exec(l))) out.push(`Открыть ${unq(m[1])}`)
-    else if ((m = new RegExp(String.raw`^page\.waitForURL\(${LIT}`).exec(l))) out.push(`Дождаться перехода на ${unq(m[1])}`)
-    else if ((m = new RegExp(String.raw`^page\.keyboard\.press\(${LIT}`).exec(l))) out.push(`Нажать клавишу ${unq(m[1])}`)
-    else if ((m = new RegExp(String.raw`^expect\((.+)\)\.toContainText\(${LIT}`).exec(l))) out.push(`Убедиться, что в ${target(m[1])} — «${unq(m[2])}»`)
-    else if ((m = /^(.+)\.(click|dblclick|check|uncheck)\(\)/.exec(l))) out.push(`${{ click: 'Нажать', dblclick: 'Дважды нажать', check: 'Отметить', uncheck: 'Снять отметку' }[m[2]]} ${target(m[1])}`)
-    else if ((m = new RegExp(String.raw`^(.+)\.fill\(${LIT}\)`).exec(l))) out.push(/пароль/.test(raw) ? `Ввести пароль в ${target(m[1])}` : unq(m[2]) ? `Ввести «${unq(m[2])}» в ${target(m[1])}` : `Очистить ${target(m[1])}`)
-    else if ((m = new RegExp(String.raw`^(.+)\.selectOption\(${LIT}\)`).exec(l))) out.push(`Выбрать «${unq(m[2])}» в ${target(m[1])}`)
-    else if ((m = new RegExp(String.raw`^(.+)\.press\(${LIT}\)`).exec(l))) out.push(`Нажать клавишу ${unq(m[2])} в ${target(m[1])}`)
-    else out.push(l.replace(/;$/, ''))
+    out.push(stepOf(l, raw))
   }
   return out.map((s, i) => `${i + 1}. ${s}`).join('\n')
 }

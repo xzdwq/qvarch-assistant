@@ -1,0 +1,6 @@
+/* TermPanes: what its template cannot carry as utilities (scoped). */
+
+/* the tabs making room while one is dragged (TransitionGroup's move class) */
+.tabmv-move {
+  transition: transform 0.16s ease;
+}

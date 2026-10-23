@@ -1,7 +1,8 @@
 import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { IPC, type IslandLayout } from '../shared/api'
+import type { IslandLayout } from '../shared/api'
+import { emit } from './ipc/router'
 import { ISLAND_PILL, ISLAND_WINDOW, nextDock, type Dock } from '../shared/island'
 import { makeIcon } from './icon'
 
@@ -22,6 +23,16 @@ function common(): Electron.WebPreferences {
 }
 
 export const TITLEBAR_HEIGHT = 38
+/** The app's Windows identity (taskbar grouping, the Start menu shortcut). */
+export const APP_ID = 'com.qvarch.assistant'
+/**
+ * The main window's colours before its page paints (main has no CSS): the default theme's background
+ * and the native buttons' symbols; the page then sets the user's theme.
+ */
+const WINDOW_BG = '#0d1117'
+const TITLEBAR_SYMBOLS = '#adb7c6'
+/** The island's window is see-through: only its content is drawn. */
+const TRANSPARENT = '#00000000'
 
 /** Frameless main window with a custom title bar (VS Code style); native min/max/close via titleBarOverlay. */
 export function createMainWindow(): BrowserWindow {
@@ -31,9 +42,9 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     title: 'Qvarch Assistant',
     icon: makeIcon(64),
-    backgroundColor: '#0d1117',
+    backgroundColor: WINDOW_BG,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0d1117', symbolColor: '#adb7c6', height: TITLEBAR_HEIGHT },
+    titleBarOverlay: { color: WINDOW_BG, symbolColor: TITLEBAR_SYMBOLS, height: TITLEBAR_HEIGHT },
     // the notes' browser component is a <webview> (held to the browser's profile — see noteBrowser.ts)
     webPreferences: { ...common(), webviewTag: true },
   })
@@ -48,7 +59,7 @@ export function createMainWindow(): BrowserWindow {
   forwardConsole(win, 'main')
   // pinned to the taskbar: it must start the portable exe itself (the copy it unpacks into %TEMP% is not the app)
   const exe = process.env.PORTABLE_EXECUTABLE_FILE
-  if (process.platform === 'win32' && exe) win.setAppDetails({ appId: 'com.qvarch.assistant', appIconPath: exe, appIconIndex: 0, relaunchCommand: `"${exe}"`, relaunchDisplayName: 'Qvarch Assistant' })
+  if (process.platform === 'win32' && exe) win.setAppDetails({ appId: APP_ID, appIconPath: exe, appIconIndex: 0, relaunchCommand: `"${exe}"`, relaunchDisplayName: 'Qvarch Assistant' })
   return win
 }
 
@@ -63,10 +74,32 @@ export function fixShortcut(): void {
   if (!existsSync(lnk)) return
   try {
     const cur = shell.readShortcutLink(lnk)
-    if (cur.target === exe && cur.appUserModelId === 'com.qvarch.assistant') return
-    shell.writeShortcutLink(lnk, 'replace', { target: exe, icon: exe, iconIndex: 0, appUserModelId: 'com.qvarch.assistant', description: 'Qvarch Assistant' })
+    if (cur.target === exe && cur.appUserModelId === APP_ID) return
+    shell.writeShortcutLink(lnk, 'replace', { target: exe, icon: exe, iconIndex: 0, appUserModelId: APP_ID, description: 'Qvarch Assistant' })
   } catch {
     // not ours to touch after all
+  }
+}
+
+/**
+ * The pill stuck to an edge, let go with its centre at (cx, cy): at the top / bottom it slides along the edge
+ * (kept on the screen); at a side x is that edge and y the pill's centre.
+ */
+function stuckPill(dock: Dock, wa: Rectangle, cx: number, cy: number): { x: number; y: number } {
+  const alongEdge = () => Math.round(Math.max(wa.x, Math.min(wa.x + wa.width - ISLAND_PILL.width, cx - ISLAND_PILL.width / 2)))
+  switch (dock) {
+    case 'top':
+      return { x: alongEdge(), y: wa.y }
+    case 'bottom':
+      return { x: alongEdge(), y: wa.y + wa.height - ISLAND_PILL.height }
+    case 'left':
+      return { x: wa.x, y: Math.round(cy) }
+    case 'right':
+      return { x: wa.x + wa.width - 1, y: Math.round(cy) }
+    default: {
+      const never: never = dock
+      return never
+    }
   }
 }
 
@@ -115,7 +148,7 @@ export class Island {
       alwaysOnTop: true,
       hasShadow: false,
       show: false,
-      backgroundColor: '#00000000',
+      backgroundColor: TRANSPARENT,
       webPreferences: common(),
     })
     this.win.setAlwaysOnTop(true, 'screen-saver')
@@ -156,11 +189,22 @@ export class Island {
 
   private layoutFor(pill: { x: number; y: number }): IslandLayout {
     const wa = screen.getDisplayNearestPoint({ x: Math.round(pill.x), y: Math.round(pill.y) }).workArea
-    if (this.dock === 'top') return { up: false, dock: 'top' }
-    if (this.dock === 'bottom') return { up: true, dock: 'bottom' }
-    if (this.dock === 'left' || this.dock === 'right') return { up: false, dock: this.dock, offset: Math.round(pill.y - this.sideTop(wa)) }
-    // downward by default; upward only when the expanded island would not fit below the pill
-    return { up: pill.y + ISLAND_WINDOW.height > wa.y + wa.height }
+    switch (this.dock) {
+      case 'top':
+        return { up: false, dock: 'top' }
+      case 'bottom':
+        return { up: true, dock: 'bottom' }
+      case 'left':
+      case 'right':
+        return { up: false, dock: this.dock, offset: Math.round(pill.y - this.sideTop(wa)) }
+      case undefined:
+        // downward by default; upward only when the expanded island would not fit below the pill
+        return { up: pill.y + ISLAND_WINDOW.height > wa.y + wa.height }
+      default: {
+        const never: never = this.dock
+        return never
+      }
+    }
   }
 
   /** At a side edge the window stands around the pill's centre (pill.y), inside the work area. */
@@ -216,8 +260,7 @@ export class Island {
     const wa = display.workArea
     const wasDocked = !!this.dock
     this.dock = dock
-    if (dock === 'top' || dock === 'bottom') this.pill = { x: Math.round(Math.max(wa.x, Math.min(wa.x + wa.width - ISLAND_PILL.width, cx - ISLAND_PILL.width / 2))), y: dock === 'top' ? wa.y : wa.y + wa.height - ISLAND_PILL.height }
-    else if (dock) this.pill = { x: dock === 'left' ? wa.x : wa.x + wa.width - 1, y: Math.round(cy) }
+    if (dock) this.pill = stuckPill(dock, wa, cx, cy)
     else if (wasDocked)
       // unstuck: the full pill takes the place where the slim one was let go
       this.pill = { x: Math.round(cx - ISLAND_PILL.width / 2), y: Math.round(Math.max(wa.y, Math.min(wa.y + wa.height - ISLAND_PILL.height, cy - ISLAND_PILL.height / 2))) }
@@ -229,17 +272,17 @@ export class Island {
     const layout = this.layoutFor(this.pill)
     const changed = layout.up !== this.layout.up || layout.dock !== this.layout.dock || layout.offset !== this.layout.offset
     this.layout = layout
-    if (changed) this.win.webContents.send(IPC.islandLayout, layout)
+    if (changed) emit(this.win.webContents, 'onIslandLayout', layout)
     if (changed || dock || wasDocked) this.place()
     this.persist({ ...this.pill, dock: this.dock })
-    this.win.webContents.send(IPC.islandHover, { moved: true })
+    emit(this.win.webContents, 'onIslandHover', { moved: true })
   }
 
   reset(): void {
     this.dock = undefined
     this.pill = this.validPill({})
     this.layout = this.layoutFor(this.pill)
-    this.win.webContents.send(IPC.islandLayout, this.layout)
+    emit(this.win.webContents, 'onIslandLayout', this.layout)
     this.place()
     this.persist({ ...this.pill, dock: undefined })
   }
@@ -272,7 +315,7 @@ export class Island {
     const far = 60
     if (p.x < b.x - far || p.x > b.x + b.width + far || p.y < b.y - far || p.y > b.y + b.height + far) {
       this.setSolid(false)
-      this.win.webContents.send(IPC.islandHover, { leave: true })
+      emit(this.win.webContents, 'onIslandHover', { leave: true })
     }
   }
 }

@@ -1,0 +1,73 @@
+/* AiSection: the AI assistants' component (its own DOM) made to look as the other sections (scoped). */
+
+.mcpw :deep(label) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mcpw :deep(.span2) {
+  grid-column: 1 / -1;
+}
+.mcpw :deep(.small) {
+  font-size: 12px;
+}
+.mcpw :deep(.olopts) {
+  display: flex;
+  flex-direction: column;
+  max-width: 420px;
+  margin-top: 10px;
+}
+.mcpw :deep(label.switch span) {
+  order: -1;
+}
+.mcpw :deep(.switch input) {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.mcpw :deep(.switch input)::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-hi);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.mcpw :deep(.switch input:checked) {
+  background: var(--accent);
+}
+.mcpw :deep(.switch input:checked)::after {
+  transform: translateX(14px);
+}
+.mcpw :deep(h3) {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.mcpw :deep(.small) {
+  font-size: 12px;
+}
+.mcpw :deep(.fields) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+.mcpw :deep(h3.mt) {
+  margin-top: 26px;
+}

@@ -62,144 +62,33 @@ const open = ref<string>()
 </script>
 
 <template>
-  <section class="lt">
-    <h3><Icon name="checkSquare" :size="15" />Мои задачи <span class="muted">{{ tasks.filter((t) => t.status !== 'done').length }} открыто</span></h3>
-    <div class="add">
-      <input v-model="title" placeholder="Новая задача — Enter" spellcheck="false" @keydown.enter="add" />
-      <button :disabled="!title.trim()" @click="add"><Icon name="plus" :size="14" />Добавить</button>
+  <section class="lt tw:bg-panel tw:border tw:border-border tw:rounded-[4px] tw:py-10 tw:px-14 tw:flex tw:flex-col tw:gap-6">
+    <h3 class="tw:flex tw:items-center tw:gap-8 tw:mt-2 tw:mr-0 tw:mb-4 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2"><Icon name="checkSquare" :size="15" />Мои задачи <span class="muted tw:font-normal tw:text-[12px]">{{ tasks.filter((t) => t.status !== 'done').length }} открыто</span></h3>
+    <div class="add tw:flex tw:gap-8">
+      <input class="tw:flex-1 tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px]" v-model="title" placeholder="Новая задача — Enter" spellcheck="false" @keydown.enter="add" />
+      <button class="tw:inline-flex tw:items-center tw:gap-5" :disabled="!title.trim()" @click="add"><Icon name="plus" :size="14" />Добавить</button>
     </div>
 
     <template v-for="[proj, list] in groups" :key="proj">
-      <div class="proj">{{ proj || 'Без проекта' }}</div>
-      <div v-for="t in list" :key="t.id" class="row" :class="[t.status]">
-        <select :value="t.status" class="st" @change="patch(t, { status: ($event.target as HTMLSelectElement).value as LocalTask['status'] })">
+      <div class="proj tw:mt-6 tw:text-[12px] tw:text-muted">{{ proj || 'Без проекта' }}</div>
+      <div v-for="t in list" :key="t.id" class="row tw:group/row tw:grid tw:grid-cols-[130px_auto_minmax(0,1fr)_130px_130px_70px_74px_26px_26px] tw:gap-8 tw:items-center" :class="[t.status]">
+        <select :value="t.status" class="st tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12px] tw:group-[.progress]/row:not-group-[.review]/row:not-group-[.done]/row:text-info-fg tw:group-[.review]/row:not-group-[.done]/row:text-accent-fg tw:group-[.done]/row:text-up-fg" @change="patch(t, { status: ($event.target as HTMLSelectElement).value as LocalTask['status'] })">
           <option v-for="s in STATUSES" :key="s.id" :value="s.id">{{ s.label }}</option>
         </select>
-        <span class="tkey" title="Номер задачи">{{ t.key }}</span>
-        <input class="title" :value="t.title" spellcheck="false" @change="patch(t, { title: ($event.target as HTMLInputElement).value })" />
-        <SuggestInput class="projin" :model-value="projDraft[t.id] ?? t.project ?? ''" :options="projects" placeholder="проект" @update:model-value="(v) => (projDraft[t.id] = v)" @commit="(v) => setProject(t, v)" @cancel="delete projDraft[t.id]" />
+        <span class="tkey tw:text-accent-fg tw:text-[12px] tw:font-semibold tw:whitespace-nowrap" title="Номер задачи">{{ t.key }}</span>
+        <input class="title tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px] tw:group-[.done]/row:line-through tw:group-[.done]/row:opacity-[0.55]" :value="t.title" spellcheck="false" @change="patch(t, { title: ($event.target as HTMLInputElement).value })" />
+        <SuggestInput class="projin tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px]" :model-value="projDraft[t.id] ?? t.project ?? ''" :options="projects" placeholder="проект" @update:model-value="(v) => (projDraft[t.id] = v)" @commit="(v) => setProject(t, v)" @cancel="delete projDraft[t.id]" />
         <DatePick class="due" :model-value="t.due ?? ''" clearable no-wheel format="short" placeholder="срок" title="Срок" :late="!!t.due && t.due < today && t.status !== 'done'" @update:model-value="(d) => patch(t, { due: d || undefined })" />
-        <input class="est" type="number" min="0" step="15" :value="t.estimateMin ?? ''" placeholder="мин" title="Оценка, минут" @change="patch(t, { estimateMin: Number(($event.target as HTMLInputElement).value) || undefined })" />
-        <button v-if="t.from" class="from" :title="`Создана из заметки — открыть ${fmtDay(t.from.day)}`" @click="emit('openDay', t.from.day)"><Icon name="note" :size="12" />{{ fmtDay(t.from.day) }}</button>
+        <input class="est tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px]" type="number" min="0" step="15" :value="t.estimateMin ?? ''" placeholder="мин" title="Оценка, минут" @change="patch(t, { estimateMin: Number(($event.target as HTMLInputElement).value) || undefined })" />
+        <button v-if="t.from" class="from tw:inline-flex tw:items-center tw:gap-4 tw:py-3 tw:px-6 tw:border-0 tw:bg-transparent tw:text-[11px] tw:text-warn tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :title="`Создана из заметки — открыть ${fmtDay(t.from.day)}`" @click="emit('openDay', t.from.day)"><Icon name="note" :size="12" />{{ fmtDay(t.from.day) }}</button>
         <span v-else></span>
-        <button class="more" :title="t.description ? 'Описание' : 'Добавить описание'" @click="open = open === t.id ? undefined : t.id"><Icon :name="open === t.id ? 'chevronDown' : 'chevronRight'" :size="13" /></button>
-        <button class="del" title="Удалить" @click="remove(t)"><Icon name="trash" :size="13" /></button>
-        <textarea v-if="open === t.id" class="desc" :value="t.description ?? ''" rows="3" placeholder="Описание" spellcheck="false" @change="patch(t, { description: ($event.target as HTMLTextAreaElement).value.trim() || undefined })"></textarea>
+        <button class="more tw:inline-flex tw:items-center tw:gap-4 tw:py-3 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[11px] tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :title="t.description ? 'Описание' : 'Добавить описание'" @click="open = open === t.id ? undefined : t.id"><Icon :name="open === t.id ? 'chevronDown' : 'chevronRight'" :size="13" /></button>
+        <button class="del tw:inline-flex tw:items-center tw:gap-4 tw:py-3 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[11px] tw:hover:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Удалить" @click="remove(t)"><Icon name="trash" :size="13" /></button>
+        <textarea v-if="open === t.id" class="desc tw:py-4 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px] tw:col-[2/-1] tw:resize-y" :value="t.description ?? ''" rows="3" placeholder="Описание" spellcheck="false" @change="patch(t, { description: ($event.target as HTMLTextAreaElement).value.trim() || undefined })"></textarea>
       </div>
     </template>
-    <p v-if="!groups.length" class="muted small">Задач нет. Добавьте строкой выше или кнопкой «В задачу» у любой заметки.</p>
+    <p v-if="!groups.length" class="muted small tw:text-[12px]">Задач нет. Добавьте строкой выше или кнопкой «В задачу» у любой заметки.</p>
   </section>
 </template>
 
-<style scoped>
-.tkey {
-  color: var(--accent-fg);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.lt {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0 4px;
-  font-size: 11px;
-  font-family: var(--font-data);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-h3 .muted {
-  font-weight: 400;
-  font-size: 12px;
-}
-.add {
-  display: flex;
-  gap: 8px;
-}
-.add input {
-  flex: 1;
-}
-.add button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-input,
-select,
-textarea {
-  padding: 4px 8px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-.proj {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.row {
-  display: grid;
-  grid-template-columns: 130px auto minmax(0, 1fr) 130px 130px 70px 74px 26px 26px;
-  gap: 8px;
-  align-items: center;
-}
-.row.done .title {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.st {
-  font-size: 12px;
-}
-.row.progress .st {
-  color: var(--info-fg);
-}
-.row.review .st {
-  color: var(--accent-fg);
-}
-.row.done .st {
-  color: var(--up-fg);
-}
-.due.late {
-  color: var(--down-fg);
-  border-color: rgba(255, 61, 61, 0.5);
-}
-.from,
-.more,
-.del {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-}
-.from {
-  color: var(--warn);
-}
-.del:hover {
-  color: var(--down-fg);
-}
-.desc {
-  grid-column: 2 / -1;
-  resize: vertical;
-}
-.small {
-  font-size: 12px;
-}
-</style>
+<style scoped src="./LocalTasks.css"></style>

@@ -60,11 +60,5 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 </script>
 
 <template>
-  <canvas ref="canvas" class="orb" role="img" :style="{ width: `${px ?? size}px`, height: `${px ?? size}px` }"></canvas>
+  <canvas ref="canvas" class="orb tw:block" role="img" :style="{ width: `${px ?? size}px`, height: `${px ?? size}px` }"></canvas>
 </template>
-
-<style scoped>
-.orb {
-  display: block;
-}
-</style>

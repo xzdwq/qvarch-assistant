@@ -1,5 +1,5 @@
 import { reactive, ref, shallowRef } from 'vue'
-import type { BranchCommitInfo, BranchDiffStat, BranchRef, ConflictSource, MainStatus, ProjectProfile, ReleasePlan, StaleBranchHint } from '@shared/release'
+import { mainStatusOf, type BranchCommitInfo, type BranchDiffStat, type BranchRef, type ConflictSource, type MainStatus, type ProjectProfile, type ReleasePlan, type ReleaseProgressEvent, type StaleBranchHint } from '@shared/release'
 import type { JiraVersion } from '@shared/jira'
 import { makeColors } from './releaseRail'
 import { onNewDay } from './today'
@@ -30,7 +30,8 @@ export const rs = reactive({
   nameByRef: new Map<string, string>(),
   statusOverride: new Map<string, MainStatus>(),
   diffStats: new Map<string, BranchDiffStat>(),
-  listInfo: 'Загрузка веток…',
+  /** What the branch list shows («N из M»); null — the branches are still loading. */
+  listInfo: null as string | null,
   limit: 100,
   limitInit: false,
   filter: '',
@@ -96,7 +97,7 @@ export async function openProject(id: string, force = false, resume = false): Pr
   } catch {
     // not remembered — fine
   }
-  rs.listInfo = 'Загрузка веток…'
+  rs.listInfo = null
   try {
     await window.qa.releaseOpen(id, resume)
   } catch (e) {
@@ -118,7 +119,7 @@ function resetForNewContext(): void {
   rs.patternCount = null
   rs.dateCheck = { branchName: null, exists: false }
   showError('')
-  rs.listInfo = 'Загрузка веток…'
+  rs.listInfo = null
   rs.staleHints = null
   rs.staleLoading = false
   rs.copied = new Set()
@@ -176,12 +177,13 @@ function onMsg(msg: Msg): void {
         rs.limitInit = true
       }
       const info = msg.info
+      // the whole line under the list (null — still loading)
       rs.listInfo =
         info.totalBranches === 0
-          ? 'В репозитории нет веток'
+          ? 'В репозитории нет веток.'
           : info.truncated
-            ? `${msg.branches.length} из ${info.totalMatches} (всего ${info.totalBranches})`
-            : `${msg.branches.length} из ${info.totalBranches}`
+            ? `Показано ${msg.branches.length} из ${info.totalMatches} (всего ${info.totalBranches}).`
+            : `Показано ${msg.branches.length} из ${info.totalBranches}.`
       break
     }
     case 'branchMainStatus':
@@ -199,8 +201,7 @@ function onMsg(msg: Msg): void {
       rs.commits.set(msg.ref, { commits: msg.commits, truncated: msg.truncated, forkedFrom: msg.forkedFrom })
       const list = msg.commits as BranchCommitInfo[]
       if (list.length) {
-        const n = list.filter((c) => c.alreadyInMain).length
-        rs.statusOverride.set(msg.ref, n === 0 ? 'none' : n === list.length ? 'full' : 'partial')
+        rs.statusOverride.set(msg.ref, mainStatusOf(list.filter((c) => c.alreadyInMain).length, list.length))
       }
       break
     }
@@ -249,17 +250,27 @@ function onMsg(msg: Msg): void {
       break
     case 'progress': {
       if (!rs.plan) return
-      const ev = msg.event
-      if (ev.type === 'applied') {
-        const f = rs.plan.items.find((i) => i.sha === ev.item.sha)
-        if (f) f.applied = true
-        planTick.value++
-      } else if (ev.type === 'conflict') {
-        rs.busy.start = false
-        showError(`Конфликт на коммите ${String(ev.item.sha).slice(0, 8)} «${ev.item.subject}». Разрешите его в репозитории и нажмите «Продолжить сборку».`, true)
-      } else if (ev.type === 'done') {
-        rs.busy.start = false
-        showError('')
+      const ev = msg.event as ReleaseProgressEvent
+      switch (ev.type) {
+        case 'applied': {
+          const f = rs.plan.items.find((i) => i.sha === ev.item.sha)
+          if (f) f.applied = true
+          planTick.value++
+          break
+        }
+        case 'conflict':
+          rs.busy.start = false
+          showError(`Конфликт на коммите ${ev.item.sha.slice(0, 8)} «${ev.item.subject}». Разрешите его в репозитории и нажмите «Продолжить сборку».`, true)
+          break
+        case 'done':
+          rs.busy.start = false
+          showError('')
+          break
+        default: {
+          // an event of a newer main — ignored
+          const unknown: never = ev
+          void unknown
+        }
       }
       break
     }

@@ -1,0 +1,24 @@
+/* NotebookView: what its template cannot carry as utilities (scoped). */
+
+/* ---------- the side ---------- */
+/* the tablet on a board: the handles do not reach over the board and take no pointer */
+/* ---------- search ---------- */
+/* ---------- panes ---------- */
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.zoom .zv {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
+  color: var(--accent-fg);
+}
+/* (the tabs' move animation: @nb/screen/PaneTabs.css) */
+/* a linked file: the switch is a column of its own at the right (nothing under it — no cursor fights) */
+/* a linked note + board: one plaque, a bar on the left */
+/* the sort menu — teleported to <body> (placed by placeFloat) */
+/* (out of the tool bar: its button look is given here) */

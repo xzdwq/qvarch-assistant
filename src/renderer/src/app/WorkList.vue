@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isProductive } from '@shared/kinds'
+import { isCall, isMeeting } from '@shared/work'
 import NoteLinks from '../components/NoteLinks.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
@@ -22,13 +23,20 @@ const emit = defineEmits<{ openDay: [day: string, entryId?: string] }>()
 type Period = 'today' | 'week' | 'month' | 'd30' | 'custom'
 type Kind = 'event' | 'meeting' | 'call' | 'note' | 'plan'
 const KEY = 'qa.work.list'
+/** The list's filters (kept between visits); `task` — any block, only with a task, only without. */
+const DEFAULT_FILTER = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, onlyProd: true }
+type ListFilter = typeof DEFAULT_FILTER
+const TASK_FILTERS: Record<ListFilter['task'], (task?: { key: string }) => boolean> = {
+  any: () => true,
+  with: (task) => !!task,
+  without: (task) => !task,
+}
 const st = reactive(read())
-function read() {
-  const d = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, onlyProd: true }
+function read(): ListFilter {
   try {
-    return { ...d, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
+    return { ...DEFAULT_FILTER, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<ListFilter>) }
   } catch {
-    return d
+    return { ...DEFAULT_FILTER }
   }
 }
 watch(st, (v) => {
@@ -46,8 +54,15 @@ const monthEnd = (d: string) => shiftDay(`${shiftDay(`${d.slice(0, 7)}-28`, 4).s
   const t = todayKey.value
   const old = st.period as Period
   if (old !== 'custom' || !st.from || !st.to) {
-    const r: [string, string] =
-      old === 'today' ? [t, t] : old === 'month' ? [`${t.slice(0, 7)}-01`, monthEnd(t)] : old === 'd30' ? [shiftDay(t, -29), t] : old === 'custom' ? [st.from || t, st.to || t] : [mondayOf(t), shiftDay(mondayOf(t), 6)]
+    const PRESET_DATES: Record<Period, () => [string, string]> = {
+      today: () => [t, t],
+      week: () => [mondayOf(t), shiftDay(mondayOf(t), 6)],
+      month: () => [`${t.slice(0, 7)}-01`, monthEnd(t)],
+      d30: () => [shiftDay(t, -29), t],
+      custom: () => [st.from || t, st.to || t],
+    }
+    // anything else stored (an unknown old preset) — this week
+    const r = (Object.hasOwn(PRESET_DATES, old) ? PRESET_DATES[old] : PRESET_DATES.week)()
     st.from = r[0]
     st.to = r[1]
     st.period = 'custom'
@@ -112,13 +127,13 @@ type Item =
   | { t: 'entry'; type: Kind; day: string; id: string; at: number; e: Entry }
   | { t: 'note'; type: 'note'; day: string; id: string; at: number; n: Note }
   | { t: 'plan'; type: 'plan'; day: string; id: string; at: number; p: PlanBlock }
-const typeOf = (e: Entry): Kind => (e.outlook || e.kind === 'meeting' ? 'meeting' : e.kind === 'call' ? 'call' : 'event')
+const typeOf = (e: Entry): Kind => (isMeeting(e) ? 'meeting' : isCall(e) ? 'call' : 'event')
 const items = computed<Item[]>(() => {
   const s = st.q.trim().toLowerCase()
   const out: Item[] = []
   const typeOk = (t: Kind) => !st.types.length || st.types.includes(t)
   const kindOk = (k: string) => (!st.onlyProd || isProductive(kinds.value, k)) && (!st.kinds.length || st.kinds.includes(k))
-  const taskOk = (task?: { key: string }) => st.task === 'any' || (st.task === 'with' ? !!task : !task)
+  const taskOk = TASK_FILTERS[st.task] ?? TASK_FILTERS.without
   const textOk = (...xs: Array<string | undefined>) => !s || xs.some((x) => x?.toLowerCase().includes(s))
   for (const d of days.value) {
     for (const e of d.entries)
@@ -188,436 +203,75 @@ function exportCsv(): void {
 </script>
 
 <template>
-  <div class="wl">
-    <div class="bar">
-      <span class="pnav" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
-        <button class="ib" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
-        <button ref="rangeEl" class="pl" :class="{ on: rangeOpen }" title="Выбрать день или период" @click="rangeOpen = !rangeOpen"><Icon name="calendar" :size="12" />{{ rangeText }}</button>
-        <button class="ib" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
-        <button v-if="!hasToday" class="today" title="К сегодняшнему дню (тот же вид периода)" @click="goToday">Сегодня</button>
+  <div class="wl tw:flex tw:flex-col tw:h-full tw:min-h-0 tw:pt-10 tw:pr-14 tw:pb-0 tw:pl-14 tw:gap-8">
+    <div class="bar tw:flex tw:items-center tw:gap-8 tw:flex-none tw:whitespace-nowrap tw:overflow-hidden">
+      <span class="pnav tw:inline-flex tw:flex-none tw:items-center tw:gap-2" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Назад" @click="shift(-1)"><Icon name="chevronLeft" :size="14" /></button>
+        <button ref="rangeEl" class="pl tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-text tw:font-data tw:text-[12.5px] tw:whitespace-nowrap tw:[&.on]:border-accent/60" :class="{ on: rangeOpen }" title="Выбрать день или период" @click="rangeOpen = !rangeOpen"><Icon name="calendar" :size="12" />{{ rangeText }}</button>
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
+        <button v-if="!hasToday" class="today tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-[12.5px] tw:whitespace-nowrap tw:ml-4 tw:text-accent-fg tw:font-[inherit]" title="К сегодняшнему дню (тот же вид периода)" @click="goToday">Сегодня</button>
       </span>
       <DateRangePicker v-if="rangeOpen" :from="from" :to="to" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (st.period = 'custom'), (rangeOpen = false))" @close="rangeOpen = false" />
-      <button class="tog" :class="{ on: st.onlyProd }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.onlyProd = !st.onlyProd">Продуктивные</button>
+      <button class="tog tw:[.seg_button+&]:not-[&.on]:border-l tw:[.seg_button+&]:not-[&.on]:border-l-border-2 tw:inline-flex tw:items-center tw:h-28 tw:py-0 tw:px-10 tw:rounded-r2 tw:border tw:border-border tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/16 tw:[&.on]:text-text tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[.seg_button+&]:not-[&.on]:border-border-3" :class="{ on: st.onlyProd }" title="Только продуктивные виды (без обеда, перерыва…)" @click="st.onlyProd = !st.onlyProd">Продуктивные</button>
       <FilterMenu v-model="st.types" label="Тип" icon="layers" :options="TYPES" />
       <FilterMenu v-model="st.kinds" label="Вид" icon="tag" :options="kindOpts" />
-      <span class="seg">
-        <button :class="{ on: st.task === 'any' }" @click="st.task = 'any'">Все</button>
-        <button :class="{ on: st.task === 'with' }" @click="st.task = 'with'">С задачей</button>
-        <button :class="{ on: st.task === 'without' }" @click="st.task = 'without'">Без задачи</button>
+      <span class="seg tw:inline-flex tw:flex-none tw:border tw:border-border-2 tw:rounded-r2 tw:overflow-hidden">
+        <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12px] tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:[&.on]:bg-accent-soft tw:[&.on]:text-accent-fg" :class="{ on: st.task === 'any' }" @click="st.task = 'any'">Все</button>
+        <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12px] tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:[&.on]:bg-accent-soft tw:[&.on]:text-accent-fg" :class="{ on: st.task === 'with' }" @click="st.task = 'with'">С задачей</button>
+        <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12px] tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:[&.on]:bg-accent-soft tw:[&.on]:text-accent-fg" :class="{ on: st.task === 'without' }" @click="st.task = 'without'">Без задачи</button>
       </span>
-      <label class="search"><Icon name="search" :size="13" /><input v-model="st.q" placeholder="Текст, ABC-123…" spellcheck="false" /></label>
-      <button v-if="anyFilter" class="ghost" title="Сбросить фильтры" @click="reset"><Icon name="x" :size="12" />фильтры</button>
-      <span class="grow"></span>
-      <button class="ghost" :title="st.desc ? 'Сначала новые' : 'Сначала старые'" @click="st.desc = !st.desc"><Icon name="sort" :size="13" />{{ st.desc ? 'новые' : 'старые' }}</button>
-      <button class="ghost" title="Выгрузить список в CSV" @click="exportCsv"><Icon name="download" :size="13" />CSV</button>
+      <label class="search tw:inline-flex tw:items-center tw:gap-6 tw:flex-[0_1_220px] tw:min-w-120 tw:h-28 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:text-muted"><Icon name="search" :size="13" /><input class="tw:flex-1 tw:min-w-0 tw:p-0 tw:border-0 tw:bg-transparent tw:text-[12.5px]" v-model="st.q" placeholder="Текст, ABC-123…" spellcheck="false" /></label>
+      <button v-if="anyFilter" class="ghost tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-28 tw:py-0 tw:px-9 tw:text-[12px] tw:text-text-2" title="Сбросить фильтры" @click="reset"><Icon name="x" :size="12" />фильтры</button>
+      <span class="grow tw:flex-1"></span>
+      <button class="ghost tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-28 tw:py-0 tw:px-9 tw:text-[12px] tw:text-text-2" :title="st.desc ? 'Сначала новые' : 'Сначала старые'" @click="st.desc = !st.desc"><Icon name="sort" :size="13" />{{ st.desc ? 'новые' : 'старые' }}</button>
+      <button class="ghost tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-28 tw:py-0 tw:px-9 tw:text-[12px] tw:text-text-2" title="Выгрузить список в CSV" @click="exportCsv"><Icon name="download" :size="13" />CSV</button>
     </div>
-    <div class="sum cap">
+    <div class="sum cap tw:flex tw:gap-18 tw:flex-none tw:pt-2 tw:pr-2 tw:pb-0 tw:pl-2">
       <span>{{ rangeText }}</span>
-      <span>Записей <b>{{ counts.entries }}</b></span>
-      <span>Время <b>{{ formatDuration(total) }}</b></span>
-      <span v-if="counts.notes">Заметок <b>{{ counts.notes }}</b></span>
+      <span>Записей <b class="tw:text-text-hi tw:text-[12px]">{{ counts.entries }}</b></span>
+      <span>Время <b class="tw:text-text-hi tw:text-[12px]">{{ formatDuration(total) }}</b></span>
+      <span v-if="counts.notes">Заметок <b class="tw:text-text-hi tw:text-[12px]">{{ counts.notes }}</b></span>
     </div>
-    <div class="list">
-      <section v-for="g in groups" :key="g.day" class="grp">
-        <div class="gh">
-          <span class="gt" :class="{ today: g.day === todayKey }">{{ g.title }}</span>
-          <span class="gm num">{{ g.list.length }} · {{ formatDuration(g.ms) }}</span>
-          <button class="lnk" title="Открыть день" @click="emit('openDay', g.day)"><Icon name="timeline" :size="12" /></button>
+    <div class="list tw:flex-1 tw:min-h-0 tw:overflow-auto tw:pb-14">
+      <section v-for="g in groups" :key="g.day" class="grp tw:mb-10 tw:border tw:border-border tw:rounded-r3 tw:bg-panel">
+        <div class="gh tw:sticky tw:top-0 tw:z-1 tw:flex tw:items-center tw:gap-10 tw:h-32 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-12 tw:border-b tw:border-b-border tw:rounded-[var(--r3)_var(--r3)_0_0] tw:bg-panel-2">
+          <span class="gt tw:text-[12.5px] tw:font-semibold tw:text-text-hi tw:[&.today]:text-accent-fg" :class="{ today: g.day === todayKey }">{{ g.title }}</span>
+          <span class="gm num tw:font-data tw:tabular-nums tw:text-muted tw:text-[11.5px]">{{ g.list.length }} · {{ formatDuration(g.ms) }}</span>
+          <button class="lnk tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2 tw:inline-flex tw:ml-auto tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:not-[.seg_button+&]:border-border-3" title="Открыть день" @click="emit('openDay', g.day)"><Icon name="timeline" :size="12" /></button>
         </div>
         <template v-for="it in g.list" :key="it.id">
-          <div v-if="it.t === 'note'" class="row note" @click="emit('openDay', it.day)">
-            <span class="tm num">{{ formatHM(it.n.at) }}</span>
-            <span class="kic"><Icon name="note" :size="13" /></span>
-            <span class="tt"><span class="ttl">{{ it.n.text.split('\n')[0] || 'Заметка' }}</span><span v-if="it.n.text.includes('\n')" class="sub">{{ it.n.text.split('\n').slice(1).join(' ') }}</span></span>
-            <span class="badge nt">заметка</span>
+          <div v-if="it.t === 'note'" class="row note tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:bg-hover tw:[--c:var(--warn)]" @click="emit('openDay', it.day)">
+            <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(it.n.at) }}</span>
+            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c)"><Icon name="note" :size="13" /></span>
+            <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.n.text.split('\n')[0] || 'Заметка' }}</span><span v-if="it.n.text.includes('\n')" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ it.n.text.split('\n').slice(1).join(' ') }}</span></span>
+            <span class="badge nt tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:text-[10.5px] tw:bg-warn/14 tw:text-warn-fg">заметка</span>
           </div>
-          <div v-else-if="it.t === 'plan'" class="row plan" :style="{ '--c': kindColor(it.p.kind) }" @click="emit('openDay', it.day)">
-            <span class="tm num">{{ formatHM(it.p.start) }}–{{ formatHM(it.p.end) }}</span>
-            <span class="kic"><Icon :name="entryIcon(it.p)" :size="13" /></span>
-            <span class="tt"><span class="ttl">{{ it.p.label || kindLabel(it.p.kind) }}</span></span>
-            <span v-if="it.p.task" class="tchip">{{ it.p.task.key }}</span>
-            <span class="badge pl">план</span>
-            <span class="du num">{{ formatDuration(it.p.end - it.p.start) }}</span>
+          <div v-else-if="it.t === 'plan'" class="row plan tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:bg-hover tw:[&&]:[border-left-style:dashed]" :style="{ '--c': kindColor(it.p.kind) }" @click="emit('openDay', it.day)">
+            <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(it.p.start) }}–{{ formatHM(it.p.end) }}</span>
+            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c)"><Icon :name="entryIcon(it.p)" :size="13" /></span>
+            <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.p.label || kindLabel(it.p.kind) }}</span></span>
+            <span v-if="it.p.task" class="tchip tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]">{{ it.p.task.key }}</span>
+            <span class="badge pl tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:text-[10.5px] tw:bg-accent-soft tw:text-accent-fg">план</span>
+            <span class="du num tw:font-data tw:tabular-nums tw:flex-none tw:min-w-52 tw:text-right tw:text-text-2 tw:text-[12px]">{{ formatDuration(it.p.end - it.p.start) }}</span>
           </div>
-          <div v-else class="row" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" title="Открыть событие" @click="editing = { day: it.day, entry: it.e }">
-            <span class="tm num">{{ formatHM(it.e.start) }}–{{ formatHM(it.e.end) }}</span>
-            <span class="kic" :title="kindLabel(it.e.kind)"><Icon :name="entryIcon(it.e)" :size="13" /></span>
-            <span class="tt">
-              <span class="ttl">{{ it.e.label || kindLabel(it.e.kind) }}</span>
-              <span v-if="it.e.description" class="sub">{{ it.e.description.split('\n')[0] }}</span>
+          <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:not-[&.live]:bg-hover tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[WorkList-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" title="Открыть событие" @click="editing = { day: it.day, entry: it.e }">
+            <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(it.e.start) }}–{{ formatHM(it.e.end) }}</span>
+            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[WorkList-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(it.e.kind)"><Icon :name="entryIcon(it.e)" :size="13" /></span>
+            <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col">
+              <span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.e.label || kindLabel(it.e.kind) }}</span>
+              <span v-if="it.e.description" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ it.e.description.split('\n')[0] }}</span>
             </span>
-            <span v-if="isLive(it.e)" class="lv"><i></i>идёт</span>
-            <span v-if="it.e.task" class="tchip" :title="it.e.task.summary">{{ it.e.task.key }}</span>
+            <span v-if="isLive(it.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[WorkList-live-blink_1s_steps(2)_infinite]"></i>идёт</span>
+            <span v-if="it.e.task" class="tchip tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]" :title="it.e.task.summary">{{ it.e.task.key }}</span>
             <NoteLinks :id="it.e.id" />
-            <span v-if="it.e.outlook" class="badge">Outlook</span>
-            <span class="kl">{{ kindLabel(it.e.kind) }}</span>
-            <span class="du num">{{ formatDuration(it.e.end - it.e.start) }}</span>
+            <span v-if="it.e.outlook" class="badge tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:text-[10.5px]">Outlook</span>
+            <span class="kl tw:flex-none tw:w-90 tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px] tw:text-right">{{ kindLabel(it.e.kind) }}</span>
+            <span class="du num tw:font-data tw:tabular-nums tw:flex-none tw:min-w-52 tw:text-right tw:text-text-2 tw:text-[12px]">{{ formatDuration(it.e.end - it.e.start) }}</span>
           </div>
         </template>
       </section>
       <EntryModal v-if="editing" :day="editing.day" :entry="editing.entry" @close="editing = undefined" @changed="reload" />
-      <p v-if="!groups.length" class="none">Ничего не найдено{{ anyFilter ? ' — попробуйте сбросить фильтры' : '' }}.</p>
+      <p v-if="!groups.length" class="none tw:text-muted tw:text-[12.5px]">Ничего не найдено{{ anyFilter ? ' — попробуйте сбросить фильтры' : '' }}.</p>
     </div>
   </div>
 </template>
-
-<style scoped>
-.wl {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  padding: 10px 14px 0;
-  gap: 8px;
-}
-.num {
-  font-family: var(--font-data);
-  font-variant-numeric: tabular-nums;
-}
-.pnav {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
-.pnav .ib {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-}
-.pnav .ib:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.pnav .pl,
-.pnav .today {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--text);
-  font-family: var(--font-data);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.pnav .pl.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-}
-.pnav .today {
-  margin-left: 4px;
-  color: var(--accent-fg);
-  font-family: inherit;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.seg {
-  display: inline-flex;
-  flex: none;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.seg button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.seg button + button {
-  border-left: 1px solid var(--border-2);
-}
-.seg button.on {
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-}
-.tog {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.tog.on {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-  background: rgb(var(--accent-rgb) / 0.16);
-  color: var(--text);
-}
-.search {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 1 220px;
-  min-width: 120px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--field-bg);
-  color: var(--muted);
-}
-.search input {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 12.5px;
-}
-.ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  height: 28px;
-  padding: 0 9px;
-  font-size: 12px;
-  color: var(--text-2);
-}
-.grow {
-  flex: 1;
-}
-.sum {
-  display: flex;
-  gap: 18px;
-  flex: none;
-  padding: 2px 2px 0;
-}
-.sum b {
-  color: var(--text-hi);
-  font-size: 12px;
-}
-.list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding-bottom: 14px;
-}
-.grp {
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-  background: var(--panel);
-}
-.gh {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 32px;
-  padding: 0 8px 0 12px;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--r3) var(--r3) 0 0;
-  background: var(--panel-2);
-}
-.gt {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-hi);
-}
-.gt.today {
-  color: var(--accent-fg);
-}
-.gm {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.lnk {
-  display: inline-flex;
-  margin-left: auto;
-  padding: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.lnk:hover {
-  color: var(--accent-fg);
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  margin: 0 6px;
-  padding: 3px 8px 3px 6px;
-  border-left: 3px solid var(--c, var(--border-3));
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  cursor: default;
-}
-.row:last-child {
-  border-bottom: 0;
-}
-.row:hover {
-  background: var(--hover);
-}
-.row.plan {
-  border-left-style: dashed;
-}
-.row.note {
-  --c: var(--warn);
-}
-.tm {
-  flex: none;
-  width: 92px;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.kic {
-  display: inline-flex;
-  flex: none;
-  color: var(--c);
-}
-.tt {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ttl {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13px;
-}
-.sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.tchip {
-  flex: none;
-  padding: 0 7px;
-  border-radius: var(--r2);
-  background: rgba(68, 138, 255, 0.16);
-  color: var(--info-fg);
-  font-family: var(--font-data);
-  font-size: 11px;
-}
-.badge {
-  flex: none;
-  padding: 0 6px;
-  border-radius: var(--r2);
-  background: rgba(68, 138, 255, 0.16);
-  color: var(--info-fg);
-  font-size: 10.5px;
-}
-.badge.pl {
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-}
-.badge.nt {
-  background: rgba(255, 183, 77, 0.14);
-  color: var(--warn-fg);
-}
-.kl {
-  flex: none;
-  width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
-  font-size: 11.5px;
-  text-align: right;
-}
-.du {
-  flex: none;
-  min-width: 52px;
-  text-align: right;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.none {
-  color: var(--muted);
-  font-size: 12.5px;
-}
-
-/* an event going on now (a call the tracker keeps extending, a block over "now"): a sweep and a pulse */
-.row.live {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
-}
-.row.live::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 35%;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 22%, transparent), transparent);
-  animation: live-sweep 2.6s linear infinite;
-  pointer-events: none;
-}
-.row.live .kic {
-  animation: live-pulse 1.4s ease-in-out infinite;
-}
-.lv {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  padding: 0 7px;
-  border-radius: var(--r2);
-  background: color-mix(in srgb, var(--c) 20%, transparent);
-  color: var(--text-hi);
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.lv i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--c);
-  box-shadow: 0 0 6px var(--c);
-  animation: live-blink 1s steps(2) infinite;
-}
-@keyframes live-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
-}
-@keyframes live-pulse {
-  50% {
-    opacity: 0.45;
-    transform: scale(0.88);
-  }
-}
-@keyframes live-blink {
-  50% {
-    opacity: 0.3;
-  }
-}
-</style>

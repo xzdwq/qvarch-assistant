@@ -1,0 +1,123 @@
+/* Timeline: what its template cannot carry as utilities (scoped). */
+.mtime {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
+}
+/* planned — dashed, see-through: a plan, not what happened */
+/* under a fanned-out group of notes: the pointer may cross it without the group folding back */
+/* an invisible end for a linked block / note out of view */
+/* outside the official hours — dimmed, so the work day stands out */
+.off {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.35) 0 6px, rgba(0, 0, 0, 0.18) 6px 12px);
+  pointer-events: none;
+}
+.mainl,
+.callsl {
+  cursor: crosshair;
+}
+.pc {
+  top: 13px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--up);
+}
+.seg,
+.uncut {
+  top: 5px;
+  bottom: 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  /* the text follows the block's own width (the same on the page and in the dashboard) */
+  container-type: inline-size;
+}
+@container (max-width: 139px) {
+  .us {
+    display: none;
+  }
+}
+@container (max-width: 83px) {
+  .ul {
+    display: none;
+  }
+}
+.seg.small {
+  top: 4px;
+  bottom: 4px;
+  border-radius: var(--r2);
+  font-size: 11px;
+}
+/* a block's text: up to two small lines, the icon inline at its start */
+/* resize handles lie over the block's edges — they take no room from the text */
+.uncut {
+  background: repeating-linear-gradient(135deg, rgba(127, 139, 157, 0.3) 0 6px, rgba(127, 139, 157, 0.1) 6px 12px);
+  background-size: 17px 17px;
+  animation: Timeline-flow 1.4s linear infinite;
+  color: var(--text-2);
+  font-size: 11px;
+  justify-content: center;
+  white-space: nowrap;
+}
+.app {
+  top: 6px;
+  bottom: 6px;
+  opacity: 0.9;
+}
+.app:hover {
+  opacity: 1;
+  outline: 1px solid rgba(255, 255, 255, 0.6);
+  z-index: 1;
+}
+.app.idle,
+.app.locked {
+  background: repeating-linear-gradient(90deg, var(--border-3) 0 2px, transparent 2px 4px);
+}
+.call.presence {
+  background: var(--accent-fg);
+}
+.card {
+  position: absolute;
+  top: 34px;
+  margin-left: 12px;
+  width: 300px;
+  padding: 8px 10px;
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 10;
+  animation: Timeline-fade 0.12s ease-out;
+}
+.card.flip {
+  margin-left: -312px;
+}
+.c-time {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.c-time .muted {
+  font-weight: 400;
+  margin-left: 6px;
+}
+.sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+.hint {
+  font-size: 11px;
+}
+.mini {
+  padding: 2px 8px;
+  font-size: 11px;
+}

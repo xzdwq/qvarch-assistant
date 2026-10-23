@@ -1,5 +1,6 @@
 import { firstFreeLane, overlap } from './timeline'
 import type { CallSegment, DayData, Entry, KindDef } from './types'
+import type { BuiltinKind } from './tracker/constants'
 
 /** Main-window sections of the call apps — their titles are not the call's. */
 const NOT_CALL = /^(чат|активность|календарь|команды|звонки|файлы|приложения|chat|activity|calendar|teams|calls|files|apps|onedrive|сообщество|community|уведомлени|notification)\b|^(microsoft teams|zoom( workplace| meetings)?|telegram|slack|skype)$/i
@@ -39,8 +40,10 @@ export const callLabel = (call: CallSegment): string => (call.title ? `Созв�
 /** A call shorter than this does not become a block (mic flicker). Teams may hold the mic only while unmuted. */
 export const CALL_ENTRY_MIN_MS = 10_000
 
+/** The kind a detected call's block gets: the built-in «call» if the user keeps it, else their first kind. */
 function callKind(kinds: KindDef[]): string {
-  return kinds.find((k) => k.id === 'call')?.id ?? kinds[0]?.id ?? 'call'
+  const CALL: BuiltinKind = 'call'
+  return kinds.find((k) => k.id === CALL)?.id ?? kinds[0]?.id ?? CALL
 }
 
 /**

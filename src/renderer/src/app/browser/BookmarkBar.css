@@ -1,0 +1,14 @@
+/* BookmarkBar: what its template cannot carry as utilities (scoped). */
+
+/* a bookmark dragged over another: into it (a folder), or its place before / after it */
+.bm.dropin,
+.bm.drop-before,
+.bm.drop-after {
+  background: rgb(var(--accent-rgb) / 0.2);
+}
+.bm.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.bm.drop-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}

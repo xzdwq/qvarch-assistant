@@ -1,7 +1,7 @@
 import vm from 'node:vm'
 import { inspect } from 'node:util'
 import { stripTypeScriptTypes } from 'node:module'
-import type { LoopJob, LoopResult, PassResult } from '../../shared/loop'
+import type { LoopJob, LoopResult, PassResult } from '../../notebook/domain/loop'
 import { errorText } from './errorText'
 
 /**

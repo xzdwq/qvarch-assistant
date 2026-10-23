@@ -1,0 +1,5 @@
+/* JiraDetails: what its template cannot carry as utilities (scoped). */
+
+.st.indeterminate {
+  background: var(--info);
+}

@@ -1,0 +1,5 @@
+/* DeviceBar: what its template cannot carry as utilities (scoped). */
+
+.dpick :deep(svg) {
+  color: var(--muted);
+}

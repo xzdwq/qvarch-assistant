@@ -18,12 +18,20 @@ import WorkList from './WorkList.vue'
  */
 const props = defineProps<{ settings: PublicSettings; focus?: { day: string; entryId?: string; n: number } }>()
 const emit = defineEmits<{ settings: [] }>()
-type Tab = 'work' | 'list' | 'jira' | 'calendar' | 'reports'
+/** The tabs of «Моя работа» in their row order (the first one is the default). */
+const TABS = [
+  { id: 'work', label: 'Работа' },
+  { id: 'list', label: 'Список' },
+  { id: 'reports', label: 'Аналитика' },
+  { id: 'calendar', label: 'Календарь' },
+  { id: 'jira', label: 'Jira' },
+] as const
+type Tab = (typeof TABS)[number]['id']
 const KEY = 'qa.work.tab'
 const read = (): Tab => {
   try {
     const v = localStorage.getItem(KEY)
-    return v === 'list' || v === 'jira' || v === 'calendar' || v === 'reports' ? v : 'work'
+    return TABS.find((t) => t.id === v)?.id ?? 'work'
   } catch {
     return 'work'
   }
@@ -36,13 +44,6 @@ watch(tab, (v) => {
     // fine
   }
 })
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'work', label: 'Работа' },
-  { id: 'list', label: 'Список' },
-  { id: 'reports', label: 'Аналитика' },
-  { id: 'calendar', label: 'Календарь' },
-  { id: 'jira', label: 'Jira' },
-]
 /** A day (a block on it) opened from here or from outside: Работа shows it — the block picked on the timeline. */
 const boardFocus = ref<{ day: string; entryId?: string; n: number }>()
 let n = 0
@@ -63,64 +64,14 @@ watch(
 </script>
 
 <template>
-  <div class="work">
-    <div class="wtabs">
-      <button v-for="t in TABS" :key="t.id" :class="{ on: tab === t.id }" @click="tab = t.id">{{ t.label }}</button>
+  <div class="work tw:flex tw:flex-col tw:h-full tw:min-h-0">
+    <div class="wtabs tw:flex-none tw:flex tw:gap-0 tw:py-0 tw:px-14 tw:border-b tw:border-b-border">
+      <button class="tw:relative tw:h-34 tw:py-0 tw:px-14 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:hover:not-[&.on]:text-text tw:hover:bg-transparent tw:[&.on]:text-accent-fg tw:[&.on]:after:content-[''] tw:[&.on]:after:absolute tw:[&.on]:after:left-8 tw:[&.on]:after:right-8 tw:[&.on]:after:-bottom-1 tw:[&.on]:after:h-2 tw:[&.on]:after:bg-accent" v-for="t in TABS" :key="t.id" :class="{ on: tab === t.id }" @click="tab = t.id">{{ t.label }}</button>
     </div>
-    <WorkBoard v-if="tab === 'work'" class="wbody" :settings="settings" :focus="boardFocus" @open-day="open" />
-    <WorkList v-else-if="tab === 'list'" class="wbody" @open-day="open" />
-    <TaskList v-else-if="tab === 'jira'" class="wbody" @settings="emit('settings')" @open-day="(d) => open(d)" />
-    <TaskCalendar v-else-if="tab === 'calendar'" class="wbody" fill :work-days="settings.schedule.workDays" @open-day="(d) => open(d)" />
-    <ReportsView v-else class="wbody rep-in" @go="(_v, d, id) => d && open(d, id)" />
+    <WorkBoard v-if="tab === 'work'" class="wbody tw:flex-1 tw:[&&]:min-h-0" :settings="settings" :focus="boardFocus" @open-day="open" />
+    <WorkList v-else-if="tab === 'list'" class="wbody tw:flex-1 tw:[&&]:min-h-0" @open-day="open" />
+    <TaskList v-else-if="tab === 'jira'" class="wbody tw:flex-1 tw:min-h-0" @settings="emit('settings')" @open-day="(d) => open(d)" />
+    <TaskCalendar v-else-if="tab === 'calendar'" class="wbody tw:flex-1 tw:min-h-0" fill :work-days="settings.schedule.workDays" @open-day="(d) => open(d)" />
+    <ReportsView v-else class="wbody rep-in tw:flex-1 tw:[&&]:min-h-0" @go="(_v, d, id) => d && open(d, id)" />
   </div>
 </template>
-
-<style scoped>
-.work {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.wtabs {
-  flex: none;
-  display: flex;
-  gap: 0;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-}
-.wtabs button {
-  position: relative;
-  height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.wtabs button:hover {
-  color: var(--text);
-  background: transparent;
-}
-.wtabs button.on {
-  color: var(--accent-fg);
-}
-.wtabs button.on::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--accent);
-}
-.wbody {
-  flex: 1;
-  min-height: 0;
-}
-</style>

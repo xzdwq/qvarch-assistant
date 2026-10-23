@@ -1,0 +1,80 @@
+/* App: what its template cannot carry as utilities (scoped). */
+
+.ico.spin :deep(svg) {
+  animation: App-qa-spin 0.6s linear infinite;
+}
+/* the window moves by the logo and the empty stretches only — buttons never sit inside a drag area
+   (Electron cuts holes for them, and on Windows some of those holes go missing: clicks were lost) */
+.nodrag,
+.titlebar button,
+.titlebar input {
+  -webkit-app-region: no-drag;
+}
+/* the section's actions: in the middle of the bar */
+/* the «Ещё» menu — teleported to <body> (placed by placeFloat) */
+/* (out of the title bar: its button look is given here) */
+/* the sections: terminal tabs — the open one is lit and named */
+.date {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r2);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-transform: capitalize;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+.titlebar .date {
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+/* the native date picker opens under the date button */
+.picker {
+  width: 0;
+  height: 0;
+  padding: 0;
+  margin: 0 0 0 -2px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  align-self: flex-end;
+}
+.titlebar .today {
+  color: var(--accent-fg);
+  border-color: var(--accent-line);
+  height: 24px;
+  font-size: 12px;
+}
+.grow {
+  flex: 1;
+}
+.azoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-width: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: default;
+}
+.azoom button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.titlebar .azoom .zv {
+  min-width: 42px;
+  padding: 0 4px;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}

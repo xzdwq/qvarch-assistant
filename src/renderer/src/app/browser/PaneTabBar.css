@@ -1,0 +1,6 @@
+/* PaneTabBar: what its template cannot carry as utilities (scoped). */
+
+/* the tabs move to their new places (TransitionGroup's class) */
+.tabmv-move {
+  transition: transform 0.16s ease;
+}

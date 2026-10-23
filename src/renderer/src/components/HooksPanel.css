@@ -1,0 +1,5 @@
+/* HooksPanel: what its template cannot carry as utilities (scoped). */
+
+.ed :deep(.cm-editor) {
+  max-height: 240px;
+}

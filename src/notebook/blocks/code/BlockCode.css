@@ -1,0 +1,14 @@
+/* BlockCode: what its template cannot carry as utilities (scoped). */
+
+.bc-ed :deep(.cm-editor),
+.bc-val :deep(.cm-editor) {
+  max-height: 420px;
+}
+.lg.warn {
+  border-color: #fbbf24;
+  color: #fde68a;
+}
+.lg.error {
+  border-color: var(--down);
+  color: var(--down-fg);
+}

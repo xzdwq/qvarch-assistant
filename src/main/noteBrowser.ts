@@ -104,12 +104,24 @@ export function netListen(host: WebContents, id: number, on: boolean, preserve: 
     throw new Error(`Не удалось подключиться к странице: ${e instanceof Error ? e.message : String(e)}`)
   }
   let mainFrame: string | undefined
-  g.debugger.on('message', (_e, method: string, p: Record<string, any>) => {
-    if (method === 'Page.frameNavigated' && !p.frame?.parentId) {
+  /** Finds the request and ends it (when it is in the list): its time, `done`; the block told. */
+  const ended = (p: Record<string, any>, fill: (it: NetItem) => void) => {
+    const it = L.items.get(p.requestId)
+    if (!it) return
+    fill(it)
+    it.ms = Math.round((p.timestamp - it.t0) * 1000)
+    it.done = true
+    touch()
+  }
+  /** The protocol's events the network list follows: the method → its change to the list (the block told). */
+  const onEvent: Record<string, (p: Record<string, any>) => void> = {
+    'Page.frameNavigated': (p) => {
+      if (p.frame?.parentId) return
       mainFrame = p.frame.id
       L.page.url = p.frame.url
       touch()
-    } else if (method === 'Network.requestWillBeSent') {
+    },
+    'Network.requestWillBeSent': (p) => {
       // the main frame's new page (its document's request): the list starts over (unless kept)
       if (p.type === 'Document' && p.requestId === p.loaderId && (!mainFrame || p.frameId === mainFrame) && !p.redirectResponse) {
         if (!L.preserve) {
@@ -131,7 +143,8 @@ export function netListen(host: WebContents, id: number, on: boolean, preserve: 
       L.items.set(p.requestId, { id: p.requestId, method: p.request.method, url: p.request.url, type: p.type ?? 'Other', t0: p.timestamp, wall: Math.round(p.wallTime * 1000), done: false })
       L.order.push(p.requestId)
       touch()
-    } else if (method === 'Network.responseReceived') {
+    },
+    'Network.responseReceived': (p) => {
       const it = L.items.get(p.requestId)
       if (!it) return
       it.status = p.response.status
@@ -140,27 +153,20 @@ export function netListen(host: WebContents, id: number, on: boolean, preserve: 
       const t = p.response.timing
       if (t) it.ttfb = Math.round(t.receiveHeadersEnd - t.sendEnd)
       touch()
-    } else if (method === 'Network.loadingFinished') {
-      const it = L.items.get(p.requestId)
-      if (!it) return
-      it.size = p.encodedDataLength
-      it.ms = Math.round((p.timestamp - it.t0) * 1000)
-      it.done = true
-      touch()
-    } else if (method === 'Network.loadingFailed') {
-      const it = L.items.get(p.requestId)
-      if (!it) return
-      it.error = p.canceled ? 'отменён' : p.blockedReason ? `заблокирован (${p.blockedReason})` : p.errorText
-      it.ms = Math.round((p.timestamp - it.t0) * 1000)
-      it.done = true
-      touch()
-    } else if (method === 'Page.domContentEventFired') {
+    },
+    'Network.loadingFinished': (p) => ended(p, (it) => (it.size = p.encodedDataLength)),
+    'Network.loadingFailed': (p) => ended(p, (it) => (it.error = p.canceled ? 'отменён' : p.blockedReason ? `заблокирован (${p.blockedReason})` : p.errorText)),
+    'Page.domContentEventFired': (p) => {
       L.page.dcl = p.timestamp
       touch()
-    } else if (method === 'Page.loadEventFired') {
+    },
+    'Page.loadEventFired': (p) => {
       L.page.load = p.timestamp
       touch()
-    }
+    },
+  }
+  g.debugger.on('message', (_e, method: string, p: Record<string, any>) => {
+    if (Object.hasOwn(onEvent, method)) onEvent[method](p)
   })
   g.debugger.on('detach', () => {
     clearTimeout(L.timer)

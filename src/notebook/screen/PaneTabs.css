@@ -1,0 +1,6 @@
+/* PaneTabs: what its template cannot carry as utilities (scoped). */
+
+/* the tabs make room for a dragged one */
+.tabmv-move {
+  transition: transform 0.16s ease;
+}

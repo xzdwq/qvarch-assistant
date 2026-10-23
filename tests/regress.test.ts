@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseRegress, regressMd, runSum, swapStand, unstable, type RegressRun } from '../src/shared/regress'
-import { findBlocks } from '../src/shared/noteBlocks'
+import { parseRegress, regressMd, runSum, swapStand, tallyChecks, unstable, type RegressRun } from '../src/shared/regress'
+import { findBlocks } from '../src/notebook/domain/findBlocks'
 
 describe('«Регрессия»', () => {
   it('its settings round-trip, and it is a component of a note', () => {
@@ -19,5 +19,10 @@ describe('«Регрессия»', () => {
     expect(unstable([run('ok'), run('ok')], 'a.md', 'k')).toBe(false)
     expect(unstable([run('ok'), run('fail'), run('ok')], 'a.md', 'k')).toBe(true)
     expect(runSum({ at: 1, ms: 1, items: [...run('ok').items, ...run('fail').items, ...run('fail', true).items] })).toEqual({ ok: 1, fail: 1, soft: 1, all: 3 })
+  })
+  it("a test's ready checks counted by verdict; anything else not counted", () => {
+    const states = ['ok', 'fail', 'ok', 'warn', 'skip', 'toString'].map((state) => ({ state }))
+    expect(tallyChecks(states)).toEqual({ ok: 2, fail: 1, warn: 1 })
+    expect(Object.keys(tallyChecks([])).sort()).toEqual(['fail', 'ok', 'warn'])
   })
 })

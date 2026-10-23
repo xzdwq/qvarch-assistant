@@ -34,7 +34,9 @@ export function parseNoteLink(url: string): NoteLink | undefined {
   return undefined
 }
 
-export type EventStatus = 'done' | 'now' | 'ahead'
+/** An event's place in time; in the order today's events are listed (going on first, the finished last). */
+export const EVENT_STATUSES = ['now', 'ahead', 'done'] as const
+export type EventStatus = (typeof EVENT_STATUSES)[number]
 export const statusOf = (e: Pick<EventRef, 'start' | 'end'>, now: number): EventStatus => (now >= e.end ? 'done' : now >= e.start ? 'now' : 'ahead')
 
 const words = (q: string) => q.toLowerCase().split(/\s+/).filter(Boolean)
@@ -73,7 +75,7 @@ export function pickGroups(all: EventRef[], query: string, now: number, todayKey
       if (e.start - now <= (searching ? 62 : 14) * DAY) ahead.push(e)
     } else if (!e.outlook || searching || now - e.start <= 62 * DAY) past.push(e)
   }
-  const rank = (s: EventStatus) => (s === 'now' ? 0 : s === 'ahead' ? 1 : 2)
+  const rank = (s: EventStatus) => EVENT_STATUSES.indexOf(s)
   today.sort((a, b) => rank(statusOf(a, now)) - rank(statusOf(b, now)) || (statusOf(a, now) === 'ahead' ? a.start - b.start : b.start - a.start))
   ahead.sort((a, b) => a.start - b.start)
   past.sort((a, b) => b.start - a.start)
@@ -101,9 +103,13 @@ export function durText(ms: number): string {
 }
 /** The status in words: «завершено», «идёт · ещё 20 мин», «через 2 ч». */
 export function statusText(e: Pick<EventRef, 'start' | 'end'>, now: number): string {
-  const s = statusOf(e, now)
-  if (s === 'done') return 'завершено'
-  if (s === 'now') return `идёт · ещё ${durText(e.end - now)}`
-  const d = e.start - now
-  return d < 36e5 ? `через ${durText(d)}` : d < DAY ? `через ${Math.round(d / 36e5)} ч` : `через ${Math.round(d / DAY)} дн`
+  return STATUS_TEXT[statusOf(e, now)](e, now)
+}
+const STATUS_TEXT: Record<EventStatus, (e: Pick<EventRef, 'start' | 'end'>, now: number) => string> = {
+  done: () => 'завершено',
+  now: (e, now) => `идёт · ещё ${durText(e.end - now)}`,
+  ahead: (e, now) => {
+    const d = e.start - now
+    return d < 36e5 ? `через ${durText(d)}` : d < DAY ? `через ${Math.round(d / 36e5)} ч` : `через ${Math.round(d / DAY)} дн`
+  },
 }

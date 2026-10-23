@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { placeFloat, useAnchor } from '../lib/floating'
+import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
+import Popover from './Popover.vue'
 
 /**
  * When a chain stops — one control: «error» (no answer, a script failed), whole classes of statuses (4xx, 5xx…)
@@ -9,14 +9,16 @@ import Icon from './Icon.vue'
  */
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [v: string] }>()
-const CLASSES = ['3xx', '4xx', '5xx']
+/** The word for «no answer / a script failed» in the value. */
+const ON_ERROR = 'error'
+const CLASSES: readonly string[] = ['3xx', '4xx', '5xx']
 const parts = computed(() => props.modelValue.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))
-const own = computed(() => parts.value.filter((p) => p !== 'error' && !CLASSES.includes(p)).join(', '))
+const own = computed(() => parts.value.filter((p) => p !== ON_ERROR && !CLASSES.includes(p)).join(', '))
 function set(next: { error?: boolean; classes?: string[]; own?: string }): void {
-  const error = next.error ?? parts.value.includes('error')
+  const error = next.error ?? parts.value.includes(ON_ERROR)
   const classes = next.classes ?? CLASSES.filter((c) => parts.value.includes(c))
   const codes = (next.own ?? own.value).split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d{3}(-\d{3})?$/.test(x))
-  emit('update:modelValue', [...(error ? ['error'] : []), ...classes, ...codes].join(', '))
+  emit('update:modelValue', [...(error ? [ON_ERROR] : []), ...classes, ...codes].join(', '))
 }
 function toggleClass(c: string): void {
   const now = CLASSES.filter((x) => parts.value.includes(x))
@@ -24,116 +26,30 @@ function toggleClass(c: string): void {
 }
 const label = computed(() => {
   if (!parts.value.length) return 'никогда'
-  return parts.value.map((p) => (p === 'error' ? 'ошибка' : p)).join(', ')
+  return parts.value.map((p) => (p === ON_ERROR ? 'ошибка' : p)).join(', ')
 })
 const open = ref(false)
 const root = ref<HTMLElement>()
 const ownText = ref(own.value)
-/** The popover: over everything (teleported), kept by its button. */
-const style = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
-useAnchor(open, root, () => {
-  if (!root.value) return
-  const f = placeFloat(root.value, 300, true, 0)
-  style.value = { ...f.style, maxHeight: `${f.maxH}px` }
-})
-const onDown = (e: PointerEvent) => open.value && !root.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.sop-pop') && (open.value = false)
-onMounted(() => document.addEventListener('pointerdown', onDown, true))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
+// (the popover: over everything, kept by the control)
 </script>
 
 <template>
-  <span ref="root" class="sop">
-    <button class="sb" :class="{ on: open }" title="Когда останавливать цепочку" @click="(open = !open), (ownText = own)">
-      Остановить на: <b>{{ label }}</b><Icon name="chevronDown" :size="11" />
+  <span ref="root" class="sop tw:relative tw:inline-flex">
+    <button class="sb tw:inline-flex tw:items-center tw:gap-6 tw:h-30 tw:py-0 tw:px-10 tw:text-[12.5px] tw:[&.on]:border-accent" :class="{ on: open }" title="Когда останавливать цепочку" @click="(open = !open), (ownText = own)">
+      Остановить на: <b class="tw:text-text-hi tw:font-semibold">{{ label }}</b><Icon name="chevronDown" :size="11" />
     </button>
-    <Teleport to="body">
-    <div v-if="open" class="sop-pop" :style="style">
-      <label class="row"><input type="checkbox" :checked="parts.includes('error')" @change="set({ error: ($event.target as HTMLInputElement).checked })" />Ошибке — нет ответа, ошибка скрипта</label>
-      <div class="cls">
-        <span>Ответах</span>
-        <button v-for="c in CLASSES" :key="c" :class="{ on: parts.includes(c) }" @click="toggleClass(c)">{{ c }}</button>
+    <Popover v-model:open="open" :anchor="root" :width="300" align-left :chrome="0" class="sop-pop tw:flex tw:overflow-y-auto tw:flex-col tw:gap-10 tw:w-300 tw:p-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:text-[12.5px]">
+      <label class="row tw:flex tw:items-center tw:gap-8"><input type="checkbox" :checked="parts.includes(ON_ERROR)" @change="set({ error: ($event.target as HTMLInputElement).checked })" />Ошибке — нет ответа, ошибка скрипта</label>
+      <div class="cls tw:flex tw:items-center tw:gap-6">
+        <span class="tw:mr-4 tw:text-text-2">Ответах</span>
+        <button class="tw:py-3 tw:px-10 tw:font-data tw:text-[12px] tw:[&.on]:border-accent tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="c in CLASSES" :key="c" :class="{ on: parts.includes(c) }" @click="toggleClass(c)">{{ c }}</button>
       </div>
-      <label class="own">
+      <label class="own tw:flex tw:flex-col tw:gap-4 tw:text-text-2">
         Своих кодах
-        <input v-model="ownText" placeholder="401, 409, 400-404" spellcheck="false" @change="set({ own: ownText })" @keydown.enter="set({ own: ownText })" />
+        <input class="tw:font-data tw:text-[12.5px]" v-model="ownText" placeholder="401, 409, 400-404" spellcheck="false" @change="set({ own: ownText })" @keydown.enter="set({ own: ownText })" />
       </label>
-      <button class="never" @click="(emit('update:modelValue', ''), (ownText = ''))">Не останавливать никогда</button>
-    </div>
-    </Teleport>
+      <button class="never tw:self-start tw:py-3 tw:px-10 tw:text-[12px]" @click="(emit('update:modelValue', ''), (ownText = ''))">Не останавливать никогда</button>
+    </Popover>
   </span>
 </template>
-
-<style scoped>
-.sop {
-  position: relative;
-  display: inline-flex;
-}
-.sb {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12.5px;
-}
-.sb b {
-  color: var(--text-hi);
-  font-weight: 600;
-}
-.sb.on {
-  border-color: var(--accent);
-}
-/* teleported to <body> (placed by placeFloat) */
-.sop-pop {
-  display: flex;
-  overflow-y: auto;
-  flex-direction: column;
-  gap: 10px;
-  width: 300px;
-  padding: 12px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r3);
-  background: var(--pop);
-  box-shadow: var(--shadow);
-  font-size: 12.5px;
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.cls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cls span {
-  margin-right: 4px;
-  color: var(--text-2);
-}
-.cls button {
-  padding: 3px 10px;
-  font-family: var(--font-data);
-  font-size: 12px;
-}
-.cls button.on {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent-fg);
-}
-.own {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--text-2);
-}
-.own input {
-  font-family: var(--font-data);
-  font-size: 12.5px;
-}
-.never {
-  align-self: flex-start;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-</style>

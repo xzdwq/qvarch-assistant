@@ -1,0 +1,96 @@
+/*
+ * Colours of the contrast themes (surfaces, lines, text) and of the accent — picked by the root's data attributes
+ * (set from the user's theme by lib/theme.ts in every window). «soft» is also what shows before the settings come.
+ * The window's own canvas in main follows --bg and --text-2 (WINDOW_FRAME in shared/theme.ts; a test keeps them equal).
+ */
+:root,
+:root[data-contrast='soft'] {
+  /* surfaces */
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1a212b;
+  --panel-3: #222b36;
+  --field-bg: #0f141b;
+  --hover: #1f2731;
+  --pop: #1a212b;
+  /* lines */
+  --border: #212a36;
+  --border-2: #2d3745;
+  --border-3: #3a4658;
+  /* text */
+  --text-hi: #f0f3f6;
+  --text: #d7dde7;
+  --text-2: #adb7c6;
+  --muted: #7f8b9d;
+  --dim: #566173;
+  /* how much white lightens the accent for text, how strong its soft fill is */
+  --accent-fg-lift: 35%;
+  --accent-soft-alpha: 0.14;
+}
+
+:root[data-contrast='normal'] {
+  --bg: #0a0d12;
+  --panel: #141920;
+  --panel-2: #1a212b;
+  --panel-3: #232c38;
+  --field-bg: #0c1016;
+  --hover: #212a35;
+  --pop: #1a212b;
+  --border: #2a3442;
+  --border-2: #374355;
+  --border-3: #47566b;
+  --text-hi: #f7f9fb;
+  --text: #e3e8ef;
+  --text-2: #bcc5d2;
+  --muted: #8f9bad;
+  --dim: #647185;
+  --accent-fg-lift: 45%;
+  --accent-soft-alpha: 0.14;
+}
+
+:root[data-contrast='high'] {
+  --bg: #06080b;
+  --panel: #11151b;
+  --panel-2: #181e27;
+  --panel-3: #222a35;
+  --field-bg: #090c10;
+  --hover: #222b37;
+  --pop: #181e27;
+  --border: #333e4e;
+  --border-2: #465368;
+  --border-3: #5a6980;
+  --text-hi: #ffffff;
+  --text: #eef2f7;
+  --text-2: #cfd6e0;
+  --muted: #a0abbc;
+  --dim: #77849a;
+  --accent-fg-lift: 45%;
+  --accent-soft-alpha: 0.2;
+}
+
+/* the accent: the user's colour (--accent, --accent-rgb set by lib/theme.ts) and what is derived from it */
+:root {
+  --accent: #ff6b00;
+  --accent-rgb: 255 107 0;
+  --accent-hi: color-mix(in srgb, var(--accent), white 20%);
+  --accent-fg: color-mix(in srgb, var(--accent), white var(--accent-fg-lift));
+  --accent-soft: rgb(var(--accent-rgb) / var(--accent-soft-alpha));
+  --accent-line: rgb(var(--accent-rgb) / 0.55);
+  /* text on the accent: dark on a light accent, white on a dark one */
+  --on-accent: #0a0d12;
+}
+
+:root[data-accent-tone='dark'] {
+  --on-accent: #ffffff;
+}
+
+/* the accent choices offered in the settings (a picked one is kept as the user's colour) */
+:root {
+  --accent-choice-orange: #ff6b00;
+  --accent-choice-turquoise: #18ffff;
+  --accent-choice-green: #00e676;
+  --accent-choice-blue: #448aff;
+  --accent-choice-violet: #8b7cff;
+  --accent-choice-amber: #ffb300;
+  --accent-choice-pink: #ff4f9a;
+}

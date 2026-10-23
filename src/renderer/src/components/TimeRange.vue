@@ -15,6 +15,9 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ 'update:start': [t: Ms]; 'update:end': [t: Ms]; change: [r: { start: Ms; end: Ms }] }>()
 
+/** Which of the two times. */
+type Part = 'start' | 'end'
+
 const length = computed(() => Math.max(MINUTE, props.end - props.start))
 /** The day the range is on (its start's day) and its bounds. */
 const base = computed(() => dayStart(dayKey(props.start)))
@@ -39,34 +42,43 @@ function setEnd(t: Ms): void {
   apply(s, Math.max(e, s + MINUTE))
 }
 const round = (t: Ms, step: number) => Math.round(t / (step * MINUTE)) * step * MINUTE
-function nudge(part: 'start' | 'end', minutes: number): void {
+function nudge(part: Part, minutes: number): void {
   const step = Math.abs(minutes)
   if (part === 'start') setStart(round(props.start, step) + minutes * MINUTE)
   else setEnd(round(props.end, step) + minutes * MINUTE)
 }
-function onWheel(part: 'start' | 'end', e: WheelEvent): void {
+function onWheel(part: Part, e: WheelEvent): void {
   if (props.disabled) return
   e.preventDefault()
   // up — later, down — earlier
   const up = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0
   nudge(part, (up ? 1 : -1) * (e.shiftKey ? 1 : 5))
 }
-const editing = ref<'start' | 'end'>()
-function onKey(part: 'start' | 'end', e: KeyboardEvent): void {
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+const editing = ref<Part>()
+/** An arrow moves the time by 5 min (1 with Shift): up — later, down — earlier. */
+function nudgeByKey(part: Part, e: KeyboardEvent, dir: 1 | -1): void {
+  e.preventDefault()
+  nudge(part, dir * (e.shiftKey ? 1 : 5))
+}
+/** The keys of a time input: the arrows nudge, Enter applies (by leaving), Esc puts the shown time back. */
+const KEY_ACTIONS: Partial<Record<string, (part: Part, e: KeyboardEvent, input: HTMLInputElement) => void>> = {
+  ArrowUp: (part, e) => nudgeByKey(part, e, 1),
+  ArrowDown: (part, e) => nudgeByKey(part, e, -1),
+  Enter: (_part, e, input) => {
     e.preventDefault()
-    nudge(part, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 5))
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    ;(e.target as HTMLInputElement).blur()
-  } else if (e.key === 'Escape') {
+    input.blur()
+  },
+  Escape: (part, e, input) => {
     e.stopPropagation()
-    ;(e.target as HTMLInputElement).value = shown(part)
-    ;(e.target as HTMLInputElement).blur()
-  }
+    input.value = shown(part)
+    input.blur()
+  },
+}
+function onKey(part: Part, e: KeyboardEvent): void {
+  KEY_ACTIONS[e.key]?.(part, e, e.target as HTMLInputElement)
 }
 /** Typed: «9», «930», «9:30», «09.30». */
-function typed(part: 'start' | 'end', v: string): void {
+function typed(part: Part, v: string): void {
   editing.value = undefined
   const m = v.trim().match(/^(\d{1,2})(?:[:.]?(\d{2}))?$/)
   if (!m || +m[1] > 24 || +(m[2] ?? 0) > 59) return
@@ -74,14 +86,14 @@ function typed(part: 'start' | 'end', v: string): void {
   if (part === 'start') setStart(t)
   else setEnd(t)
 }
-const shown = (part: 'start' | 'end') =>
+const shown = (part: Part) =>
   editing.value !== part && (part === 'start' ? props.liveStart : props.liveEnd) ? 'сейчас' : formatHM(part === 'start' ? props.start : props.end)
 </script>
 
 <template>
-  <span class="tr" :class="{ boxed, disabled }">
+  <span class="tr tw:group/tr tw:inline-flex tw:items-center tw:gap-1 tw:flex-none tw:whitespace-nowrap tw:font-data tw:tabular-nums tw:text-text tw:[&.boxed]:h-30 tw:[&.boxed]:pt-0 tw:[&.boxed]:pr-10 tw:[&.boxed]:pb-0 tw:[&.boxed]:pl-6 tw:[&.boxed]:border tw:[&.boxed]:border-border-2 tw:[&.boxed]:rounded-r2 tw:[&.boxed]:bg-field tw:[&.boxed]:text-[13px] tw:[&.boxed]:focus-within:border-accent" :class="{ boxed, disabled }">
     <input
-      class="tp"
+      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)] tw:disabled:cursor-default"
       :class="{ live: liveStart && editing !== 'start' }"
       :value="shown('start')"
       :disabled="disabled"
@@ -93,7 +105,7 @@ const shown = (part: 'start' | 'end') =>
       @change="typed('start', ($event.target as HTMLInputElement).value)"
       @blur="editing = undefined"
     />–<input
-      class="tp"
+      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)] tw:disabled:cursor-default"
       :class="{ live: liveEnd && editing !== 'end' }"
       :value="shown('end')"
       :disabled="disabled"
@@ -109,54 +121,3 @@ const shown = (part: 'start' | 'end') =>
     <slot />
   </span>
 </template>
-
-<style scoped>
-.tr {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  flex: none;
-  white-space: nowrap;
-  font-family: var(--font-data);
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-.tr.boxed {
-  height: 30px;
-  padding: 0 10px 0 6px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r2);
-  background: var(--field-bg);
-  font-size: 13px;
-}
-.tr.boxed:focus-within {
-  border-color: var(--accent);
-}
-.tp {
-  width: 5.2ch;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r1);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: center;
-  cursor: ns-resize;
-}
-.tr.boxed .tp {
-  height: 22px;
-}
-.tp.live {
-  width: 7ch;
-  color: var(--up-fg);
-}
-.tp:hover:not(:disabled),
-.tp:focus {
-  background: var(--hover);
-  outline: 1px solid var(--accent-line);
-}
-.tp:disabled {
-  cursor: default;
-}
-</style>

@@ -4,6 +4,7 @@ import { labelWithoutKey, pickableTasks, plainTask } from '@shared/jira'
 import { plannedWithin } from '@shared/plan'
 import { formatDuration, formatHM } from '@shared/timeline'
 import type { Ms, PlanBlock } from '@shared/types'
+import { isKind } from '@shared/tracker/constants'
 import Icon from './Icon.vue'
 import TimeRange from './TimeRange.vue'
 import OffsetField from './OffsetField.vue'
@@ -39,12 +40,12 @@ const workMs = computed(() => (props.schedule.work ? props.schedule.work[1] - pr
 const plannedWork = computed(() => {
   const w = props.schedule.work
   if (!w) return 0
-  const nonLunch = props.plan.filter((p) => p.kind !== 'lunch')
+  const nonLunch = props.plan.filter((p) => !isKind(p.kind, 'lunch'))
   return plannedWithin(nonLunch, w[0], w[1])
 })
 const hasLunch = computed(() => {
   const l = props.schedule.lunch
-  return !!l && props.plan.some((p) => p.kind === 'lunch' && p.start < l[1] && p.end > l[0])
+  return !!l && props.plan.some((p) => isKind(p.kind, 'lunch') && p.start < l[1] && p.end > l[0])
 })
 
 type PlanItem = { kind: string; label: string; task?: { key: string; summary: string }; minutes: number }
@@ -123,289 +124,100 @@ async function done(): Promise<void> {
 </script>
 
 <template>
-  <div class="plan">
-    <div class="ph">
+  <div class="plan tw:flex tw:flex-col tw:gap-10">
+    <div class="ph tw:flex tw:items-center tw:gap-8 tw:flex-wrap">
       <Icon name="calendar" :size="16" />
-      <b>План дня</b>
-      <span v-if="workMs" class="muted small">запланировано {{ formatDuration(plannedWork) }} из {{ formatDuration(workMs) }}</span>
-      <span class="spacer"></span>
-      <button class="ib" title="Закрыть планирование" @click="emit('close')"><Icon name="x" :size="14" /></button>
+      <b class="tw:text-[14px]">План дня</b>
+      <span v-if="workMs" class="muted small tw:text-[12px]">запланировано {{ formatDuration(plannedWork) }} из {{ formatDuration(workMs) }}</span>
+      <span class="spacer tw:flex-1"></span>
+      <button class="ib tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Закрыть планирование" @click="emit('close')"><Icon name="x" :size="14" /></button>
     </div>
 
     <!-- the selected plan block -->
-    <div v-if="sel" class="sel">
-      <div class="srow">
-        <span class="kic" :style="{ background: kindColor(sel.kind) }"><Icon :name="entryIcon(sel)" :size="12" /></span>
-        <input v-model="editLabel" class="lbl" spellcheck="false" @change="update({ label: editLabel })" @keydown.enter="update({ label: editLabel })" />
+    <div v-if="sel" class="sel tw:flex tw:flex-col tw:gap-8 tw:p-10 tw:rounded-[4px] tw:border-1.5 tw:border-dashed tw:border-accent/60 tw:bg-accent/7">
+      <div class="srow tw:flex tw:items-center tw:gap-8 tw:flex-wrap">
+        <span class="kic tw:inline-flex tw:items-center tw:justify-center tw:w-22 tw:h-22 tw:rounded-r2 tw:text-text-hi" :style="{ background: kindColor(sel.kind) }"><Icon :name="entryIcon(sel)" :size="12" /></span>
+        <input v-model="editLabel" class="lbl tw:flex-1 tw:py-5 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[13px]" spellcheck="false" @change="update({ label: editLabel })" @keydown.enter="update({ label: editLabel })" />
       </div>
-      <div class="srow">
+      <div class="srow tw:flex tw:items-center tw:gap-8 tw:flex-wrap">
         <TimeRange boxed :start="sel.start" :end="sel.end" @change="(r) => update({ start: r.start, end: r.end })" />
       </div>
-      <div v-if="sel.task" class="muted small tline"><Icon name="jira" :size="12" />{{ sel.task.key }} · {{ labelWithoutKey(sel.task.summary, sel.task.key) }}</div>
+      <div v-if="sel.task" class="muted small tline tw:flex tw:items-center tw:gap-6 tw:text-[12px]"><Icon name="jira" :size="12" />{{ sel.task.key }} · {{ labelWithoutKey(sel.task.summary, sel.task.key) }}</div>
       <div class="kinds">
-        <button v-for="k in planKinds" :key="k.id" :class="{ on: sel.kind === k.id }" :style="sel.kind === k.id ? { background: k.color } : {}" :title="k.label" @click="update({ kind: k.id })">
+        <button class="tw:border-0 tw:rounded-none tw:bg-transparent tw:py-4 tw:px-10 tw:text-[12px] tw:text-muted tw:[&.on]:text-text-hi" v-for="k in planKinds" :key="k.id" :class="{ on: sel.kind === k.id }" :style="sel.kind === k.id ? { background: k.color } : {}" :title="k.label" @click="update({ kind: k.id })">
           <Icon :name="k.icon" :size="13" />
         </button>
       </div>
-      <div class="srow">
-        <button class="ok" title="Создать настоящий блок на это время" @click="done"><Icon name="check" :size="14" />Сделано по плану</button>
-        <button class="danger" @click="remove"><Icon name="trash" :size="13" />Удалить</button>
-        <span class="spacer"></span>
-        <button class="ib" title="Снять выделение" @click="emit('select', undefined)"><Icon name="x" :size="13" /></button>
+      <div class="srow tw:flex tw:items-center tw:gap-8 tw:flex-wrap">
+        <button class="ok tw:text-up tw:inline-flex tw:items-center tw:gap-5 tw:text-[12px] tw:py-4 tw:px-10" title="Создать настоящий блок на это время" @click="done"><Icon name="check" :size="14" />Сделано по плану</button>
+        <button class="danger tw:text-down-fg tw:inline-flex tw:items-center tw:gap-5 tw:text-[12px] tw:py-4 tw:px-10" @click="remove"><Icon name="trash" :size="13" />Удалить</button>
+        <span class="spacer tw:flex-1"></span>
+        <button class="ib tw:border-0 tw:bg-transparent tw:text-muted tw:inline-flex tw:items-center tw:gap-5 tw:text-[12px] tw:py-4 tw:px-10 tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Снять выделение" @click="emit('select', undefined)"><Icon name="x" :size="13" /></button>
       </div>
     </div>
 
-    <div class="tools">
-      <span class="muted small">Длительность</span>
+    <div class="tools tw:flex tw:items-center tw:gap-8 tw:flex-wrap">
+      <span class="muted small tw:text-[12px]">Длительность</span>
       <OffsetField v-model="minutes" unsigned :step="15" :max="720" />
-      <span class="spacer"></span>
-      <button v-if="schedule.lunch && !hasLunch" @click="addLunch"><Icon name="utensils" :size="13" />Обед по графику</button>
-      <button v-if="plan.length" class="dim" @click="clearPlan">Очистить план</button>
+      <span class="spacer tw:flex-1"></span>
+      <button class="tw:inline-flex tw:items-center tw:gap-5 tw:text-[12px] tw:py-4 tw:px-10" v-if="schedule.lunch && !hasLunch" @click="addLunch"><Icon name="utensils" :size="13" />Обед по графику</button>
+      <button v-if="plan.length" class="dim tw:text-muted tw:inline-flex tw:items-center tw:gap-5 tw:text-[12px] tw:py-4 tw:px-10" @click="clearPlan">Очистить план</button>
     </div>
 
-    <p class="muted small hint">Перетащите вид занятости или задачу на дорожку «План» таймлайна. Блоки плана двигаются и тянутся за края; клик — изменить.</p>
+    <p class="muted small hint tw:text-[12px] tw:m-0">Перетащите вид занятости или задачу на дорожку «План» таймлайна. Блоки плана двигаются и тянутся за края; клик — изменить.</p>
 
-    <div class="pal">
+    <div class="pal tw:flex tw:flex-wrap tw:gap-6">
       <div
         v-for="k in planKinds"
         :key="k.id"
-        class="item kind"
+        class="item kind tw:inline-flex tw:items-center tw:gap-6 tw:py-5 tw:px-10 tw:rounded-[4px] tw:border-1.5 tw:border-dashed tw:border-(--c,color-mix(in_srgb,var(--info)_70%,transparent)) tw:bg-[color-mix(in_srgb,var(--c,var(--info))_16%,transparent)] tw:text-[12px] tw:cursor-grab tw:select-none tw:active:cursor-grabbing"
         
         :style="{ '--c': k.color }"
         :title="`Перетащите на таймлайн: ${k.label}, ${minutes} мин`"
-        @pointerdown="startDrag($event, { kind: k.id, label: k.label, minutes: k.id === 'lunch' && schedule.lunch ? (schedule.lunch[1] - schedule.lunch[0]) / 60000 : minutes })"
+        @pointerdown="startDrag($event, { kind: k.id, label: k.label, minutes: isKind(k.id, 'lunch') && schedule.lunch ? (schedule.lunch[1] - schedule.lunch[0]) / 60000 : minutes })"
       >
         <Icon :name="k.icon" :size="13" />{{ k.label }}
       </div>
       <div
-        class="item kind custom"
+        class="item kind custom tw:inline-flex tw:items-center tw:gap-6 tw:py-5 tw:px-10 tw:rounded-[4px] tw:border-1.5 tw:border-dashed tw:border-(--c,color-mix(in_srgb,var(--info)_70%,transparent)) tw:bg-[color-mix(in_srgb,var(--c,var(--info))_16%,transparent)] tw:text-[12px] tw:cursor-grab tw:select-none tw:active:cursor-grabbing"
         
         :class="{ off: !custom.trim() }"
         title="Своё название"
         @pointerdown="startDrag($event, { kind: 'task', label: custom.trim() || 'Задача', minutes })"
       >
         <Icon name="plus" :size="13" />
-        <input v-model="custom" placeholder="своё название…" spellcheck="false" @pointerdown.stop />
+        <input class="tw:w-130 tw:border-0 tw:bg-transparent tw:text-text tw:[font:inherit] tw:outline-none" v-model="custom" placeholder="своё название…" spellcheck="false" @pointerdown.stop />
       </div>
     </div>
 
     <template v-if="jira.connected">
-      <div class="th">
+      <div class="th tw:flex tw:items-center tw:gap-8 tw:flex-wrap tw:text-[12px] tw:text-info-fg">
         <Icon name="jira" :size="13" /><span>Задачи Jira</span>
-        <input v-model="q" class="search" placeholder="поиск" spellcheck="false" />
+        <input v-model="q" class="search tw:ml-auto tw:w-160 tw:py-3 tw:px-8 tw:rounded-r2 tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12px]" placeholder="поиск" spellcheck="false" />
       </div>
-      <div class="tasks">
+      <div class="tasks tw:flex tw:flex-col tw:gap-4 tw:max-h-260 tw:overflow-auto">
         <div
           v-for="i in tasks"
           :key="i.key"
-          class="item task"
+          class="item task tw:items-center tw:gap-6 tw:py-5 tw:px-10 tw:rounded-[4px] tw:border-1.5 tw:border-dashed tw:border-(--c,color-mix(in_srgb,var(--info)_70%,transparent)) tw:bg-[color-mix(in_srgb,var(--c,var(--info))_16%,transparent)] tw:text-[12px] tw:cursor-grab tw:select-none tw:active:cursor-grabbing tw:[--c:var(--info)] tw:flex"
           
           :title="`${i.key} — ${i.summary}${i.estimateSec ? ` · оценка ${Math.round(i.estimateSec / 60)} мин` : ''}`"
           @pointerdown="startDrag($event, { kind: 'task', label: `${i.key} ${i.summary}`, task: { key: i.key, summary: i.summary }, minutes: taskMinutes(i.estimateSec) })"
         >
-          <b>{{ i.key }}</b>
-          <span class="sum">{{ i.summary }}</span>
-          <span class="muted small">{{ taskMinutes(i.estimateSec) }}м</span>
+          <b class="tw:flex-none tw:text-info-fg">{{ i.key }}</b>
+          <span class="sum tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ i.summary }}</span>
+          <span class="muted small tw:text-[12px]">{{ taskMinutes(i.estimateSec) }}м</span>
         </div>
-        <p v-if="!tasks.length" class="muted small">Нет задач — мои задачи Jira и отмеченные звёздочкой в «Задачах».</p>
+        <p v-if="!tasks.length" class="muted small tw:text-[12px]">Нет задач — мои задачи Jira и отмеченные звёздочкой в «Задачах».</p>
       </div>
     </template>
     <Teleport to="body">
-      <div v-if="ghost?.moved" class="ghost" :style="{ left: `${ghost.x + 12}px`, top: `${ghost.y + 10}px`, '--c': kindColor(ghost.item.kind) }">
-        <b v-if="ghost.item.task">{{ ghost.item.task.key }}</b>{{ ghost.item.task ? '' : ghost.item.label }} · {{ ghost.item.minutes }}м
+      <div v-if="ghost?.moved" class="ghost tw:fixed tw:z-5000 tw:pointer-events-none tw:py-4 tw:px-10 tw:rounded-r2 tw:border-1.5 tw:border-dashed tw:border-(--c) tw:bg-[color-mix(in_srgb,var(--c)_30%,var(--bg))] tw:text-text-hi tw:text-[12px] tw:whitespace-nowrap tw:[box-shadow:0_8px_20px_rgba(0,0,0,0.45)]" :style="{ left: `${ghost.x + 12}px`, top: `${ghost.y + 10}px`, '--c': kindColor(ghost.item.kind) }">
+        <b class="tw:mr-4" v-if="ghost.item.task">{{ ghost.item.task.key }}</b>{{ ghost.item.task ? '' : ghost.item.label }} · {{ ghost.item.minutes }}м
       </div>
     </Teleport>
-    <p v-if="plan.length" class="muted small">В плане {{ plan.length }} · с {{ formatHM(Math.min(...plan.map((p) => p.start))) }} до {{ formatHM(Math.max(...plan.map((p) => p.end))) }}</p>
+    <p v-if="plan.length" class="muted small tw:text-[12px]">В плане {{ plan.length }} · с {{ formatHM(Math.min(...plan.map((p) => p.start))) }} до {{ formatHM(Math.max(...plan.map((p) => p.end))) }}</p>
   </div>
 </template>
 
-<style scoped>
-.plan {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.ph,
-.srow,
-.tools,
-.th {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.tline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ph b {
-  font-size: 14px;
-}
-.spacer {
-  flex: 1;
-}
-.small {
-  font-size: 12px;
-}
-.hint {
-  margin: 0;
-}
-.ib {
-  display: inline-flex;
-  padding: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.sel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 4px;
-  border: 1.5px dashed rgb(var(--accent-rgb) / 0.6);
-  background: rgb(var(--accent-rgb) / 0.07);
-}
-.kic {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r2);
-  color: var(--text-hi);
-}
-.lbl {
-  flex: 1;
-  padding: 5px 8px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-.kinds,
-.durs {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  align-self: flex-start;
-}
-.kinds button,
-.durs button {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.kinds button.on {
-  color: var(--text-hi);
-}
-.durs button.on {
-  background: rgb(var(--accent-rgb) / 0.3);
-  color: var(--text);
-}
-.ok {
-  color: var(--up);
-}
-.danger {
-  color: var(--down-fg);
-}
-.dim {
-  color: var(--muted);
-}
-.tools button,
-.srow button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  padding: 4px 10px;
-}
-.pal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 4px;
-  border: 1.5px dashed var(--c, rgba(68, 138, 255, 0.7));
-  background: color-mix(in srgb, var(--c, var(--info)) 16%, transparent);
-  font-size: 12px;
-  cursor: grab;
-  user-select: none;
-}
-.item:active {
-  cursor: grabbing;
-}
-.ghost {
-  position: fixed;
-  z-index: 5000;
-  pointer-events: none;
-  padding: 4px 10px;
-  border-radius: var(--r2);
-  border: 1.5px dashed var(--c);
-  background: color-mix(in srgb, var(--c) 30%, var(--bg));
-  color: var(--text-hi);
-  font-size: 12px;
-  white-space: nowrap;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
-}
-.ghost b {
-  margin-right: 4px;
-}
-.custom input {
-  width: 130px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  outline: none;
-}
-.th {
-  font-size: 12px;
-  color: var(--info-fg);
-}
-.th .search {
-  margin-left: auto;
-  width: 160px;
-  padding: 3px 8px;
-  border-radius: var(--r2);
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-}
-.tasks {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 260px;
-  overflow: auto;
-}
-.item.task {
-  --c: var(--info);
-  display: flex;
-}
-.item.task b {
-  flex: none;
-  color: var(--info-fg);
-}
-.sum {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>
+<style scoped src="./PlanPanel.css"></style>
