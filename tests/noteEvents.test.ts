@@ -15,7 +15,7 @@ describe('events in notes', () => {
     const l = eventLink({ day: '2026-10-18', id: 'ab-12', label: 'Созвон [важный]' })
     expect(l).toBe('[Созвон  важный](qvarch://event/2026-10-18/ab-12)'.replace('  ', ' '))
     expect(parseNoteLink('qvarch://event/2026-10-18/ab-12')).toEqual({ kind: 'event', day: '2026-10-18', id: 'ab-12' })
-    expect(parseNoteLink('qvarch://jira/DOS-12')).toEqual({ kind: 'jira', key: 'DOS-12' })
+    expect(parseNoteLink('qvarch://jira/ABC-12')).toEqual({ kind: 'jira', key: 'ABC-12' })
     expect(parseNoteLink('https://x')).toBeUndefined()
   })
   it('knows done / going on / ahead', () => {

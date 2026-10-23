@@ -14,7 +14,14 @@ interface Step {
   /** Runs in the first visible browser page (a WebContentsView) — after js. */
   vjs?: string
   /** Real (trusted) input into that page, in order: a click at the centre of a CSS selector, typed text, a key. */
-  vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; wait?: number }>
+  vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number }>
+  /**
+   * Files picked in the page as a person does: a real click on `click` (it opens the file window — caught by the
+   * protocol, never shown), the files given to it; without `click` — straight into the file field `sel`.
+   */
+  vfiles?: { click?: string; sel?: string; paths: string[] }
+  /** The same real input into the window itself (the app's own fields). */
+  minput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number }>
   /** A mouse moved across the window (x, y → x, y in n steps): every cursor change of the window and its pages is logged. */
   move?: [number, number, number, number, number]
   /**
@@ -88,15 +95,58 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
         w.webContents.sendInputEvent({ type: 'mouseUp', ...at(st.pts[st.pts.length - 1]), button: 'left', clickCount: 1 })
         await sleep(300)
       }
-      if (s.vinput) {
+      if (s.vfiles) {
         const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())
         const wc = v?.webContents
-        for (const a of s.vinput) {
+        if (wc) {
+          const dbg = wc.debugger
+          const mine = !dbg.isAttached()
+          if (mine) dbg.attach('1.3')
+          try {
+            if (s.vfiles.click) {
+              await dbg.sendCommand('Page.enable')
+              await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true })
+              const opened = new Promise<number | undefined>((ok) => {
+                const h = (_e: unknown, method: string, p: { backendNodeId?: number }) => {
+                  if (method !== 'Page.fileChooserOpened') return
+                  dbg.off('message', h)
+                  ok(p.backendNodeId)
+                }
+                dbg.on('message', h)
+                setTimeout(() => (dbg.off('message', h), ok(undefined)), 5000)
+              })
+              const r = (await wc.executeJavaScript(`(() => { const e = document.querySelector(${JSON.stringify(s.vfiles.click)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
+              if (r) {
+                const [x, y] = r.map((n) => Math.round(n * wc.getZoomFactor()))
+                wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+                wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+              }
+              const node = await opened
+              if (node) await dbg.sendCommand('DOM.setFileInputFiles', { files: s.vfiles.paths, backendNodeId: node })
+              else log.push(`${s.name}: окно выбора файла не открылось`)
+              await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false })
+            } else if (s.vfiles.sel) {
+              const doc = (await dbg.sendCommand('DOM.getDocument')) as { root: { nodeId: number } }
+              const n = (await dbg.sendCommand('DOM.querySelector', { nodeId: doc.root.nodeId, selector: s.vfiles.sel })) as { nodeId: number }
+              await dbg.sendCommand('DOM.setFileInputFiles', { files: s.vfiles.paths, nodeId: n.nodeId })
+            }
+          } catch (e) {
+            log.push(`${s.name}: vfiles ${e instanceof Error ? e.message : String(e)}`)
+          } finally {
+            if (mine) dbg.detach()
+          }
+          await sleep(500)
+        }
+      }
+      if (s.vinput || s.minput) {
+        const v = w.contentView.children.find((x): x is WebContentsView => x instanceof WebContentsView && x.getVisible())
+        const wc = s.minput ? w.webContents : v?.webContents
+        for (const a of s.minput ?? s.vinput ?? []) {
           if (!wc) break
           if (a.dbl) {
             const r = (await wc.executeJavaScript(`(() => { const e = document.querySelector(${JSON.stringify(a.dbl)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
             if (r) {
-              const [x, y] = r.map(Math.round)
+              const [x, y] = r.map((v) => Math.round(v * wc.getZoomFactor()))
               wc.sendInputEvent({ type: 'mouseMove', x, y })
               for (const n of [1, 2]) {
                 wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: n })
@@ -108,7 +158,18 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
             const r = (await wc.executeJavaScript(`(() => { const e = document.querySelector(${JSON.stringify(a.click)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)) as [number, number] | null
             if (!r) log.push(`${s.name}: no ${a.click}`)
             else {
-              const [x, y] = r.map(Math.round)
+              const [x, y] = r.map((v) => Math.round(v * wc.getZoomFactor()))
+              wc.sendInputEvent({ type: 'mouseMove', x, y })
+              wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+              wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+            }
+          }
+          // a click at a point (an expression giving [x, y] in the page)
+          if (a.at) {
+            const r = (await wc.executeJavaScript(a.at)) as [number, number] | null
+            if (!r) log.push(`${s.name}: no point`)
+            else {
+              const [x, y] = r.map((v) => Math.round(v * wc.getZoomFactor()))
               wc.sendInputEvent({ type: 'mouseMove', x, y })
               wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
               wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
@@ -116,9 +177,10 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
           }
           if (a.type) for (const ch of a.type) wc.sendInputEvent({ type: 'char', keyCode: ch })
           if (a.key) {
-            wc.sendInputEvent({ type: 'keyDown', keyCode: a.key })
-            if (a.key === 'Enter') wc.sendInputEvent({ type: 'char', keyCode: '\r' })
-            wc.sendInputEvent({ type: 'keyUp', keyCode: a.key })
+            const modifiers = a.mods ?? []
+            wc.sendInputEvent({ type: 'keyDown', keyCode: a.key, modifiers })
+            if (a.key === 'Enter' && !modifiers.length) wc.sendInputEvent({ type: 'char', keyCode: '\r' })
+            wc.sendInputEvent({ type: 'keyUp', keyCode: a.key, modifiers })
           }
           await sleep(a.wait ?? 250)
         }

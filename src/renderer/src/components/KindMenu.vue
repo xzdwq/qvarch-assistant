@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { kinds } from '../lib/palette'
+import { useCloseOnScroll } from '../lib/floating'
 import Icon from './Icon.vue'
 
 /**
  * Right-click menu "what kind of activity is this?". Fixed-positioned and clamped into `bounds`
- * (the island passes its panel rect — anything outside it would be click-through).
+ * (the island passes its panel rect — anything outside it would be click-through). Over everything (teleported);
+ * closed by a click elsewhere, Esc, or anything scrolling (it stood by what has moved).
  */
 const props = defineProps<{
   x: number
@@ -28,7 +30,8 @@ const style = computed(() => {
   return { left: `${left}px`, top: `${top}px` }
 })
 
-function onDown(e: MouseEvent): void {
+useCloseOnScroll(ref(true), () => emit('close'), '.kmenu')
+function onDown(e: PointerEvent): void {
   if (!el.value?.contains(e.target as Node)) emit('close')
 }
 function onKey(e: KeyboardEvent): void {
@@ -37,16 +40,17 @@ function onKey(e: KeyboardEvent): void {
 
 onMounted(() => {
   if (el.value) size.value = { w: el.value.offsetWidth, h: el.value.offsetHeight }
-  window.addEventListener('mousedown', onDown, true)
+  window.addEventListener('pointerdown', onDown, true)
   window.addEventListener('keydown', onKey)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', onDown, true)
+  window.removeEventListener('pointerdown', onDown, true)
   window.removeEventListener('keydown', onKey)
 })
 </script>
 
 <template>
+  <Teleport to="body">
   <div ref="el" class="kmenu" :style="style" @contextmenu.prevent>
     <div v-if="title" class="ttl">{{ title }}</div>
     <button v-for="k in noKinds ? [] : kinds.filter((x) => !x.hidden || x.id === current)" :key="k.id" :class="{ cur: k.id === current }" @click="emit('pick', k.id)">
@@ -55,6 +59,7 @@ onBeforeUnmount(() => {
     </button>
     <slot />
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

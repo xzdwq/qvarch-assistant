@@ -1,5 +1,6 @@
+import { httpRequestText } from '../src/shared/httpBlock'
 import { describe, expect, it } from 'vitest'
-import { emptyOf, readSpec, serverOf, specToHttp } from '../src/shared/openapi'
+import { emptyOf, readSpec, serverOf, specExamples, specToHttp } from '../src/shared/openapi'
 import type { HttpFolder, HttpRequest } from '../src/shared/http'
 
 const oas3 = {
@@ -112,5 +113,19 @@ describe('OpenAPI → HTTP with the suggested values', () => {
     expect(r.url).toBe('{{base_api_test}}/catalog/sync/products/{{kind}}')
     expect(r.params).toEqual([{ on: true, key: 'SearchParams', value: '' }, { on: true, key: 'page', value: '' }])
     expect(JSON.parse(r.body.text)).toEqual({ name: '', mode: 0, qty: 0 })
+  })
+})
+
+describe('OpenAPI → requests for the notebook', () => {
+  it('the server put in, the query and headers asked for, a body from the schema, a path parameter left to fill', () => {
+    const [list, create, del] = specExamples(oas3, 'https://shop.test/swagger/v1.json', ['GET /items', 'POST /items', 'DELETE /items/{id}'])
+    expect(list).toEqual({ method: 'GET', url: 'https://shop.test/api/v2/items?page=', headers: [] })
+    expect(create.url).toBe('https://shop.test/api/v2/items')
+    expect(create.contentType).toBe('application/json')
+    expect(JSON.parse(create.body!)).toMatchObject({ title: '', price: 0 })
+    expect(del).toEqual({ method: 'DELETE', url: 'https://shop.test/api/v2/items/{{id}}', headers: [['X-Api-Key', '{{x_api_key_shop_test}}']] })
+    // and as a block: the {{id}} kept, the query laid out
+    expect(httpRequestText(list)).toBe('GET https://shop.test/api/v2/items\n    ?page=')
+    expect(httpRequestText(del)).toContain('DELETE https://shop.test/api/v2/items/{{id}}')
   })
 })

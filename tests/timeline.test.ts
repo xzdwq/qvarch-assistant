@@ -122,7 +122,7 @@ describe('flattenForDisplay / parseQuickDuration', () => {
     expect(parseQuickDuration('30м созвон с командой')).toEqual({ minutes: 30, rest: 'созвон с командой' })
     expect(parseQuickDuration('1ч ревью')).toEqual({ minutes: 60, rest: 'ревью' })
     expect(parseQuickDuration('20 мин')).toEqual({ minutes: 20, rest: '' })
-    expect(parseQuickDuration('DOS-1 fix')).toBeUndefined()
+    expect(parseQuickDuration('ABC-1 fix')).toBeUndefined()
     expect(parseQuickDuration('3мя людьми')).toBeUndefined()
   })
 })

@@ -125,6 +125,8 @@ const api: QaApi = {
   },
   httpImport: (folder, vars) => ipcRenderer.invoke(IPC.httpImport, folder, vars),
   browser: (m, ...a) => ipcRenderer.invoke(IPC.browser, m, ...a),
+  files: (m, ...a) => ipcRenderer.invoke(IPC.files, m, ...a),
+  sql: (m, ...a) => ipcRenderer.invoke(IPC.sql, m, ...a),
   pathForFile: (file) => webUtils.getPathForFile(file),
   clipGet: () => ipcRenderer.invoke(IPC.clip, 'get'),
   clipSet: (on) => ipcRenderer.invoke(IPC.clip, 'set', on),
@@ -141,6 +143,7 @@ const api: QaApi = {
   jiraVersionIssues: (id) => ipcRenderer.invoke(IPC.jiraVersionIssues, id),
   calendarRange: (from, to) => ipcRenderer.invoke(IPC.calendarRange, from, to),
   openExternal: (url) => ipcRenderer.send(IPC.openExternal, url),
+  copyImage: (bytes) => ipcRenderer.invoke(IPC.copyImage, bytes),
   onCombo: (cb) => listen(IPC.combo, cb),
   getCombo: () => ipcRenderer.invoke(IPC.getCombo),
   onPulse: (cb) => listen(IPC.pulse, cb),
@@ -198,6 +201,14 @@ const api: QaApi = {
   docImportFile: (dir, file) => ipcRenderer.invoke(IPC.docImportFile, dir, file),
   runCode: (runId, job) => ipcRenderer.invoke(IPC.runCode, runId, job),
   runCodeStop: (runId) => ipcRenderer.send(IPC.runCodeStop, runId),
+  runLoop: (runId, job) => ipcRenderer.invoke(IPC.runLoop, runId, job),
+  runLoopPass: (runId, n, result) => ipcRenderer.send(IPC.runLoopPass, runId, n, result),
+  runLoopStop: (runId) => ipcRenderer.send(IPC.runLoopStop, runId),
+  onLoopPass: (cb) => {
+    const h = (_e: unknown, runId: string, n: number, vars: Record<string, unknown>) => cb(runId, n, vars)
+    ipcRenderer.on(IPC.loopPass, h)
+    return () => void ipcRenderer.off(IPC.loopPass, h)
+  },
   vaultReadImage: (path) => ipcRenderer.invoke(IPC.vaultReadImage, path),
   vaultDeleteImage: (path) => ipcRenderer.invoke(IPC.vaultDeleteImage, path),
   vaultRestoreImage: (path, bytes) => ipcRenderer.invoke(IPC.vaultRestoreImage, path, bytes),

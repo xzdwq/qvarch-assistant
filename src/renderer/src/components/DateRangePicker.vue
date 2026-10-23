@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFollow } from '../lib/floating'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from './Icon.vue'
 
@@ -73,6 +74,8 @@ function place(): void {
   if (top + h > window.innerHeight - 6) top = Math.max(6, r.top - h - 6)
   pos.value = { left: Math.max(6, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 6)), top }
 }
+// kept under its anchor while the page scrolls; closed when the anchor is out of sight
+useFollow(ref(true), () => props.anchor, () => place(), () => emit('close'))
 function onDown(e: MouseEvent): void {
   if (!el.value?.contains(e.target as Node) && !props.anchor?.contains(e.target as Node)) emit('close')
 }

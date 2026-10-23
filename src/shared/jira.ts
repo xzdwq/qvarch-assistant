@@ -166,7 +166,7 @@ export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string):
   return list.sort((a, b) => a.project.key.localeCompare(b.project.key) || cmp(key(a), key(b)) || b.updated - a.updated)
 }
 
-/** Board URLs / keys → project keys ("…/projects/DOS/boards/98" → "DOS"). */
+/** Board URLs / keys → project keys ("…/projects/ABC/boards/98" → "ABC"). */
 export function projectKeys(input: string): string[] {
   const keys = new Set<string>()
   for (const part of input.split(/[\s,;]+/)) {

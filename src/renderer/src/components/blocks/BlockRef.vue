@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { resolvePath, summary } from '@shared/runbook'
-import { ctxValues, fenceParts, fenceSrc, noteRun, pretty } from '../../lib/runbook'
+import { envAt, fenceParts, fenceSrc, noteRun, pretty } from '../../lib/runbook'
+import { doc } from '../../lib/notebook'
 import CodeArea from '../CodeArea.vue'
 import Icon from '../Icon.vue'
 
-/** A value of the note's context shown live (```json ref=login.body): it changes when its block runs again. */
-const props = defineProps<{ src: string; path: string; onChange?: (src: string) => void }>()
+/**
+ * A value of the note's context shown live (```json ref=login.body): it changes when its block runs again. In a loop —
+ * the pass shown. (As a table — the notebook's table «Из переменной».)
+ */
+const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
 const parts = computed(() => fenceParts(props.src))
 const draft = ref(parts.value.info.ref ?? '')
 watch(
@@ -22,7 +26,9 @@ const res = computed(() => {
   // (follows every value of the context: a block run again changes its time)
   const n = noteRun(props.path)
   for (const k in n.ctx) void n.ctx[k].at
-  return parts.value.info.ref ? resolvePath(ctxValues(props.path), parts.value.info.ref) : { ok: false }
+  const lr = n.loops
+  for (const k in lr) void lr[k].sel
+  return parts.value.info.ref ? resolvePath(envAt(props.path, props.line, doc(props.path).text).values(), parts.value.info.ref) : { ok: false }
 })
 const from = computed(() => {
   const root = /^[A-Za-z_$][\w$]*/.exec(parts.value.info.ref ?? '')?.[0]

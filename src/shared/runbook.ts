@@ -18,7 +18,7 @@
  *
  * In the text, `{{ login.status }}` shows the value.
  */
-export type RunKind = 'http' | 'code' | 'data' | 'ref' | 'pw'
+export type RunKind = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop'
 /** The browsers a Playwright block can drive (installed ones; Chromium — if it was downloaded). */
 export const PW_BROWSERS = ['msedge', 'chrome', 'chromium'] as const
 export type PwBrowser = (typeof PW_BROWSERS)[number]
@@ -43,6 +43,16 @@ export interface BlockInfo {
   soft?: boolean
   /** Playwright: the Браузер section's sign-ins (its cookies) — a site entered there (SSO too) is entered here. */
   session?: boolean
+  /** A database query (```sql db=…): the connection's name (its settings — in «Базы данных», not in the note). */
+  db?: string
+  /** A text by a template (```md template): Markdown with {{ values }} — published as the text filled. */
+  template?: boolean
+  /** The head of a loop (```js loop, right under <!-- qa:loop -->). */
+  loop?: boolean
+  /** Inside a loop — how its results are shown: one at a time (none), gathered into one (acc), each apart (each). */
+  out?: 'acc' | 'each'
+  /** A data value shown as a table (```json ref=rows view=table). */
+  view?: 'table'
 }
 /** ```lang key=value flag … */
 export function parseInfo(info: string): BlockInfo {
@@ -58,31 +68,41 @@ export function parseInfo(info: string): BlockInfo {
       else if (p === 'notrace') out.notrace = true
       else if (p === 'soft') out.soft = true
       else if (p === 'session') out.session = true
+      else if (p === 'template') out.template = true
+      else if (p === 'loop') out.loop = true
       continue
     }
     if (m[1] === 'name' && isName(m[2])) out.name = m[2]
     else if (m[1] === 'ref') out.ref = m[2]
+    else if (m[1] === 'db') out.db = m[2]
+    else if (m[1] === 'out' && (m[2] === 'acc' || m[2] === 'each')) out.out = m[2]
+    else if (m[1] === 'view' && m[2] === 'table') out.view = 'table'
     else if (m[1] === 'timeout' && Number(m[2]) > 0) out.timeout = Math.min(3600, Number(m[2]))
     else if (m[1] === 'browser' && (PW_BROWSERS as readonly string[]).includes(m[2])) out.browser = m[2] as PwBrowser
   }
   return out
 }
 export const isName = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s) && !RESERVED.has(s)
-const RESERVED = new Set(['ctx', 'runs', 'set', 'console', 'page', 'context', 'browser', 'expect', 'step', 'devices', 'await', 'return', 'function', 'class', 'const', 'let', 'var', 'new', 'this', 'import', 'export', 'default', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'in', 'of', 'delete', 'void', 'yield', 'null', 'true', 'false', 'undefined'])
+const RESERVED = new Set(['ctx', 'runs', 'set', 'body', 'loop', 'console', 'page', 'context', 'browser', 'expect', 'step', 'devices', 'await', 'return', 'function', 'class', 'const', 'let', 'var', 'new', 'this', 'import', 'export', 'default', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'in', 'of', 'delete', 'void', 'yield', 'null', 'true', 'false', 'undefined'])
 export function infoMd(i: BlockInfo): string {
   return [
     i.lang,
+    i.template ? 'template' : '',
+    i.loop ? 'loop' : '',
     i.pw ? 'playwright' : '',
     i.run && !i.pw ? 'run' : '',
     i.lib ? 'lib' : '',
+    i.db !== undefined ? `db=${i.db}` : '',
     i.name ? `name=${i.name}` : '',
     i.ref ? `ref=${i.ref}` : '',
+    i.view ? `view=${i.view}` : '',
     i.pw && i.browser && i.browser !== 'msedge' ? `browser=${i.browser}` : '',
     i.pw && i.headed ? 'headed' : '',
     i.pw && i.notrace ? 'notrace' : '',
     i.pw && i.session ? 'session' : '',
     i.soft ? 'soft' : '',
     i.timeout ? `timeout=${i.timeout}` : '',
+    i.out ? `out=${i.out}` : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -90,6 +110,9 @@ export function infoMd(i: BlockInfo): string {
 /** What a fenced block of this info is (undefined — plain code, not run). */
 export function runKindOf(i: BlockInfo): RunKind | undefined {
   if (i.lang === 'http' || i.lang === 'rest') return 'http'
+  if ((i.lang === 'md' || i.lang === 'markdown') && i.template) return 'tpl'
+  // (plain ```sql — code to read; with db= — a query to run)
+  if (i.lang === 'sql' && i.db !== undefined) return 'sql'
   const code = ['js', 'javascript', 'ts', 'typescript'].includes(i.lang)
   if (code && i.pw && !i.lib) return 'pw'
   if (code && (i.run || i.lib)) return 'code'
@@ -159,7 +182,9 @@ export function parseHttpText(text: string): HttpText {
   const first = (lines[i++] ?? '').trim()
   const m = METHODS.exec(first)
   const method = m ? m[1].toUpperCase() : 'GET'
-  const url = (m ? first.slice(m[0].length) : first).replace(/\s+HTTP\/[\d.]+$/i, '').trim()
+  let url = (m ? first.slice(m[0].length) : first).replace(/\s+HTTP\/[\d.]+$/i, '').trim()
+  // the query laid out under the request line, a parameter a line (indented `?a=1` / `&b=2`)
+  for (; i < lines.length && /^\s+[?&]/.test(lines[i]); i++) url += lines[i].trim()
   const headers: Array<[string, string]> = []
   for (; i < lines.length && lines[i].trim(); i++) {
     if (/^\s*(#|\/\/)/.test(lines[i])) continue

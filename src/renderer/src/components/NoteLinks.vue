@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import type { VaultNode } from '@shared/vault'
 import Icon from './Icon.vue'
+import { beside, useFollow } from '../lib/floating'
 import { ensureMentions, notesOf, noteTitle, openNote } from '../lib/mentions'
 
 /**
@@ -13,11 +14,21 @@ const emit = defineEmits<{ opened: [] }>()
 ensureMentions()
 const paths = computed(() => notesOf(props.id))
 const open = ref<{ x: number; y: number }>()
+/** The chip it opened from: the list stays by it, closes when it is out of sight. */
+let anchor: HTMLElement | undefined
+const popEl = ref<HTMLElement>()
+const at = (r: DOMRect) => beside(r, 300, popEl.value?.offsetHeight ?? 260)
+useFollow(
+  open,
+  () => anchor,
+  (r) => open.value && (open.value = at(r)),
+  () => (open.value = undefined),
+)
 const ctimes = shallowRef<Map<string, number>>(new Map())
 async function toggle(e: Event): Promise<void> {
   if (open.value) return void (open.value = undefined)
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  open.value = { x: Math.min(r.left, window.innerWidth - 300), y: r.bottom + 4 }
+  anchor = e.currentTarget as HTMLElement
+  open.value = at(anchor.getBoundingClientRect())
   // when each note was made (the vault's tree)
   const map = new Map<string, number>()
   const walk = (ns: VaultNode[]) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : map.set(n.path, n.ctime)))
@@ -43,7 +54,7 @@ function go(p: string): void {
     <Icon name="link" :size="12" /><b>{{ paths.length }}</b>
   </span>
   <Teleport to="body">
-    <div v-if="open" class="nlx-pop" :style="{ left: `${open.x}px`, top: `${open.y}px` }" @pointerdown.stop @click.stop>
+    <div v-if="open" ref="popEl" class="nlx-pop" :style="{ left: `${open.x}px`, top: `${open.y}px` }" @pointerdown.stop @click.stop>
       <p class="cap">Упомянуто в заметках</p>
       <button v-for="p in paths" :key="p" @click="go(p)">
         <Icon name="note" :size="13" />

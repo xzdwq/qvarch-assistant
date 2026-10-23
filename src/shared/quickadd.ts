@@ -5,7 +5,7 @@ import type { Ms } from './types'
  * Quick add («Моя работа»): one line of text → a block. Recognised and taken out of the title:
  *   time        14:00-15:30 · 14-15 · с 9 до 11 · 14:00 · в 9:30
  *   duration    30м · 1ч · 1.5ч · 1ч30м · 45 мин
- *   task        DOS-123 · Q-7
+ *   task        ABC-123 · Q-7
  *   kind        #встреча (a kind's name or its start)
  *   day         сегодня · завтра · послезавтра · вчера · пн…вс (in the shown week) · 16.10
  * The rest is the title.

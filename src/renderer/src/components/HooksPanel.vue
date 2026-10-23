@@ -153,7 +153,7 @@ watch(
         <label class="chk" title="Хук включён"><input v-model="draft.on" type="checkbox" />вкл</label>
         <button class="del" title="Удалить хук" @click="remove"><Icon name="trash" :size="13" /></button>
       </div>
-      <label class="fl">Сайт<input v-model="draft.site" spellcheck="false" placeholder="mdm-dev.aoavant.ru · *.aoavant.ru · https://site/путь" /></label>
+      <label class="fl">Сайт<input v-model="draft.site" spellcheck="false" placeholder="app.example.com · *.example.com · https://site/путь" /></label>
 
       <p class="cap">CSS — на каждой странице сайта</p>
       <div class="ed"><CodeArea v-model="draft.css" lang="css" :min-height="60" placeholder=".banner, .promo { display: none !important }" /></div>

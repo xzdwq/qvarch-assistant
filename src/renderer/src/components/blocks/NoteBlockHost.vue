@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { BlockKind } from '@shared/noteBlocks'
 import Icon from '../Icon.vue'
+import { beside, useFollow } from '../../lib/floating'
 import BlockTable from './BlockTable.vue'
 import BlockChart from './BlockChart.vue'
 import BlockMermaid from './BlockMermaid.vue'
@@ -9,6 +10,9 @@ import BlockCallout from './BlockCallout.vue'
 import BlockToggle from './BlockToggle.vue'
 import BlockToc from './BlockToc.vue'
 import BlockWork from './BlockWork.vue'
+import BlockRegress from './BlockRegress.vue'
+import BlockFiles from './BlockFiles.vue'
+import BlockSql from './BlockSql.vue'
 import BlockAudio from './BlockAudio.vue'
 import BlockImage from './BlockImage.vue'
 import BlockBoard from './BlockBoard.vue'
@@ -18,6 +22,12 @@ import BlockPw from './BlockPw.vue'
 import BlockBrowser from './BlockBrowser.vue'
 import BlockData from './BlockData.vue'
 import BlockRef from './BlockRef.vue'
+import BlockTpl from './BlockTpl.vue'
+import BlockLoop from './BlockLoop.vue'
+import BlockLoopEnd from './BlockLoopEnd.vue'
+import LoopOut from './LoopOut.vue'
+import { fenceParts, fenceSrc, runKey } from '../../lib/runbook'
+import type { LoopBlockKind } from '../../lib/loopView'
 
 /**
  * A component of a note as the editor shows it: the component itself and, on the left on hover, its handle —
@@ -40,10 +50,22 @@ const props = defineProps<{
   onDuplicate: () => void
   onTranscribe?: (rel: string) => void
   onDropAudio?: (rel: string) => void
+  /** The loop it is in (its key): its results over the passes shown under it. */
+  loop?: string
 }>()
-const NAMES: Record<BlockKind, string> = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер' }
+const NAMES: Record<BlockKind, string> = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер', regress: 'Регрессия', files: 'Тестовые файлы', sql: 'Запрос к БД', tpl: 'Шаблон', loop: 'Цикл', loopEnd: 'Конец цикла' }
 const copied = ref(false)
 const menu = ref<{ x: number; y: number }>()
+/** The handle the menu opened from: the menu stays by it, closes when it is out of sight. */
+let menuAnchor: HTMLElement | undefined
+const menuEl = ref<HTMLElement>()
+const menuAt = (r: DOMRect) => beside(r, 230, menuEl.value?.offsetHeight ?? 200)
+useFollow(
+  menu,
+  () => menuAnchor,
+  (r) => menu.value && (menu.value = menuAt(r)),
+  () => (menu.value = undefined),
+)
 const raw = ref<string>()
 /** The handle: a click opens the menu, a drag moves the component. */
 function onHandleDown(e: PointerEvent): void {
@@ -63,8 +85,8 @@ function onHandleDown(e: PointerEvent): void {
   const up = () => {
     cleanup()
     if (dragging) return
-    const r = btn.getBoundingClientRect()
-    menu.value = menu.value ? undefined : { x: r.left, y: r.bottom + 4 }
+    menuAnchor = btn
+    menu.value = menu.value ? undefined : menuAt(btn.getBoundingClientRect())
   }
   const cleanup = () => {
     window.removeEventListener('pointermove', move)
@@ -89,6 +111,17 @@ function act(what: 'raw' | 'copy' | 'dup' | 'del'): void {
   } else if (what === 'dup') props.onDuplicate()
   else props.onRemove()
 }
+/** A runnable block in a loop: its kind and key (the bar of its passes under it). */
+const IN_LOOP = new Set(['http', 'sql', 'code', 'pw', 'tpl'])
+const inLoop = computed(() => {
+  if (!props.loop || !IN_LOOP.has(props.kind)) return undefined
+  const info = fenceParts(props.src).info
+  return info.lib ? undefined : { kind: props.kind as LoopBlockKind, key: runKey(info.name, props.kind, props.line), name: info.name, out: info.out }
+})
+function setOut(out: 'acc' | 'each' | undefined): void {
+  const p = fenceParts(props.src)
+  props.onChange(fenceSrc(p.fence, { ...p.info, out }, p.body))
+}
 function applyRaw(): void {
   if (raw.value !== undefined && raw.value !== props.src) props.onChange(raw.value)
   raw.value = undefined
@@ -103,7 +136,7 @@ function applyRaw(): void {
       <div class="nb-rh"><b>{{ NAMES[kind] }} — Markdown</b><span class="grow"></span><button @mousedown.prevent @click="raw = undefined">Отмена</button><button class="primary" @mousedown.prevent @click="applyRaw">Готово</button></div>
       <textarea v-model="raw" spellcheck="false" @keydown.ctrl.enter.prevent="applyRaw" @keydown.esc.prevent="raw = undefined"></textarea>
     </div>
-    <BlockTable v-else-if="kind === 'table'" :src="src" :autofocus="autofocus" @change="onChange" @exit="onExit" />
+    <BlockTable v-else-if="kind === 'table'" :src="src" :path="path" :line="line" :autofocus="autofocus" @change="onChange" @exit="onExit" />
     <BlockChart v-else-if="kind === 'chart'" :src="src" :autofocus="autofocus" @change="onChange" />
     <BlockMermaid v-else-if="kind === 'mermaid'" :src="src" :autofocus="autofocus" @change="onChange" />
     <BlockCallout v-else-if="kind === 'callout'" :src="src" :autofocus="autofocus" @change="onChange" @exit="onExit" />
@@ -116,11 +149,18 @@ function applyRaw(): void {
     <BlockPw v-else-if="kind === 'pw'" :src="src" :path="path" :line="line" :on-change="onChange" />
     <BlockBrowser v-else-if="kind === 'browser'" :src="src" :path="path" :line="line" :on-change="onChange" />
     <BlockData v-else-if="kind === 'data'" :src="src" :path="path" :on-change="onChange" />
-    <BlockRef v-else-if="kind === 'ref'" :src="src" :path="path" :on-change="onChange" />
+    <BlockRef v-else-if="kind === 'ref'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockTpl v-else-if="kind === 'tpl'" :src="src" :path="path" :line="line" :in-loop="!!loop" :on-change="onChange" />
+    <BlockLoop v-else-if="kind === 'loop'" :src="src" :path="path" :line="line" :on-change="onChange" />
+    <BlockLoopEnd v-else-if="kind === 'loopEnd'" :path="path" :line="line" />
     <BlockWork v-else-if="kind === 'work'" :src="src" :autofocus="autofocus" @change="onChange" />
+    <BlockRegress v-else-if="kind === 'regress'" :src="src" :path="path" :on-change="onChange" />
+    <BlockFiles v-else-if="kind === 'files'" :src="src" :on-change="onChange" />
+    <BlockSql v-else-if="kind === 'sql'" :src="src" :path="path" :line="line" :on-change="onChange" />
     <BlockToc v-else :headings="headings" @go="onGo" />
+    <LoopOut v-if="inLoop && raw === undefined" :path="path" :loop-key="loop!" :kind="inLoop.kind" :block-key="inLoop.key" :name="inLoop.name" :out="inLoop.out" :on-mode="setOut" />
     <Teleport to="body">
-      <div v-if="menu" class="nb-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
+      <div v-if="menu" ref="menuEl" class="nb-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
         <button @click="act('copy')"><Icon name="copy" :size="13" />Копировать</button>
         <button @click="act('dup')"><Icon name="layers" :size="13" />Дублировать</button>
         <button v-if="kind !== 'audio' && kind !== 'image'" @click="act('raw')"><Icon name="code" :size="13" />Изменить как Markdown</button>

@@ -9,12 +9,13 @@ function dedent(code: string): { body: string; pad: string } {
 }
 
 /** Formats a block's code; throws with a short message when the code does not parse. */
-export async function formatCode(lang: string, code: string): Promise<string> {
+export async function formatCode(lang: string, code: string, opts: { sqlDialect?: 'postgresql' | 'mysql' | 'mariadb' | 'sqlite' } = {}): Promise<string> {
   const { body, pad } = dedent(code)
   let out: string
   if (lang === 'sql') {
     const { format } = await import('sql-formatter')
-    out = format(body, { language: 'postgresql', keywordCase: 'upper', dataTypeCase: 'upper', functionCase: 'upper', tabWidth: 2, linesBetweenQueries: 1 })
+    // a note's {{ value }} kept whole (a parameter, not braces to space out)
+    out = format(body, { language: opts.sqlDialect ?? 'postgresql', keywordCase: 'upper', dataTypeCase: 'upper', functionCase: 'upper', tabWidth: 2, linesBetweenQueries: 1, paramTypes: { custom: [{ regex: String.raw`\{\{[^{}]*\}\}` }] } })
   } else if (lang === 'json') {
     try {
       out = JSON.stringify(JSON.parse(body), null, 2)

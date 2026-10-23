@@ -6,6 +6,7 @@ import Icon from '../components/Icon.vue'
 import JiraReleasePicker from '../components/JiraReleasePicker.vue'
 import type { JiraVersion } from '@shared/jira'
 import { computeRail, drawRail, railWidth, type Row } from '../lib/releaseRail'
+import { placeFloat, useAnchor } from '../lib/floating'
 import { colors, listen, loadProjects, openProject, planTick, requestDateCheck, rs, send, showError, today } from '../lib/releaseStore'
 
 /**
@@ -31,6 +32,13 @@ onMounted(async () => {
 })
 const projOpen = ref(false)
 const projEl = ref<HTMLElement>()
+/** The projects' list: over everything (teleported), kept by its button. */
+const projStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(projOpen, projEl, () => {
+  if (!projEl.value) return
+  const f = placeFloat(projEl.value, 340, true, 0)
+  projStyle.value = { ...f.style, maxHeight: `${f.maxH}px` }
+})
 function pickProject(id: string): void {
   projOpen.value = false
   void openProject(id, true)
@@ -95,7 +103,7 @@ function applyFilters(): void {
 const relBusy = ref(false)
 /** The keys to tick once the full list of branches comes (it was limited when the release was picked). */
 let pendingKeys: string[] | undefined
-/** A branch is a task's when its name holds the key as a whole word: feature/DOS-12, DOS-12-fix — not DOS-123. */
+/** A branch is a task's when its name holds the key as a whole word: feature/ABC-12, ABC-12-fix — not ABC-123. */
 const keyRe = (k: string) => new RegExp(`(^|[^A-Za-z0-9])${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'i')
 function tickKeys(keys: string[]): void {
   const res = keys.map(keyRe)
@@ -450,7 +458,7 @@ async function removeProject(id: string): Promise<void> {
   await loadProjects()
 }
 function onDown(e: MouseEvent): void {
-  if (projOpen.value && !projEl.value?.contains(e.target as Node)) projOpen.value = false
+  if (projOpen.value && !projEl.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.pd')) projOpen.value = false
 }
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
@@ -487,7 +495,8 @@ const subjectOf = (r: Row) => (r.kind === 'item' ? r.item.subject : r.commit.sub
           </select>
           <div ref="projEl" class="pop">
             <button class="pname" :class="{ on: projOpen }" title="Проект" @click="projOpen = !projOpen">{{ rs.projectName || 'Проект' }}<Icon name="chevronDown" :size="12" /></button>
-            <div v-if="projOpen" class="pd">
+            <Teleport to="body">
+            <div v-if="projOpen" class="pd" :style="projStyle">
               <button v-for="p in rs.projects" :key="p.id" class="pi" :class="{ on: p.id === rs.projectId }" @click="pickProject(p.id)">
                 <span class="pn">{{ p.name }}</span><small>{{ p.repositoryPath }}</small>
               </button>
@@ -495,6 +504,7 @@ const subjectOf = (r: Row) => (r.kind === 'item' ? r.item.subject : r.commit.sub
               <button class="pi" @click="(projOpen = false), (managerOpen = true)"><span class="pn">Проекты…</span></button>
               <button class="pi" :disabled="!rs.projectId" @click="(projOpen = false), openProject(rs.projectId, true, true)"><span class="pn">Продолжить сохранённую сборку</span></button>
             </div>
+            </Teleport>
           </div>
         </div>
         <div class="acts">
@@ -1139,12 +1149,9 @@ select option {
 .pname.on {
   background: rgba(255, 255, 255, 0.06);
 }
+/* teleported to <body> (placed by placeFloat) */
 .pd {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 40;
-  width: 340px;
+  overflow-y: auto;
   padding: 5px;
   display: flex;
   flex-direction: column;

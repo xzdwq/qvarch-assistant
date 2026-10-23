@@ -13,13 +13,13 @@ describe('analytics', () => {
   it('events: a task by its key, others by kind + title; count, sum, average, days, per day', () => {
     const days = ['2026-10-12', '2026-10-13']
     const items = [
-      e('2026-10-12', 9, 10, { task: { key: 'DOS-1', summary: 'Фича' }, label: 'x' }),
-      e('2026-10-13', 9, 11, { task: { key: 'DOS-1', summary: 'Фича' }, label: 'y' }),
+      e('2026-10-12', 9, 10, { task: { key: 'ABC-1', summary: 'Фича' }, label: 'x' }),
+      e('2026-10-13', 9, 11, { task: { key: 'ABC-1', summary: 'Фича' }, label: 'y' }),
       e('2026-10-12', 12, 12.5, { label: ' ревью ' }),
       e('2026-10-13', 12, 12.5, { label: 'Ревью' }),
     ]
     const ev = eventsOf(items, days)
-    expect(ev[0]).toMatchObject({ key: 'DOS-1', label: 'Фича', count: 2, ms: 3 * H, avg: 1.5 * H, days: 2, perDay: [H, 2 * H] })
+    expect(ev[0]).toMatchObject({ key: 'ABC-1', label: 'Фича', count: 2, ms: 3 * H, avg: 1.5 * H, days: 2, perDay: [H, 2 * H] })
     expect(ev[1]).toMatchObject({ key: 'task|ревью', count: 2, ms: H })
   })
   it('heat: weekday × hour, split at hour edges', () => {

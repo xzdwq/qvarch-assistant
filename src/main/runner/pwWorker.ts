@@ -1,3 +1,4 @@
+import { gen } from '../../shared/gen'
 import vm from 'node:vm'
 import { inspect } from 'node:util'
 import { stripTypeScriptTypes } from 'node:module'
@@ -7,6 +8,8 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import { expect } from 'playwright/test'
+import { makeQa } from './qaRuntime'
+import type { QaCheck } from '../../shared/qaChecks'
 
 /**
  * A notebook's Playwright block, run in a process of its own (one per run): the installed Edge / Chrome is
@@ -22,6 +25,8 @@ interface Job {
   ctx: Record<string, unknown>
   runs?: Record<string, unknown>
   dir: string
+  /** The notebook's test files' folder (qa.file('Набор/файл')). */
+  files?: string
   /** The block's name and the note's — Allure's test and suite. */
   name: string
   suite: string
@@ -31,6 +36,8 @@ interface Job {
   ignoreHTTPSErrors: boolean
   /** The Браузер section's cookies (Playwright's form) — its sign-ins. */
   cookies?: Array<Record<string, unknown>>
+  /** Its sites' localStorage (Playwright's storageState origins) — their settings, as in the Браузер. */
+  storage?: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>
 }
 type Log = { level: 'log' | 'info' | 'warn' | 'error'; text: string }
 export interface PwStep {
@@ -82,6 +89,8 @@ async function run(job: Job): Promise<void> {
   const logs: Log[] = []
   const sets: Record<string, unknown> = {}
   const steps: PwStep[] = []
+  /** The ready checks' results (qa.…). */
+  const checks: QaCheck[] = []
   let depth = 0
   let lastSent = 0
   const progress = (force = false) => {
@@ -132,7 +141,8 @@ async function run(job: Job): Promise<void> {
           throw new Error(job.browser === 'msedge' ? 'Не найден Microsoft Edge — укажите browser=chrome в строке блока' : job.browser === 'chrome' ? 'Не найден Google Chrome — уберите browser=chrome (будет Edge)' : 'Chromium не скачан — используйте Edge или Chrome')
         throw err
       }
-      context = await browser.newContext({ ignoreHTTPSErrors: job.ignoreHTTPSErrors, viewport: { width: 1280, height: 800 } })
+      context = await browser.newContext({ ignoreHTTPSErrors: job.ignoreHTTPSErrors, viewport: { width: 1280, height: 800 }, ...(job.storage?.length ? { storageState: { cookies: [], origins: job.storage } } : {}) })
+      if (job.storage?.length) logs.push({ level: 'info', text: `localStorage из Браузера: ${job.storage.map((o) => `${o.origin} (${o.localStorage.length})`).join(', ')}` })
       if (job.cookies?.length) {
         // one by one: a cookie Chromium refuses (an odd one) does not lose the rest
         let ok = 0
@@ -141,6 +151,9 @@ async function run(job: Job): Promise<void> {
       }
       if (job.trace) await context.tracing.start({ screenshots: true, snapshots: true, sources: false, title: job.name })
       page = await context.newPage()
+      // a click that opens the system's file window (a «Загрузить» button) — the window is never shown: the files go by
+      // setInputFiles / qa.dropFiles
+      page.on('filechooser', () => undefined)
     })
     if (stopped) throw new Error('Остановлено')
     const vars = Object.fromEntries(Object.entries(job.ctx).filter(([k]) => isName(k)))
@@ -152,6 +165,8 @@ async function run(job: Job): Promise<void> {
       context,
       browser,
       expect,
+      qa: makeQa(page!, step, checks, job.dir, job.files ?? ''),
+      gen,
       devices,
       step,
       console: cons,
@@ -181,10 +196,11 @@ async function run(job: Job): Promise<void> {
     const raw = err instanceof Error ? err.message : String(err)
     const msg = stopped ? 'Остановлено' : ansi(err instanceof Error && err.name !== 'Error' ? `${err.name}: ${raw}` : raw)
     const at = err instanceof Error ? /блок:(\d+)/.exec(err.stack ?? '')?.[1] : undefined
-    error = at && !stopped ? `${msg}\n(строка ${at})` : msg
+    // (a ready check failing says what and where itself — its line in the runtime is not the scenario's)
+    error = at && !stopped && !/^Проверка «/.test(msg) ? `${msg}\n(строка ${at})` : msg
     stack = err instanceof Error ? ansi(err.stack ?? '') : undefined
     // an expect that failed — the test failed; anything else — it broke
-    failed = !stopped && /expect\(|toHave|toBe|toEqual|toContain|toMatch/.test(raw) ? 'failed' : 'broken'
+    failed = !stopped && /expect\(|toHave|toBe|toEqual|toContain|toMatch|^Проверка «/.test(raw) ? 'failed' : 'broken'
     for (const s of steps) if (s.state === 'run') ((s.state = 'error'), (s.ms = Date.now() - s.start))
   }
 
@@ -221,7 +237,7 @@ async function run(job: Job): Promise<void> {
   })()
   port.postMessage({
     type: 'done',
-    result: { ok: !error, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, steps, error, ms: performance.now() - t0, files, browser: browser?.version(), ...(outCookies ? { cookies: outCookies } : {}) },
+    result: { ok: !error, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, steps, checks, error, ms: performance.now() - t0, files, browser: browser?.version(), ...(outCookies ? { cookies: outCookies } : {}) },
   })
 }
 

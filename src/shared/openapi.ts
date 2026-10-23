@@ -239,3 +239,25 @@ export function specToHttp(spec: unknown, specUrl: string, ids: string[], opt: S
   const children: HttpNode[] = byTag.size > 1 ? [...byTag].map(([tag, reqs]) => ({ id: httpId(), type: 'folder' as const, name: tag, open: false, children: reqs })) : [...byTag.values()].flat()
   return { folder: { id: httpId(), type: 'folder', name: `${info.title}${info.version ? ` ${info.version}` : ''} ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`, open: true, children }, vars }
 }
+
+/**
+ * The picked operations as plain requests (for the notebook's blocks, the clipboard): the server's address put in, the
+ * query and the headers the description asks for, the body made from its schema. Path parameters with no value stay as
+ * {{name}} (the note asks for them); the login is the site's own (put in by who writes the block), not the variables.
+ */
+export function specExamples(spec: unknown, specUrl: string, ids: string[], opt: SpecToHttpOptions = {}): Array<{ method: string; url: string; body?: string; contentType?: string; headers: Array<[string, string]> }> {
+  const { folder, vars } = specToHttp(spec, specUrl, ids, opt)
+  const base = vars[0]
+  const reqs: HttpRequest[] = []
+  const walk = (n: HttpNode) => (n.type === 'request' ? reqs.push(n) : n.children.forEach(walk))
+  walk(folder)
+  return reqs.map((r) => {
+    let url = r.url.split(`{{${base.key}}}`).join(base.value)
+    const q = r.params.filter((p) => p.on && p.key).map((p) => `${encodeURIComponent(p.key)}=${/\{\{[^}]+\}\}/.test(p.value) ? p.value : encodeURIComponent(p.value)}`)
+    if (q.length) url += `${url.includes('?') ? '&' : '?'}${q.join('&')}`
+    const b = r.body
+    const body = b.mode === 'json' ? b.text : b.mode === 'urlencoded' ? b.rows.filter((x) => x.on && x.key).map((x) => `${encodeURIComponent(x.key)}=${encodeURIComponent(x.value)}`).join('&') : undefined
+    const contentType = b.mode === 'json' ? 'application/json' : b.mode === 'urlencoded' ? 'application/x-www-form-urlencoded' : undefined
+    return { method: r.method, url, ...(body ? { body, contentType } : {}), headers: r.headers.filter((h) => h.on && h.key).map((h) => [h.key, h.value] as [string, string]) }
+  })
+}

@@ -2,7 +2,7 @@
  * What «@» offers in a note before the events: things to insert and do (as Notion's «/»). Each one is found by
  * the start of any of its words, Russian or English — «ауд», «aud», «запис» all find «Аудио».
  */
-export type CmdId = 'http' | 'pw' | 'browser' | 'js' | 'data' | 'ref' | 'work' | 'board' | 'audio' | 'emoji' | 'table' | 'chart' | 'mermaid' | 'callout' | 'toggle' | 'toc' | 'image' | 'todo' | 'code' | 'divider' | 'date'
+export type CmdId = 'http' | 'pw' | 'browser' | 'js' | 'data' | 'ref' | 'work' | 'board' | 'audio' | 'emoji' | 'table' | 'chart' | 'mermaid' | 'callout' | 'toggle' | 'toc' | 'image' | 'todo' | 'code' | 'divider' | 'date' | 'regress' | 'files' | 'fuzz' | 'sql' | 'loop' | 'tpl'
 export interface NoteCmd {
   id: CmdId
   title: string
@@ -15,7 +15,13 @@ export const NOTE_CMDS: NoteCmd[] = [
   { id: 'emoji', title: 'Эмодзи', hint: 'Выбрать эмодзи — пишите название по-русски или по-английски', icon: 'sparkles', keys: ['эмодзи', 'эмоджи', 'emoji', 'смайл', 'smile', 'smiley'] },
   { id: 'http', title: 'HTTP-запрос', hint: 'Выполняется здесь; ответ доступен дальше по имени — {{имя.body}}', icon: 'api', keys: ['http', 'запрос', 'request', 'api', 'rest', 'curl', 'get', 'post'] },
   { id: 'pw', title: 'Playwright', hint: 'Сценарий в браузере (Edge / Chrome): шаги, скриншот, трассировка, Allure', icon: 'globe', keys: ['playwright', 'браузер', 'автотест', 'тест', 'e2e', 'сценарий', 'browser', 'test', 'ui'] },
+  { id: 'sql', title: 'Запрос к БД', hint: 'SQL к PostgreSQL / MySQL / SQLite: только чтение, соединение на каждый запрос; строки — в переменную блока, план запроса с узкими местами; запросы всего блокнота — библиотекой', icon: 'database', keys: ['бд', 'db', 'sql', 'база', 'база данных', 'запрос', 'select', 'postgres', 'postgresql', 'mysql', 'sqlite', 'explain', 'план'] },
+  { id: 'fuzz', title: 'Перебор параметров запроса', hint: 'Запрос сайта (поиск, фильтр, выгрузка) с перебором параметров: массивы 0 / 1 / 20 / 21 / 100, пусто, null, длинные строки, числа. Таблица: статус, время, сколько найдено; где ломается', icon: 'api', keys: ['перебор', 'fuzz', 'фаззинг', 'параметры', 'запрос', 'граница', 'массив', 'фильтр', 'api'] },
+  { id: 'files', title: 'Тестовые файлы', hint: 'Набор файлов для сценариев с загрузкой: свои, записанные, сгенерированные; у каждого — принять / отклонить. Сценарий прогоняется по всему набору', icon: 'folder', keys: ['файлы', 'файл', 'загрузка', 'импорт', 'excel', 'xlsx', 'csv', 'upload', 'files', 'тестовые'] },
+  { id: 'regress', title: 'Регрессия', hint: 'Прогнать все тесты Playwright папки: таблица результатов, история по датам, запуск на другом адресе', icon: 'repeat', keys: ['регрессия', 'regression', 'прогон', 'тесты', 'tests', 'suite', 'набор', 'автотесты'] },
   { id: 'browser', title: 'Браузер', hint: 'Живые страницы во вкладках прямо в заметке; запросы и время загрузки', icon: 'browser', keys: ['браузер', 'browser', 'сайт', 'страница', 'web', 'вкладка', 'запросы', 'network', 'iframe'] },
+  { id: 'loop', title: 'Цикл', hint: 'Повторить блоки для каждого элемента: заголовок — обычный JS (for…of, for…in, Object.entries, while), await body({ … }) — проход; результаты — по одному, вместе (одна таблица / один текст) или каждый отдельно', icon: 'repeat', keys: ['цикл', 'loop', 'for', 'foreach', 'each', 'while', 'повтор', 'перебор', 'итерация', 'каждый'] },
+  { id: 'tpl', title: 'Текст по шаблону', hint: 'Markdown с {{ значениями }}: эмодзи, жирный, списки, таблицы — заполняется данными и копируется с оформлением; в цикле — текст на каждый проход', icon: 'note', keys: ['шаблон', 'template', 'текст', 'text', 'сообщение', 'message', 'markdown', 'отчёт'] },
   { id: 'js', title: 'Код JS / TS', hint: 'Выполняется отдельно от приложения; переменные заметки — его переменные, return — результат', icon: 'code', keys: ['код', 'js', 'ts', 'javascript', 'typescript', 'скрипт', 'script', 'run', 'выполнить', 'функция'] },
   { id: 'data', title: 'Данные JSON', hint: 'Набор данных с именем — для кода и запросов', icon: 'braces', keys: ['данные', 'data', 'json', 'yaml', 'массив', 'array', 'переменная', 'variable'] },
   { id: 'ref', title: 'Значение переменной', hint: 'Показывает значение из контекста заметки — вживую', icon: 'eye', keys: ['значение', 'value', 'ref', 'вывод', 'output', 'показать'] },

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { blockReport, fenceParts, fenceSrc, noteRun, pretty, runCode, runKey, stopBlock } from '../../lib/runbook'
+import { blockReport, envAt, fenceParts, fenceSrc, noteRun, pretty, runCode, runKey, stopBlock } from '../../lib/runbook'
+import { useFold } from '../../lib/foldState'
 import { doc } from '../../lib/notebook'
 import { summary } from '@shared/runbook'
 import CodeArea from '../CodeArea.vue'
@@ -47,22 +48,23 @@ async function go(): Promise<void> {
   clearTimeout(timer)
   write()
   if (info.value.lib) return
-  await runCode(props.path, key.value, info.value.name, info.value.lang, code.value, doc(props.path).text, info.value.timeout)
+  await runCode(props.path, key.value, info.value.name, info.value.lang, code.value, doc(props.path).text, info.value.timeout, envAt(props.path, props.line, doc(props.path).text))
 }
-const vars = computed(() => Object.keys(noteRun(props.path).ctx))
-const showValue = ref(true)
+const vars = computed(() => Object.keys(envAt(props.path, props.line, doc(props.path).text).values()))
+// (folded or open — as it was left, back from another tab too)
+const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
 </script>
 
 <template>
-  <div class="bc" :class="{ lib: info.lib }" @keydown.ctrl.enter.prevent="go">
-    <RunHead :report="() => blockReport(path, key, 'code', info, code)" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stopBlock(path, key)">
+  <div class="bc" :class="{ lib: info.lib }" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
+    <RunHead :report="() => blockReport(path, key, 'code', info, code)" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stopBlock(path, key, envAt(path, line, doc(path).text).id)">
       <span class="seg">
         <button :class="{ on: !ts }" @mousedown.prevent @click="setLang('js')">JS</button>
         <button :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="setLang('ts')">TS</button>
       </span>
       <label class="chk" title="Общие функции: не выполняются сами, подставляются перед каждым блоком кода заметки"><input type="checkbox" :checked="info.lib" @change="setLib(($event.target as HTMLInputElement).checked)" />lib</label>
     </RunHead>
-    <div class="bc-ed"><CodeArea v-model="code" :lang="ts ? 'typescript' : 'js'" :min-height="40" placeholder="return items.filter((x) => x.price > 100)" /></div>
+    <div class="bc-ed"><CodeArea v-model="code" :lang="ts ? 'typescript' : 'js'" :run="go" :min-height="40" placeholder="return items.filter((x) => x.price > 100)" /></div>
     <p v-if="!info.lib && vars.length" class="bc-vars">Доступно: <code v-for="v in vars" :key="v">{{ v }}</code><span class="muted">· set('имя', значение) — опубликовать ещё</span></p>
     <div v-if="run && !info.lib && run.state !== 'run'" class="bc-out">
       <div v-for="(l, i) in run.logs ?? []" :key="i" class="lg" :class="l.level">{{ l.text }}</div>

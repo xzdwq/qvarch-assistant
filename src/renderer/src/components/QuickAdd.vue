@@ -223,7 +223,7 @@ defineExpose({ focus })
           ref="inp"
           v-model="text"
           spellcheck="false"
-          placeholder="Что сделано или в планах — время, DOS-123, #вид, завтра…"
+          placeholder="Что сделано или в планах — время, ABC-123, #вид, завтра…"
           @keydown="onKey"
           @input="updateSug"
           @click="updateSug"
@@ -251,7 +251,7 @@ defineExpose({ focus })
         <span class="grow"></span>
         <span class="enter">Enter ⏎</span>
       </template>
-      <span v-else class="hint">«ревью DOS-123 14:00-15:00» · «созвон 30м #созвон» · «завтра 10:00 демо» · <b>@</b> задача · <b>#</b> вид</span>
+      <span v-else class="hint">«ревью ABC-123 14:00-15:00» · «созвон 30м #созвон» · «завтра 10:00 демо» · <b>@</b> задача · <b>#</b> вид</span>
     </div>
     <Teleport to="body">
       <div v-if="sugOpen" class="qa-sug" :style="sugStyle" @mousedown.prevent>

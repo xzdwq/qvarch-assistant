@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ImageMenu from '../components/ImageMenu.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AppCommand } from '@shared/api'
 import type { PublicSettings } from '@shared/types'
@@ -20,6 +21,7 @@ import { setupLinks } from '../lib/links'
 import { startBrowser } from '../lib/browser'
 import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
+import { placeFloat, useAnchor } from '../lib/floating'
 setupLinks()
 // the browser's news from the start (a tab the app opens is placed even before the section is first shown)
 startBrowser()
@@ -65,11 +67,17 @@ const off = window.qa.onNavigate((nav) => {
 })
 onBeforeUnmount(off)
 
-function closeMenu(): void {
-  menuOpen.value = false
-}
-onMounted(() => window.addEventListener('click', closeMenu))
-onBeforeUnmount(() => window.removeEventListener('click', closeMenu))
+/** The «Ещё» menu: over everything (teleported), kept by its button. */
+const menuBtn = ref<HTMLElement>()
+const menuStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(menuOpen, menuBtn, () => {
+  if (!menuBtn.value) return
+  const f = placeFloat(menuBtn.value, 280, false, 0)
+  menuStyle.value = { ...f.style, maxHeight: `${f.maxH}px` }
+})
+const away = (e: PointerEvent) => menuOpen.value && !menuBtn.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.tb-menu') && (menuOpen.value = false)
+onMounted(() => window.addEventListener('pointerdown', away, true))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', away, true))
 
 function run(cmd: AppCommand): void {
   menuOpen.value = false
@@ -175,10 +183,11 @@ function setAppZoom(z: number): void {
       <button class="ico nodrag" :class="{ on: view === 'settings' }" title="Настройки" aria-label="Настройки" @click="view = 'settings'">
         <Icon name="settings" :size="16" />
       </button>
-      <div class="menu nodrag" @click.stop>
-        <button class="ico" :class="{ on: menuOpen }" title="Ещё" aria-label="Ещё" @click="menuOpen = !menuOpen"><Icon name="more" :size="16" /></button>
+      <div class="menu nodrag">
+        <button ref="menuBtn" class="ico" :class="{ on: menuOpen }" title="Ещё" aria-label="Ещё" @click="menuOpen = !menuOpen"><Icon name="more" :size="16" /></button>
+        <Teleport to="body">
         <Transition name="pop">
-          <div v-if="menuOpen" class="dropdown">
+          <div v-if="menuOpen" class="dropdown tb-menu" :style="menuStyle">
             <button @click="run('island-toggle')"><Icon name="layers" :size="14" />Показать / скрыть island</button>
             <button @click="run('island-reset')"><Icon name="move" :size="14" />Вернуть island наверх по центру</button>
             <div class="sep"></div>
@@ -188,6 +197,7 @@ function setAppZoom(z: number): void {
             <button @click="run('quit')"><Icon name="x" :size="14" />Выход <span class="muted">(трекинг остановится)</span></button>
           </div>
         </Transition>
+        </Teleport>
       </div>
       </div>
     </header>
@@ -208,6 +218,7 @@ function setAppZoom(z: number): void {
       <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep" :active="view === 'browser'" @open-http="openHttp" />
     </main>
     <StatusBar :section="sectionName" @terminal="view = 'terminal'" @browser="view = 'browser'" />
+      <ImageMenu />
   </div>
 </template>
 
@@ -312,13 +323,10 @@ function setAppZoom(z: number): void {
 .tside.r {
   justify-content: flex-end;
 }
+/* the «Ещё» menu — teleported to <body> (placed by placeFloat) */
 .dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 100;
-  min-width: 280px;
   padding: 4px;
+  overflow-y: auto;
   background: var(--pop);
   border: 1px solid var(--border-2);
   border-radius: var(--r3);
@@ -326,11 +334,25 @@ function setAppZoom(z: number): void {
   display: flex;
   flex-direction: column;
 }
+/* (out of the title bar: its button look is given here) */
 .dropdown button {
+  cursor: default;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 12.5px;
   text-align: left;
   color: var(--text-2);
   padding: 6px 10px;
   border-radius: var(--r2);
+}
+.dropdown button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--text);
 }
 .dropdown .sep {
   height: 1px;

@@ -451,7 +451,7 @@ export interface PwRecState {
 }
 export interface BrowserApi {
   /** Recording a scenario: a new tab at `url`; its clicks and typing become Playwright lines. */
-  pwRecStart(note: string, key: string, url: string): BrowserTab
+  pwRecStart(note: string, key: string, url: string, screen?: { w: number; h: number }): BrowserTab
   /** Recording stopped: what was recorded (cancelled — nothing). */
   pwRecStop(cancel?: boolean): Promise<{ note: string; key: string; url: string; lines: string[] } | undefined>
   pwRecState(): PwRecState | undefined
@@ -510,5 +510,22 @@ export interface BrowserApi {
   savePage(id: string): Promise<void>
   viewSource(id: string): void
   swaggerFind(id: string): Promise<{ url: string; text: string } | { error: string; tried: string[] }>
+  /** «Проверка»: on / off and its settings, the tabs it could not watch. */
+  apiMapHosts(): Array<{ host: string; endpoints: number; calls: number; last: number }>
+  apiMapList(host?: string): import('./apiMap').ApiEndpoint[]
+  /** The site's login as its requests carried it (token headers — the latest seen, kept in memory only; the session's cookies). */
+  apiMapAuth(url: string): Promise<Array<[string, string]>>
+  apiMapClear(host?: string): void
+  checkState(): import('./check').CheckState
+  checkList(): import('./check').CheckProblem[]
+  checkSet(patch: Partial<import('./check').CheckSettings>): import('./check').CheckState
+  /** These findings (none given — all) forgotten. */
+  checkClear(ids?: string[]): void
+  /** Such findings no more (or again). */
+  checkMute(key: string, on?: boolean): void
+  /** The findings that went into a bug note. */
+  checkNote(ids: string[], note: string): void
+  checkShow(tabId: string, sel: string): Promise<boolean>
+  checkShot(tabId: string): Promise<Uint8Array | undefined>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']

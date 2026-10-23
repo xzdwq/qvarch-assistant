@@ -8,6 +8,7 @@ import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
 import DateRangePicker from '../components/DateRangePicker.vue'
 import { onNewDay } from '../lib/today'
+import { placeFloat, useAnchor } from '../lib/floating'
 import { isProductive } from '@shared/kinds'
 import type { Entry } from '@shared/types'
 import { dailyByKind, eventsOf, heatOf, type EventStat } from '@shared/analytics'
@@ -229,11 +230,18 @@ function applyView(v: Saved): void {
   savedOpen.value = false
 }
 const savedEl = ref<HTMLElement>()
-function onDown(e: MouseEvent): void {
-  if (savedOpen.value && !savedEl.value?.contains(e.target as Node)) savedOpen.value = false
+/** Their list: over everything (teleported), kept by its button. */
+const savedStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(savedOpen, savedEl, () => {
+  if (!savedEl.value) return
+  const f = placeFloat(savedEl.value, 230, false, 0)
+  savedStyle.value = { ...f.style, maxHeight: `${f.maxH}px` }
+})
+function onDown(e: PointerEvent): void {
+  if (savedOpen.value && !savedEl.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.svd')) savedOpen.value = false
 }
-onMounted(() => window.addEventListener('mousedown', onDown, true))
-onBeforeUnmount(() => window.removeEventListener('mousedown', onDown, true))
+onMounted(() => window.addEventListener('pointerdown', onDown, true))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', onDown, true))
 
 // ---------- totals ----------
 const total = computed(() => unionOf(items.value))
@@ -429,7 +437,8 @@ function exportCsv(): void {
       <div class="acts">
         <div ref="savedEl" class="sv">
           <button class="ib" :class="{ on: savedOpen }" title="Сохранённые отчёты" @click="savedOpen = !savedOpen"><Icon name="star" :size="14" /></button>
-          <div v-if="savedOpen" class="svd">
+          <Teleport to="body">
+          <div v-if="savedOpen" class="svd" :style="savedStyle">
             <button v-for="v in saved" :key="v.name" class="svi" @click="applyView(v)">
               <Icon name="star" :size="12" />
               <span>{{ v.name }}</span>
@@ -441,6 +450,7 @@ function exportCsv(): void {
               <button type="submit" :disabled="!newName.trim()"><Icon name="check" :size="13" /></button>
             </form>
           </div>
+          </Teleport>
         </div>
         <button class="ib" title="Экспорт CSV" :disabled="!items.length" @click="exportCsv"><Icon name="download" :size="14" /></button>
         <button class="ib" :class="{ spin: loading }" title="Обновить" @click="load"><Icon name="refresh" :size="14" /></button>
@@ -743,12 +753,9 @@ function exportCsv(): void {
 .sv {
   position: relative;
 }
+/* teleported to <body> (placed by placeFloat) */
 .svd {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 40;
-  width: 230px;
+  overflow-y: auto;
   padding: 6px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);

@@ -1,4 +1,6 @@
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
+import { app, BrowserWindow, clipboard as sysClipboard, ClipboardItem, desktopCapturer, nativeImage, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, session, shell, Tray, utilityProcess, type UtilityProcess } from 'electron'
+import { TestFiles } from './testFiles'
+import { TEST_FILES_METHODS } from '../shared/testFiles'
 import { deleteProject, importVscodeProjects, readProjects, saveProject, setReleaseDataDir } from './release/config'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -8,6 +10,7 @@ import { qvarchTools } from './mcpTools'
 import { netClear, netListen, setupNoteBrowser } from './noteBrowser'
 import { TraceServer } from './traceServer'
 import { PW_BROWSERS } from '../shared/runbook'
+import { LOOP_MAX, LOOP_MAX_LIMIT, LOOP_PARALLEL_LIMIT, type LoopJob, type LoopResult, type PassResult } from '../shared/loop'
 import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../shared/docBundle'
 import { join } from 'node:path'
 import { IPC, type AppCommand, type PwJob, type PwResult, type PwStep } from '../shared/api'
@@ -38,6 +41,8 @@ import { Terminals } from './terminal'
 import { Browser } from './browser'
 import { ClipLog } from './clipLog'
 import { BROWSER_METHODS } from '../shared/browser'
+import { SQL_METHODS } from '../shared/sql'
+import { SqlStore } from './sql/store'
 import type { EventRef } from '../shared/noteEvents'
 import type { TermConfig } from '../shared/terminal'
 
@@ -64,6 +69,10 @@ let jira: Jira
 let outlook: Outlook
 let voice: Voice
 let vault: Vault
+let sqlStore: SqlStore | undefined
+/** The notebook's test files (made when first asked for: the vault is there by then). */
+let testFiles: TestFiles | undefined
+const files = () => (testFiles ??= new TestFiles(join(vault.root, '.files'), () => mainWin))
 let quitting = false
 
 // ---------- broadcasting ----------
@@ -954,8 +963,28 @@ function registerIpc(): void {
     if (!BROWSER_METHODS.includes(m as (typeof BROWSER_METHODS)[number])) throw new Error(`browser: нет метода ${m}`)
     return (br[m as (typeof BROWSER_METHODS)[number]] as (...x: unknown[]) => unknown).apply(br, a)
   })
+  // a file picked while recording: into the notebook's «Записанные»
+  br.onRecordFiles = (paths) => files().recorded(paths)
+  ipcMain.handle(IPC.files, (_e, m: string, ...a: unknown[]) => {
+    if (!TEST_FILES_METHODS.includes(m as (typeof TEST_FILES_METHODS)[number])) throw new Error(`files: нет метода ${m}`)
+    const tf = files()
+    return (tf[m as (typeof TEST_FILES_METHODS)[number]] as (...x: unknown[]) => unknown).apply(tf, a)
+  })
+  // «Базы данных»: made on its first use (the notebook is there by then)
+  ipcMain.handle(IPC.sql, (_e, m: string, ...a: unknown[]) => {
+    if (!SQL_METHODS.includes(m as (typeof SQL_METHODS)[number])) throw new Error(`sql: нет метода ${m}`)
+    sqlStore ??= new SqlStore(store.root, join(__dirname, 'sqlWorker.js'), vault)
+    const db = sqlStore
+    return (db[m as (typeof SQL_METHODS)[number]] as (...x: unknown[]) => unknown).apply(db, a)
+  })
   ipcMain.on(IPC.browserLayout, (_e, rects: Parameters<Browser['layout']>[0]) => br.layout(Array.isArray(rects) ? rects : []))
 
+  ipcMain.handle(IPC.copyImage, async (_e, bytes: Uint8Array) => {
+    // (a JPEG too — the clipboard takes it as PNG)
+    const img = nativeImage.createFromBuffer(Buffer.from(bytes))
+    if (img.isEmpty()) throw new Error('это не картинка')
+    await sysClipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(img.toPNG())], { type: 'image/png' }) })])
+  })
   ipcMain.on(IPC.openExternal, (_e, url: string) => {
     // web pages only (Jira, links in notes) — never file:// or app protocols
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
@@ -1051,12 +1080,14 @@ function registerIpc(): void {
     return vault.importDoc(parseBundle(readFileSync(p, 'utf8')), str(dir))
   })
   // a code block of a note: a process of its own per run (stopped at once, its memory capped)
-  const codeRuns = new Map<string, { proc: UtilityProcess; done: (r: unknown) => void; timer: NodeJS.Timeout }>()
-  const endRun = (id: string, r: unknown) => {
+  const codeRuns = new Map<string, { proc: UtilityProcess; done: (r: unknown) => void; timer: NodeJS.Timeout; off: () => void }>()
+  const endRun = (id: string, r: unknown, from?: UtilityProcess) => {
     const run = codeRuns.get(id)
-    if (!run) return
+    // (a process killed by a restart, its exit coming late: not the run going on now)
+    if (!run || (from && run.proc !== from)) return
     codeRuns.delete(id)
     clearTimeout(run.timer)
+    run.off()
     try {
       run.proc.kill()
     } catch {
@@ -1064,25 +1095,77 @@ function registerIpc(): void {
     }
     run.done(r)
   }
-  ipcMain.handle(IPC.runCode, (_e, runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }) => {
+  ipcMain.handle(IPC.runCode, (e, runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }) => {
     const id = str(runId)
     endRun(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
     return new Promise((done) => {
       const proc = utilityProcess.fork(join(__dirname, 'codeWorker.js'), [], { serviceName: 'Qvarch Code', execArgv: ['--max-old-space-size=512', '--disable-warning=ExperimentalWarning'] })
       const sec = Math.min(3600, Math.max(1, Number(job.timeoutSec) || 30))
-      const timer = setTimeout(() => endRun(id, { ok: false, error: `Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`, logs: [], ms: sec * 1000 }), sec * 1000)
-      codeRuns.set(id, { proc, done, timer })
-      proc.on('message', (m: unknown) => endRun(id, m))
-      proc.on('exit', (code) => endRun(id, { ok: false, error: code ? `Процесс выполнения завершился (код ${code}) — возможно, не хватило памяти (предел 512 МБ)` : 'Процесс выполнения завершился', logs: [], ms: 0 }))
+      const timer = setTimeout(() => endRun(id, { ok: false, error: `Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`, logs: [], ms: sec * 1000 }, proc), sec * 1000)
+      // (the window that asked is gone: nothing waits for the run)
+      const gone = () => endRun(id, { ok: false, error: 'Окно закрыто', logs: [], ms: 0 }, proc)
+      e.sender.once('destroyed', gone)
+      codeRuns.set(id, { proc, done, timer, off: () => e.sender.off('destroyed', gone) })
+      proc.on('message', (m: unknown) => endRun(id, m, proc))
+      proc.on('exit', (code) => endRun(id, { ok: false, error: code ? `Процесс выполнения завершился (код ${code}) — возможно, не хватило памяти (предел 512 МБ)` : 'Процесс выполнения завершился', logs: [], ms: 0 }, proc))
       proc.postMessage({ code: str(job.code), ts: !!job.ts, libs: Array.isArray(job.libs) ? job.libs : [], ctx: job.ctx ?? {}, runs: job.runs ?? {} })
     })
   })
   ipcMain.on(IPC.runCodeStop, (_e, runId: string) => endRun(str(runId), { ok: false, error: 'Остановлено', logs: [], ms: 0 }))
+  // a loop of a note: its head in a process of its own; each pass it asks for goes to the window that runs the note
+  const loopRuns = new Map<string, { proc: UtilityProcess; done: (r: LoopResult) => void; timer: NodeJS.Timeout; off: () => void }>()
+  const endLoop = (id: string, r: LoopResult, from?: UtilityProcess) => {
+    const run = loopRuns.get(id)
+    if (!run || (from && run.proc !== from)) return
+    loopRuns.delete(id)
+    clearTimeout(run.timer)
+    run.off()
+    try {
+      run.proc.kill()
+    } catch {
+      // gone
+    }
+    run.done(r)
+  }
+  const loopFail = (error: string, ms = 0): LoopResult => ({ ok: false, error, logs: [], passes: 0, ms })
+  ipcMain.handle(IPC.runLoop, (e, runId: string, job: LoopJob & { timeoutSec: number }) => {
+    const id = str(runId)
+    endLoop(id, loopFail('Перезапущено'))
+    return new Promise<LoopResult>((done) => {
+      const proc = utilityProcess.fork(join(__dirname, 'loopWorker.js'), [], { serviceName: 'Qvarch Loop', execArgv: ['--max-old-space-size=512', '--disable-warning=ExperimentalWarning'] })
+      const sec = Math.min(86_400, Math.max(1, Number(job.timeoutSec) || 600))
+      const timer = setTimeout(() => endLoop(id, loopFail(`Остановлено: цикл дольше ${sec} с (timeout=… в начале цикла — дать больше)`, sec * 1000), proc), sec * 1000)
+      const gone = () => endLoop(id, loopFail('Окно закрыто'), proc)
+      e.sender.once('destroyed', gone)
+      loopRuns.set(id, { proc, done, timer, off: () => e.sender.off('destroyed', gone) })
+      proc.on('message', (m: { type: 'pass'; n: number; vars: Record<string, unknown> } | { type: 'end'; result: LoopResult }) => {
+        if (m?.type === 'pass') {
+          if (!e.sender.isDestroyed()) e.sender.send(IPC.loopPass, id, m.n, m.vars)
+          // (no window to run the pass — the loop has nothing to go on with)
+          else endLoop(id, loopFail('Окно закрыто'), proc)
+        } else if (m?.type === 'end') endLoop(id, m.result, proc)
+      })
+      proc.on('exit', (code) => endLoop(id, loopFail(code ? `Процесс цикла завершился (код ${code}) — возможно, не хватило памяти (предел 512 МБ)` : 'Процесс цикла завершился'), proc))
+      proc.postMessage({
+        type: 'start',
+        job: {
+          head: str(job.head),
+          ts: !!job.ts,
+          libs: Array.isArray(job.libs) ? job.libs : [],
+          ctx: job.ctx ?? {},
+          parallel: Math.min(LOOP_PARALLEL_LIMIT, Math.max(1, Math.floor(Number(job.parallel)) || 1)),
+          max: Math.min(LOOP_MAX_LIMIT, Math.max(1, Math.floor(Number(job.max)) || LOOP_MAX)),
+        },
+      })
+    })
+  })
+  ipcMain.on(IPC.runLoopPass, (_e, runId: string, n: number, result: PassResult) => loopRuns.get(str(runId))?.proc.postMessage({ type: 'pass', n: Number(n), result }))
+  ipcMain.on(IPC.runLoopStop, (_e, runId: string) => endLoop(str(runId), loopFail('Остановлено')))
   // a Playwright block: a process of its own per run; asked to stop first (it closes its browser), killed if it does not
   const pwRuns = new Map<string, { proc: UtilityProcess; done: (r: PwResult) => void; timer: NodeJS.Timeout; kill?: NodeJS.Timeout; reason?: string }>()
-  const endPw = (id: string, r: PwResult) => {
+  const endPw = (id: string, r: PwResult, from?: UtilityProcess) => {
     const run = pwRuns.get(id)
-    if (!run) return
+    if (!run || (from && run.proc !== from)) return
     pwRuns.delete(id)
     clearTimeout(run.timer)
     clearTimeout(run.kill)
@@ -1098,7 +1181,7 @@ function registerIpc(): void {
     if (!run || run.reason) return
     run.reason = reason
     run.proc.postMessage({ type: 'stop' })
-    run.kill = setTimeout(() => endPw(id, { ok: false, error: reason, logs: [], ms: 0 }), 8000)
+    run.kill = setTimeout(() => endPw(id, { ok: false, error: reason, logs: [], ms: 0 }, run.proc), 8000)
   }
   /** The Браузер section's cookies in Playwright's form (a host-only one goes by its address). */
   const browserCookies = async (): Promise<Array<Record<string, unknown>>> => {
@@ -1115,7 +1198,7 @@ function registerIpc(): void {
   }
   /**
    * The cookies a run left, back into the Браузер section: a site that renews its session on every visit
-   * (Directus' refresh token) would otherwise be signed out there — its old cookie no longer valid.
+   * (a rotating refresh token) would otherwise be signed out there — its old cookie no longer valid.
    * Only the changed and the new ones (what the user did there meanwhile is not overwritten with the same).
    */
   const cookiesBack = async (sent: Array<Record<string, unknown>>, got: unknown): Promise<number> => {
@@ -1154,6 +1237,17 @@ function registerIpc(): void {
   ipcMain.handle(IPC.runPw, async (e, runId: string, job: PwJob) => {
     const id = str(runId)
     const cookies = job?.session ? await browserCookies().catch(() => []) : undefined
+    // the sites the scenario opens: their localStorage from the Браузер (a site's settings — its layout — live there)
+    const origins = job?.session
+      ? [...String(job.code ?? '').matchAll(/page\.goto\(\s*['"`](https?:\/\/[^'"`]+)/g)].map((m) => {
+          try {
+            return new URL(m[1]).origin
+          } catch {
+            return ''
+          }
+        })
+      : []
+    const storage = origins.length ? await br.localStorageOf(origins.filter(Boolean)).catch(() => []) : []
     endPw(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
     const note = str(job?.note)
     const dir = vault.runDir(note, str(job?.key))
@@ -1173,12 +1267,12 @@ function registerIpc(): void {
           if (cookies && got) {
             void cookiesBack(cookies, got).then((n) => {
               if (n) r.logs = [...r.logs, { level: 'info', text: `Вход сохранён в Браузер: обновлено cookie — ${n}` }]
-              endPw(id, r)
-            }, () => endPw(id, r))
-          } else endPw(id, r)
+              endPw(id, r, proc)
+            }, () => endPw(id, r, proc))
+          } else endPw(id, r, proc)
         }
       })
-      proc.on('exit', (code) => endPw(id, { ok: false, error: code ? `Процесс Playwright завершился (код ${code})` : 'Процесс Playwright завершился', logs: [], ms: 0 }))
+      proc.on('exit', (code) => endPw(id, { ok: false, error: code ? `Процесс Playwright завершился (код ${code})` : 'Процесс Playwright завершился', logs: [], ms: 0 }, proc))
       const name = (note.split('/').pop() ?? note).replace(/\.md$/i, '')
       proc.postMessage({
         type: 'run',
@@ -1189,6 +1283,7 @@ function registerIpc(): void {
           ctx: job.ctx ?? {},
           runs: job.runs ?? {},
           dir,
+          files: files().root,
           name: str(job.name) || 'Сценарий',
           suite: name,
           browser: (PW_BROWSERS as readonly string[]).includes(job.browser) ? job.browser : 'msedge',
@@ -1196,6 +1291,7 @@ function registerIpc(): void {
           trace: job.trace !== false,
           ignoreHTTPSErrors: br.settings().acceptBadCerts,
           cookies,
+          storage,
         },
       })
     })
@@ -1203,7 +1299,7 @@ function registerIpc(): void {
   ipcMain.on(IPC.runPwStop, (_e, runId: string) => stopPw(str(runId), 'Остановлено'))
   ipcMain.handle(IPC.runFile, (_e, p: string, key: string, name: string) => {
     const n = str(name)
-    if (!/^(final|failure)\.png$/.test(n)) throw new Error('Недопустимый файл')
+    if (!/^(final|failure)\.png$|^layout-\d+x\d+-\d+\.png$/.test(n)) throw new Error('Недопустимый файл')
     return readFileSync(join(vault.runDir(str(p), str(key)), n))
   })
   const traces = new TraceServer(vault.runsRoot)
@@ -1426,6 +1522,8 @@ app.on('window-all-closed', () => undefined)
 
 app.on('before-quit', () => {
   quitting = true
+  // the queries going on: cancelled on their servers, their connections closed
+  sqlStore?.stopAll()
   globalShortcut.unregisterAll()
   probe?.stop()
   tablet?.stop()

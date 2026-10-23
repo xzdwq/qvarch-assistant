@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { EntryKind } from '@shared/types'
+import { placeFloat, useAnchor } from '../lib/floating'
 
 export interface Recent {
   label: string
@@ -24,6 +25,20 @@ const suggestions = computed<Recent[]>(() => {
   if (props.noRecent) return []
   const q = label.value.trim().toLowerCase()
   return props.recent.filter((r) => r.label && (!q || r.label.toLowerCase().includes(q)) && r.label !== label.value).slice(0, 6)
+})
+
+/** The suggestions: over everything (teleported), as wide as the field, kept by it; `dropUp` — always over it. */
+const root = ref<HTMLElement>()
+// (the field scrolled out of sight — closed)
+const shown = computed({ get: () => open.value && suggestions.value.length > 0, set: (v) => void (v || (open.value = false)) })
+const style = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(shown, root, () => {
+  if (!root.value) return
+  const r = root.value.getBoundingClientRect()
+  const f = placeFloat(root.value, r.width, true, 0)
+  const up: Record<string, string> = props.dropUp ? { bottom: `${window.innerHeight - r.top + 4}px`, top: 'auto' } : {}
+  const maxH = props.dropUp ? Math.min(180, Math.max(60, r.top - 12)) : Math.min(220, f.maxH)
+  style.value = { ...f.style, ...up, maxHeight: `${maxH}px` }
 })
 
 function onFocus(): void {
@@ -69,7 +84,7 @@ function onKey(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="label-input">
+  <div ref="root" class="label-input">
     <div class="field">
       <textarea
         v-if="multiline"
@@ -97,18 +112,20 @@ function onKey(e: KeyboardEvent): void {
         @keydown="onKey"
       />
     </div>
-    <ul v-if="open && suggestions.length" class="dropdown" :class="{ up: dropUp }">
-      <li
-        v-for="(s, i) in suggestions"
-        :key="`${s.kind}-${s.label}`"
-        :class="{ active: i === active }"
-        @mousedown.prevent="pick(s)"
-        @mouseenter="active = i"
-      >
-        <span class="text">{{ s.label }}</span>
-        <span class="hint">недавнее</span>
-      </li>
-    </ul>
+    <Teleport to="body">
+      <ul v-if="shown" class="li-pop" :style="style">
+        <li
+          v-for="(s, i) in suggestions"
+          :key="`${s.kind}-${s.label}`"
+          :class="{ active: i === active }"
+          @mousedown.prevent="pick(s)"
+          @mouseenter="active = i"
+        >
+          <span class="text">{{ s.label }}</span>
+          <span class="hint">недавнее</span>
+        </li>
+      </ul>
+    </Teleport>
   </div>
 </template>
 
@@ -160,27 +177,18 @@ input {
   font: inherit;
   padding: 7px 0;
 }
-.dropdown {
-  position: absolute;
-  z-index: 50;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
+/* the suggestions — teleported to <body> (placed by placeFloat; a click outside blurs the field and closes them) */
+.li-pop {
+  box-sizing: border-box;
   margin: 0;
   padding: 4px;
   list-style: none;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 4px;
-  max-height: 220px;
   overflow: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   animation: drop-in 0.14s ease-out;
-}
-.dropdown.up {
-  top: auto;
-  bottom: calc(100% + 4px);
-  max-height: 180px;
 }
 @keyframes drop-in {
   from {

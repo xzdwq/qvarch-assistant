@@ -12,16 +12,16 @@ const opts = (now: string, isToday = true) => ({ now: t(now), isToday, dayStart:
 describe('workDay', () => {
   it('the day list keeps its order; a meeting given a task counts in it; the rest sorts out', () => {
     const w = workDay({
-      dayTasks: [{ key: 'Q-2', summary: 'Своя' }, { key: 'DOS-1', summary: 'Jira' }],
+      dayTasks: [{ key: 'Q-2', summary: 'Своя' }, { key: 'ABC-1', summary: 'Jira' }],
       entries: [
-        e('09:00', '10:00', { task: { key: 'DOS-1', summary: 'Jira' } }),
-        e('10:00', '10:30', { kind: 'meeting', outlook: { id: 'o', sig: 's' }, task: { key: 'DOS-1', summary: 'Jira' } }),
+        e('09:00', '10:00', { task: { key: 'ABC-1', summary: 'Jira' } }),
+        e('10:00', '10:30', { kind: 'meeting', outlook: { id: 'o', sig: 's' }, task: { key: 'ABC-1', summary: 'Jira' } }),
         e('11:00', '11:20', { kind: 'call' }),
         e('12:00', '13:00', { kind: 'lunch' }),
-        e('14:00', '15:00', { task: { key: 'RND-5', summary: 'Ещё' } }),
+        e('14:00', '15:00', { task: { key: 'XYZ-5', summary: 'Ещё' } }),
       ],
     })
-    expect(w.tasks.map((x) => x.task.key)).toEqual(['Q-2', 'DOS-1', 'RND-5'])
+    expect(w.tasks.map((x) => x.task.key)).toEqual(['Q-2', 'ABC-1', 'XYZ-5'])
     expect(w.tasks[0].own).toBe(true)
     expect(w.tasks[1].ms).toBe(90 * M)
     expect(w.meetings).toHaveLength(1)

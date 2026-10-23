@@ -53,7 +53,7 @@ describe('reports', () => {
   const items = [
     { day: DAY, e: E('m', '10:00', '11:00', { kind: 'meeting' }) },
     { day: DAY, e: E('c', '10:30', '11:30', { kind: 'call', source: 'detected' }) },
-    { day: DAY, e: E('j', '12:00', '13:00', { task: { key: 'DOS-1', summary: 's' } }) },
+    { day: DAY, e: E('j', '12:00', '13:00', { task: { key: 'ABC-1', summary: 's' } }) },
   ]
   it('groups with overlaps counted once inside a group', () => {
     const g = groupItems([...items, { day: DAY, e: E('c2', '10:45', '11:15', { kind: 'call' }) }], 'kind')
@@ -63,7 +63,7 @@ describe('reports', () => {
   it('filters', () => {
     expect(items.filter((i) => matches(i.e, { taskType: ['jira'] })).map((i) => i.e.id)).toEqual(['j'])
     expect(items.filter((i) => matches(i.e, { sources: ['call'] })).map((i) => i.e.id)).toEqual(['c'])
-    expect(items.filter((i) => matches(i.e, { text: 'dos' })).map((i) => i.e.id)).toEqual(['j'])
+    expect(items.filter((i) => matches(i.e, { text: 'abc' })).map((i) => i.e.id)).toEqual(['j'])
   })
   it('bars: total is the union, parts per series', () => {
     const [b] = bars(items, [DAY], 'day', (i) => i.e.kind)

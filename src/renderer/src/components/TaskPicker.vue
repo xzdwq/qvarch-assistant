@@ -41,13 +41,8 @@ function measure(): void {
   fl.value = placeFloat((root.value.firstElementChild as HTMLElement | null) ?? root.value, 440)
   place.value = { up: fl.value.up, maxH: fl.value.maxH }
 }
+// (kept by its button while the page scrolls; the button out of sight — closed)
 useAnchor(open, root, measure)
-// a floating list does not follow a scrolling page — it closes instead
-function onScroll(e: Event): void {
-  if (open.value && fl.value.teleport && !dd.value?.contains(e.target as Node)) open.value = false
-}
-onMounted(() => window.addEventListener('scroll', onScroll, true))
-onBeforeUnmount(() => window.removeEventListener('scroll', onScroll, true))
 
 async function toggle(): Promise<void> {
   open.value = !open.value

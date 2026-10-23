@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { placeFloat, useAnchor } from '../lib/floating'
 import Icon from './Icon.vue'
 
 /**
@@ -28,7 +29,14 @@ const label = computed(() => {
 const open = ref(false)
 const root = ref<HTMLElement>()
 const ownText = ref(own.value)
-const onDown = (e: PointerEvent) => open.value && !root.value?.contains(e.target as Node) && (open.value = false)
+/** The popover: over everything (teleported), kept by its button. */
+const style = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(open, root, () => {
+  if (!root.value) return
+  const f = placeFloat(root.value, 300, true, 0)
+  style.value = { ...f.style, maxHeight: `${f.maxH}px` }
+})
+const onDown = (e: PointerEvent) => open.value && !root.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.sop-pop') && (open.value = false)
 onMounted(() => document.addEventListener('pointerdown', onDown, true))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
 </script>
@@ -38,7 +46,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
     <button class="sb" :class="{ on: open }" title="Когда останавливать цепочку" @click="(open = !open), (ownText = own)">
       Остановить на: <b>{{ label }}</b><Icon name="chevronDown" :size="11" />
     </button>
-    <div v-if="open" class="pop">
+    <Teleport to="body">
+    <div v-if="open" class="sop-pop" :style="style">
       <label class="row"><input type="checkbox" :checked="parts.includes('error')" @change="set({ error: ($event.target as HTMLInputElement).checked })" />Ошибке — нет ответа, ошибка скрипта</label>
       <div class="cls">
         <span>Ответах</span>
@@ -50,6 +59,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
       </label>
       <button class="never" @click="(emit('update:modelValue', ''), (ownText = ''))">Не останавливать никогда</button>
     </div>
+    </Teleport>
   </span>
 </template>
 
@@ -73,12 +83,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDown, true))
 .sb.on {
   border-color: var(--accent);
 }
-.pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
+/* teleported to <body> (placed by placeFloat) */
+.sop-pop {
   display: flex;
+  overflow-y: auto;
   flex-direction: column;
   gap: 10px;
   width: 300px;

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { audioEmbed, MARK_COLORS, resolveWiki, type VaultHit, type VaultNode } from '@shared/vault'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
+import NotebookHelp from '../components/NotebookHelp.vue'
 import MdEditor from '../components/MdEditor.vue'
 import BoardView from '../components/BoardView.vue'
 import { isBoard, serializeBoard } from '@shared/whiteboard'
@@ -11,10 +12,11 @@ import EventModal from '../components/EventModal.vue'
 import EventCard from '../components/EventCard.vue'
 import EmojiPick from '../components/EmojiPick.vue'
 import NodeMark from '../components/NodeMark.vue'
-import { clearCtx, flushRuns, noteReport, noteRun, runAll, stopRunAll } from '../lib/runbook'
+import { clearCtx, flushRuns, forgetRuns, moveRuns, noteReport, noteRun, runAll, stopRunAll } from '../lib/runbook'
 import { summary } from '@shared/runbook'
 import { useTablet } from '../lib/tablet'
 import { fmtSec, useRecorder } from '../lib/recorder'
+import { placeFloat, useAnchor, useFollow } from '../lib/floating'
 import {
   closeEverywhere,
   closeTab,
@@ -158,6 +160,7 @@ async function rename(path: string, name: string): Promise<void> {
   try {
     const to = await window.qa.vaultMove(path, dirOf(path), clean)
     remap(path, to)
+    moveRuns(path, to)
     if (folder.value) folder.value = folder.value === path ? to : folder.value
     await loadTree()
   } catch (e) {
@@ -169,6 +172,7 @@ async function moveTo(path: string, dir: string): Promise<void> {
   try {
     const to = await window.qa.vaultMove(path, dir)
     remap(path, to)
+    moveRuns(path, to)
     if (dir && !layout.open.includes(dir)) layout.open.push(dir)
     await loadTree()
   } catch (e) {
@@ -181,6 +185,8 @@ async function remove(n: VaultNode): Promise<void> {
     closeEverywhere(n.path)
     await window.qa.vaultDelete(n.path)
     for (const k of [...docs.keys()]) if (k === n.path || k.startsWith(n.path + '/')) docs.delete(k)
+    // its runs too (a new note of that name must not show them)
+    forgetRuns(n.path)
     if (folder.value && (folder.value === n.path || folder.value.startsWith(n.path + '/'))) folder.value = undefined
     await loadTree()
   } catch (e) {
@@ -430,6 +436,17 @@ function setEditor(key: string, el: unknown): void {
   else editors.delete(key)
 }
 const editorOf = (p: Pane | undefined) => (p?.active ? editors.get(`${p.id}:${p.active}`) : undefined)
+/** The note's empty places (the margins, under the text, the path and dates lines' blank parts): the cursor stays in the note. */
+const EMPTY_PLACES = ['pscroll', 'mde', 'cm-editor', 'cm-scroller', 'crumbs', 'nmeta']
+function onPaneDown(e: MouseEvent, p: Pane): void {
+  if (e.button !== 0) return
+  const t = e.target as HTMLElement
+  if (!EMPTY_PLACES.some((c) => t.classList?.contains(c))) return
+  const ed = editorOf(p)
+  if (!ed) return
+  e.preventDefault()
+  ed.focusAt(e.clientX, e.clientY)
+}
 // ---------- pictures into a note (the button; a paste / a drop — the editor's own) ----------
 const imgInput = ref<HTMLInputElement>()
 let imgPane: Pane | undefined
@@ -610,14 +627,25 @@ async function setEmoji(n: VaultNode, emoji?: string): Promise<void> {
   await loadTree()
 }
 // ---------- a runnable note: «Выполнить всё», its context ----------
-const RUNNABLE = /^(`{3,}|~{3,})\s*(http|rest)\b|^(`{3,}|~{3,})\s*(js|ts|javascript|typescript)\b[^\n]*\b(run|lib|playwright|pw)\b|^(`{3,}|~{3,})\s*(json|yaml|browser)\b[^\n]*\bname=/m
+const RUNNABLE = /^(`{3,}|~{3,})\s*(http|rest)\b|^(`{3,}|~{3,})\s*(js|ts|javascript|typescript)\b[^\n]*\b(run|lib|playwright|pw)\b|^(`{3,}|~{3,})\s*(json|yaml|browser)\b[^\n]*\bname=|^(`{3,}|~{3,})\s*sql\b[^\n]*\bdb=/m
 const runnable = (path?: string) => !!path && !isBoard(path) && RUNNABLE.test(docs.get(path)?.text ?? '')
 const ctxOpen = ref<{ path: string; x: number; y: number }>()
+/** «Инструкция» (the notebook's and the testing tools' help) open. */
+const helpOpen = ref(false)
+/** The button the panel opened from: the panel stays by it (a pane resized), closes when it is gone. */
+let ctxAnchor: HTMLElement | undefined
+const ctxAt = (r: DOMRect) => ({ x: Math.max(8, Math.min(r.right - 360, window.innerWidth - 370)), y: r.bottom + 6 })
 function openCtxPanel(path: string, e: MouseEvent): void {
   if (ctxOpen.value?.path === path) return void (ctxOpen.value = undefined)
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  ctxOpen.value = { path, x: Math.max(8, Math.min(r.right - 360, window.innerWidth - 370)), y: r.bottom + 6 }
+  ctxAnchor = e.currentTarget as HTMLElement
+  ctxOpen.value = { path, ...ctxAt(ctxAnchor.getBoundingClientRect()) }
 }
+useFollow(
+  ctxOpen,
+  () => ctxAnchor,
+  (r) => ctxOpen.value && (ctxOpen.value = { ...ctxOpen.value, ...ctxAt(r) }),
+  () => (ctxOpen.value = undefined),
+)
 const closeCtxPanel = (e: PointerEvent) => !(e.target as HTMLElement).closest('.nrun-ctx, .nrun-b') && (ctxOpen.value = undefined)
 onMounted(() => window.addEventListener('pointerdown', closeCtxPanel))
 onBeforeUnmount(() => window.removeEventListener('pointerdown', closeCtxPanel))
@@ -697,11 +725,20 @@ function onZoneDrop(): void {
   else splitWith(d.pane, d.path, z.side)
 }
 
-// sort menu
+// sort menu: over everything (teleported), as wide as the tool bar, kept under it
 const sortOpen = ref(false)
-const closeSort = () => (sortOpen.value = false)
-onMounted(() => window.addEventListener('pointerdown', closeSort))
-onBeforeUnmount(() => window.removeEventListener('pointerdown', closeSort))
+const toolsEl = ref<HTMLElement>()
+const sortBtn = ref<HTMLElement>()
+const sortStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(sortOpen, toolsEl, () => {
+  if (!toolsEl.value) return
+  const r = toolsEl.value.getBoundingClientRect()
+  const f = placeFloat(toolsEl.value, Math.max(160, r.width - 16), true, 0)
+  sortStyle.value = { ...f.style, left: `${Math.max(8, Math.min(r.left + 8, window.innerWidth - parseFloat(f.style.width) - 8))}px`, maxHeight: `${f.maxH}px` }
+})
+const awaySort = (e: PointerEvent) => sortOpen.value && !sortBtn.value?.contains(e.target as Node) && !(e.target as Element).closest?.('.sortmenu') && (sortOpen.value = false)
+onMounted(() => window.addEventListener('pointerdown', awaySort, true))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', awaySort, true))
 
 // ---------- keys ----------
 function onKey(e: KeyboardEvent): void {
@@ -736,7 +773,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="nb">
     <!-- sections & files / search -->
     <aside v-if="!sideHidden" class="nside" :style="{ width: `${layout.side}px` }">
-      <div class="ntools">
+      <div ref="toolsEl" class="ntools">
         <button title="Скрыть панель" @click="sideHidden = true"><Icon name="sidebar" :size="15" /></button>
         <button title="Новая заметка (Ctrl+N)" @click="newNote()"><Icon name="filePlus" :size="15" /></button>
         <button title="Новая доска — полотно для схем и записей" @click="newBoard()"><Icon name="presentation" :size="15" /></button>
@@ -744,13 +781,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <button title="Голосовая заметка" @click="newVoiceNote"><Icon name="mic" :size="15" /></button>
         <span class="grow"></span>
         <button :class="{ on: layout.sideTab === 'search' }" title="Поиск по всем заметкам" @click="toggleSearch()"><Icon name="search" :size="15" /></button>
-        <span class="sortwrap" @pointerdown.stop>
-          <button :class="{ on: sortOpen }" title="Сортировка" @click="sortOpen = !sortOpen"><Icon name="sort" :size="15" /></button>
-          <div v-if="sortOpen" class="sortmenu">
-            <button v-for="s in SORTS" :key="s.id" :class="{ on: layout.sort === s.id }" @click="(layout.sort = s.id), (sortOpen = false)">
-              <Icon v-if="layout.sort === s.id" name="check" :size="12" /><span v-else class="sp"></span>{{ s.label }}
-            </button>
-          </div>
+        <span class="sortwrap">
+          <button ref="sortBtn" :class="{ on: sortOpen }" title="Сортировка" @click="sortOpen = !sortOpen"><Icon name="sort" :size="15" /></button>
+          <Teleport to="body">
+            <div v-if="sortOpen" class="sortmenu" :style="sortStyle">
+              <button v-for="s in SORTS" :key="s.id" :class="{ on: layout.sort === s.id }" @click="(layout.sort = s.id), (sortOpen = false)">
+                <Icon v-if="layout.sort === s.id" name="check" :size="12" /><span v-else class="sp"></span>{{ s.label }}
+              </button>
+            </div>
+          </Teleport>
         </span>
         <button title="Свернуть все разделы" @click="layout.open = []"><Icon name="collapse" :size="15" /></button>
       </div>
@@ -896,12 +935,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <button v-else class="tb nrun" title="Выполнить всё: блоки HTTP и кода сверху вниз (данные — сразу); первая ошибка останавливает" @click="runAll(p.active!, docs.get(p.active!)!.text)"><Icon name="play" :size="11" />Выполнить всё</button>
               </template>
             </template>
+            <button v-if="pi === layout.panes.length - 1" class="tb" :class="{ on: layout.wide }" :title="layout.wide ? 'Обычная ширина текста (820 px)' : 'Текст на всю ширину (с отступами по краям)'" @click="layout.wide = !layout.wide"><Icon name="expand" :size="14" /></button>
+            <button v-if="pi === layout.panes.length - 1" class="tb" :class="{ on: helpOpen }" title="Инструкция: блокнот и тестирование" @click="helpOpen = true"><Icon name="book" :size="14" /></button>
             <button class="tb" :class="{ on: layout.panes.length > 1 }" :title="layout.panes.length > 1 ? 'Одна колонка (Ctrl+\\)' : 'Разделить'" @click="toggleSplit">
               <Icon name="columns" :size="14" />
             </button>
           </div>
 
-          <div v-if="tabOf(p) && p.active" class="pbody" :class="{ paired: !!pairOf(p.active) }">
+          <div v-if="tabOf(p) && p.active" class="pbody" :class="{ paired: !!pairOf(p.active) }" :style="layout.wide ? { '--note-max': 'none', '--note-pad': '32px' } : undefined">
             <div v-if="pairOf(p.active)" class="pairsw">
               <button class="pswap" :title="`Показать ${isBoard(p.active) ? 'заметку' : 'доску'} «${noteName(pairOf(p.active)!)}» здесь`" @click="showPair(pi)">
                 <Icon :name="isBoard(p.active) ? 'note' : 'presentation'" :size="13" /><span>{{ isBoard(p.active) ? 'Текст' : 'Доска' }}</span>
@@ -926,7 +967,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 @warn="say"
               />
             </div>
-            <div v-else class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel">
+            <div v-else class="pscroll" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel" @mousedown="onPaneDown($event, p)">
               <div class="crumbs">
                 <template v-for="(c, ci) in dirOf(p.active).split('/').filter(Boolean)" :key="ci"><span>{{ c }}</span><Icon name="chevronRight" :size="10" /></template>
                 <span class="leaf"><NodeMark v-if="emojiOf(p.active) || colorOf(p.active)" :emoji="emojiOf(p.active)" :color="colorOf(p.active)" icon="note" :size="13" />{{ noteName(p.active) }}</span>
@@ -1045,6 +1086,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </template>
       </div>
     </Teleport>
+    <NotebookHelp v-if="helpOpen" @close="helpOpen = false" />
   </div>
 </template>
 
@@ -1482,9 +1524,9 @@ mark {
 .nmeta {
   box-sizing: border-box;
   width: 100%;
-  max-width: 820px;
+  max-width: var(--note-max, 820px);
   margin: -2px auto 8px;
-  padding: 0 24px 0 52px;
+  padding: 0 calc(24px + var(--note-pad, 0px)) 0 calc(52px + var(--note-pad, 0px));
   color: var(--muted);
   font-size: 11.5px;
 }
@@ -1653,15 +1695,10 @@ mark {
 .sortwrap {
   display: inline-flex;
 }
-.ntools {
-  position: relative;
-}
+/* the sort menu — teleported to <body> (placed by placeFloat) */
 .sortmenu {
-  position: absolute;
-  top: calc(100% - 2px);
-  left: 8px;
-  right: 8px;
-  z-index: 20;
+  box-sizing: border-box;
+  overflow-y: auto;
   padding: 5px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1670,18 +1707,28 @@ mark {
   display: flex;
   flex-direction: column;
 }
-.ntools .sortmenu button {
+/* (out of the tool bar: its button look is given here) */
+.sortmenu button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
   justify-content: flex-start;
   gap: 8px;
   width: auto;
   height: auto;
   padding: 6px 10px;
+  border: 0;
   border-radius: var(--r2);
+  background: transparent;
   color: var(--text);
   font-size: 12.5px;
   white-space: nowrap;
 }
-.ntools .sortmenu button.on {
+.sortmenu button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.sortmenu button.on {
   background: rgb(var(--accent-rgb) / 0.16);
 }
 .sortmenu .sp {
@@ -1691,9 +1738,9 @@ mark {
 .ntitle {
   box-sizing: border-box;
   width: 100%;
-  max-width: 820px;
+  max-width: var(--note-max, 820px);
   margin: 18px auto 6px;
-  padding: 0 24px 0 52px;
+  padding: 0 calc(24px + var(--note-pad, 0px)) 0 calc(52px + var(--note-pad, 0px));
   border: 0;
   background: transparent;
   color: var(--text-hi);

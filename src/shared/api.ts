@@ -7,7 +7,10 @@ import type { PulsePoint } from './pulse'
 import type { JiraFacets, JiraIssue, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi } from './browser'
+import type { TestFilesApi } from './testFiles'
+import type { SqlApi } from './sql'
 import type { PwBrowser } from './runbook'
+import type { LoopJob, LoopResult, PassResult } from './loop'
 import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
@@ -215,6 +218,10 @@ export interface QaApi {
   pathForFile(file: File): string
   /** Браузер: a method of the pages' side (see BrowserApi). */
   browser<K extends keyof BrowserApi>(m: K, ...a: Parameters<BrowserApi[K]>): Promise<Awaited<ReturnType<BrowserApi[K]>>>
+  /** The notebook's test files (see TestFilesApi). */
+  files<K extends keyof TestFilesApi>(m: K, ...a: Parameters<TestFilesApi[K]>): Promise<Awaited<ReturnType<TestFilesApi[K]>>>
+  /** «Базы данных»: the connections, a query run / explained / stopped, the notebook's queries (see SqlApi). */
+  sql<K extends keyof SqlApi>(m: K, ...a: Parameters<SqlApi[K]>): Promise<Awaited<ReturnType<SqlApi[K]>>>
   /** Where the visible pages go (sent often — no answer). */
   browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number }; scale?: number }>): void
   /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */
@@ -226,6 +233,8 @@ export interface QaApi {
   /** One Jira task in full (with its description). */
   jiraIssue(key: string): Promise<JiraIssue | undefined>
   openExternal(url: string): void
+  /** A picture (PNG / JPEG bytes) into the system clipboard. */
+  copyImage(bytes: Uint8Array): Promise<void>
   /** Live typing combo (sent on every batch of key presses). */
   onCombo(cb: (c: ComboState) => void): () => void
   getCombo(): Promise<ComboState>
@@ -271,6 +280,11 @@ export interface QaApi {
   /** A code block run in a process of its own (killed by runCodeStop / its time limit). */
   runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number }>
   runCodeStop(runId: string): void
+  /** A loop's head run in a process of its own: each pass it asks for comes as onLoopPass, answered by runLoopPass. */
+  runLoop(runId: string, job: LoopJob & { timeoutSec: number }): Promise<LoopResult>
+  runLoopPass(runId: string, n: number, result: PassResult): void
+  runLoopStop(runId: string): void
+  onLoopPass(cb: (runId: string, n: number, vars: Record<string, unknown>) => void): () => void
   /** A Playwright block run in a process of its own; its files go to the note's runs (vault/.runs/<note>/<key>). */
   runPw(runId: string, job: PwJob): Promise<PwResult>
   runPwStop(runId: string): void
@@ -433,6 +447,8 @@ export const IPC = {
   httpAbort: 'qa:httpAbort',
   httpChainEv: 'qa:httpChainEv',
   browser: 'qa:browser',
+  files: 'qa:files',
+  sql: 'qa:sql',
   clip: 'qa:clip',
   clipEv: 'qa:clipEv',
   browserLayout: 'qa:browserLayout',
@@ -440,6 +456,7 @@ export const IPC = {
   jiraVersionIssues: 'qa:jiraVersionIssues',
   calendarRange: 'qa:calendarRange',
   openExternal: 'qa:openExternal',
+  copyImage: 'qa:copyImage',
   combo: 'qa:combo',
   getCombo: 'qa:getCombo',
   pulse: 'qa:pulse',
@@ -467,6 +484,10 @@ export const IPC = {
   runSave: 'qa:runSave',
   runCode: 'qa:runCode',
   runCodeStop: 'qa:runCodeStop',
+  runLoop: 'qa:runLoop',
+  runLoopPass: 'qa:runLoopPass',
+  runLoopStop: 'qa:runLoopStop',
+  loopPass: 'qa:loopPass',
   runPw: 'qa:runPw',
   runPwStop: 'qa:runPwStop',
   pwProgress: 'qa:pwProgress',
@@ -515,6 +536,8 @@ export interface PwJob {
   runs?: Record<string, unknown>
   /** The note and the block (where its files go). */
   note: string
+  /** The notebook's test files' folder (qa.file('Набор/файл')) — set by the main process. */
+  files?: string
   key: string
   name: string
   browser: PwBrowser
@@ -531,6 +554,8 @@ export interface PwResult {
   sets?: Record<string, unknown>
   logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>
   steps?: PwStep[]
+  /** The ready checks (qa.…): passed / failed / a warning, with their tables. */
+  checks?: import('./qaChecks').QaCheck[]
   error?: string
   ms: number
   /** What the run left: final.png / failure.png, trace.zip, allure-results. */

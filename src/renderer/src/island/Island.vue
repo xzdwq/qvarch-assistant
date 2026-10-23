@@ -1583,7 +1583,7 @@ function onKey(e: KeyboardEvent): void {
                   v-model="qLabel"
                   class="qlabel"
                   :day="today"
-                  :placeholder="`${kindLabel(qKind)} · 30м, 14:00-15:00, DOS-123, #вид · @ задача`"
+                  :placeholder="`${kindLabel(qKind)} · 30м, 14:00-15:00, ABC-123, #вид · @ задача`"
                   @keydown.stop
                   @submit="addQuickEvent()"
                   @kind="(k) => (qKind = k)"
@@ -1820,7 +1820,7 @@ function onKey(e: KeyboardEvent): void {
                   v-model="label"
                   class="cutq"
                   :day="today"
-                  placeholder="30м, 14:00-15:00, DOS-123, #вид · @ задача"
+                  placeholder="30м, 14:00-15:00, ABC-123, #вид · @ задача"
                   @submit="cut()"
                   @kind="(k) => (kind = k)"
                   @task="(t) => !cutTasks.some((x) => x.key === t.key) && (cutTasks = [...cutTasks, t])"

@@ -10,7 +10,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     // the release builder runs in its own (utility) process — see src/main/release/worker.ts
-    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), releaseWorker: resolve('src/main/release/worker.ts'), codeWorker: resolve('src/main/runner/codeWorker.ts'), pwWorker: resolve('src/main/runner/pwWorker.ts'), hookWorker: resolve('src/main/runner/hookWorker.ts') } } },
+    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), releaseWorker: resolve('src/main/release/worker.ts'), codeWorker: resolve('src/main/runner/codeWorker.ts'), loopWorker: resolve('src/main/runner/loopWorker.ts'), pwWorker: resolve('src/main/runner/pwWorker.ts'), hookWorker: resolve('src/main/runner/hookWorker.ts'), sqlWorker: resolve('src/main/sql/worker.ts') } } },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

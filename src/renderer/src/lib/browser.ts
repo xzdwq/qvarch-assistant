@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import type { Bookmark, BrowserTab, RecItem, RecState } from '@shared/browser'
+import { DEFAULT_CHECK, type CheckProblem, type CheckState } from '@shared/check'
 
 /** The browser's state from the main process: tabs, the recording, bookmarks — shared by the section and the status bar. */
 export const tabs = shallowRef<BrowserTab[]>([])
@@ -7,6 +8,12 @@ export const recState = shallowRef<RecState>({ on: false, documents: false, coun
 export const recItems = shallowRef<RecItem[]>([])
 export const bookmarks = shallowRef<Bookmark[]>([])
 export const tabsLoaded = ref(false)
+/** «Проверка»: on / off, its settings, its findings. */
+export const checkState = shallowRef<CheckState>({ settings: DEFAULT_CHECK, blocked: [] })
+export const checkProblems = shallowRef<CheckProblem[]>([])
+/** «Карта API»: its sites (host, endpoints, calls), news of it (a change) as a counter. */
+export const apiMapHosts = shallowRef<Array<{ host: string; endpoints: number; calls: number; last: number }>>([])
+export const apiMapTick = ref(0)
 type Listener = (type: string, payload: unknown) => void
 const listeners = new Set<Listener>()
 let started = false
@@ -17,6 +24,9 @@ export function startBrowser(): void {
   void window.qa.browser('recState').then((s) => (recState.value = s))
   void window.qa.browser('recList').then((l) => (recItems.value = l))
   void window.qa.browser('bookmarks').then((b) => (bookmarks.value = b))
+  void window.qa.browser('checkState').then((s) => (checkState.value = s))
+  void window.qa.browser('checkList').then((l) => (checkProblems.value = l))
+  void window.qa.browser('apiMapHosts').then((h) => (apiMapHosts.value = h))
   window.qa.onBrowser((type, p) => {
     if (type === 'tabs') tabs.value = p as BrowserTab[]
     else if (type === 'rec') {
@@ -24,6 +34,15 @@ export function startBrowser(): void {
       recState.value = r.state
       recItems.value = r.items
     } else if (type === 'bookmarks') bookmarks.value = p as Bookmark[]
+    else if (type === 'check') {
+      const c = p as { state: CheckState; problems: CheckProblem[] }
+      checkState.value = c.state
+      checkProblems.value = c.problems
+    }
+    else if (type === 'apimap') {
+      apiMapHosts.value = (p as { hosts: typeof apiMapHosts.value }).hosts
+      apiMapTick.value++
+    }
     // a tab the app opened (a recording, a link, a trace): shown in the current pane
     else if (type === 'activate') placeTab(bLayout.cur, (p as { id: string }).id)
     for (const l of listeners) l(type, p)
@@ -131,25 +150,39 @@ export function splitWith(from: number, id: string, side: 'left' | 'right'): voi
 }
 
 /**
- * Something of the app is open over the pages — a dialog or a menu teleported into <body>, a title bar menu:
+ * Something of the app is open over the pages — a dialog or a menu teleported into <body>:
  * the native pages would hide it, so they make way meanwhile.
  */
-export function useOverlay() {
+export function useOverlay(pages?: () => Element[]) {
   const on = ref(false)
   let mo: MutationObserver | undefined
   let raf = 0
+  /** Over a page (its native view): only then the page is put under its picture — a menu beside it needs nothing. */
+  const overPage = (el: HTMLElement) => {
+    if (!pages) return true
+    // (a popover not placed yet — no position of its own, or not shown: it covers nothing; placed a frame later, it is
+    // looked at again)
+    const cs = getComputedStyle(el)
+    if ((cs.position !== 'fixed' && cs.position !== 'absolute') || cs.visibility === 'hidden' || cs.display === 'none') return false
+    const r = el.getBoundingClientRect()
+    return pages().some((p) => {
+      const q = p.getBoundingClientRect()
+      return r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top
+    })
+  }
   const check = () => {
     raf = 0
     const app = document.getElementById('app')
-    const body = [...document.body.children].some((el) => el !== app && el instanceof HTMLElement && el.tagName !== 'SCRIPT' && el.getClientRects().length > 0 && !el.classList.contains('bv-ignore'))
-    on.value = body || !!document.querySelector('.titlebar .dropdown')
+    const pops = [...document.body.children].filter((el): el is HTMLElement => el !== app && el instanceof HTMLElement && el.tagName !== 'SCRIPT' && el.getClientRects().length > 0 && !el.classList.contains('bv-ignore'))
+    // (the title bar's menu too: teleported into <body> like any other)
+    on.value = pops.some(overPage)
+    // (a popover placed a frame after it appears, moved with its button — looked at again while one is open)
+    if (pops.length && pages) setTimeout(schedule, 150)
   }
   const schedule = () => (raf ||= requestAnimationFrame(check))
   onMounted(() => {
     mo = new MutationObserver(schedule)
     mo.observe(document.body, { childList: true })
-    const tb = document.querySelector('.titlebar')
-    if (tb) mo.observe(tb, { childList: true, subtree: true })
     check()
   })
   onBeforeUnmount(() => {

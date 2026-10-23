@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { regressMd } from '@shared/regress'
 import { openUrl } from '../lib/links'
 import { computed, createApp, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type App } from 'vue'
+import { useCloseOnScroll, visibleRect } from '../lib/floating'
 import ThinkingOrb from './ThinkingOrb.vue'
 import Icon, { iconSvg } from './Icon.vue'
 import { EditorSelection, EditorState, Prec, StateField, Transaction, type Range } from '@codemirror/state'
@@ -30,14 +32,18 @@ import { durText, eventLink, jiraLink, parseNoteLink, periodText, pickGroups, st
 import type { JiraIssue } from '@shared/jira'
 import { eventOf, events, eventsNow, eventsTick, issueOf, jiraSite, kindOf } from '../lib/noteEvents'
 import { todayKey } from '../lib/today'
-import { ctxValues, noteRun, syncData } from '../lib/runbook'
+import { ctxValues, noteRun, syncData, syncTemplates } from '../lib/runbook'
 import { resolvePath, TEMPLATE } from '@shared/runbook'
 import { boardMd, workMd, calloutMd, chartMd, findBlocks, mermaidMd, NEW_CHART, NEW_MERMAID, newTable, tableMd, TOC_MD, toggleMd, type BlockKind } from '@shared/noteBlocks'
+import { findLoops, loopAt, LOOP_CLOSE_MD, LOOP_MAX, LOOP_TIMEOUT, loopOpenMd, type LoopRange } from '@shared/loop'
 import NoteBlockHost from './blocks/NoteBlockHost.vue'
 import BlockRecording from './blocks/BlockRecording.vue'
 import { tree } from '../lib/notebook'
 import { StateEffect } from '@codemirror/state'
 import { matchCmds, pickerMode, type CmdId, type NoteCmd } from '../lib/noteCommands'
+import { emptyFuzz, fuzzLines } from '@shared/fuzz'
+import { apiMapHosts, tabs as browserTabs } from '../lib/browser'
+import { dbConns, loadConns } from '../lib/sqlDb'
 import { loadEmoji, searchEmoji, useEmoji, type Emoji } from '../lib/emoji'
 
 /**
@@ -676,19 +682,23 @@ class CompWidget extends WidgetType {
     readonly extra: string,
     /** Its first line (an unnamed runnable block is known by it). */
     readonly line: number,
+    /** The loop it is in (its key; '' — none) and the loops around it (their bands on the left). */
+    readonly loop = '',
+    readonly band = 0,
   ) {
     super()
   }
   eq(o: CompWidget): boolean {
-    return o.kind === this.kind && o.src === this.src && o.extra === this.extra && o.line === this.line
+    return o.kind === this.kind && o.src === this.src && o.extra === this.extra && o.line === this.line && o.loop === this.loop && o.band === this.band
   }
   get estimatedHeight(): number {
     const n = this.src.split('\n').length
-    return this.kind === 'http' || this.kind === 'code' ? 140 + n * 20 : this.kind === 'pw' ? 180 + n * 20 : this.kind === 'browser' ? 110 + (Number(/height:\s*(\d+)/.exec(this.src)?.[1]) || 560) : this.kind === 'data' || this.kind === 'ref' ? 90 : this.kind === 'audio' ? 48 : this.kind === 'image' ? 320 : this.kind === 'board' ? 440 : this.kind === 'table' ? 24 + n * 34 : this.kind === 'chart' ? 400 : this.kind === 'mermaid' ? 300 : this.kind === 'toc' ? 60 + n * 26 : 40 + n * 24
+    return this.kind === 'http' || this.kind === 'code' || this.kind === 'sql' || this.kind === 'tpl' || this.kind === 'loop' ? 140 + n * 20 : this.kind === 'loopEnd' ? 26 : this.kind === 'pw' ? 180 + n * 20 : this.kind === 'browser' ? 110 + (Number(/height:\s*(\d+)/.exec(this.src)?.[1]) || 560) : this.kind === 'data' || this.kind === 'ref' ? 90 : this.kind === 'audio' ? 48 : this.kind === 'image' ? 320 : this.kind === 'board' ? 440 : this.kind === 'regress' ? 320 : this.kind === 'files' ? 220 : this.kind === 'table' ? 24 + n * 34 : this.kind === 'chart' ? 400 : this.kind === 'mermaid' ? 300 : this.kind === 'toc' ? 60 + n * 26 : 40 + n * 24
   }
   toDOM(view: EditorView): HTMLElement {
     const dom = document.createElement('div')
     dom.className = 'cm-comp'
+    setBand(dom, this.band)
     const autofocus = !!focusSrc && focusSrc === this.src
     if (autofocus) focusSrc = ''
     const hp = reactive({
@@ -698,6 +708,7 @@ class CompWidget extends WidgetType {
       autofocus,
       path: props.path ?? '',
       line: this.line,
+      loop: this.loop || undefined,
       onChange: (src: string) => compReplace(view, dom, src),
       onRemove: () => compRemove(view, dom),
       onGo: (pos: number) => {
@@ -724,6 +735,8 @@ class CompWidget extends WidgetType {
     q.props.src = this.src
     q.props.headings = this.extra ? JSON.parse(this.extra) : []
     ;(q.props as { line?: number }).line = this.line
+    ;(q.props as { loop?: string }).loop = this.loop || undefined
+    setBand(dom, this.band)
     return true
   }
   destroy(dom: HTMLElement): void {
@@ -736,17 +749,68 @@ class CompWidget extends WidgetType {
   }
 }
 type CompDom = HTMLElement & { _qa?: { app: App; props: { kind: BlockKind; src: string; headings: unknown; line?: number }; ro: ResizeObserver } }
-function buildComps(state: EditorState): { ranges: CompRange[]; deco: DecorationSet } {
-  const found = findBlocks(state.doc.toString().split('\n'))
-  const heads = found.some((b) => b.kind === 'toc') ? JSON.stringify(headingsOf(state)) : ''
-  const ranges = found.map((b) => ({ kind: b.kind, from: state.doc.line(b.line0).from, to: state.doc.line(b.line1).to, src: b.src }))
-  return { ranges, deco: Decoration.set(ranges.map((r) => Decoration.replace({ widget: new CompWidget(r.kind, r.src, r.kind === 'toc' ? heads : '', state.doc.lineAt(r.from).number), block: true }).range(r.from, r.to))) }
+/** A loop's band on the left of what is in it (a loop in a loop — one more band). */
+function setBand(dom: HTMLElement, band: number): void {
+  dom.classList.toggle('cm-loopband', band > 0)
+  if (band > 0) dom.style.setProperty('--ld', String(band))
+  else dom.style.removeProperty('--ld')
 }
+/** How many (closed) loops each line is in — from a loop's start to its end. */
+function loopDepths(loops: LoopRange[], lines: number): Uint8Array {
+  const d = new Uint8Array(lines + 2)
+  for (const l of loops) if (l.end !== undefined) for (let i = l.line0; i <= l.end; i++) d[i] = Math.min(255, d[i] + 1)
+  return d
+}
+function buildComps(state: EditorState): { ranges: CompRange[]; deco: DecorationSet } {
+  const lines = state.doc.toString().split('\n')
+  const found = findBlocks(lines)
+  const loops = findLoops(lines)
+  const depth = loopDepths(loops, lines.length)
+  const heads = found.some((b) => b.kind === 'toc') ? JSON.stringify(headingsOf(state)) : ''
+  const ranges = found.map((b) => ({ kind: b.kind, from: state.doc.line(b.line0).from, to: state.doc.line(b.line1).to, src: b.src, line: b.line0 }))
+  return { ranges, deco: Decoration.set(ranges.map((r) => Decoration.replace({ widget: new CompWidget(r.kind, r.src, r.kind === 'toc' ? heads : '', r.line, loopAt(loops, r.line)?.key ?? '', depth[r.line]), block: true }).range(r.from, r.to))) }
+}
+/** The lines of text in a loop: its band on the left. */
+function buildBands(state: EditorState): DecorationSet {
+  const lines = state.doc.toString().split('\n')
+  const loops = findLoops(lines)
+  if (!loops.some((l) => l.end !== undefined)) return Decoration.none
+  const depth = loopDepths(loops, lines.length)
+  const out: Range<Decoration>[] = []
+  for (let i = 1; i <= lines.length; i++) if (depth[i]) out.push(Decoration.line({ class: 'cm-loopband', attributes: { style: `--ld: ${depth[i]}` } }).range(state.doc.line(i).from))
+  return Decoration.set(out)
+}
+const bandField = StateField.define<DecorationSet>({
+  create: buildBands,
+  update: (v, tr) => (tr.docChanged ? buildBands(tr.state) : v),
+  provide: (f) => EditorView.decorations.from(f),
+})
 const compField = StateField.define<{ ranges: CompRange[]; deco: DecorationSet }>({
   create: buildComps,
   update: (v, tr) => (tr.docChanged ? buildComps(tr.state) : v),
   provide: (f) => [EditorView.decorations.from(f, (v) => v.deco), EditorView.atomicRanges.of((view) => view.state.field(f).deco)],
 })
+/**
+ * A component on the note's last line: an empty line after it (there is always somewhere to type under it). Added
+ * apart from the typing (after it, not into its transaction), at the very end (no cursor moves), out of the undo
+ * history; never while a word is being composed (IME).
+ */
+function ensureTail(v: EditorView): void {
+  const doc = v.state.doc
+  const last = doc.line(doc.lines)
+  if (!last.length || v.composing) return
+  if (!v.state.field(compField).ranges.some((r) => r.to >= last.from)) return
+  v.dispatch({ changes: { from: doc.length, insert: '\n' }, annotations: [Transaction.addToHistory.of(false), Transaction.userEvent.of('input.component')] })
+}
+let tailQueued = false
+const tailAfter = (v: EditorView) => {
+  if (tailQueued) return
+  tailQueued = true
+  queueMicrotask(() => {
+    tailQueued = false
+    if (view === v) ensureTail(v)
+  })
+}
 function compAt(view: EditorView, dom: HTMLElement): CompRange | undefined {
   let pos: number
   try {
@@ -810,16 +874,33 @@ function cutOf(view: EditorView, r: CompRange): { from: number; to: number } {
   if (prevBlank && after && !after.text.trim() && after.to < len) cut.to = after.to + 1
   return cut
 }
+/** A loop's start or end: the loop (its start, its end line). */
+function loopOfComp(view: EditorView, r: CompRange): LoopRange | undefined {
+  if (r.kind !== 'loop' && r.kind !== 'loopEnd') return undefined
+  const no = view.state.doc.lineAt(r.from).number
+  return findLoops(view.state.doc.toString().split('\n')).find((l) => (r.kind === 'loop' ? l.line0 === no : l.end === no))
+}
+/** A loop's start with all it holds, down to its end. */
+function wholeLoop(view: EditorView, r: CompRange): CompRange {
+  const l = r.kind === 'loop' ? loopOfComp(view, r) : undefined
+  if (!l || l.end === undefined) return r
+  const to = view.state.doc.line(l.end).to
+  return { ...r, to, src: view.state.sliceDoc(r.from, to) }
+}
 function compRemove(view: EditorView, dom: HTMLElement): void {
   const r = compAt(view, dom)
   if (!r) return
-  const { from, to } = cutOf(view, r)
-  view.dispatch({ changes: { from, to }, selection: { anchor: from }, annotations: Transaction.userEvent.of('delete.component') })
+  const l = loopOfComp(view, r)
+  const doc = view.state.doc
+  // (a loop: its start and its end go — the blocks it held stay where they are)
+  const parts = l && l.end !== undefined ? [cutOf(view, { ...r, from: doc.line(l.line0).from, to: doc.line(l.headEnd).to }), cutOf(view, { ...r, from: doc.line(l.end).from, to: doc.line(l.end).to })] : [cutOf(view, r)]
+  view.dispatch({ changes: parts, selection: { anchor: parts[0].from }, annotations: Transaction.userEvent.of('delete.component') })
   view.focus()
 }
 function compDuplicate(view: EditorView, dom: HTMLElement): void {
-  const r = compAt(view, dom)
-  if (!r) return
+  const at = compAt(view, dom)
+  if (!at) return
+  const r = wholeLoop(view, at)
   view.dispatch({ changes: { from: r.to, insert: `\n\n${r.src}` }, annotations: Transaction.userEvent.of('input.component') })
 }
 /**
@@ -827,14 +908,16 @@ function compDuplicate(view: EditorView, dom: HTMLElement): void {
  * component); dropped — it moves there (one undo step).
  */
 function compDrag(view: EditorView, dom: HTMLElement, e0: PointerEvent): void {
-  const r = compAt(view, dom)
-  if (!r) return
+  const at0 = compAt(view, dom)
+  if (!at0) return
+  // (a loop's start carries the whole loop)
+  const r = wholeLoop(view, at0)
   const line = document.createElement('div')
   line.className = 'cm-comp-drop'
   document.body.append(line)
   const ghost = document.createElement('div')
   ghost.className = 'cm-comp-ghost'
-  ghost.textContent = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер' }[r.kind]
+  ghost.textContent = { table: 'Таблица', chart: 'График', mermaid: 'Схема', toc: 'Оглавление', callout: 'Выноска', toggle: 'Свёртка', work: 'Работа', audio: 'Аудио', image: 'Изображение', board: 'Доска', http: 'HTTP-запрос', code: 'Код', data: 'Данные', ref: 'Значение', pw: 'Playwright', browser: 'Браузер', regress: 'Регрессия', files: 'Тестовые файлы', sql: 'Запрос к БД', tpl: 'Шаблон', loop: 'Цикл', loopEnd: 'Конец цикла' }[r.kind]
   document.body.append(ghost)
   dom.classList.add('cm-comp-moving')
   let target: number | undefined
@@ -1284,6 +1367,19 @@ function checkPicker(v: EditorView): void {
 function closePicker(): void {
   picker.value = undefined
 }
+/** The note scrolled while the list is open: the list goes with the «@» (out of sight — closed). */
+function onPickerScroll(e: Event): void {
+  if (!picker.value || !view || (e.target instanceof Element && e.target.closest('.mde-pick'))) return
+  const c = view.coordsAtPos(picker.value.from)
+  const box = visibleRect(view.contentDOM)
+  if (!c || !box || c.bottom < box.top || c.top > box.bottom) return closePicker()
+  checkPicker(view)
+}
+watch(
+  () => !!picker.value,
+  (on) => (on ? window.addEventListener('scroll', onPickerScroll, true) : window.removeEventListener('scroll', onPickerScroll, true)),
+)
+onBeforeUnmount(() => window.removeEventListener('scroll', onPickerScroll, true))
 // the Jira tasks for the query (asked a moment after typing stops)
 const jiraHits = shallowRef<JiraIssue[]>([])
 let jiraTimer: ReturnType<typeof setTimeout> | undefined
@@ -1409,6 +1505,14 @@ function insertComp(md: string): void {
   closePicker()
 }
 /** A block name not taken in this note: resp, resp2, resp3… */
+/** The note's last value that is a list (a query's rows, data) — what a loop / a table most likely goes over. */
+function listVar(): string | undefined {
+  if (!props.path) return undefined
+  const ctx = noteRun(props.path).ctx
+  return Object.keys(ctx)
+    .filter((k) => Array.isArray(ctx[k].value))
+    .sort((a, b) => ctx[b].at - ctx[a].at)[0]
+}
 function freeName(base: string): string {
   const text = view?.state.doc.toString() ?? ''
   for (let n = 1; ; n++) {
@@ -1417,6 +1521,13 @@ function freeName(base: string): string {
   }
 }
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+void loadConns()
+/** The site a new «перебор» opens: the one the Browser talked to last (its tab's page), else none yet. */
+function fuzzSite(): string {
+  const host = [...apiMapHosts.value].sort((a, b) => b.last - a.last)[0]?.host
+  const tab = browserTabs.value.find((t) => host && /^https?:/.test(t.url) && new URL(t.url).host === host) ?? browserTabs.value.find((t) => /^https?:/.test(t.url))
+  return tab?.url ?? (host ? `https://${host}/` : 'https://')
+}
 function runCmd(id: CmdId): void {
   const p = picker.value
   if (!p || !view) return
@@ -1435,10 +1546,22 @@ function runCmd(id: CmdId): void {
   else if (id === 'toggle') insertComp(toggleMd({ title: '', body: '', open: true }))
   else if (id === 'toc') insertComp(TOC_MD)
   else if (id === 'work') insertComp(workMd({ period: 'today', view: 'table' }))
+  else if (id === 'regress') insertComp(regressMd({ id: Math.random().toString(36).slice(2, 10), folder: '', deep: true }))
+  // a set of the note's own (by its name) — not the notebook's shared «Записанные» with whatever is in it already
+  else if (id === 'files') insertComp(`\`\`\`files\n${JSON.stringify({ set: (props.path?.split('/').pop() ?? 'Файлы').replace(/\.md$/i, '').replace(/[\\/:*?"<>|]/g, '_') || 'Файлы' }, null, 2)}\n\`\`\``)
+  // the check in a scenario of its own: the site (the Browser's page now), the page's login, the request to choose
+  // a query: the first connection there is (none yet — chosen in the block); no title line (one is written only when the person names the query)
+  else if (id === 'sql') insertComp(['```sql db=' + (dbConns.value[0]?.name ?? '') + ' name=' + freeName('rows'), 'select ', '```'].join('\n'))
+  else if (id === 'fuzz') insertComp(['```ts playwright name=' + freeName('fuzz') + ' session', `await page.goto(${JSON.stringify(fuzzSite())})`, ...fuzzLines(emptyFuzz()), '```'].join('\n'))
   else if (id === 'http') insertComp(`\`\`\`http name=${freeName('resp')}\nGET https://\n\`\`\``)
   else if (id === 'browser') insertComp(`\`\`\`browser name=${freeName('site')}\nurl: about:blank\nheight: 560\n\`\`\``)
   else if (id === 'pw') insertComp(`\`\`\`ts playwright name=${freeName('scenario')}\nawait page.goto('https://example.com')\nawait expect(page).toHaveTitle(/Example/)\nreturn await page.title()\n\`\`\``)
   else if (id === 'js') insertComp(`\`\`\`js run name=${freeName('result')}\n\n\`\`\``)
+  else if (id === 'tpl') insertComp(`\`\`\`md template name=${freeName('text')}\n✅ **{{ ${listVar() ?? 'value'} }}**\n\`\`\``)
+  else if (id === 'loop') {
+    // its head empty: the loop offers its kinds (for…of, a counter, for…in, while…) — the chosen one fills it
+    insertComp([loopOpenMd({ name: freeName('passes'), parallel: 1, max: LOOP_MAX, timeout: LOOP_TIMEOUT }), '```js loop', '', '```', '', LOOP_CLOSE_MD].join('\n'))
+  }
   else if (id === 'data') insertComp(`\`\`\`json name=${freeName('data')}\n[]\n\`\`\``)
   else if (id === 'ref') insertComp('```json ref=' + ((props.path && Object.keys(noteRun(props.path).ctx).pop()) || 'value') + '\n```')
   else if (id === 'board') replaceAt(latin ? '@board ' : '@доска ', true)
@@ -1623,6 +1746,8 @@ const contextMenu = EditorView.domEventHandlers({
 function closeMenu(): void {
   menu.value = undefined
 }
+// (it stood where the click was: the note scrolled — gone)
+useCloseOnScroll(menu, closeMenu, '.mde-menu')
 function onMenuDown(e: MouseEvent): void {
   if (menu.value && !menuEl.value?.contains(e.target as Node)) closeMenu()
 }
@@ -1715,6 +1840,7 @@ onMounted(() => {
         pictures,
         pickerKeys,
         compField,
+        bandField,
         compGuard,
         recField,
         contextMenu,
@@ -1740,6 +1866,7 @@ onMounted(() => {
           if (u.docChanged) {
             emit('change', u.state.doc.toString())
             scheduleSync()
+            tailAfter(u.view)
           }
           if (u.focusChanged && !u.view.hasFocus) closePicker()
           else if (u.transactions.some((t) => t.isUserEvent('input') || t.isUserEvent('delete') || t.isUserEvent('select'))) checkPicker(u.view)
@@ -1750,16 +1877,31 @@ onMounted(() => {
   })
 })
 onMounted(() => props.text.includes('qvarch://') && void eventsNow())
+// (a note opened that ends with a component)
+onMounted(() => view && tailAfter(view))
 // the note's data blocks in its context (those off screen too); the {{ }} values redraw with the context
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 function scheduleSync(): void {
   clearTimeout(syncTimer)
-  syncTimer = setTimeout(() => props.path && view && syncData(props.path, view.state.doc.toString()), 400)
+  syncTimer = setTimeout(() => {
+    if (!props.path || !view) return
+    const text = view.state.doc.toString()
+    syncData(props.path, text)
+    syncTemplates(props.path, text)
+  }, 400)
 }
-onMounted(() => props.path && syncData(props.path, props.text))
+onMounted(() => {
+  if (!props.path) return
+  syncData(props.path, props.text)
+  syncTemplates(props.path, props.text)
+})
 watch(
   () => (props.path ? JSON.stringify(Object.keys(noteRun(props.path).ctx).map((k) => [k, noteRun(props.path!).ctx[k].at])) : ''),
-  () => view?.dispatch({}),
+  () => {
+    view?.dispatch({})
+    // (the note's values changed: its templates filled again — the ones off screen too)
+    if (props.path && view) syncTemplates(props.path, view.state.doc.toString())
+  },
 )
 onBeforeUnmount(() => view?.destroy())
 
@@ -1785,6 +1927,18 @@ watch(
 
 defineExpose({
   focus: () => view?.focus(),
+  /**
+   * A click on the note's empty places (under its last line, beside it in the margins): the cursor to the nearest
+   * place of the text — under the text, its end; beside a line, that line's nearest end.
+   */
+  focusAt(x: number, y: number): void {
+    if (!view) return
+    const c = view.contentDOM.getBoundingClientRect()
+    const end = view.coordsAtPos(view.state.doc.length)
+    const pos = end && y > end.bottom ? view.state.doc.length : view.posAtCoords({ x: Math.min(Math.max(x, c.left + 2), c.right - 2), y: Math.min(Math.max(y, c.top + 1), c.bottom - 1) }, false)
+    view.dispatch({ selection: { anchor: pos }, scrollIntoView: false })
+    view.focus()
+  },
   /** A recording starts: its place is shown under the cursor's line (where the recording will go). */
   startRecMarker(): void {
     if (!view) return
@@ -2111,6 +2265,15 @@ defineExpose({
   color: var(--dim);
   font-size: 11px;
 }
+/* a loop's band: on the left of all it holds (its start, its blocks, its text, its end) — a loop in a loop, one more */
+.cm-loopband {
+  --lw: 12px;
+  padding-left: calc(var(--ld) * var(--lw) + 6px) !important;
+  background-image: repeating-linear-gradient(to right, rgb(var(--accent-rgb) / 0.5) 0 2px, transparent 2px var(--lw));
+  background-position: 2px 0;
+  background-size: calc(var(--ld) * var(--lw)) 100%;
+  background-repeat: no-repeat;
+}
 .cm-comp-drop {
   position: fixed;
   z-index: 4000;
@@ -2208,9 +2371,12 @@ defineExpose({
 
 <style scoped>
 .mde {
+  box-sizing: border-box;
   width: 100%;
-  max-width: 820px;
+  /* the note's width: a column of 820 px, or the whole width with margins (the notebook's «На всю ширину») */
+  max-width: var(--note-max, 820px);
   margin: 0 auto;
+  padding: 0 var(--note-pad, 0px);
   min-height: 0;
 }
 .mde :deep(.cm-val) {

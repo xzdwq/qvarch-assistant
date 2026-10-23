@@ -37,6 +37,9 @@ export async function languageOf(kind: string): Promise<Extension> {
       return (await import('@codemirror/lang-html')).html()
     case 'css':
       return (await import('@codemirror/lang-css')).css()
+    case 'md':
+    case 'markdown':
+      return (await import('@codemirror/lang-markdown')).markdown()
     case 'http':
     case 'xml':
     case 'yaml':

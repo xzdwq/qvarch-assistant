@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import SuggestInput from './SuggestInput.vue'
+import { computed, onBeforeUnmount, ref, reactive } from 'vue'
 import type { LocalTask } from '@shared/types'
 import Icon from './Icon.vue'
 import DatePick from './DatePick.vue'
@@ -22,6 +23,13 @@ const STATUSES: Array<{ id: LocalTask['status']; label: string }> = [
   { id: 'review', label: 'Ревью' },
   { id: 'done', label: 'Готово' },
 ]
+/** A task's project as it is being typed (its suggestions — the projects there are). */
+const projDraft = reactive<Record<string, string>>({})
+function setProject(t: LocalTask, v: string): void {
+  delete projDraft[t.id]
+  const p = v.trim() || undefined
+  if (p !== t.project) patch(t, { project: p })
+}
 const projects = computed(() => [...new Set(tasks.value.map((t) => t.project).filter((p): p is string => !!p))].sort())
 const today = new Date().toLocaleDateString('sv-SE')
 
@@ -60,7 +68,6 @@ const open = ref<string>()
       <input v-model="title" placeholder="Новая задача — Enter" spellcheck="false" @keydown.enter="add" />
       <button :disabled="!title.trim()" @click="add"><Icon name="plus" :size="14" />Добавить</button>
     </div>
-    <datalist id="lt-projects"><option v-for="p in projects" :key="p" :value="p" /></datalist>
 
     <template v-for="[proj, list] in groups" :key="proj">
       <div class="proj">{{ proj || 'Без проекта' }}</div>
@@ -70,7 +77,7 @@ const open = ref<string>()
         </select>
         <span class="tkey" title="Номер задачи">{{ t.key }}</span>
         <input class="title" :value="t.title" spellcheck="false" @change="patch(t, { title: ($event.target as HTMLInputElement).value })" />
-        <input class="projin" :value="t.project ?? ''" list="lt-projects" placeholder="проект" spellcheck="false" @change="patch(t, { project: ($event.target as HTMLInputElement).value.trim() || undefined })" />
+        <SuggestInput class="projin" :model-value="projDraft[t.id] ?? t.project ?? ''" :options="projects" placeholder="проект" @update:model-value="(v) => (projDraft[t.id] = v)" @commit="(v) => setProject(t, v)" @cancel="delete projDraft[t.id]" />
         <DatePick class="due" :model-value="t.due ?? ''" clearable no-wheel format="short" placeholder="срок" title="Срок" :late="!!t.due && t.due < today && t.status !== 'done'" @update:model-value="(d) => patch(t, { due: d || undefined })" />
         <input class="est" type="number" min="0" step="15" :value="t.estimateMin ?? ''" placeholder="мин" title="Оценка, минут" @change="patch(t, { estimateMin: Number(($event.target as HTMLInputElement).value) || undefined })" />
         <button v-if="t.from" class="from" :title="`Создана из заметки — открыть ${fmtDay(t.from.day)}`" @click="emit('openDay', t.from.day)"><Icon name="note" :size="12" />{{ fmtDay(t.from.day) }}</button>

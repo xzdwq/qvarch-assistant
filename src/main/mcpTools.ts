@@ -78,7 +78,7 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
     {
       name: 'notes_list',
       description: 'Список папок и заметок блокнота (пути). folder — показать только эту папку.',
-      inputSchema: { type: 'object', properties: { folder: { type: 'string', description: 'Путь папки, например «DOS-123 Статусы»' } } },
+      inputSchema: { type: 'object', properties: { folder: { type: 'string', description: 'Путь папки, например «ABC-123 Статусы»' } } },
       run: async (a) => {
         const list = flat(c.tree(), opt(a.folder) ?? '')
         return list.length ? list.map((x) => `${x.dir ? '📁' : x.board ? '🧩' : '📄'} ${x.path}`).join('\n') : 'Пусто'
@@ -86,8 +86,8 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
     },
     {
       name: 'task_folder',
-      description: 'Папка задачи: находит папку, чьё имя начинается с ключа задачи (DOS-123), иначе создаёт «КЛЮЧ — название из Jira». Все тесты и документы по задаче — в ней.',
-      inputSchema: { type: 'object', properties: { key: { type: 'string', description: 'Ключ задачи Jira, например DOS-2984' }, title: { type: 'string', description: 'Название, если задачи нет в Jira' } }, required: ['key'] },
+      description: 'Папка задачи: находит папку, чьё имя начинается с ключа задачи (ABC-123), иначе создаёт «КЛЮЧ — название из Jira». Все тесты и документы по задаче — в ней.',
+      inputSchema: { type: 'object', properties: { key: { type: 'string', description: 'Ключ задачи Jira, например ABC-42' }, title: { type: 'string', description: 'Название, если задачи нет в Jira' } }, required: ['key'] },
       run: async (a) => {
         const key = str(a.key, 'key', 50).trim().toUpperCase()
         const dirs = flat(c.tree()).filter((x) => x.dir)
@@ -227,7 +227,7 @@ export function qvarchTools(c: ToolCtx): McpTool[] {
     {
       name: 'work_track',
       description: 'Учёт времени работы: если сегодня есть запись по этой задаче (key) или с этим названием, которая идёт сейчас или закончилась не больше 30 минут назад, — продлевает её до текущего времени; иначе создаёт новую от текущего момента (15 мин). Вызывай в начале работы и время от времени, пока работаешь. Ничего не удаляет и не переносит.',
-      inputSchema: { type: 'object', properties: { key: { type: 'string', description: 'Ключ задачи Jira' }, label: { type: 'string', description: 'Что делается, например «Автотесты DOS-123»' } } },
+      inputSchema: { type: 'object', properties: { key: { type: 'string', description: 'Ключ задачи Jira' }, label: { type: 'string', description: 'Что делается, например «Автотесты ABC-123»' } } },
       run: async (a) => {
         const key = opt(a.key)?.toUpperCase()
         const issue = key ? c.issue(key) : undefined
@@ -275,7 +275,7 @@ const GUIDE = `# Исполняемые заметки Qvarch — как пис�
 
 ## Данные
 \`\`\`json name=config
-{ "base": "https://mdm-dev.aoavant.ru", "user": "test" }
+{ "base": "https://app.example.com", "user": "test" }
 \`\`\`
 (или yaml name=…). Публикуется сразу. Мок-данные удобно класть через data_set.
 
@@ -305,12 +305,12 @@ return { passed: list.filter(c => c.ok).length, list }
 ## Playwright (установленный Edge / Chrome)
 \`\`\`ts playwright name=createItem session
 await step('Открыть страницу', async () => {
-  await page.goto(\`\${config.base}/general-selection-nomenclature\`)
-  await expect(page.getByRole('button', { name: 'Массовая обработка' })).toBeVisible({ timeout: 30_000 })
+  await page.goto(\`\${config.base}/items\`)
+  await expect(page.getByRole('button', { name: 'Создать' })).toBeVisible({ timeout: 30_000 })
 })
 await step('Создать', async () => {
-  await page.getByRole('button', { name: 'Массовая обработка' }).click()
-  await page.locator('.q-menu .q-item', { hasText: 'Массово создать номенклатуру' }).click()
+  await page.getByRole('button', { name: 'Создать' }).click()
+  await page.locator('.q-menu .q-item', { hasText: 'Новая запись' }).click()
 })
 return { url: page.url() }
 \`\`\`

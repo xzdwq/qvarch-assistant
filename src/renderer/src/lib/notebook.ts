@@ -234,6 +234,8 @@ interface Layout {
   sort: SortMode
   /** The files panel is hidden. */
   sideHidden?: boolean
+  /** The note's text over the whole width (margins at its sides), else a column of 820 px. */
+  wide?: boolean
 }
 export type SortMode = 'name' | 'name-desc' | 'mtime' | 'mtime-old' | 'ctime' | 'ctime-old'
 export const SORTS: Array<{ id: SortMode; label: string }> = [

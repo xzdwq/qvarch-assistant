@@ -56,25 +56,25 @@ describe('a document packed and unpacked', () => {
 
   it('carries a whole folder: its subfolders (empty too), its notes in place, boards from outside', () => {
     const a = vault()
-    a.create('', 'folder', 'DOS-1')
-    a.create('DOS-1', 'folder', 'Тесты')
-    a.create('DOS-1', 'folder', 'Пустая')
+    a.create('', 'folder', 'ABC-1')
+    a.create('ABC-1', 'folder', 'Тесты')
+    a.create('ABC-1', 'folder', 'Пустая')
     a.write('Общая.qboard', '{"shapes":[]}')
-    a.write('DOS-1/Описание.md', '# Задача\n```board\npath: Общая.qboard\n```\n')
-    a.write('DOS-1/Тесты/API.md', '```http name=x\nGET https://e.com\n```\n')
-    const { bundle } = a.exportDoc('DOS-1', false)
-    expect(bundle.root).toBe('DOS-1')
+    a.write('ABC-1/Описание.md', '# Задача\n```board\npath: Общая.qboard\n```\n')
+    a.write('ABC-1/Тесты/API.md', '```http name=x\nGET https://e.com\n```\n')
+    const { bundle } = a.exportDoc('ABC-1', false)
+    expect(bundle.root).toBe('ABC-1')
     expect(bundle.dirs?.sort()).toEqual(['Пустая', 'Тесты'])
     const back = parseBundle(JSON.stringify(bundle))
 
     const b = vault()
-    b.create('', 'folder', 'DOS-1')
+    b.create('', 'folder', 'ABC-1')
     const r = b.importDoc(back, '')
-    expect(r.folder).toBe('DOS-1 2')
-    expect(b.read('DOS-1 2/Тесты/API.md')).toContain('GET https://e.com')
-    expect(existsSync(join(b.root, 'DOS-1 2', 'Пустая'))).toBe(true)
+    expect(r.folder).toBe('ABC-1 2')
+    expect(b.read('ABC-1 2/Тесты/API.md')).toContain('GET https://e.com')
+    expect(existsSync(join(b.root, 'ABC-1 2', 'Пустая'))).toBe(true)
     // the board it showed from outside came into the folder, the note points at it there
-    expect(b.read('DOS-1 2/Описание.md')).toContain('path: DOS-1 2/Общая.qboard')
+    expect(b.read('ABC-1 2/Описание.md')).toContain('path: ABC-1 2/Общая.qboard')
   })
 
   it('rejects paths out of the folder', () => {

@@ -1,9 +1,15 @@
-import { app, clipboard, dialog, ipcMain, Menu, safeStorage, session, shell, WebContentsView, type BrowserWindow, type MenuItemConstructorOptions, type Session, type WebContents } from 'electron'
+import { app, BrowserWindow as Win, clipboard, dialog, ipcMain, Menu, safeStorage, session, shell, WebContentsView, type BrowserWindow, type MenuItemConstructorOptions, type Session, type WebContents } from 'electron'
+import { AUTH_HEADER } from '../shared/httpBlock'
 import { createHash, X509Certificate } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { SOURCE_SCHEME, sourcePage } from './viewSource'
 import { Hooks } from './hooks'
+import { CheckWatch } from './check'
+import { ApiMapStore } from './apiMap'
+import { apiPath, type ApiEndpoint } from '../shared/apiMap'
+import { CHECK_BINDING, CHECK_WORLD, checkPageScript, highlightScript, type PageFinding } from '../shared/checkPage'
+import type { CheckProblem, CheckSettings, CheckState } from '../shared/check'
 import type { BrowserHook, HookHit, HookStatus } from '../shared/hooks'
 import { browserId, DEFAULT_BROWSER_SETTINGS, type PwRecState, type Bookmark, type BrowserSettings, type BrowserTab, type DeviceMode, type HistoryItem, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecState } from '../shared/browser'
 
@@ -33,7 +39,11 @@ interface Tab {
   /** The rulers over the page: on, and the guides pulled out of them (px from the left / the top). */
   ruler: { on: boolean; v: number[]; h: number[] }
   /** Who keeps the protocol attached (the recording, the device mode, a hook's search). */
-  dbg: Set<'rec' | 'device' | 'hook'>
+  dbg: Set<'rec' | 'device' | 'hook' | 'check' | 'pw'>
+  /** «Проверка»: its watcher's script registered for the tab's new pages. */
+  checkScript?: string
+  /** The contexts of the watcher's own world — what goes wrong there is not the page's. */
+  checkCtx?: Set<number>
   /** A hook's search: the page's requests so far (id → what it is). */
   hookReq?: Map<string, { url: string; method: string; type?: string; mime?: string; status?: number }>
   /** The page's own HTML (its request): Chromium tells no «loadingFinished» for it — taken when the page has loaded. */
@@ -92,8 +102,27 @@ export class Browser {
   private bodyBytes = 0
   private recTimer?: NodeJS.Timeout
   /** A Playwright scenario being recorded (one at a time). */
-  private pwRec?: { note: string; key: string; tabId: string; url: string; lines: string[]; stopping?: boolean; at?: string }
+  private pwRec?: {
+    note: string
+    key: string
+    tabId: string
+    url: string
+    lines: string[]
+    stopping?: boolean
+    at?: string
+    device?: boolean
+    /** Files just picked: the request that carries them is looked for in the tab's traffic (its line gets the binding). */
+    uploads?: Array<{ line: string; names: string[]; heads: Buffer[]; at: number }>
+  }
   readonly hooks: Hooks
+  /** «Проверка»: what the watched tabs show wrong. */
+  readonly check: CheckWatch
+  readonly apiMap: ApiMapStore
+  /** Files picked while recording → kept with the notebook; their «Набор/файл» back (index.ts sets it). */
+  onRecordFiles?: (paths: string[]) => string[]
+  /** Tabs where the watching could not start (their DevTools hold the protocol). */
+  private checkBlocked = new Set<string>()
+  private checkTimer?: NodeJS.Timeout
 
   constructor(
     root: string,
@@ -110,6 +139,8 @@ export class Browser {
       // a hook changed / the search paused or not: the pages follow
       if (type === 'hooks' || type === 'hookPaused') for (const t of this.tabs.values()) this.hookSync(t)
     })
+    this.apiMap = new ApiMapStore(root, () => this.emit('apimap', { hosts: this.apiMap.hosts() }))
+    this.check = new CheckWatch(root, () => this.checkChanged(), this.apiMap)
     this.ses = session.fromPartition(PARTITION)
     // a browser's User-Agent (not "Electron" / the app — some sites refuse those)
     this.uaDefault = this.ses.getUserAgent().replace(/\s+Electron\/\S+/i, '').replace(/\s+qvarch[-\w]*\/\S+/i, '')
@@ -282,6 +313,8 @@ export class Browser {
     this.win?.contentView.addChildView(t.view)
     this.wire(t)
     if (this.recOn) void this.recAttach(t)
+    t.checkScript = undefined
+    void this.checkSync(t)
     t.view.webContents.setZoomFactor((t.t.zoom || 100) / 100)
     const ua = this.data.settings.ua
     if (ua) t.view.webContents.setUserAgent(ua)
@@ -295,24 +328,84 @@ export class Browser {
       const t = this.byContents(e.sender)
       return t && this.pwRec?.tabId === t.t.id ? { on: true, count: this.pwRec.lines.length } : null
     })
-    ipcMain.on('qa:pwrec-act', (e, a: { code?: unknown; replace?: unknown }) => {
+    ipcMain.on('qa:pwrec-act', (e, a: { code?: unknown; replace?: unknown; files?: { how?: unknown; loc?: unknown; paths?: unknown; where?: unknown; opener?: unknown } }) => {
       const t = this.byContents(e.sender)
       const r = this.pwRec
       if (!t || !r || r.tabId !== t.t.id || typeof a?.code !== 'string' || a.code.length > 2000) return
+      // files picked / dropped: kept with the notebook, the line names them there (a replay needs no window of the system's)
+      if (a.files && typeof a.files.loc === 'string' && Array.isArray(a.files.paths) && a.files.paths.length) {
+        const rels = this.onRecordFiles?.(a.files.paths.map(String)) ?? []
+        if (!rels.length) return
+        const arg = rels.length === 1 ? `qa.file('${rels[0]}')` : `[${rels.map((x) => `qa.file('${x}')`).join(', ')}]`
+        const names = rels.map((x) => `«${x.split('/').pop()}»`).join(', ')
+        // (a hidden file field has no words of its own — «поле редактирования» says nothing)
+        const where = /^(поле( редактирования| без подписи)?|область загрузки)$/i.test(String(a.files.where ?? '').trim()) ? '' : String(a.files.where ?? '').slice(0, 80)
+        // the click that opened the system's window — it is what the files replace
+        if (a.files.opener && /\.click\(\)/.test(r.lines[r.lines.length - 1] ?? '')) r.lines.pop()
+        const heads = a.files.paths.map((p) => {
+          try {
+            return readFileSync(String(p)).subarray(0, 64)
+          } catch {
+            return Buffer.alloc(0)
+          }
+        })
+        const upLine = a.files.how === 'drop' ? `await qa.dropFiles(${a.files.loc}, ${arg}) // шаг: Перетащить ${rels.length > 1 ? 'файлы' : 'файл'} ${names} в ${where}` : `await ${a.files.loc}.setInputFiles(${arg}) // шаг: Загрузить ${rels.length > 1 ? 'файлы' : 'файл'} ${names}${where ? ` в ${where}` : ''}`
+        r.lines.push(upLine)
+        ;(r.uploads ??= []).push({ line: upLine, names: a.files.paths.map((p) => basename(String(p))), heads, at: Date.now() })
+        this.emit('pwrec', this.pwRecState())
+        return
+      }
+      // (the step's words after the code are not compared — the same click described twice is the same click)
+      const bare = (x?: string) => (x ?? '').replace(/\s*\/\/ шаг: .*$/, '')
       // a double click: the clicks it was made of go
-      if (typeof a.replace === 'string') for (let i = 0; i < 2 && r.lines[r.lines.length - 1] === a.replace; i++) r.lines.pop()
+      if (typeof a.replace === 'string') for (let i = 0; i < 2 && bare(r.lines[r.lines.length - 1]) === bare(a.replace); i++) r.lines.pop()
       // the same line twice in a row (a click caught twice) — once
-      else if (r.lines[r.lines.length - 1] === a.code) return
+      else if (bare(r.lines[r.lines.length - 1]) === bare(a.code)) return
       r.lines.push(a.code)
       r.at ??= t.view.webContents.getURL()
       this.emit('pwrec', this.pwRecState())
     })
   }
+  /** The recording tab's requests watched: an upload's request is known by the file it carries. */
+  private pwRecNet(id: string): void {
+    const tab = this.tabs.get(id)
+    if (!tab || tab.asleep) return
+    try {
+      void this.dbgUse(tab, 'pw').sendCommand('Network.enable', { maxPostDataSize: 4 * 1024 * 1024 }).catch(() => undefined)
+    } catch {
+      // the page's DevTools hold the protocol: no binding, the run finds the request by the file's content
+    }
+  }
+  /**
+   * A request of the recording tab: one carrying a file just picked (its name in a multipart part, or its first
+   * bytes) — the upload's request; its endpoint goes under the upload's line («// загрузка → POST /api/…»), so a run
+   * knows which request its result rests on.
+   */
+  private pwCdp(tab: Tab, method: string, p: Record<string, any>): void {
+    const r = this.pwRec
+    if (method !== 'Network.requestWillBeSent' || !r || r.tabId !== tab.t.id || !r.uploads?.length) return
+    const req = p.request as { method?: string; url?: string; postData?: string; hasPostData?: boolean } | undefined
+    if (!req?.method || !/^(POST|PUT|PATCH)$/i.test(req.method) || !req.url) return
+    const look = (body: string | undefined) => {
+      if (!body || !r.uploads?.length) return
+      const bytes = Buffer.from(body, 'latin1')
+      const utf = Buffer.from(body, 'utf8')
+      const u = r.uploads.find((x) => Date.now() - x.at < 120_000 && (x.names.some((n) => body.includes(`filename="${n}"`)) || x.heads.some((h) => h.length >= 16 && (bytes.includes(h) || utf.includes(h)))))
+      if (!u) return
+      r.uploads = r.uploads.filter((x) => x !== u)
+      const at = r.lines.lastIndexOf(u.line)
+      if (at < 0) return
+      r.lines.splice(at + 1, 0, `// загрузка → ${req.method!.toUpperCase()} ${apiPath(req.url!).path}`)
+      this.emit('pwrec', this.pwRecState())
+    }
+    if (req.postData !== undefined) look(req.postData)
+    else if (req.hasPostData) void tab.view.webContents.debugger.sendCommand('Network.getRequestPostData', { requestId: p.requestId }).then((x: { postData?: string }) => look(x.postData), () => undefined)
+  }
   pwRecState(): PwRecState | undefined {
     const r = this.pwRec
     return r ? { note: r.note, key: r.key, tabId: r.tabId, count: r.lines.length, last: r.lines[r.lines.length - 1] } : undefined
   }
-  pwRecStart(note: string, key: string, url: string): BrowserTab {
+  pwRecStart(note: string, key: string, url: string, screen?: { w: number; h: number }): BrowserTab {
     if (!/^https?:\/\//i.test(String(url))) throw new Error('Адрес должен начинаться с http:// или https://')
     if (this.pwRec) void this.pwRecStop(true)
     // the recording tab is the one shown — the clicks go there: a tab at this very address already (as it is
@@ -325,7 +418,29 @@ export class Browser {
       t = open.t
       this.emit('activate', { id: t.id })
     } else t = this.open(url)
+    this.pwRecNet(t.id)
     this.pwRec = { note: String(note), key: String(key), tabId: t.id, url, lines: [`await page.goto('${url.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`] }
+    // the page is laid out by its window's size in CSS px (the zoom changes it: 80% — a wider page): the scenario
+    // gets the same window, else another layout and its elements elsewhere
+    const rec = this.pwRec
+    const tab = this.tabs.get(t.id)
+    // a scenario for a screen of its own: the tab in the device mode of that size, the window line from it
+    if (screen && screen.w > 0 && screen.h > 0) {
+      const w = Math.round(screen.w)
+      const h = Math.round(screen.h)
+      this.device(t.id, { name: `${w} px`, w, h, dpr: 1, mobile: false })
+      rec.device = true
+      rec.lines.unshift(`await qa.window({ width: ${w}, height: ${h}, dpr: 1 }) // шаг: Окно браузера ${w}×${h} (экран ${w} px)`)
+    } else if (tab && !tab.asleep)
+      void tab.view.webContents
+        .executeJavaScript('[innerWidth, innerHeight, devicePixelRatio]', true)
+        .then(([w, h, dpr]: [number, number, number]) => {
+          if (this.pwRec !== rec || !(w > 0 && h > 0)) return
+          const d = Math.round((dpr || 1) * 100) / 100
+          rec.lines.unshift(`await qa.window({ width: ${Math.round(w)}, height: ${Math.round(h)}, dpr: ${d} }) // шаг: Окно браузера ${Math.round(w)}×${Math.round(h)}, масштаб при записи ${tab.t.zoom || 100}%`)
+          this.emit('pwrec', this.pwRecState())
+        })
+        .catch(() => undefined)
     // a page already loaded asks no more: it is told
     if (open && !open.asleep && !open.view.webContents.isLoading()) open.view.webContents.send('qa:pwrec', true)
     this.emit('pwrec', this.pwRecState())
@@ -343,6 +458,9 @@ export class Browser {
     }
     this.pwRec = undefined
     if (t && !t.asleep) t.view.webContents.send('qa:pwrec', false)
+    if (t && !t.asleep) this.dbgDrop(t, 'pw')
+    // the screen it was recorded for: the tab back to itself
+    if (r.device && t) this.device(t.t.id)
     this.emit('pwrec', undefined)
     return cancel ? undefined : { note: r.note, key: r.key, url: r.url, lines: r.lines }
   }
@@ -386,6 +504,7 @@ export class Browser {
     this.wire(tab)
     if (this.recOn) void this.recAttach(tab)
     this.hookSync(tab, url)
+    void this.checkSync(tab)
     if (url !== 'about:blank') void view.webContents.loadURL(url).catch(() => undefined)
     this.changed()
     if (opener) this.emit('opened', { id, opener })
@@ -397,6 +516,8 @@ export class Browser {
     // the recording tab closed: the recording stays (stopped from the bar) — its lines are kept
     this.tabs.delete(id)
     this.shown.delete(id)
+    this.check.dropTab(id)
+    this.checkBlocked.delete(id)
     this.devClose(t)
     try {
       if (!t.asleep) {
@@ -459,7 +580,14 @@ export class Browser {
   }
   // ---------- the developer tools, docked under the page ----------
   private devOpen(t: Tab): void {
-    if (t.dev) return
+    // (hidden before — shown again as it was left: its console, its network log)
+    if (t.dev) {
+      if (!t.t.devtools) {
+        t.t.devtools = true
+        this.changed()
+      }
+      return
+    }
     const dev = new WebContentsView()
     dev.setVisible(false)
     t.dev = dev
@@ -501,9 +629,16 @@ export class Browser {
     }
     this.changed()
   }
+  /**
+   * The tools' button: shown / hidden — not closed: hidden, the tools go on (their console, their network log, «Preserve
+   * log» too), and come back as they were. Closed with the tab.
+   */
   private devToggle(t: Tab): void {
-    if (t.dev) this.devClose(t)
-    else this.devOpen(t)
+    if (t.dev && t.t.devtools) {
+      t.t.devtools = false
+      t.dev.setVisible(false)
+      this.changed()
+    } else this.devOpen(t)
   }
   /** Everything the site keeps (cache, cookies, storage, service workers) dropped, then a reload without the cache. */
   async resetSite(id: string): Promise<void> {
@@ -842,6 +977,7 @@ export class Browser {
     wc.on('did-start-navigation', (d) => {
       // a hook's search listens from the start of the page (its HTML too)
       if (d.isMainFrame && !d.isSameDocument) this.hookSync(tab, d.url)
+      if (d.isMainFrame && !d.isSameDocument) void this.checkSync(tab)
       if (d.isMainFrame && !d.isSameDocument) t.error = undefined
     })
     wc.on('dom-ready', () => this.hooks.apply(wc))
@@ -1205,7 +1341,7 @@ export class Browser {
    * The protocol (Chrome DevTools) on a page: shared by the recording and the device mode — attached while
    * either needs it. Detached from outside (the page gone): both stop.
    */
-  private dbgUse(tab: Tab, who: 'rec' | 'device' | 'hook'): Electron.Debugger {
+  private dbgUse(tab: Tab, who: 'rec' | 'device' | 'hook' | 'check' | 'pw'): Electron.Debugger {
     const d = tab.view.webContents.debugger
     if (!d.isAttached()) {
       d.attach('1.3')
@@ -1214,6 +1350,8 @@ export class Browser {
       d.on('message', (_e, method, params) => {
         if (tab.rec) this.onCdp(tab, method, params as Record<string, unknown>)
         if (tab.dbg.has('hook')) this.hookCdp(tab, method, params as Record<string, unknown>)
+        if (tab.dbg.has('check')) this.checkCdp(tab, method, params as Record<string, any>)
+        if (tab.dbg.has('pw')) this.pwCdp(tab, method, params as Record<string, any>)
       })
       d.on('detach', () => {
         tab.rec = false
@@ -1228,7 +1366,7 @@ export class Browser {
     tab.dbg.add(who)
     return d
   }
-  private dbgDrop(tab: Tab, who: 'rec' | 'device' | 'hook'): void {
+  private dbgDrop(tab: Tab, who: 'rec' | 'device' | 'hook' | 'check' | 'pw'): void {
     tab.dbg.delete(who)
     if (tab.dbg.size) return
     const d = tab.view.webContents.debugger
@@ -1256,7 +1394,7 @@ export class Browser {
     if (!tab.rec) return
     tab.rec = false
     // the device mode stays: only the network goes quiet
-    if (tab.dbg.size > 1 && !tab.dbg.has('hook')) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
+    if (tab.dbg.size > 1 && !tab.dbg.has('hook') && !tab.dbg.has('check')) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
     this.dbgDrop(tab, 'rec')
   }
   // ---------- hooks: their search listens to the pages of their sites ----------
@@ -1275,7 +1413,7 @@ export class Browser {
       }
     } else if (!want && has) {
       tab.hookReq = undefined
-      if (!tab.rec && tab.dbg.size > 1) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
+      if (!tab.rec && !tab.dbg.has('check') && tab.dbg.size > 1) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
       this.dbgDrop(tab, 'hook')
     }
   }
@@ -1347,6 +1485,210 @@ export class Browser {
   hookReapply(id: string): void {
     const t = this.tabs.get(id)
     if (t && !t.asleep) t.view.webContents.reload()
+  }
+
+  // ---------- a site's localStorage for a Playwright run (its settings: widths, collapsed panels…) ----------
+  /**
+   * What the sites keep in localStorage, as Playwright's storageState wants it: from an open tab of the site, else
+   * from a hidden page of it (its robots.txt — any page of the origin sees its storage; nothing of the site runs).
+   */
+  async localStorageOf(origins: string[]): Promise<Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>> {
+    const out: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }> = []
+    const read = (wc: WebContents) =>
+      wc.executeJavaScript('Object.entries(localStorage).map(([name, value]) => ({ name, value }))', true) as Promise<Array<{ name: string; value: string }>>
+    for (const origin of [...new Set(origins)]) {
+      if (!/^https?:\/\//i.test(origin)) continue
+      try {
+        const tab = [...this.tabs.values()].find((t) => !t.asleep && originOf(t.view.webContents.getURL()) === origin)
+        let items: Array<{ name: string; value: string }>
+        if (tab) items = await read(tab.view.webContents)
+        else {
+          const w = new Win({ show: false, webPreferences: { session: this.ses, sandbox: true } })
+          try {
+            await Promise.race([w.loadURL(`${origin}/robots.txt`), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 10000))]).catch(() => undefined)
+            items = await read(w.webContents)
+          } finally {
+            w.destroy()
+          }
+        }
+        if (items.length) out.push({ origin, localStorage: items })
+      } catch {
+        // the site is not reachable now — the run goes without its storage
+      }
+    }
+    return out
+  }
+
+  // ---------- «Проверка»: the watched tabs' network, console and page ----------
+  /** The watching on a tab: on while «Проверка» is on (and the tab awake); its watcher's script as the settings say. */
+  private async checkSync(tab: Tab, renew = false): Promise<void> {
+    const want = this.check.settings.on && !tab.asleep
+    const has = tab.dbg.has('check')
+    const d = tab.view.webContents.debugger
+    if (!want) {
+      if (!has) return
+      try {
+        if (tab.checkScript) await d.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.checkScript }).catch(() => undefined)
+        await d.sendCommand('Runtime.removeBinding', { name: CHECK_BINDING }).catch(() => undefined)
+        if (!tab.rec && !tab.dbg.has('hook') && tab.dbg.size > 1) await d.sendCommand('Network.disable').catch(() => undefined)
+      } finally {
+        tab.checkScript = undefined
+        this.dbgDrop(tab, 'check')
+      }
+      return
+    }
+    if (has && tab.checkScript && !renew) return
+    try {
+      this.dbgUse(tab, 'check')
+      this.checkBlocked.delete(tab.t.id)
+    } catch {
+      // the page's DevTools hold the protocol
+      if (!this.checkBlocked.has(tab.t.id)) {
+        this.checkBlocked.add(tab.t.id)
+        this.checkChanged()
+      }
+      return
+    }
+    try {
+      await d.sendCommand('Network.enable', { maxTotalBufferSize: 100 * 1024 * 1024, maxResourceBufferSize: 20 * 1024 * 1024, maxPostDataSize: 1024 * 1024 })
+      await d.sendCommand('Runtime.enable')
+      await d.sendCommand('Page.enable')
+      await d.sendCommand('Runtime.addBinding', { name: CHECK_BINDING, executionContextName: CHECK_WORLD })
+      const st = this.check.settings
+      const on = (k: string) => !st.off.includes(k as never)
+      const source = checkPageScript({ loadingMs: st.loadingMs, kinds: { toast: on('toast'), dialog: on('unsaved'), loading: on('loading'), overflow: on('overflow'), hscroll: on('hscroll') } })
+      if (tab.checkScript) await d.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.checkScript }).catch(() => undefined)
+      tab.checkScript = ((await d.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source, worldName: CHECK_WORLD })) as { identifier: string }).identifier
+      // the page already open: its own world now
+      const tree = (await d.sendCommand('Page.getFrameTree')) as { frameTree: { frame: { id: string; url: string } } }
+      if (/^https?:/i.test(tree.frameTree.frame.url)) {
+        const w = (await d.sendCommand('Page.createIsolatedWorld', { frameId: tree.frameTree.frame.id, worldName: CHECK_WORLD })) as { executionContextId: number }
+        await d.sendCommand('Runtime.evaluate', { expression: source, contextId: w.executionContextId })
+      }
+    } catch {
+      // the page is going — the next page tries again
+    }
+  }
+  private checkCdp(tab: Tab, method: string, p: Record<string, any>): void {
+    const id = tab.t.id
+    const page = tab.view.webContents.getURL()
+    const d = tab.view.webContents.debugger
+    if (method === 'Network.requestWillBeSent') {
+      const h = (p.request?.headers ?? {}) as Record<string, string>
+      // (the login the page's requests carry — for a request copied into a note)
+      const login = Object.entries(h).filter(([k]) => AUTH_HEADER.test(k) && k.toLowerCase() !== 'cookie')
+      if (login.length)
+        try {
+          this.authByHost.set(new URL(String(p.request?.url ?? '')).host, login)
+        } catch {
+          // (no address)
+        }
+      this.check.started(id, page, String(p.requestId), {
+        method: String(p.request?.method ?? 'GET'),
+        url: String(p.request?.url ?? ''),
+        type: String(p.type ?? ''),
+        start: Date.now(),
+        postData: p.request?.postData,
+        hasPostData: !!p.request?.hasPostData,
+        reqType: h['Content-Type'] ?? h['content-type'],
+        reqHeaders: h,
+      })
+    } else if (method === 'Network.responseReceived') this.check.answered(id, String(p.requestId), Number(p.response?.status ?? 0), p.response?.mimeType, p.response?.headers)
+    else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
+      const reqId = String(p.requestId)
+      const failed = method === 'Network.loadingFailed' ? String(p.blockedReason ? `заблокирован: ${p.blockedReason}` : p.corsErrorStatus ? `CORS: ${p.corsErrorStatus.corsError}` : (p.errorText ?? 'ошибка')) + (p.canceled ? ' (canceled)' : '') : undefined
+      void this.check.finished(id, page, reqId, failed, async (needPost, needRes) => {
+        const out: { post?: string; res?: string } = {}
+        if (!d.isAttached()) return out
+        if (needPost) out.post = ((await d.sendCommand('Network.getRequestPostData', { requestId: reqId }).catch(() => ({}))) as { postData?: string }).postData
+        if (needRes) {
+          const r = (await d.sendCommand('Network.getResponseBody', { requestId: reqId }).catch(() => undefined)) as { body: string; base64Encoded: boolean } | undefined
+          if (r) out.res = r.base64Encoded ? Buffer.from(r.body, 'base64').toString('utf8') : r.body
+        }
+        return out
+      })
+    } else if (method === 'Runtime.executionContextCreated') {
+      if (p.context?.name === CHECK_WORLD) (tab.checkCtx ??= new Set()).add(Number(p.context.id))
+    } else if (method === 'Runtime.bindingCalled' && p.name === CHECK_BINDING) {
+      try {
+        this.check.page(id, page, JSON.parse(String(p.payload)) as PageFinding)
+      } catch {
+        // not ours
+      }
+    } else if (method === 'Runtime.consoleAPICalled' && p.type === 'error' && !tab.checkCtx?.has(Number(p.executionContextId))) {
+      const text = ((p.args ?? []) as Array<{ value?: unknown; description?: string }>).map((a) => (a.value !== undefined ? (typeof a.value === 'string' ? a.value : JSON.stringify(a.value)) : (a.description ?? ''))).join(' ')
+      const f = p.stackTrace?.callFrames?.[0]
+      this.check.console(id, page, text, f ? `${f.url}:${f.lineNumber + 1}` : undefined)
+    } else if (method === 'Runtime.exceptionThrown' && !tab.checkCtx?.has(Number(p.exceptionDetails?.executionContextId))) {
+      const e = p.exceptionDetails ?? {}
+      this.check.console(id, page, String(e.exception?.description ?? e.text ?? 'Исключение'), e.url ? `${e.url}:${(e.lineNumber ?? 0) + 1}` : undefined)
+    }
+  }
+  private checkChanged(): void {
+    this.checkTimer ??= setTimeout(() => {
+      this.checkTimer = undefined
+      this.emit('check', { state: this.checkState(), problems: this.check.problems() })
+    }, 250)
+  }
+  // ---------- «Карта API» ----------
+  apiMapHosts(): ReturnType<ApiMapStore['hosts']> {
+    return this.apiMap.hosts()
+  }
+  apiMapList(host?: string): ApiEndpoint[] {
+    return this.apiMap.list(host)
+  }
+  /** The login headers each site's requests carried last (a token, a CSRF guard) — in memory only, never written. */
+  private authByHost = new Map<string, Array<[string, string]>>()
+  async apiMapAuth(url: string): Promise<Array<[string, string]>> {
+    let host = ''
+    try {
+      host = new URL(url).host
+    } catch {
+      return []
+    }
+    const out = [...(this.authByHost.get(host) ?? [])].filter(([k]) => k.toLowerCase() !== 'cookie')
+    // the cookies the browser would send there now (the session's own)
+    const cookies = await this.ses.cookies.get({ url }).catch(() => [])
+    if (cookies.length) out.push(['Cookie', cookies.map((c) => `${c.name}=${c.value}`).join('; ')])
+    return out
+  }
+  apiMapClear(host?: string): void {
+    this.apiMap.clear(host)
+  }
+  checkState(): CheckState {
+    return { settings: this.check.settings, blocked: [...this.checkBlocked] }
+  }
+  checkList(): CheckProblem[] {
+    return this.check.problems()
+  }
+  checkSet(patch: Partial<CheckSettings>): CheckState {
+    const before = JSON.stringify(this.check.settings)
+    this.check.setSettings(patch)
+    // on / off, or the page's watcher told other things — every tab follows
+    if (JSON.stringify(this.check.settings) !== before) for (const t of this.tabs.values()) void this.checkSync(t, true)
+    return this.checkState()
+  }
+  checkClear(ids?: string[]): void {
+    this.check.clear(Array.isArray(ids) ? ids.map(String) : undefined)
+  }
+  checkMute(key: string, on = true): void {
+    this.check.mute(String(key), on !== false)
+  }
+  checkNote(ids: string[], note: string): void {
+    this.check.setNote(ids.map(String), String(note))
+  }
+  /** The element of a finding shown on its page (the tab made current by the window). */
+  async checkShow(tabId: string, sel: string): Promise<boolean> {
+    const t = this.tabs.get(tabId)
+    if (!t || t.asleep) return false
+    return !!(await t.view.webContents.executeJavaScript(highlightScript(String(sel)), true).catch(() => false))
+  }
+  /** The tab's page as it is now (PNG). */
+  async checkShot(tabId: string): Promise<Uint8Array | undefined> {
+    const t = this.tabs.get(tabId)
+    if (!t || t.asleep) return undefined
+    const img = await t.view.webContents.capturePage()
+    return img.isEmpty() ? undefined : new Uint8Array(img.toPNG())
   }
 
   // ---------- the device mode ----------
@@ -1439,6 +1781,8 @@ export class Browser {
         reqHeaders: extra ?? Object.entries(req.headers),
         postData: req.postData,
       }
+      // (a request that never ends — a long poll, server events — never leaves the map: the oldest go past a limit)
+      if (this.pending.size > 2000) for (const k of [...this.pending.keys()].slice(0, 500)) this.pending.delete(k)
       this.pending.set(id, { item, started: Date.now(), hasPostData: req.hasPostData && req.postData === undefined })
       this.recItems.push(item)
       // the oldest go beyond the limit

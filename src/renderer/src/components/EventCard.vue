@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useCloseOnScroll } from '../lib/floating'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { Entry, KindDef } from '@shared/types'
 import { formatDuration, formatHM } from '@shared/timeline'
@@ -28,6 +29,8 @@ const kind = computed(() => kinds.value.find((k) => k.id === entry.value?.kind))
 const dayText = computed(() => new Date(`${props.day}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' }))
 const others = computed(() => notesOf(props.id).filter((p) => p !== props.path))
 const pos = computed(() => ({ left: `${Math.max(8, Math.min(props.x, window.innerWidth - 440))}px`, top: `${Math.min(props.y + 6, window.innerHeight - 360)}px` }))
+// (it stood by a mark in the text: the text scrolled — gone)
+useCloseOnScroll(ref(true), () => !editing.value && emit('close'), '.evc')
 const close = (e: PointerEvent) => !(e.target as HTMLElement).closest('.evc, .em-back') && !editing.value && emit('close')
 const key = (e: KeyboardEvent) => e.key === 'Escape' && !editing.value && emit('close')
 onMounted(() => {

@@ -8,8 +8,8 @@ const t = (d: string, hm: string) => dayStart(d) + +hm.split(':')[0] * 3_600_000
 
 describe('parseQuick', () => {
   it('a range, a task and a kind; the rest is the title', () => {
-    const q = parseQuick('ревью DOS-123 14:00-15:30 #встр', ctx)
-    expect(q).toMatchObject({ label: 'ревью', task: 'DOS-123', kind: 'meeting', day: DAY, start: t(DAY, '14:00'), end: t(DAY, '15:30') })
+    const q = parseQuick('ревью ABC-123 14:00-15:30 #встр', ctx)
+    expect(q).toMatchObject({ label: 'ревью', task: 'ABC-123', kind: 'meeting', day: DAY, start: t(DAY, '14:00'), end: t(DAY, '15:30') })
   })
   it('hours without minutes, "с … до …"', () => {
     expect(parseQuick('планёрка 9-10', ctx)).toMatchObject({ label: 'планёрка', start: t(DAY, '9:00'), end: t(DAY, '10:00') })
@@ -30,6 +30,6 @@ describe('parseQuick', () => {
   })
   it('leaves what it does not know in the title', () => {
     expect(parseQuick('#неважно версия 2.0 готова', ctx)).toMatchObject({ label: '#неважно версия 2.0 готова' })
-    expect(parseQuick('DOS-7', ctx)).toMatchObject({ label: '', task: 'DOS-7' })
+    expect(parseQuick('ABC-7', ctx)).toMatchObject({ label: '', task: 'ABC-7' })
   })
 })

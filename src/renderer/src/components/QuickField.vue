@@ -12,7 +12,7 @@ import Icon from './Icon.vue'
 
 /**
  * The one way to type a new event, everywhere: the first line is understood as it is typed — time
- * («14:00-15:30», «в 9:30»), duration («30м», «1ч»), a task («DOS-123»), a kind («#встреча»), a day («завтра»,
+ * («14:00-15:30», «в 9:30»), duration («30м», «1ч»), a task («ABC-123»), a kind («#встреча»), a day («завтра»,
  * «пн», «20.10») — and what was understood shows under it. «@» picks a task, «#» a kind. The other lines are
  * the description. Enter — submit (Shift+Enter, or Enter with `enterNewline`, — a new line).
  */
@@ -132,7 +132,7 @@ defineExpose({ focus: () => el.value?.focus() })
       :value="modelValue"
       :rows="rows"
       spellcheck="false"
-      :placeholder="placeholder ?? 'Что делали — 14:00-15:00, 30м, DOS-123, #вид, завтра · @ задача'"
+      :placeholder="placeholder ?? 'Что делали — 14:00-15:00, 30м, ABC-123, #вид, завтра · @ задача'"
       @input="(emit('update:modelValue', ($event.target as HTMLTextAreaElement).value), updateSug())"
       @click="updateSug"
       @keydown="onKey"

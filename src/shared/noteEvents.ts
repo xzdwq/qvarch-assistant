@@ -21,7 +21,7 @@ export interface EventRef {
 export const EVENT_SCHEME = 'qvarch://'
 /** `[Label](qvarch://event/2026-10-18/<id>)` */
 export const eventLink = (e: Pick<EventRef, 'day' | 'id' | 'label'>) => `[${linkText(e.label)}](${EVENT_SCHEME}event/${e.day}/${e.id})`
-/** `[DOS-123 Summary](qvarch://jira/DOS-123)` */
+/** `[ABC-123 Summary](qvarch://jira/ABC-123)` */
 export const jiraLink = (key: string, summary: string) => `[${linkText(`${key} ${summary}`)}](${EVENT_SCHEME}jira/${key})`
 const linkText = (s: string) => s.replace(/[[\]\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || 'событие'
 

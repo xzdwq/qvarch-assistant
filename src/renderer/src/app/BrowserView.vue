@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { pwRec, stopPwRec } from '../lib/pwrec'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { readSpec, specToHttp, type ApiOp, type ApiSpec } from '@shared/openapi'
+import { readSpec, serverOf, specToHttp, type ApiSpec } from '@shared/openapi'
 import { load as yamlLoad } from 'js-yaml'
 import type { HttpNode } from '@shared/http'
 import { browserId, DEFAULT_BROWSER_SETTINGS, deviceFit, DEVICES, findLinks, recordingToHttp, RESPONSIVE, toUrl, UA_MOBILE, type Bookmark, type BrowserSettings, type DeviceMode, type Visit, type CertInfo, type PasswordInfo, type RecFull, type RecItem, type RecLink } from '@shared/browser'
@@ -9,6 +9,11 @@ import { METHOD_COLOR } from '@shared/http'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
 import HooksPanel from '../components/HooksPanel.vue'
+import CheckPanel from '../components/CheckPanel.vue'
+import UrlParts from '../components/UrlParts.vue'
+import ApiMapPanel from '../components/ApiMapPanel.vue'
+import { checkProblems, checkState } from '../lib/browser'
+import { placeFloat, useAnchor, useFollow } from '../lib/floating'
 import { bLayout, bookmarks, hostOf, moveTab, onBrowserEvent, placeTab, recItems, recState, splitWith, startBrowser, syncLayout, tabs, tabsLoaded, useOverlay } from '../lib/browser'
 
 /**
@@ -205,21 +210,72 @@ function onUrlKey(e: KeyboardEvent, pi: number): void {
   else if (e.key === 'Enter') {
     e.preventDefault()
     const pick = suggestions.value[sugIdx.value]
-    submitUrl(pi, pick ? pick.url : (urlEdit[pid] ?? ''))
+    // (the field's own text — what is seen is what goes, whatever happened to the edit's state)
+    submitUrl(pi, pick ? pick.url : (e.target as HTMLInputElement).value)
   }
 }
+/** An address sent from a pane: what it was before — the site taking it back is told («перенаправление сайта»). */
+const sentUrl = reactive<Record<string, { want: string; was: string; at: number; left?: boolean } | undefined>>({})
+const bounced = reactive<Record<string, string | undefined>>({})
 function submitUrl(pi: number, text: string): void {
   const p = bLayout.panes[pi]
   endUrl(p.id, true)
   const url = toUrl(text)
-  if (p.active) window.qa.browser('go', p.active, url)
-  else void newTab(pi, url)
+  if (!p.active) return void newTab(pi, url)
+  const was = byId(p.active)?.url ?? ''
+  bounced[p.id] = undefined
+  // the very same address: the page loaded again (as Enter does in any browser)
+  if (url === was) return void window.qa.browser('nav', p.active, 'reload')
+  sentUrl[p.id] = { want: url, was, at: Date.now() }
+  window.qa.browser('go', p.active, url)
+}
+/** Suggestions closed; the edit itself kept (focus going elsewhere does not lose what was typed — as in any browser). */
+function endSuggest(): void {
+  suggestFor.value = undefined
+  suggestions.value = []
 }
 function endUrl(pid: string, blur = false): void {
   urlEdit[pid] = undefined
-  suggestFor.value = undefined
-  suggestions.value = []
+  endSuggest()
   if (blur) urlEls.get(pid)?.blur()
+}
+// a pane's page went elsewhere (a link, the back button, another tab): a stale edit no more — the page's address shown;
+// an address sent and then taken back by the site within seconds — said
+watch(
+  () => bLayout.panes.map((p) => [p.id, p.active, byId(p.active)?.url] as const),
+  (now, before) => {
+    for (const [pid, active, url] of now) {
+      const old = before?.find((x) => x[0] === pid)
+      if (old && (old[1] !== active || old[2] !== url) && document.activeElement !== urlEls.get(pid)) urlEdit[pid] = undefined
+      const s = sentUrl[pid]
+      if (!s || !url) continue
+      if (Date.now() - s.at > 8000) sentUrl[pid] = undefined
+      else if (url !== s.was) s.left = true
+      else if (s.left || Date.now() - s.at > 1500) {
+        bounced[pid] = `Сайт сам вернул прежний адрес — это перенаправление на стороне сайта (например, восстановил сохранённые фильтры): ${s.want}`
+        sentUrl[pid] = undefined
+        setTimeout(() => (bounced[pid] = undefined), 8000)
+      }
+    }
+  },
+)
+// ---------- the address in parts (the arrow beside the address line) ----------
+const urlwEls = new Map<string, HTMLElement>()
+/** The suggestions: over everything (teleported), as wide as the address line, kept under it. */
+const sugAnchor = computed(() => (suggestFor.value ? urlwEls.get(suggestFor.value) : undefined))
+const sugOpen = computed({ get: () => !!suggestFor.value, set: (v) => void (v || endSuggest()) })
+const sugStyle = ref<Record<string, string>>({ position: 'fixed', left: '-10000px', top: '0px' })
+useAnchor(sugOpen, sugAnchor, () => {
+  const a = sugAnchor.value
+  if (!a) return
+  const f = placeFloat(a, a.getBoundingClientRect().width, true, 0)
+  sugStyle.value = { ...f.style, maxHeight: `${f.maxH}px` }
+})
+const partsFor = ref<string>()
+function openFromParts(pi: number, url: string, newTabToo: boolean): void {
+  partsFor.value = undefined
+  if (newTabToo) void newTab(pi, url)
+  else submitUrl(pi, url)
 }
 async function focusUrl(pi: number): Promise<void> {
   await nextTick()
@@ -255,7 +311,8 @@ const pageShown = (id?: string) => {
   const t = byId(id)
   return !!t && !isBlank(t.url) && !t.error
 }
-const overlay = useOverlay()
+// (the page put under its picture only when a popover is over it — a menu in the side panel needs nothing)
+const overlay = useOverlay(() => [...pageEls.values(), ...devEls.values()])
 const covering = computed(() => overlay.value || !!suggestFor.value || !!tabDrag.value)
 const shots = ref<Record<string, string>>({})
 let coverSeq = 0
@@ -287,7 +344,10 @@ function sendLayout(): void {
         // the device mode: the page as big as the device, made smaller to fit
         const a = box(area)
         const fit = deviceFit(device, a)
-        fits[p.id] = { x: fit.x - a.x, y: fit.y - a.y, w: fit.w, h: fit.h, scale: fit.scale }
+        // The page (a native view) goes by screen px; the frame drawn under it is inside the app's CSS zoom,
+        // which would scale its px once more (at 90% the frame came out smaller and shifted) — undo it.
+        const z = (area as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom || 1
+        fits[p.id] = { x: (fit.x - a.x) / z, y: (fit.y - a.y) / z, w: fit.w / z, h: fit.h / z, scale: fit.scale }
         rects.push({ id: p.active, x: fit.x, y: fit.y, w: fit.w, h: fit.h, scale: fit.scale, ...dev })
       } else rects.push({ id: p.active, ...box(el), ...dev })
     }
@@ -670,12 +730,21 @@ function saveBmEdit(): void {
 
 // a folder's contents: a list under its chip (going deeper inside it, back with ‹)
 const folderPop = ref<{ id: string; x: number; y: number; trail: string[] }>()
+/** The chip the list opened from: the list stays by it (the window resized), closes when it is gone. */
+let folderAnchor: HTMLElement | undefined
 function openFolder(id: string, anchor?: HTMLElement, deeper = false): void {
   if (!deeper && folderPop.value?.id === id && !bmDrag.value) return void (folderPop.value = undefined)
+  if (anchor && !deeper) folderAnchor = anchor
   const r = anchor?.getBoundingClientRect()
   const p = folderPop.value
   folderPop.value = deeper && p ? { ...p, id, trail: [...p.trail, p.id] } : { id, x: r?.left ?? p?.x ?? 0, y: (r?.bottom ?? (p ? p.y - 4 : 0)) + 4, trail: [] }
 }
+useFollow(
+  folderPop,
+  () => folderAnchor,
+  (r) => folderPop.value && (folderPop.value = { ...folderPop.value, x: Math.max(8, Math.min(r.left, window.innerWidth - 368)), y: r.bottom + 4 }),
+  () => (folderPop.value = undefined),
+)
 function folderBack(): void {
   const p = folderPop.value
   if (p?.trail.length) folderPop.value = { ...p, id: p.trail[p.trail.length - 1], trail: p.trail.slice(0, -1) }
@@ -900,26 +969,16 @@ async function doTransfer(): Promise<void> {
 }
 const useText = (l: RecLink) => l.uses.map((u) => `№${u.to + 1} ${u.where === 'path' ? 'путь' : u.where === 'query' ? `параметр ${u.key}` : u.where === 'body' ? `тело ${u.key}` : `заголовок ${u.key}`}`).join(', ')
 // ---------- Swagger / OpenAPI ----------
-const panelMode = ref<'rec' | 'api' | 'hooks'>('rec')
+const panelMode = ref<'rec' | 'hooks' | 'check' | 'map'>('check')
+/** «Проверка»: the findings not taken into a bug yet — the button's number. */
+const checkNew = computed(() => checkProblems.value.filter((p) => !p.note).length)
+const checkHigh = computed(() => checkProblems.value.some((p) => !p.note && p.sev === 'high'))
 /** The hooks' panel (the side, its own mode). */
-function openHooks(): void {
-  if (recOpen.value && panelMode.value === 'hooks') return void (recOpen.value = false)
-  recOpen.value = true
-  panelMode.value = 'hooks'
-}
 const api = shallowRef<{ url: string; spec: unknown; info: ApiSpec; origin: string }>()
 const apiBusy = ref(false)
 const apiError = ref('')
 const apiTried = ref<string[]>([])
-const apiQ = ref('')
 const apiPicked = ref(new Set<string>())
-/** The panel on Swagger; `look` — search right away when this site has not been searched yet. */
-function openSwagger(look: boolean): void {
-  recOpen.value = true
-  panelMode.value = 'api'
-  const origin = originOf(byId(curId.value)?.url)
-  if (look && !apiBusy.value && api.value?.origin !== origin && pageShown(curId.value)) void findSwagger()
-}
 async function findSwagger(): Promise<void> {
   const id = curId.value
   if (!id) return
@@ -947,36 +1006,30 @@ async function findSwagger(): Promise<void> {
     apiBusy.value = false
   }
 }
+/** The Swagger found, for «Карта API»: its operations, the server's base path, the site. */
+const mapSpec = computed(() => {
+  const a = api.value
+  if (!a) return undefined
+  let base = ''
+  let host = ''
+  try {
+    base = new URL(serverOf(a.spec as Record<string, unknown>, a.url)).pathname.replace(/\/+$/, '')
+  } catch {
+    // no server named — matched by the path's end
+  }
+  try {
+    host = new URL(a.origin).host
+  } catch {
+    // none
+  }
+  return { title: a.info.title, ops: a.info.ops, base, host }
+})
 function clearApi(): void {
   api.value = undefined
   apiError.value = ''
   apiTried.value = []
   apiPicked.value = new Set()
-  apiQ.value = ''
 }
-const apiShown = computed(() => {
-  const q = apiQ.value.trim().toLowerCase()
-  const ops = api.value?.info.ops ?? []
-  return q ? ops.filter((o) => `${o.method} ${o.path} ${o.summary} ${o.tag} ${o.operationId ?? ''}`.toLowerCase().includes(q)) : ops
-})
-const apiGroups = computed(() => {
-  const m = new Map<string, ApiOp[]>()
-  for (const o of apiShown.value) m.set(o.tag, [...(m.get(o.tag) ?? []), o])
-  return [...m].map(([tag, ops]) => ({ tag, ops }))
-})
-const apiAll = computed(() => apiShown.value.length > 0 && apiShown.value.every((o) => apiPicked.value.has(o.id)))
-function apiToggle(id: string): void {
-  const s = new Set(apiPicked.value)
-  if (s.has(id)) s.delete(id)
-  else s.add(id)
-  apiPicked.value = s
-}
-function apiPickGroup(ops: ApiOp[], on: boolean): void {
-  const s = new Set(apiPicked.value)
-  for (const o of ops) on ? s.add(o.id) : s.delete(o.id)
-  apiPicked.value = s
-}
-const apiPickAll = (on: boolean) => apiPickGroup(apiShown.value, on)
 const API_OPTS = 'qa.browser.apiOpts'
 const apiOpts = ref<{ defaults: boolean; optional: boolean }>((() => {
   try {
@@ -1209,11 +1262,11 @@ const BASE_VAR = '{{base_…}}'
       <!-- a Playwright scenario being recorded (inside the one root: the app positions and hides it) -->
       <div v-if="pwRec" class="pwrecbar">
         <i class="prd"></i><b>Запись сценария Playwright</b>
-        <span class="pmuted">в «{{ pwRec.note.split('/').pop()!.replace(/\.md$/i, '') }}» · строк: {{ pwRec.count }}</span>
+        <span class="pmuted">{{ pwRec.key === 'check:steps' ? 'шаги для журнала' : `в «${pwRec.note.split('/').pop()!.replace(/\.md$/i, '')}»` }} · строк: {{ pwRec.count }}</span>
         <code v-if="pwRec.last" class="plast" :title="pwRec.last">{{ pwRec.last }}</code>
         <span class="pgrow"></span>
         <button title="Остановить и ничего не вставлять" @click="stopPwRec(true)">Отменить</button>
-        <button class="ppri" title="Остановить — записанное встанет в блок теста, заметка откроется" @click="stopPwRec()"><i class="psq"></i>Стоп — в заметку</button>
+        <button class="ppri" :title="pwRec.key === 'check:steps' ? 'Остановить — шаги встанут в запись журнала (Проверка)' : 'Остановить — записанное встанет в блок теста, заметка откроется'" @click="stopPwRec()"><i class="psq"></i>{{ pwRec.key === 'check:steps' ? 'Стоп — в журнал' : 'Стоп — в заметку' }}</button>
       </div>
       <!-- bookmarks, the recording -->
       <div class="bbar" @contextmenu.self.prevent="onBmMenu(undefined, $event)">
@@ -1246,12 +1299,11 @@ const BASE_VAR = '{{base_…}}'
           <button v-if="download.state === 'completed'" @click="window_show(download.path)">Показать</button>
           <button class="x" @click="download = undefined"><Icon name="x" :size="11" /></button>
         </span>
-        <span class="pill">
-          <button class="hookb" :class="{ on: recOpen && panelMode === 'hooks' }" title="Хуки сайта: свой CSS / JS на страницах, поиск в ответах" @click="openHooks"><Icon name="zap" :size="12" /></button>
-          <button class="recb ico" :class="{ on: recState.on }" :title="recState.on ? `Остановить запись запросов (записано: ${recItems.length})` : 'Записывать запросы страниц (XHR / fetch)'" @click="toggleRec"><i></i><b v-if="recItems.length">{{ recItems.length }}</b></button>
-          <button class="swb" :class="{ on: recOpen && panelMode === 'api' }" title="Swagger / OpenAPI сайта: найти и взять его запросы" @click="openSwagger(true)"><b>{}</b></button>
-        </span>
-        <button class="ib" :class="{ on: recOpen }" title="Записанные запросы" @click="recOpen = !recOpen"><Icon name="list" :size="14" /></button>
+        <button class="ib pbtn" :class="{ on: recOpen }" :title="`Панель: проверка, запись запросов, Swagger, хуки${checkNew ? ` · найдено ${checkNew}` : ''}${recState.on ? ' · идёт запись запросов' : ''}`" @click="recOpen = !recOpen">
+          <Icon name="list" :size="14" />
+          <i v-if="recState.on" class="pdot"></i>
+          <b v-if="checkNew" class="pcnt" :class="{ hot: checkHigh }">{{ checkNew > 99 ? '99+' : checkNew }}</b>
+        </button>
         <button class="ib" title="История (Ctrl+H)" @click="openHistory"><Icon name="history" :size="15" /></button>
         <button class="ib" title="Сохранённые пароли" @click="pwOpen = ''"><Icon name="lock" :size="14" /></button>
       </div>
@@ -1291,7 +1343,7 @@ const BASE_VAR = '{{base_…}}'
               <button v-if="byId(p.active)?.loading" class="tb" title="Остановить" @click="p.active && window_nav(p.active, 'stop')"><Icon name="x" :size="14" /></button>
               <button v-else class="tb" title="Обновить (F5)" :disabled="!p.active" @click="p.active && window_nav(p.active, 'reload')"><Icon name="refresh" :size="13" /></button>
               <button class="tb" title="Сбросить всё, что сайт сохранил (кэш, куки, хранилище), и перезагрузить" :disabled="!pageShown(p.active)" @click="p.active && resetSite(p.active)"><Icon name="eraser" :size="14" /></button>
-              <div class="urlw">
+              <div :ref="(el) => el && urlwEls.set(p.id, el as HTMLElement)" class="urlw">
                 <button v-if="pageShown(p.active)" class="certb" :class="certCls(p.active)" title="Сведения о подключении и сертификате" @click="showCert(p.active!, $event)"><Icon :name="byId(p.active)?.url.startsWith('https:') ? 'lock' : 'globe'" :size="12" /></button>
                 <input
                   :ref="(el) => el && urlEls.set(p.id, el as HTMLInputElement)"
@@ -1303,17 +1355,22 @@ const BASE_VAR = '{{base_…}}'
                   @focus="(urlEdit[p.id] = urlShown(p.id, p.active)), ($event.target as HTMLInputElement).select()"
                   @input="onUrlInput(p.id, ($event.target as HTMLInputElement).value)"
                   @keydown="onUrlKey($event, pi)"
-                  @blur="setTimeout_(() => endUrl(p.id), 150)"
+                  @blur="setTimeout_(endSuggest, 150)"
                 />
+                <button class="upb" :class="{ on: partsFor === p.id }" title="Адрес по частям: путь, параметры запроса — изменить, убрать, добавить и открыть" :disabled="!pageShown(p.active)" @click="partsFor = partsFor === p.id ? undefined : p.id"><Icon name="chevronDown" :size="13" /></button>
                 <div v-if="urlEdit[p.id] === undefined && urlShown(p.id, p.active)" class="urlview" aria-hidden="true"><span v-for="(x, i) in urlParts(urlShown(p.id, p.active))" :key="i" :class="x.c">{{ x.t }}</span></div>
                 <button v-if="sitePasswords(p.active).length" class="key" title="Сохранённые пароли этого сайта" @click="pwOpen = originOf(byId(p.active)?.url)"><Icon name="lock" :size="12" /></button>
                 <button class="star" :class="{ on: starred(p.active) }" :title="starred(p.active) ? 'Убрать из закладок' : 'В закладки (Ctrl+D)'" :disabled="!pageShown(p.active)" @click="toggleStar(p.active)"><Icon name="star" :size="13" /></button>
-                <div v-if="suggestFor === p.id" class="sug">
-                  <button v-for="(s, i) in suggestions" :key="s.url" :class="{ on: i === sugIdx }" @mousedown.prevent="submitUrl(pi, s.url)">
-                    <Icon :name="s.bookmark ? 'star' : 'clock'" :size="12" /><b>{{ s.title || hostOf(s.url) }}</b><span>{{ s.url }}</span>
-                  </button>
-                </div>
+                <UrlParts v-if="partsFor === p.id && p.active" :url="byId(p.active)?.url ?? ''" :anchor="urlwEls.get(p.id)" @open="(u, n) => openFromParts(pi, u, n)" @close="partsFor = undefined" />
+                <Teleport to="body">
+                  <div v-if="suggestFor === p.id" class="sug" :style="sugStyle">
+                    <button v-for="(s, i) in suggestions" :key="s.url" :class="{ on: i === sugIdx }" @mousedown.prevent="submitUrl(pi, s.url)">
+                      <Icon :name="s.bookmark ? 'star' : 'clock'" :size="12" /><b>{{ s.title || hostOf(s.url) }}</b><span>{{ s.url }}</span>
+                    </button>
+                  </div>
+                </Teleport>
               </div>
+              <button v-if="bounced[p.id]" class="bounce" :title="bounced[p.id]" @click="bounced[p.id] = undefined"><Icon name="undo" :size="12" />сайт вернул адрес</button>
               <ZoomChip v-if="p.active && pageShown(p.active)" :model-value="byId(p.active)?.zoom ?? 100" :min="25" :max="300" title="Масштаб страницы · колесо, Ctrl+колесо над страницей · клик — 100%" @update:model-value="(z) => p.active && window_zoom(p.active, z)" />
               <button class="tb" :class="{ on: byId(p.active)?.ruler }" :title="byId(p.active)?.ruler ? 'Убрать линейки' : 'Линейки: тяните из линейки — линия, обратно в линейку — убрать'" :disabled="!pageShown(p.active)" @click="p.active && toggleRuler(p.active)"><Icon name="ruler" :size="14" /></button>
               <button class="tb" :class="{ on: !!byId(p.active)?.device }" :title="byId(p.active)?.device ? 'Выключить режим устройства (Ctrl+Shift+M)' : 'Режим устройства: страница как на телефоне, планшете или экране нужного размера (Ctrl+Shift+M)'" :disabled="!pageShown(p.active)" @click="toggleDevice(p.active)"><Icon name="devices" :size="15" /></button>
@@ -1403,47 +1460,16 @@ const BASE_VAR = '{{base_…}}'
     <aside v-if="recOpen" class="rec">
       <span class="rgrip" @pointerdown="dragRec"></span>
       <div class="pmode">
-        <button :class="{ on: panelMode === 'rec' }" @click="panelMode = 'rec'"><i class="rdot" :class="{ on: recState.on }"></i>Запись<b v-if="recItems.length">{{ recItems.length }}</b></button>
-        <button :class="{ on: panelMode === 'api' }" @click="openSwagger(false)">Swagger<b v-if="api">{{ api.info.ops.length }}</b></button>
-        <button :class="{ on: panelMode === 'hooks' }" @click="panelMode = 'hooks'">Хуки</button>
+        <button :class="{ on: panelMode === 'check' }" title="Проверка: ошибки сети, страницы и консоли, журнал" @click="panelMode = 'check'"><Icon name="bug" :size="13" :class="{ live: checkState.settings.on }" /><span class="pl">Проверка</span><b v-if="checkNew">{{ checkNew }}</b></button>
+        <button :class="{ on: panelMode === 'rec' }" title="Запись запросов страниц (XHR / fetch)" @click="panelMode = 'rec'"><i class="rdot" :class="{ on: recState.on }"></i><span class="pl">Запись</span><b v-if="recItems.length">{{ recItems.length }}</b></button>
+        <button :class="{ on: panelMode === 'map' }" title="Карта API: какие запросы делают страницы сайта — по трафику, со Swagger, если он есть" @click="panelMode = 'map'"><Icon name="map" :size="12" /><span class="pl">Карта API</span></button>
+        <button :class="{ on: panelMode === 'hooks' }" title="Хуки сайта: свой CSS / JS, поиск в ответах" @click="panelMode = 'hooks'"><Icon name="zap" :size="12" /><span class="pl">Хуки</span></button>
         <span class="grow"></span>
         <button class="ib" title="Скрыть" @click="recOpen = false"><Icon name="x" :size="13" /></button>
       </div>
       <HooksPanel v-if="panelMode === 'hooks'" class="hpanel" :url="byId(curId)?.url" :tab-id="curId" />
-      <template v-else-if="panelMode === 'api'">
-        <div class="rh">
-          <button class="primary sm" :disabled="apiBusy || !pageShown(curId)" @click="findSwagger"><Icon name="search" :size="12" />{{ apiBusy ? 'Ищу…' : api ? 'Искать заново' : 'Найти на этом сайте' }}</button>
-          <span class="grow"></span>
-          <button class="ib" title="Очистить" :disabled="!api && !apiError" @click="clearApi"><Icon name="trash" :size="13" /></button>
-        </div>
-        <div v-if="api" class="apih" :title="api.url">
-          <b>{{ api.info.title }}</b><span>{{ api.info.version }}</span><em>{{ api.info.kind }}</em>
-          <div class="apiu">{{ api.url }}</div>
-        </div>
-        <p v-if="apiError" class="rerr">{{ apiError }}<template v-if="apiTried.length"> · проверено адресов: {{ apiTried.length }}</template></p>
-        <template v-if="api">
-          <div class="rf">
-            <input type="checkbox" :checked="apiAll" title="Выбрать все показанные" @change="apiPickAll(($event.target as HTMLInputElement).checked)" />
-            <input v-model="apiQ" class="rq" placeholder="Фильтр: метод, путь, описание, тег" spellcheck="false" />
-          </div>
-          <div class="rlist">
-            <template v-for="g in apiGroups" :key="g.tag">
-              <label class="atag"><input type="checkbox" :checked="g.ops.every((o) => apiPicked.has(o.id))" @change="apiPickGroup(g.ops, ($event.target as HTMLInputElement).checked)" />{{ g.tag }}<span>{{ g.ops.length }}</span></label>
-              <label v-for="o in g.ops" :key="o.id" class="ri api" :class="{ picked: apiPicked.has(o.id), dep: o.deprecated }" :title="o.summary">
-                <input type="checkbox" :checked="apiPicked.has(o.id)" @change="apiToggle(o.id)" />
-                <b class="rm" :style="{ color: mColor(o.method) }">{{ o.method }}</b>
-                <span class="rp">{{ o.path }}<span v-if="o.summary" class="rsum"> — {{ o.summary }}</span></span>
-              </label>
-            </template>
-          </div>
-          <div class="rfoot">
-            <span class="muted">Выбрано: {{ apiPicked.size }}</span>
-            <span class="grow"></span>
-            <button class="primary" :disabled="!apiPicked.size" @click="apiAsk = true">В HTTP →</button>
-          </div>
-        </template>
-        <p v-else-if="!apiBusy" class="none">Откройте сайт (или его Swagger UI) и нажмите «Найти»: Qvarch посмотрит, что показывает страница, и проверит обычные адреса описания API — /v3/api-docs, /swagger.json, /openapi.json, /api-json и другие.</p>
-      </template>
+      <CheckPanel v-else-if="panelMode === 'check'" class="hpanel" :tab-id="curId" />
+      <ApiMapPanel v-else-if="panelMode === 'map'" class="hpanel" :url="byId(curId)?.url" :swagger="mapSpec" :api="api" :api-busy="apiBusy" :api-error="apiError" :api-tried="apiTried" :can-find="pageShown(curId)" @find-swagger="findSwagger" @clear-swagger="clearApi" @swagger-to-http="(ids) => ((apiPicked = new Set(ids)), (apiAsk = true))" />
       <template v-else>
       <div class="rh">
         <button class="recb" :class="{ on: recState.on }" @click="toggleRec"><i></i>{{ recState.on ? 'Остановить' : 'Начать запись' }}</button>
@@ -1910,6 +1936,68 @@ const BASE_VAR = '{{base_…}}'
   border-radius: 0;
 }
 /* the hooks: the first of the pill, the size of its neighbours */
+.pbtn {
+  position: relative;
+}
+.pdot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--down);
+}
+.pcnt {
+  position: absolute;
+  right: -6px;
+  bottom: -2px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.pcnt.hot {
+  background: var(--down);
+}
+.pmode .live {
+  color: var(--accent-fg);
+}
+.pglyph {
+  font-family: var(--font-data);
+  font-weight: 700;
+}
+.chkb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin-right: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--text-2);
+}
+.chkb b {
+  font-size: 11px;
+  font-weight: 600;
+}
+.chkb.live {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  color: var(--accent-fg);
+}
+.chkb.hot b {
+  color: var(--down-fg);
+}
+.chkb.on {
+  background: rgb(var(--accent-rgb) / 0.16);
+}
 .hookb {
   display: inline-flex;
   align-items: center;
@@ -1961,20 +2049,31 @@ const BASE_VAR = '{{base_…}}'
   align-items: center;
   gap: 2px;
   height: 36px;
+  min-width: 0;
   padding: 0 6px;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  container-type: inline-size;
 }
 .pmode > button:not(.ib) {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 12px;
+  padding: 0 10px;
+  white-space: nowrap;
   border: 0;
   border-radius: var(--r2);
   background: transparent;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* narrow: the tabs by their icons (and numbers), the open one keeps its name — never a second line */
+@container (max-width: 600px) {
+  .pmode > button:not(.on) .pl {
+    display: none;
+  }
 }
 .pmode > button.on {
   background: rgb(var(--accent-rgb) / 0.18);
@@ -2311,7 +2410,7 @@ const BASE_VAR = '{{base_…}}'
   flex: 1;
   min-width: 0;
   height: 28px;
-  padding: 0 32px 0 30px;
+  padding: 0 58px 0 30px;
   border-radius: var(--r2);
   font-family: var(--font-data);
   font-size: 12.5px;
@@ -2323,7 +2422,7 @@ const BASE_VAR = '{{base_…}}'
 .urlview {
   position: absolute;
   left: 31px;
-  right: 56px;
+  right: 84px;
   top: 0;
   bottom: 0;
   display: flex;
@@ -2358,6 +2457,36 @@ const BASE_VAR = '{{base_…}}'
 .u-hash {
   color: var(--info-fg);
 }
+/* the address in parts: beside the star */
+.upb {
+  position: absolute;
+  right: 28px;
+  display: inline-flex;
+  padding: 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+.upb:hover:not(:disabled),
+.upb.on {
+  background: var(--hover);
+  color: var(--text);
+}
+.bounce {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgb(var(--warn-rgb, 251 191 36) / 0.5);
+  border-radius: 13px;
+  background: rgb(var(--warn-rgb, 251 191 36) / 0.12);
+  color: var(--warn-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .star {
   position: absolute;
   right: 4px;
@@ -2373,12 +2502,9 @@ const BASE_VAR = '{{base_…}}'
 .star.on :deep(svg) {
   fill: currentColor;
 }
+/* the address suggestions — teleported to <body> (placed by placeFloat; the field's blur closes them) */
 .sug {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 40;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -2389,6 +2515,7 @@ const BASE_VAR = '{{base_…}}'
 }
 .sug button {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -2447,7 +2574,7 @@ const BASE_VAR = '{{base_…}}'
 }
 .key {
   position: absolute;
-  right: 28px;
+  right: 52px;
   display: inline-flex;
   padding: 5px;
   border: 0;

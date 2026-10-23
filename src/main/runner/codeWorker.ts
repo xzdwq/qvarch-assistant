@@ -1,6 +1,7 @@
 import vm from 'node:vm'
 import { inspect } from 'node:util'
 import { stripTypeScriptTypes } from 'node:module'
+import { errorText } from './errorText'
 
 /**
  * A notebook's code block, run in a process of its own (an Electron utility process, made for one run): the
@@ -80,8 +81,6 @@ port.on('message', async (e: { data: Job }) => {
     const value = await vm.runInContext(`${main}\n__block()`, sandbox, { filename: 'блок', lineOffset: -1 - libLines })
     port.postMessage({ ok: true, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, ms: performance.now() - t0 })
   } catch (err) {
-    const msg = err instanceof Error ? `${err.name === 'Error' ? '' : `${err.name}: `}${err.message}` : String(err)
-    const at = err instanceof Error ? /блок:(\d+)/.exec(err.stack ?? '')?.[1] : undefined
-    port.postMessage({ ok: false, error: at ? `${msg} (строка ${at})` : msg, logs, sets: plain(sets), ms: performance.now() - t0 })
+    port.postMessage({ ok: false, error: errorText(err, 'блок'), logs, sets: plain(sets), ms: performance.now() - t0 })
   }
 })

@@ -205,7 +205,7 @@ function exportCsv(): void {
         <button :class="{ on: st.task === 'with' }" @click="st.task = 'with'">С задачей</button>
         <button :class="{ on: st.task === 'without' }" @click="st.task = 'without'">Без задачи</button>
       </span>
-      <label class="search"><Icon name="search" :size="13" /><input v-model="st.q" placeholder="Текст, DOS-123…" spellcheck="false" /></label>
+      <label class="search"><Icon name="search" :size="13" /><input v-model="st.q" placeholder="Текст, ABC-123…" spellcheck="false" /></label>
       <button v-if="anyFilter" class="ghost" title="Сбросить фильтры" @click="reset"><Icon name="x" :size="12" />фильтры</button>
       <span class="grow"></span>
       <button class="ghost" :title="st.desc ? 'Сначала новые' : 'Сначала старые'" @click="st.desc = !st.desc"><Icon name="sort" :size="13" />{{ st.desc ? 'новые' : 'старые' }}</button>

@@ -27,7 +27,7 @@ export interface HookSearch {
 export interface BrowserHook {
   id: string
   name: string
-  /** mdm-dev.aoavant.ru, *.aoavant.ru, or an address prefix https://site/path */
+  /** app.example.com, *.example.com, or an address prefix https://site/path */
   site: string
   on: boolean
   css: string

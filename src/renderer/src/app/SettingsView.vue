@@ -479,7 +479,7 @@ function toggleDay(id: number): void {
           <div class="tp-body">
             <span class="tp-num">7ч 42м</span>
             <span class="tp-up">+12%</span>
-            <span class="tp-chip">DOS-2984</span>
+            <span class="tp-chip">ABC-42</span>
             <button class="primary">Действие</button>
           </div>
         </div>

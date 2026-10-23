@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, Compartment, Prec, type Extension } from '@codemirror/state'
 import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
+import { acceptCompletion } from '@codemirror/autocomplete'
 import { languageOf } from '../lib/codeLang'
 
 /** A code field (CodeMirror): JS / JSON / SQL / XML / YAML… or plain text, the app's colours, Tab indents. */
-const props = withDefaults(defineProps<{ modelValue: string; lang?: string; placeholder?: string; readonly?: boolean; minHeight?: number; fill?: boolean }>(), { lang: 'text', minHeight: 120 })
+/**
+ * `langExt` — the language set up by the caller (a SQL dialect with a database's tables for completion) instead of
+ * `lang`'s; `run` — Ctrl+Enter runs (and only runs: no new line).
+ */
+const props = withDefaults(defineProps<{ modelValue: string; lang?: string; langExt?: Extension; placeholder?: string; readonly?: boolean; minHeight?: number; fill?: boolean; run?: () => void }>(), { lang: 'text', minHeight: 120 })
 const emit = defineEmits<{ 'update:modelValue': [v: string] }>()
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
@@ -16,9 +21,24 @@ const langC = new Compartment()
 let langSeq = 0
 async function setLang(l: string): Promise<void> {
   const my = ++langSeq
-  const ext = await languageOf(l)
+  const ext = props.langExt ?? (await languageOf(l))
   if (my === langSeq) view?.dispatch({ effects: langC.reconfigure(ext) })
 }
+// (before every other key binding: the editor's own Mod-Enter inserts a line; Tab — the indent)
+const runKeys = Prec.highest(
+  keymap.of([
+    // Tab takes the suggestion while the list is open (as Enter does); with no list — a Tab as always
+    { key: 'Tab', run: acceptCompletion },
+    {
+      key: 'Mod-Enter',
+      run: () => {
+        if (!props.run) return false
+        props.run()
+        return true
+      },
+    },
+  ]),
+)
 const theme = EditorView.theme(
   {
     '&': { color: 'var(--text)', backgroundColor: 'var(--field-bg)', fontSize: '12.5px', border: '1px solid var(--border-2)', borderRadius: 'var(--r2)' },
@@ -40,6 +60,7 @@ onMounted(() => {
     state: EditorState.create({
       doc: props.modelValue,
       extensions: [
+        runKeys,
         basicSetup,
         keymap.of([indentWithTab]),
         langC.of([]),
@@ -61,8 +82,8 @@ watch(
   },
 )
 watch(
-  () => props.lang,
-  (l) => void setLang(l),
+  () => [props.lang, props.langExt] as const,
+  () => void setLang(props.lang),
 )
 onBeforeUnmount(() => view?.destroy())
 </script>

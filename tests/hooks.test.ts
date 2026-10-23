@@ -3,11 +3,11 @@ import { queryRegex, resType, siteMatch } from '../src/shared/hooks'
 
 describe('hooks', () => {
   it('match a site by host, a wildcard or an address prefix', () => {
-    expect(siteMatch('mdm-dev.aoavant.ru', 'https://mdm-dev.aoavant.ru/general')).toBe(true)
-    expect(siteMatch('mdm-dev.aoavant.ru', 'https://mdm-qa.aoavant.ru/')).toBe(false)
-    expect(siteMatch('*.aoavant.ru', 'https://mdm-qa.aoavant.ru/x')).toBe(true)
-    expect(siteMatch('*.aoavant.ru', 'https://aoavant.ru/')).toBe(true)
-    expect(siteMatch('*.aoavant.ru', 'https://evilaoavant.ru/')).toBe(false)
+    expect(siteMatch('app.example.com', 'https://app.example.com/general')).toBe(true)
+    expect(siteMatch('app.example.com', 'https://stage.example.com/')).toBe(false)
+    expect(siteMatch('*.example.com', 'https://stage.example.com/x')).toBe(true)
+    expect(siteMatch('*.example.com', 'https://example.com/')).toBe(true)
+    expect(siteMatch('*.example.com', 'https://evilexample.com/')).toBe(false)
     expect(siteMatch('https://site.ru/app/', 'https://site.ru/app/page')).toBe(true)
     expect(siteMatch('https://site.ru/app/', 'https://site.ru/other')).toBe(false)
     expect(siteMatch('localhost:5199', 'http://localhost:5199/dev')).toBe(true)

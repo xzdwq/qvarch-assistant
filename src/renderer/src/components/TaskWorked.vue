@@ -4,6 +4,7 @@ import { formatDuration, formatHM } from '@shared/timeline'
 import { todayKey } from '../lib/today'
 import { openEventInWork } from '../lib/mentions'
 import Icon from './Icon.vue'
+import { beside, useFollow } from '../lib/floating'
 
 /**
  * When a task was / will be worked on: a timeline icon with the number of its blocks; a click — the list (the day,
@@ -14,10 +15,20 @@ const props = defineProps<{ blocks: Worked[] }>()
 const list = computed(() => [...props.blocks].sort((a, b) => b.start - a.start))
 const total = computed(() => props.blocks.reduce((s, b) => s + Math.max(0, b.end - b.start), 0))
 const open = ref<{ x: number; y: number }>()
+/** The chip it opened from: the list stays by it, closes when it is out of sight. */
+let anchor: HTMLElement | undefined
+const popEl = ref<HTMLElement>()
+const at = (r: DOMRect) => beside(r, 300, popEl.value?.offsetHeight ?? 320, true)
+useFollow(
+  open,
+  () => anchor,
+  (r) => open.value && (open.value = at(r)),
+  () => (open.value = undefined),
+)
 function toggle(e: Event): void {
   if (open.value) return void (open.value = undefined)
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  open.value = { x: Math.max(8, Math.min(r.right - 300, window.innerWidth - 308)), y: Math.min(r.bottom + 4, window.innerHeight - 330) }
+  anchor = e.currentTarget as HTMLElement
+  open.value = at(anchor.getBoundingClientRect())
 }
 const dayText = (d: string) => {
   const s = new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', ...(d.slice(0, 4) !== todayKey.value.slice(0, 4) ? { year: 'numeric' } : {}) })
@@ -38,7 +49,7 @@ function go(b: Worked): void {
   </button>
   <span v-else></span>
   <Teleport to="body">
-    <div v-if="open" class="twk-pop" :style="{ left: `${open.x}px`, top: `${open.y}px` }" @pointerdown.stop>
+    <div v-if="open" ref="popEl" class="twk-pop" :style="{ left: `${open.x}px`, top: `${open.y}px` }" @pointerdown.stop>
       <p class="cap">На таймлайне · {{ formatDuration(total) }}</p>
       <button v-for="b in list" :key="b.id" :class="{ fut: b.day > todayKey }" @click="go(b)">
         <span class="d">{{ dayText(b.day) }}</span>

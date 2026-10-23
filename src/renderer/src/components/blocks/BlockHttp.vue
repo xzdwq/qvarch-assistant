@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { blockReport, fenceParts, fenceSrc, noteRun, pretty, runHttp, runKey, stopBlock } from '../../lib/runbook'
+import { blockReport, envAt, fenceParts, fenceSrc, noteRun, pretty, runHttp, runKey, stopBlock } from '../../lib/runbook'
+import { doc } from '../../lib/notebook'
+import { useFold } from '../../lib/foldState'
 import CodeArea from '../CodeArea.vue'
 import Icon from '../Icon.vue'
 import RunHead from './RunHead.vue'
@@ -44,7 +46,7 @@ const key = computed(() => runKey(parts.value.info.name, 'http', props.line))
 const run = computed(() => noteRun(props.path).runs[key.value])
 async function go(): Promise<void> {
   save(true)
-  await runHttp(props.path, key.value, parts.value.info.name, body.value)
+  await runHttp(props.path, key.value, parts.value.info.name, body.value, envAt(props.path, props.line, doc(props.path).text))
 }
 const tab = ref<'body' | 'headers' | 'sent'>('body')
 const shownBody = computed(() => {
@@ -61,13 +63,14 @@ const statusCls = computed(() => {
   return s >= 200 && s < 300 ? 'ok' : s >= 400 ? 'err' : 'warn'
 })
 const size = (n?: number) => (n === undefined ? '' : n < 1024 ? `${n} Б` : n < 1048576 ? `${(n / 1024).toFixed(1)} КБ` : `${(n / 1048576).toFixed(2)} МБ`)
-const open = ref(true)
+// (folded or open — as it was left, back from another tab too)
+const open = useFold(() => `${props.path}#${key.value}#result`, true)
 </script>
 
 <template>
-  <div class="bh" @keydown.ctrl.enter.prevent="go">
-    <RunHead :report="() => blockReport(path, key, 'http', parts.info, parts.body)" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stopBlock(path, key)" />
-    <div class="bh-ed"><CodeArea v-model="body" lang="http" :min-height="40" placeholder="GET https://…   (заголовки строками, пустая строка, тело)" /></div>
+  <div class="bh" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
+    <RunHead :report="() => blockReport(path, key, 'http', parts.info, parts.body)" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stopBlock(path, key, envAt(path, line, doc(path).text).id)" />
+    <div class="bh-ed"><CodeArea v-model="body" lang="http" :run="go" :min-height="40" placeholder="GET https://…   (заголовки строками, пустая строка, тело)" /></div>
     <p v-if="run?.request?.missing.length" class="bh-miss">Нет значения: <code v-for="m in run.request.missing" :key="m">{{ '{' }}{{ '{' }}{{ m }}{{ '}' }}{{ '}' }}</code> — выполните блок, который его даёт (или задайте переменную в разделе HTTP)</p>
     <div v-if="run && run.state !== 'run' && (run.response || run.error)" class="bh-res">
       <div class="bh-rh">

@@ -5,8 +5,9 @@
  */
 import { AUDIO_EMBED, IMAGE_EMBED } from './vault'
 import { parseInfo, runKindOf } from './runbook'
+import { LOOP_CLOSE, loopStartAt } from './loop'
 
-export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser'
+export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser' | 'regress' | 'files' | 'sql' | 'tpl' | 'loop' | 'loopEnd'
 export interface NoteBlock {
   kind: BlockKind
   /** The first and the last line (1-based, inclusive). */
@@ -16,7 +17,7 @@ export interface NoteBlock {
   src: string
 }
 
-const FENCE_KINDS = new Set(['chart', 'mermaid', 'toc', 'work', 'board'])
+const FENCE_KINDS = new Set(['chart', 'mermaid', 'toc', 'work', 'board', 'regress', 'files'])
 /**
  * A table's own settings, kept in a comment over it (invisible in other Markdown viewers): column widths, the
  * columns summed up, the merged cells — `<!-- qa:table widths=120,0 sums=1 merge=0.1.2.1;3.0.1.2 -->`.
@@ -31,6 +32,18 @@ export function findBlocks(lines: string[]): NoteBlock[] {
   let i = 0
   while (i < lines.length) {
     const l = lines[i]
+    // a loop: its start (the comment and its head's code) and its end — the blocks between are the note's as any
+    const loop = loopStartAt(lines, i)
+    if (loop) {
+      out.push({ kind: 'loop', line0: i + 1, line1: loop.line1, src: lines.slice(i, loop.line1).join('\n') })
+      i = loop.line1
+      continue
+    }
+    if (LOOP_CLOSE.test(l)) {
+      out.push({ kind: 'loopEnd', line0: i + 1, line1: i + 1, src: l })
+      i++
+      continue
+    }
     const fence = /^(`{3,}|~{3,})\s*([\w-]*)([^`]*)$/.exec(l)
     if (fence) {
       // find the closing fence
@@ -90,6 +103,14 @@ export interface TableModel {
   sums?: number[]
   /** Merged cells of the body: from row r, column c — rs rows, cs columns (the text is the first cell's). */
   merges?: Merge[]
+  /** «Из переменной»: the value it is filled from (a path into the note's context — rows, resp.body.data). */
+  from?: string
+  /** What was filled last (its hash): the table not edited since — filled again when the value changes. */
+  filled?: string
+  /** The cells' text wrapped (by default — one line each, cut with «…»; copied whole). */
+  wrap?: boolean
+  /** The value it was filled from (its hash): changed while the table was not on screen — seen when it is. */
+  srcHash?: string
 }
 export interface Merge {
   r: number
@@ -137,6 +158,10 @@ export function parseTable(src: string): TableModel {
       const ss = [...new Set(kv.sums.split(',').map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x < n))]
       if (ss.length) t.sums = ss.sort((a, b) => a - b)
     }
+    if (kv.var && /^[A-Za-z_$][\w$.[\]"'-]*$/.test(kv.var)) t.from = kv.var
+    if (kv.fill) t.filled = kv.fill
+    if (kv.src) t.srcHash = kv.src
+    if (kv.wrap === '1') t.wrap = true
     if (kv.merge) {
       const ms = kv.merge
         .split(';')
@@ -277,7 +302,9 @@ export function deleteColAt(t: TableModel, at: number): void {
   t.sums = t.sums?.filter((s) => s !== at).map((s) => (s > at ? s - 1 : s))
   if (!t.sums?.length) t.sums = undefined
 }
-const cellText = (c: string) => c.replace(/\|/g, '\\|').replace(/\n/g, '<br>').trim()
+const cellText = (c: string) => c.replace(/\r\n?/g, '\n').replace(/\|/g, '\\|').replace(/\n/g, '<br>').trim()
+/** A cell as it comes back from the file (its edges trimmed, its line breaks — \n): what a filled table's hash is of. */
+export const normCell = (c: string) => c.replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n').trim()
 /** A table as Markdown, its columns lined up (it reads as a table in any editor). */
 export function tableMd(t: TableModel): string {
   const n = t.head.length
@@ -294,9 +321,45 @@ export function tableMd(t: TableModel): string {
     ...(t.widths?.some((x) => x > 0) ? [`widths=${t.widths.slice(0, n).map((x) => Math.round(x)).join(',')}`] : []),
     ...(t.sums?.length ? [`sums=${t.sums.filter((s) => s < n).join(',')}`] : []),
     ...(t.merges?.length ? [`merge=${t.merges.map((m) => `${m.r}.${m.c}.${m.rs}.${m.cs}`).join(';')}`] : []),
+    ...(t.wrap ? ['wrap=1'] : []),
+    ...(t.from ? [`var=${t.from}`, ...(t.filled ? [`fill=${t.filled}`] : []), ...(t.srcHash ? [`src=${t.srcHash}`] : [])] : []),
   ]
   const head = meta.length ? [`<!-- qa:table ${meta.join(' ')} -->`] : []
   return [...head, row(all[0]), sep, ...all.slice(1).map(row)].join('\n')
+}
+/**
+ * A value as a table's head and rows (its cells — text): a list of objects — a row each, every key met a column (in
+ * the order met; a key a row lacks — an empty cell); a list of plain values — one column; one object — its keys the
+ * columns, one row; a list of lists — as they are; a plain value — one cell. Objects inside cells — as JSON.
+ */
+export function valueTable(v: unknown): { head: string[]; rows: string[][] } {
+  const cell = (x: unknown) => normCell(x === null || x === undefined ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x))
+  const isObj = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)
+  const objects = (xs: Array<Record<string, unknown>>) => {
+    const head: string[] = []
+    const seen = new Set<string>()
+    for (const x of xs) for (const k of Object.keys(x)) if (!seen.has(k)) (seen.add(k), head.push(k))
+    return { head: head.length ? head : ['значение'], rows: xs.map((x) => (head.length ? head.map((k) => cell(x[k])) : [''])) }
+  }
+  if (Array.isArray(v)) {
+    if (v.length && v.every(isObj)) return objects(v)
+    if (v.length && v.every((x) => Array.isArray(x))) {
+      const n = Math.max(1, ...v.map((x) => (x as unknown[]).length))
+      return { head: Array.from({ length: n }, (_, i) => `Столбец ${i + 1}`), rows: v.map((x) => Array.from({ length: n }, (_, i) => cell((x as unknown[])[i]))) }
+    }
+    return { head: ['значение'], rows: v.map((x) => [cell(x)]) }
+  }
+  if (isObj(v)) return objects([v])
+  return { head: ['значение'], rows: [[cell(v)]] }
+}
+/** A table's content in a few letters (was it edited since it was filled?). */
+export function tableHash(t: { head: string[]; rows: string[][] }): string {
+  return textHash(JSON.stringify([t.head, t.rows]))
+}
+export function textHash(s: string): string {
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
 }
 export const newTable = (cols: number, rows: number): TableModel => ({
   head: Array.from({ length: cols }, (_, i) => `Столбец ${i + 1}`),
