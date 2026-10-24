@@ -8,7 +8,8 @@ export const ICON_COPY = svg('<rect width="14" height="14" x="8" y="8" rx="2" ry
 export const ICON_CHECK = svg('<path d="M20 6 9 17l-5-5"/>', 15)
 export const ICON_MIC = svg('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>', 14)
 export const ICON_EXPAND = svg('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>', 14)
-export const ICON_FORMAT = svg('<path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/>', 15)
+export const ICON_COMMENT = svg('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>', 12)
+export const ICON_FORMAT =svg('<path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/>', 15)
 
 /**
  * A small icon button of a widget: it never takes the editor's focus; a click runs its action (`isolate` — the click

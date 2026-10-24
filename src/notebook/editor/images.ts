@@ -1,6 +1,7 @@
 import { EditorView, WidgetType } from '@codemirror/view'
 import { imageEmbed } from '@shared/vault'
-import { draggedImageUrl, hasImages, imageUrl, takeImages } from '@renderer/lib/notebook'
+import { draggedImageUrl, hasImages, takeImages } from '@renderer/lib/notebook'
+import { followImage } from '@nb/workspace/noteMedia'
 import { editorHost } from './editorHost'
 import { ICON_EXPAND, ICON_TRASH, widgetButton } from './icons'
 
@@ -46,6 +47,9 @@ function removeLineOf(v: EditorView, text: string): void {
   }
 }
 
+/** A picture's follow (until it is here) stopped when its view is gone. */
+const stops = new WeakMap<HTMLElement, () => void>()
+
 /** A picture of the note: as wide as the note at most (smaller ones — their own size). */
 export class ImageWidget extends WidgetType {
   constructor(
@@ -66,16 +70,28 @@ export class ImageWidget extends WidgetType {
     img.draggable = false
     img.onload = () => v.requestMeasure()
     img.onclick = () => img.src && showFullSize(img.src)
-    void imageUrl(this.rel)
-      .then((u) => (img.src = u))
-      .catch(() => {
-        box.classList.add('missing')
-        box.textContent = 'Изображение не найдено'
-        box.title = this.rel
-      })
     // (inline blocks: a block in a line would get CodeMirror's empty line boxes around it)
     const inner = document.createElement('span')
     inner.className = 'cm-img-in'
+    const missing = document.createElement('span')
+    missing.textContent = 'Изображение не найдено'
+    // not here (yet): said so — and why (a shared note's picture: what its sync said); it comes — it is shown
+    const stop = followImage(this.rel, {
+      shown: (u) => {
+        img.src = u
+        box.classList.remove('missing')
+        missing.remove()
+        inner.hidden = false
+      },
+      missing: (why) => {
+        missing.textContent = why ? `Изображение не найдено — ${why}` : 'Изображение не найдено'
+        box.classList.add('missing')
+        box.title = this.rel
+        inner.hidden = true
+        box.append(missing)
+      },
+    })
+    stops.set(box, stop)
     const bar = document.createElement('span')
     bar.className = 'cm-img-bar'
     bar.append(
@@ -85,6 +101,9 @@ export class ImageWidget extends WidgetType {
     inner.append(img, bar)
     box.append(inner)
     return box
+  }
+  destroy(dom: HTMLElement): void {
+    stops.get(dom)?.()
   }
   ignoreEvent(): boolean {
     return true

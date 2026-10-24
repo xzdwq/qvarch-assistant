@@ -10,7 +10,7 @@ import type { CommandContext } from '../../src/notebook/commands/command'
 describe('block registry', () => {
   it('has one spec per kind, keyed by its kind', () => {
     for (const [k, s] of Object.entries(BLOCK_SPECS)) expect(s.kind).toBe(k)
-    expect(ALL_BLOCK_SPECS).toHaveLength(22)
+    expect(ALL_BLOCK_SPECS).toHaveLength(24)
     expect([...RUNNABLE_KINDS].sort()).toEqual(['code', 'http', 'pw', 'sql', 'tpl'])
   })
   it('a fence is recognized by one spec at most', () => {
@@ -71,7 +71,7 @@ describe('«@» commands', () => {
   it('every command is in the menu once, in its order', () => {
     expect(unorderedCommandIds()).toEqual([])
     expect(new Set(MENU_ORDER).size).toBe(MENU_ORDER.length)
-    expect(NOTE_COMMANDS.map((c) => c.title)).toEqual(['Аудио', 'Эмодзи', 'HTTP-запрос', 'Playwright', 'Запрос к БД', 'Перебор параметров запроса', 'Тестовые файлы', 'Регрессия', 'Браузер', 'Цикл', 'Текст по шаблону', 'Код JS / TS', 'Данные JSON', 'Значение переменной', 'Работа', 'Доска', 'Таблица', 'График', 'Схема', 'Выноска', 'Свёртка', 'Оглавление', 'Изображение', 'Чек-лист', 'Код', 'Разделитель', 'Дата'])
+    expect(NOTE_COMMANDS.map((c) => c.title)).toEqual(['Аудио', 'Эмодзи', 'HTTP-запрос', 'Playwright', 'Запрос к БД', 'Перебор параметров запроса', 'Тестовые файлы', 'Регрессия', 'Браузер', 'Цикл', 'Текст по шаблону', 'Код JS / TS', 'Данные JSON', 'Значение переменной', 'Работа', 'Доска', 'Чат', 'Таблица', 'График', 'Схема', 'Выноска', 'Свёртка', 'Оглавление', 'Изображение', 'Чек-лист', 'Код', 'Разделитель', 'Дата'])
   })
   it('finds commands by a word start, Russian or English', () => {
     expect(matchCommands('ауд').map((c) => c.id)).toEqual(['audio'])

@@ -68,6 +68,30 @@ const setList = (el: unknown) => (props.menu.listEl = (el as HTMLElement | null)
           </span>
           <span></span>
         </button>
+        <button v-else-if="'chatFeed' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon name="inbox" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">Лента чатов</span>
+            <span class="pk-m">Все чаты и обсуждения в одном блоке: список слева, переписка справа</span>
+          </span>
+          <span></span>
+        </button>
+        <button v-else-if="'chatRoom' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon name="chat" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.chatRoom.title }}</span>
+            <span class="pk-m">Чат · {{ r.chatRoom.members.map((m) => m.name).join(', ') }} — встанет в заметку, писать можно прямо здесь</span>
+          </span>
+          <span></span>
+        </button>
+        <button v-else-if="'newChat' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon name="plus" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.newChat ? `Новый чат «${r.newChat}»` : 'Новый чат' }}</span>
+            <span class="pk-m">Общая заметка — с её участниками, иначе — пока только вы (людей добавите в шапке чата); название — словами после «@чат»</span>
+          </span>
+          <span></span>
+        </button>
         <button v-else-if="'ev' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
           <span class="pk-ic" :style="{ color: kindColor(r.ev.kind), background: `color-mix(in srgb, ${kindColor(r.ev.kind)} 16%, transparent)` }"><Icon :name="kindIcon(r.ev.kind)" :size="14" /></span>
           <span class="pk-b">

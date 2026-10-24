@@ -1,6 +1,7 @@
 import { createApp, type App } from 'vue'
 import { EditorView, WidgetType } from '@codemirror/view'
 import { audioUrl, fixDuration } from '@renderer/lib/notebook'
+import { whenMediaArrives } from '@nb/workspace/noteMedia'
 import ThinkingOrb from '@renderer/components/ThinkingOrb.vue'
 import { editorHost } from './editorHost'
 import { ICON_CAPTIONS, ICON_MIC, ICON_TRASH, widgetButton } from './icons'
@@ -31,12 +32,18 @@ export class AudioWidget extends WidgetType {
     a.controls = true
     a.preload = 'metadata'
     fixDuration(a)
-    void audioUrl(this.rel)
-      .then((u) => (a.src = u))
-      .catch(() => {
-        box.classList.add('missing')
-        box.title = 'Файл записи не найден'
+    const load = () =>
+      audioUrl(this.rel).then((u) => {
+        a.src = u
+        box.classList.remove('missing')
+        box.title = ''
       })
+    // not here (yet): said so; a shared note's recording comes from the server — then it plays
+    load().catch(() => {
+      box.classList.add('missing')
+      box.title = 'Файл записи не найден'
+      void whenMediaArrives(this.rel).then(load).catch(() => undefined)
+    })
     // transcribing: the orb; else the button (the text goes on the line below the player)
     let tr: HTMLElement
     if (this.state === 'run') {

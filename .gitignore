@@ -3,3 +3,6 @@ out/
 dist/
 *.log
 *.tsbuildinfo
+# the transport server's local settings (the registry, passwords) — never committed
+server/.env
+server/deploy/.env

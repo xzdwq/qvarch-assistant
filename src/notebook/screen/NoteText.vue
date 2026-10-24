@@ -6,6 +6,7 @@ import MdEditor from '@renderer/components/MdEditor.vue'
 import { docs, setText } from '@nb/workspace/noteDocs'
 import { layout, type Pane } from '@nb/workspace/paneLayout'
 import { dropAudio } from '@nb/workspace/noteSync'
+import { readonlyPath } from '@nb/workspace/sharedDocs'
 import { dirOf, noteName } from '@nb/domain/notePaths'
 import { useNotebookScreen } from './notebookScreen'
 import { NoteEditors } from './noteEditors'
@@ -93,6 +94,7 @@ async function onTitleKey(e: KeyboardEvent): Promise<void> {
         :ref="setEditor"
         :text="docs.get(path)!.text"
         :path="path"
+        :readonly="readonlyPath(path)"
         @change="(t) => setText(path, t)"
         @wiki="(w) => openWiki(w)"
         @transcribe="(a) => transcribeInto(path, a)"

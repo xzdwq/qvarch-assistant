@@ -147,7 +147,7 @@ const planItems = computed<MenuItem[]>(() => [
 
 <template>
   <div class="bs tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:min-w-0 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-sql) tw:rounded-[8px] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :report="report" icon="database" kind="SQL" :name="parts.info.name" :run="run" name-placeholder="строки" @rename="rename" @run="go()" @stop="stop" />
+    <RunHead :report="report" send="sql" icon="database" kind="SQL" :name="parts.info.name" :run="run" name-placeholder="строки" @rename="rename" @run="go()" @stop="stop" />
     <div class="bs-bar tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap tw:flex-wrap">
       <select class="db tw:h-26 tw:min-w-0 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:max-w-360" :value="parts.info.db ?? ''" :title="conn ? `${kindTitle(conn.kind)} · ${connWhere(conn)}` : 'Через какое подключение'" @change="setDb(($event.target as HTMLSelectElement).value)">
         <option value="" disabled>подключение…</option>

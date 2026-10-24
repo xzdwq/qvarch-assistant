@@ -93,6 +93,16 @@ function setOpened(p: OpenPopover, on: boolean): void {
   else window.removeEventListener('keydown', onEsc, true)
 }
 
+/**
+ * Something open that is not a popover (a title edited in place): Esc closes it as the last thing opened, wherever
+ * the focus is (a popover opened over it — that one first).
+ */
+export function useEscLayer(active: Ref<boolean>, close: () => void): void {
+  const entry: OpenPopover = { close, esc: () => true }
+  watch(active, (on) => setOpened(entry, on), { immediate: true })
+  onBeforeUnmount(() => setOpened(entry, false))
+}
+
 /** The popover a component is inside of (its slot / panel): popovers opened in it count as part of it. */
 const LAYER: InjectionKey<PopoverLayer<Node>> = Symbol('popover')
 

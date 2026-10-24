@@ -22,12 +22,22 @@ import { setupLinks } from '../lib/links'
 import { startBrowser } from '../lib/browser'
 import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
+import { startChat } from '../lib/chat'
+import { startSharedFolders } from '@nb/workspace/sharedFolders'
+import { startSharedRunResults } from '@nb/workspace/sharedRunResults'
+import { startSharedAttachments } from '@nb/workspace/sharedAttachments'
 import Popover from '../components/Popover.vue'
 setupLinks()
 // the browser's news from the start (a tab the app opens is placed even before the section is first shown)
 startBrowser()
 watchPwRec()
 startMcpBridge()
+// the chats: their news from the start (a notification may open a chat's document any time)
+startChat()
+// the shared folders kept in step from the start (not only once the notebook is opened)
+startSharedFolders()
+startSharedRunResults()
+startSharedAttachments()
 
 import { openHttp, openPlace, orderedViews, setMenu, view, VIEWS, type View } from '../lib/views'
 import { placeOf } from '@shared/places'

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { EditorState, Transaction } from '@codemirror/state'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { commentMarks, setCommentMarks } from '@nb/editor/comments'
+import { commentsOf } from '@nb/workspace/noteComments'
+import { Compartment, EditorState, Transaction } from '@codemirror/state'
+import { splicesOf } from '@shared/textSplice'
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
@@ -40,11 +43,13 @@ import { eventsNow, eventsTick } from '../lib/noteEvents'
 // several roots (the editor, its menus): the classes it is given go onto the editor's box
 defineOptions({ inheritAttrs: false })
 /** `rec`: a recording into this note is going on (its place is shown in the text). */
-const props = defineProps<{ text: string; rec?: { sec: number; level: number }; path?: string }>()
+const props = defineProps<{ text: string; rec?: { sec: number; level: number }; path?: string; readonly?: boolean }>()
 const emit = defineEmits<{ change: [text: string]; wiki: [target: string]; transcribe: [audio: string]; dropAudio: [audio: string]; toEvent: [text: string, at: { from: number; to: number }]; exitUp: []; warn: [text: string]; record: []; pickImage: []; stopRec: [] }>()
 
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
+/** Whether the text may be typed in (a shared note of a reader's — not). */
+const readOnly = new Compartment()
 const getView = () => view
 
 /** What the extensions ask of this component: the note's path, the events they raise. */
@@ -91,6 +96,7 @@ onMounted(() => {
       doc: props.text,
       extensions: [
         hostApi,
+        readOnly.of(EditorState.readOnly.of(!!props.readonly)),
         history(),
         lineNumbers(),
         highlightActiveLineGutter(),
@@ -111,6 +117,7 @@ onMounted(() => {
         imagePasteAndDrop,
         commandMenuExtensions,
         noteComponents,
+        commentMarks,
         loopBands,
         componentGuard,
         componentTail,
@@ -169,20 +176,41 @@ watch(
 watch(eventsTick, redraw)
 watch(() => [...transcribing.entries()].join(), redraw)
 
-// the same note changed elsewhere (another pane, a transcript, a reload): only the changed middle is replaced
+// the same note changed elsewhere (another pane, a transcript, a reload, someone else in a shared note): only the
+// changed middle is replaced, out of this editor's undo (Ctrl+Z takes back one's own edits only)
 watch(
   () => props.text,
   (text) => {
     if (!view) return
-    const cur = view.state.doc.toString()
-    if (cur === text) return
-    let a = 0
-    while (a < cur.length && a < text.length && cur[a] === text[a]) a++
-    let b = 0
-    while (b < cur.length - a && b < text.length - a && cur[cur.length - 1 - b] === text[text.length - 1 - b]) b++
-    view.dispatch({ changes: { from: a, to: cur.length - b, insert: text.slice(a, text.length - b) } })
+    // each changed place apart: the cursor and the marks between them stay where they are
+    const ss = splicesOf(view.state.doc.toString(), text)
+    if (ss.length) view.dispatch({ changes: ss.map((s) => ({ from: s.at, to: s.at + s.del, insert: s.ins })), annotations: Transaction.addToHistory.of(false) })
   },
 )
+// a shared note one may only read: no typing
+watch(
+  () => !!props.readonly,
+  (ro) => view?.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(ro)) }),
+)
+// a shared note's comments: their open ones' places marked (they move with anyone's edits)
+const commentPlaces = computed(() =>
+  props.path ? commentsOf(props.path).flatMap((c) => (c.at && !c.at.gone && !c.room.resolved ? [{ room: c.room.id, from: c.at.from, to: c.at.to }] : [])) : [],
+)
+watch(
+  () => JSON.stringify(commentPlaces.value),
+  () => view?.dispatch({ effects: setCommentMarks.of(commentPlaces.value) }),
+)
+onMounted(() => view?.dispatch({ effects: setCommentMarks.of(commentPlaces.value) }))
+/** A place of this note shown (a comment's «к тексту»): selected and scrolled to. */
+function onGoto(e: Event): void {
+  const d = (e as CustomEvent<{ path: string; from: number; to: number }>).detail
+  if (!view || d.path !== props.path) return
+  const len = view.state.doc.length
+  view.dispatch({ selection: { anchor: Math.min(d.from, len), head: Math.min(d.to, len) }, scrollIntoView: true })
+  view.focus()
+}
+onMounted(() => window.addEventListener('qa:note-goto', onGoto))
+onBeforeUnmount(() => window.removeEventListener('qa:note-goto', onGoto))
 
 defineExpose({
   focus: () => view?.focus(),

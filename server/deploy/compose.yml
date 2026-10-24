@@ -1,0 +1,43 @@
+# The transport server with its own PostgreSQL. On the server, next to this file — `.env` (see .env.example):
+#   docker compose pull && docker compose up -d
+name: qvarch
+
+services:
+  db:
+    image: ${QA_DB_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qa
+      POSTGRES_USER: qa
+      POSTGRES_PASSWORD: ${QA_DB_PASSWORD:?QA_DB_PASSWORD is not set in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa -d qa"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # the database is not published: only the transport reaches it
+
+  transport:
+    image: ${QA_IMAGE:?QA_IMAGE is not set in .env}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qa:${QA_DB_PASSWORD}@db:5432/qa
+      QA_PORT: "3000"
+      QA_ACCESS_CODE: ${QA_ACCESS_CODE:-}
+    ports:
+      - "${QA_PUBLISH_PORT:-3000}:3000"
+
+networks:
+  default:
+    ipam:
+      config:
+        # a range used nowhere in your network (the default Docker ranges may overlap a corporate one)
+        - subnet: ${QA_SUBNET:?QA_SUBNET is not set in .env}
+
+volumes:
+  db:

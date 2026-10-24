@@ -4,6 +4,8 @@ import { boardSpec } from './board/spec'
 import { browserSpec } from './browser/spec'
 import { calloutSpec } from './callout/spec'
 import { chartSpec } from './chart/spec'
+import { chatSpec } from './chat/spec'
+import { chatfeedSpec } from './chatfeed/spec'
 import { codeSpec } from './code/spec'
 import { dataSpec } from './data/spec'
 import { filesSpec } from './files/spec'
@@ -37,6 +39,8 @@ export const BLOCK_SPECS = {
   audio: audioSpec,
   image: imageSpec,
   board: boardSpec,
+  chat: chatSpec,
+  chatfeed: chatfeedSpec,
   http: httpSpec,
   code: codeSpec,
   data: dataSpec,

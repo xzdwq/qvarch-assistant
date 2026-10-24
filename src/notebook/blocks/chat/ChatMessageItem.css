@@ -1,0 +1,24 @@
+/* A message's bubble as messengers draw it: its own colour, a tail on the last one of a group (scoped). */
+.bubble {
+  background: var(--panel-3);
+}
+.bubble.mine {
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+}
+/* the tail: a small corner below, on the author's side */
+.bubble.tail::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 12px;
+  background: inherit;
+}
+.bubble.tail:not(.mine)::after {
+  left: -6px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.bubble.tail.mine::after {
+  right: -6px;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}

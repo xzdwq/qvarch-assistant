@@ -5,13 +5,14 @@ import { RECORDED_SET, type TestFile, type TestFileSet } from '@shared/testFiles
 import { DEFECTS, emptySpec, guessColumn, isExpectation, type CellType, type XSpec } from '@shared/excelGen'
 import Icon from '@renderer/components/Icon.vue'
 import GenPicker from './GenPicker.vue'
+import { useSharedFiles } from './useSharedFiles'
 
 /**
  * «Тестовые файлы»: a set of files a scenario uploads (kept with the notebook) — added from the disk or dropped
  * here, recorded ones in «Записанные»; each marked with what it should lead to (taken / refused) and a note.
  * A scenario with an upload runs over a set by «Проверить ▾ → Прогнать с разными файлами».
  */
-const props = defineProps<{ src: string; onChange?: (src: string) => void }>()
+const props = defineProps<{ src: string; path?: string; onChange?: (src: string) => void }>()
 /** The block's own: its set, the generator's spec and faults picked (kept — the files can be made again). */
 interface Cfg {
   set: string
@@ -43,6 +44,8 @@ async function load(): Promise<void> {
 }
 onMounted(load)
 watch(set, load)
+// a shared note: the others' files of this set shown, each fetched by its button
+const others = useSharedFiles(() => props.path ?? '', () => set.value, files, load)
 // the window back — the files may have been changed outside (a recording, the folder)
 onMounted(() => window.addEventListener('focus', load))
 
@@ -210,6 +213,18 @@ const counts = computed(() => ({ ok: files.value.filter((f) => f.expect === 'ok'
         <span class="muted tw:text-muted">корректный + по файлу на каждую ошибку (и на каждую колонку, где ошибка про колонку); файлы с тем же именем пересоздаются</span>
       </div>
       <p v-if="made" class="ok-msg tw:flex tw:items-center tw:gap-6 tw:m-0 tw:text-up-fg"><Icon name="check" :size="12" />{{ made }}</p>
+    </div>
+
+    <!-- a shared note: the files the others have and this computer has not -->
+    <div v-if="others.theirs.value.length" class="tw:flex tw:flex-col tw:gap-4 tw:p-8 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg">
+      <span class="tw:text-text-2">У других участников — загрузите себе нужные:</span>
+      <div v-for="t in others.theirs.value" :key="t.file.name" class="tw:grid tw:grid-cols-[minmax(0,1fr)_auto_auto_auto] tw:items-center tw:gap-10">
+        <span class="tw:truncate tw:text-text" :title="t.file.note || t.file.name">{{ t.file.name }}</span>
+        <span class="tw:text-muted tw:font-data tw:text-[11.5px] tw:whitespace-nowrap">{{ size(t.file.size) }}</span>
+        <span class="tw:text-muted tw:whitespace-nowrap">{{ t.by }}</span>
+        <button class="sm tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:whitespace-nowrap" :disabled="!!others.fetching.value" @click="others.fetchFile(t)"><Icon name="download" :size="12" />{{ others.fetching.value === t.file.name ? 'Загружаю…' : 'Загрузить себе' }}</button>
+      </div>
+      <p v-if="others.error.value" class="tw:m-0 tw:text-down-fg">{{ others.error.value }}</p>
     </div>
 
     <div v-if="!files.length" class="tf-empty tw:flex tw:flex-col tw:items-center tw:gap-4 tw:p-16 tw:border tw:border-dashed tw:border-border-2 tw:rounded-[6px] tw:text-text-2 tw:text-center">

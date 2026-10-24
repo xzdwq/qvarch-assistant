@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { isName } from '@nb/domain/blockInfo'
 import type { BlockRun } from '@nb/engine'
+import { sendsUnrun, type ShotKind } from '@nb/engine/chatAttach'
 import Icon from '@renderer/components/Icon.vue'
+import SendToChat from './SendToChat.vue'
 import VarNameField from './VarNameField.vue'
 
 /**
  * The head of a runnable block: what it is, its name (what it publishes into the note's context — {{name}}),
  * ▶ / ■, and how its last run went.
  */
-const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string }>(), { canRun: true })
+/** `send` — the kind it goes into a chat as («В чат»; none — not sent); `src` — the block's text (a kind sent as written). */
+const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string; send?: ShotKind; src?: string }>(), { canRun: true, src: '' })
+/** «В чат» shown: a result to send (a run done), or a kind that goes as written. */
+const sendable = computed(() => !!props.send && (sendsUnrun(props.send) || (!!props.run && props.run.state !== 'run')))
 const emit = defineEmits<{ rename: [name: string | undefined]; run: []; stop: [] }>()
 const draft = ref(props.name ?? '')
 watch(
@@ -47,9 +52,10 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
     <slot />
     <span class="grow tw:flex-1"></span>
     <span v-if="run?.state === 'run'" class="rs run tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-accent-fg"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-accent tw:animate-[RunHead-pulse_0.9s_infinite]"></i>выполняется…</span>
-    <span v-else-if="run?.state === 'ok'" class="rs ok tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-up-fg" :title="new Date(run.at).toLocaleString('ru-RU')"><Icon name="check" :size="12" />{{ msText(run.ms) }} · {{ ago(run.at) }}</span>
-    <span v-else-if="run?.state === 'error'" class="rs err tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-down-fg" :title="run.error">ошибка · {{ ago(run.at) }}</span>
+    <span v-else-if="run?.state === 'ok'" class="rs ok tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-up-fg" :title="new Date(run.at).toLocaleString('ru-RU')"><Icon name="check" :size="12" />{{ msText(run.ms) }} · {{ ago(run.at) }}<template v-if="run.by"> · {{ run.by }}</template></span>
+    <span v-else-if="run?.state === 'error'" class="rs err tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-down-fg" :title="run.error">ошибка · {{ ago(run.at) }}<template v-if="run.by"> · {{ run.by }}</template></span>
     <button v-if="report && run && run.state !== 'run'" class="rc tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-muted tw:hover:not-[&.ok]:text-text tw:[&.ok]:border-(--run-copied) tw:[&.ok]:text-(--run-copied) tw:hover:enabled:bg-hover tw:hover:enabled:not-[&.ok]:border-border-3" :class="{ ok: copied }" title="Скопировать отчёт: что проверено, шаги, результат, ошибка — готовым текстом (в чат, Jira, письмо)" @mousedown.prevent @click="copyReport"><Icon :name="copied ? 'check' : 'clipboard'" :size="12" /></button>
+    <SendToChat v-if="send && sendable" :kind="send" :run="run" :src="src" :title="name ? `${kind} · ${name}` : kind" />
     <button v-if="run?.state === 'run'" class="rb stop tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-[6px] tw:text-[12px] tw:bg-stop tw:text-white tw:hover:enabled:border-border-3" title="Остановить" @mousedown.prevent @click="emit('stop')"><Icon name="stop" :size="11" />Стоп</button>
     <button v-else-if="canRun !== false" class="rb tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-[6px] tw:bg-accent tw:text-on-accent tw:text-[12px] tw:hover:enabled:bg-accent-hi" title="Выполнить (Ctrl+Enter)" @mousedown.prevent @click="emit('run')"><Icon name="play" :size="11" />Выполнить</button>
   </div>

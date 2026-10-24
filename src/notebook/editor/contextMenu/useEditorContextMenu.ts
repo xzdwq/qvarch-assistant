@@ -1,5 +1,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { EditorView } from '@codemirror/view'
+import { canComment, newComment } from '@nb/workspace/noteComments'
+import { editorHost } from '../editorHost'
 import { selectionLinesAs, selectionToCode, wrapSelection } from '../formatting'
 
 /**
@@ -7,11 +9,11 @@ import { selectionLinesAs, selectionToCode, wrapSelection } from '../formatting'
  * styles (code, bold, heading, list). Its state for EditorContextMenu (a popover at the click: closed by a press
  * elsewhere, Esc, scrolling), its opening as an editor extension.
  */
-export type ContextAction = 'cut' | 'copy' | 'paste' | 'all' | 'event' | 'code' | 'bold' | 'heading' | 'list'
+export type ContextAction = 'cut' | 'copy' | 'paste' | 'all' | 'event' | 'comment' | 'code' | 'bold' | 'heading' | 'list'
 
 export function useEditorContextMenu(getView: () => EditorView | undefined, toEvent: (text: string, at: { from: number; to: number }) => void) {
-  /** Open: where it was asked for, and whether there is a selection. */
-  const open = ref<{ x: number; y: number; sel: boolean }>()
+  /** Open: where it was asked for, whether there is a selection, whether it may be commented (a shared note). */
+  const open = ref<{ x: number; y: number; sel: boolean; comment: boolean }>()
 
   const opening = EditorView.domEventHandlers({
     contextmenu(e, v) {
@@ -21,7 +23,7 @@ export function useEditorContextMenu(getView: () => EditorView | undefined, toEv
       const r = v.state.selection.main
       if (at != null && (r.empty || at < r.from || at > r.to)) v.dispatch({ selection: { anchor: at } })
       v.focus()
-      open.value = { x: e.clientX, y: e.clientY, sel: !v.state.selection.main.empty }
+      open.value = { x: e.clientX, y: e.clientY, sel: !v.state.selection.main.empty, comment: canComment(v.state.facet(editorHost).notePath()) }
       return true
     },
   })
@@ -60,6 +62,9 @@ export function useEditorContextMenu(getView: () => EditorView | undefined, toEv
         break
       case 'event':
         if (text.trim()) toEvent(text.trim(), { from: r.from, to: r.to })
+        return
+      case 'comment':
+        newComment(v.state.facet(editorHost).notePath(), r.from, r.to)
         return
       case 'bold':
         wrapSelection('**')(v)

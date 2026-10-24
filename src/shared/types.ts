@@ -3,6 +3,7 @@ import type { OutlookSource } from './outlook'
 import type { Contrast } from './contrast'
 import type { AudioNoteKind } from './tracker/constants'
 import type { AttrDef, EntryAttrs } from './tracker/attributes'
+import type { ChatPrefs, TransportPrefs } from './transport/constants'
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -236,6 +237,9 @@ export interface Settings {
   outlook: { source: OutlookSource; clientId?: string; tenantId?: string; syncMin: number; meetings: boolean; presence: boolean }
   /** Voice notes: local speech-to-text (whisper) — on/off, right after recording, which model; micId — the microphone ('' — the system's default). */
   voice: { enabled: boolean; autoTranscribe: boolean; model: string; micId?: string }
+  /** The transport server (the access code is kept encrypted, not here) and the chat (shared/transport/constants). */
+  transport: TransportPrefs
+  chat: ChatPrefs
   idleThresholdSec: number
   sampleIntervalMs: number
   autoStart: boolean
@@ -256,6 +260,8 @@ export interface SettingsPatch {
   jira?: { clientId?: string; projects?: string[]; site?: string; syncMin?: number }
   outlook?: Partial<Settings['outlook']>
   voice?: { enabled?: boolean; autoTranscribe?: boolean; model?: string; micId?: string }
+  transport?: Partial<TransportPrefs>
+  chat?: Partial<ChatPrefs>
   idleThresholdSec?: number
   sampleIntervalMs?: number
   autoStart?: boolean

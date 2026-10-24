@@ -15,6 +15,11 @@ import type { LoopJob, LoopResult, PassResult } from '../notebook/domain/loop'
 import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
+import type { ChatFile } from './transport/chat'
+import type { TransportState } from './transport/constants'
+import type { ResultsPage, TransportEvent } from './transport/protocol'
+import type { SharedFolderLink } from './transport/sharedFolder'
+import type { MediaReport } from './transport/space'
 import type { VaultEntryKind, VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
 import type { TabletMsg, TabletPrefs, TabletState } from './tablet'
@@ -160,6 +165,42 @@ export interface QaApi {
   outlookLogin(): Promise<void>
   outlookLogout(): Promise<void>
   outlookSync(): Promise<void>
+  /** The transport server (Настройки → Сервер и чат): the connection's state, the access code (kept encrypted). */
+  transportState(): Promise<TransportState>
+  onTransport(cb: (s: TransportState) => void): () => void
+  transportSetCode(code: string): Promise<TransportState>
+  transportReconnect(): Promise<void>
+  /** A method of the server: chat, shared spaces, documents (renderer: lib/transport.ts types it by TransportMethods). */
+  serverCall(method: string, params: unknown): Promise<unknown>
+  /** A shared document's state as kept on this computer (Yjs, base64; '' — none) / kept. */
+  sharedLoad(doc: string): Promise<string>
+  sharedSave(doc: string, state: string): Promise<void>
+  /**
+   * A shared note's pictures, recordings, test files in step with the server: what it lacks sent, what this computer
+   * lacks fetched (`ways` — only one of them); the files fetched.
+   */
+  sharedMedia(space: string, rels: string[], ways?: { send?: boolean; fetch?: boolean }): Promise<MediaReport>
+  /** A shared note's run results: this device's sent (null — taken away) / what changed after a number fetched. */
+  sharedResultsPut(space: string, doc: string, entries: Record<string, unknown>): Promise<void>
+  sharedResultsGet(space: string, doc: string, since: number): Promise<ResultsPage>
+  /** A line into the shared notes' journal (data/shared.log) — what the window did with their files. */
+  sharedLog(line: string): void
+  /** A file sent into a chat (kept on the server and here): what a message carries of it. */
+  chatFilePut(room: string, name: string, mime: string, bytes: Uint8Array): Promise<ChatFile>
+  /** A chat's file: kept here, else fetched. */
+  chatFileGet(room: string, id: string): Promise<Uint8Array>
+  /** A chat's file saved where one picks (false — not saved). */
+  chatFileSave(room: string, id: string, name: string): Promise<boolean>
+  /** The note / board of the notebook that is this shared document, by its mark (never by name); '' — none. */
+  sharedFind(doc: string): Promise<string>
+  /** The shared folders of the notebook (their links: the space, where each document was last time). */
+  sharedFolders(): Promise<SharedFolderLink[]>
+  /** A folder's link kept (null — the folder is no longer shared). */
+  sharedFolderLink(dir: string, link: Omit<SharedFolderLink, 'dir'> | null): Promise<void>
+  /** The server's events: messages, new rooms, «печатает…», spaces, documents' edits and presence. */
+  onServer(cb: (ev: TransportEvent) => void): () => void
+  /** A chat to open in the feed (a click on a message's notification): its room. */
+  onChatOpen(cb: (room: string) => void): () => void
   jiraState(): Promise<JiraState>
   onJira(cb: (s: JiraState) => void): () => void
   /** Opens the Atlassian sign-in in the browser; resolves when connected. */
@@ -262,6 +303,8 @@ export interface QaApi {
   /** To the recycle bin. */
   vaultDelete(path: string): Promise<void>
   vaultSearch(q: string): Promise<VaultHit[]>
+  /** The notes that have this text as it is (a block's mark: a chat's room, a feed). */
+  vaultNotesWith(needle: string): Promise<string[]>
   /** The events mentioned in the notes: event id → the notes' paths. */
   eventMentions(): Promise<Record<string, string[]>>
   /** A recording for a note; its vault path (.audio/…). */

@@ -4,6 +4,8 @@ import Icon from '@renderer/components/Icon.vue'
 import { cssHex } from '@renderer/lib/cssColor'
 import { atPoint, openWhile, usePopover } from '@renderer/lib/usePopover'
 import { openFile } from '@nb/workspace/paneLayout'
+import { shareFolder } from '@nb/workspace/sharedFolders'
+import { remoteError } from '@shared/remoteError'
 import { useNotebookScreen } from './notebookScreen'
 import { QUICK_EMOJI } from '@nb/domain/noteFacts'
 
@@ -13,13 +15,22 @@ import { QUICK_EMOJI } from '@nb/domain/noteFacts'
  * click (the point already fitted into the window).
  */
 const props = defineProps<{ menu: { x: number; y: number; node?: VaultNode } }>()
-const { actions, transfer, editing, menu: treeMenu } = useNotebookScreen()
+const { actions, transfer, editing, menu: treeMenu, toast } = useNotebookScreen()
 const { newNote, newBoard, newFolder, pair, remove, setColor, setEmoji } = actions
 const { importDoc, exportDoc } = transfer
 const { startRename } = editing
 const { runOnNode, moreEmoji } = treeMenu
 const { panelRef, style } = usePopover(() => props.menu, { place: atPoint }, openWhile(treeMenu.treeMenu))
 const reveal = (p: string) => window.qa.vaultReveal(p)
+/** A folder shared; the code is given by «Совместная работа» of any of its notes. */
+async function sharePath(dir: string): Promise<void> {
+  try {
+    await shareFolder(dir)
+    toast.say('Папка общая — пригласите участников кнопкой «Совместная работа» у любой её заметки')
+  } catch (e) {
+    toast.say(remoteError(e))
+  }
+}
 /** The marks a node can take (styles/colors/notebook.css), as the hex kept in the vault. */
 const markColors = Array.from({ length: 7 }, (_, i) => cssHex(`--note-mark-${i + 1}`)).filter((c): c is string => !!c)
 </script>
@@ -31,6 +42,7 @@ const markColors = Array.from({ length: 7 }, (_, i) => cssHex(`--note-mark-${i +
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => newBoard(n?.path ?? ''))"><Icon name="presentation" :size="13" />Новая доска</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => newFolder(n?.path ?? ''))"><Icon name="folderPlus" :size="13" />Новый раздел</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => importDoc(n?.path ?? ''))"><Icon name="download" :size="13" />Импорт документа…</button>
+      <button v-if="menu.node" class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" title="Все заметки папки — общие: правка вместе, новые и перемещённые заметки видны всем участникам" @click="runOnNode((n) => sharePath(n!.path))"><Icon name="users" :size="13" />Открыть доступ к папке</button>
     </template>
     <template v-if="menu.node && !menu.node.dir">
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => openFile(n!.path))"><Icon name="note" :size="13" />Открыть</button>

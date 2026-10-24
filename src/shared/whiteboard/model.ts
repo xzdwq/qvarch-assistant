@@ -135,6 +135,8 @@ export interface Board {
   v: 1
   bg: BoardBg
   items: BoardItem[]
+  /** A shared board's document on the server (the same for every participant; kept through every edit). */
+  shared?: string
 }
 
 /** An axis-aligned box in world units. */

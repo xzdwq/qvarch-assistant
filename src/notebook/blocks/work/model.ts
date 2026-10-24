@@ -24,6 +24,10 @@ export interface WorkModel {
   view: WorkView
   /** Kinds not shown (calls, meetings…). */
   hide?: string[]
+  /** Whose work it is (a shared note: the device that made it — the others see its owner's work, not their own). */
+  owner?: string
+  /** The owner's name (as the others see it). */
+  by?: string
 }
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 /** The settings lines of a ```work fence, each written into the model when its value fits. */
@@ -43,6 +47,12 @@ const WORK_SETTINGS = {
   hide: (m: WorkModel, v: string) => {
     m.hide = v.split(/[,\s]+/).filter(Boolean)
   },
+  owner: (m: WorkModel, v: string) => {
+    if (/^[0-9a-f]{32}$/.test(v)) m.owner = v
+  },
+  by: (m: WorkModel, v: string) => {
+    if (v) m.by = v.slice(0, 60)
+  },
 } satisfies Record<string, (m: WorkModel, value: string) => void>
 type WorkSetting = keyof typeof WORK_SETTINGS
 const WORK_LINE = new RegExp(`^\\s*(${Object.keys(WORK_SETTINGS).join('|')})\\s*:\\s*(.*?)\\s*$`, 'i')
@@ -57,7 +67,7 @@ export function parseWork(src: string): WorkModel {
   return m
 }
 export const workMd = (m: WorkModel) =>
-  ['```work', `period: ${m.period}`, ...(m.period === 'custom' ? [`from: ${m.from ?? ''}`, `to: ${m.to ?? m.from ?? ''}`] : []), `view: ${m.view}`, ...(m.hide?.length ? [`hide: ${m.hide.join(', ')}`] : []), '```'].join('\n')
+  ['```work', `period: ${m.period}`, ...(m.period === 'custom' ? [`from: ${m.from ?? ''}`, `to: ${m.to ?? m.from ?? ''}`] : []), `view: ${m.view}`, ...(m.hide?.length ? [`hide: ${m.hide.join(', ')}`] : []), ...(m.owner ? [`owner: ${m.owner}`, ...(m.by ? [`by: ${m.by}`] : [])] : []), '```'].join('\n')
 const dayKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 /** The days of a period (local), from — to inclusive. */
 export function workRange(m: WorkModel, now = new Date()): { from: string; to: string } {

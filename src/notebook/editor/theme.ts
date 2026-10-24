@@ -116,6 +116,11 @@ const editorTheme = EditorView.theme(
     '.cm-lp-link': { color: 'var(--accent-fg)', textDecoration: 'underline', textDecorationColor: 'var(--editor-link-underline)', cursor: 'pointer' },
     '.cm-lp-bullet': { display: 'inline-block', width: '1.1em', color: 'var(--accent-hi)', fontWeight: '700' },
     '.cm-lp-check': { verticalAlign: '-0.12em', margin: '0 0.35em 0 0', width: '1em', height: '1em', accentColor: 'var(--accent)', cursor: 'pointer' },
+    // comments of a shared note: their places underlined, a sign on the margin
+    '.cm-comment': { backgroundColor: 'rgb(var(--accent-rgb) / 0.12)', borderBottom: '2px solid rgb(var(--accent-rgb) / 0.55)', cursor: 'pointer' },
+    '.cm-comment-gutter .cm-gutterElement': { padding: '0 2px', cursor: 'pointer' },
+    '.cm-comment-sign': { display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--accent-fg)' },
+    '.cm-lp-shared': { display: 'inline-block', padding: '0 7px', borderRadius: '4px', backgroundColor: 'rgb(var(--accent-rgb) / 0.14)', color: 'var(--accent-fg)', fontSize: '0.78em', lineHeight: '1.7' },
     '.cm-lp-hr': { display: 'inline-block', width: '100%', height: '0', borderTop: '1px solid var(--editor-rule)', verticalAlign: 'middle' },
     '.cm-lp-quote': { borderLeft: '3px solid rgb(var(--accent-rgb) / 0.6)', paddingLeft: '12px !important', color: 'var(--syntax-quote)' },
     '.cm-lp-code': { backgroundColor: 'var(--editor-code-bg)', fontFamily: 'var(--font-data) !important', fontSize: '0.88em', paddingLeft: '16px !important', paddingRight: '16px !important' },

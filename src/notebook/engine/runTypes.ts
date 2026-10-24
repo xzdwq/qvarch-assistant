@@ -20,11 +20,15 @@ export interface CtxItem {
   from: ValueSource
   /** The block that published it. */
   block: string
+  /** Someone else's (a shared note: the one who ran it). */
+  by?: string
 }
 /** A block's last run (the fields a kind fills — the others stay empty). */
 export interface BlockRun {
   state: RunState
   at: number
+  /** Someone else's run (a shared note: who ran it — with their connection, their data). */
+  by?: string
   ms?: number
   error?: string
   logs?: Log[]
@@ -64,6 +68,8 @@ export interface PassRun {
 export interface LoopRun {
   state: RunState
   at: number
+  /** Someone else's run (a shared note). */
+  by?: string
   ms?: number
   error?: string
   logs?: Log[]

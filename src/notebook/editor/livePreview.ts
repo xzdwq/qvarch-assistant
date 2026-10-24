@@ -3,6 +3,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { syntaxTree } from '@codemirror/language'
 import { AUDIO_EMBED, IMAGE_EMBED } from '@shared/vault'
 import { parseNoteLink } from '@shared/noteEvents'
+import { sharedDocOf } from '@shared/transport/space'
 import { fenceLang } from '@renderer/lib/codeblocks'
 import { transcribing } from '@renderer/lib/notebook'
 import { AudioWidget } from './audio'
@@ -65,6 +66,20 @@ class RuleWidget extends WidgetType {
     return s
   }
 }
+/** In place of a shared note's mark line. */
+class SharedSignWidget extends WidgetType {
+  eq(): boolean {
+    return true
+  }
+  toDOM(): HTMLElement {
+    const s = document.createElement('span')
+    s.className = 'cm-lp-shared'
+    s.textContent = 'Общий документ'
+    s.title = 'Заметка открыта другим: правки видны всем участникам (кнопка «Совместная работа» вверху)'
+    return s
+  }
+}
+const sharedSign = new SharedSignWidget()
 const hide = Decoration.replace({})
 const bullet = Decoration.replace({ widget: new BulletWidget() })
 const rule = Decoration.replace({ widget: new RuleWidget() })
@@ -226,6 +241,9 @@ function decorate(v: EditorView): DecorationSet {
       const im = line.text.match(IMAGE_EMBED)
       if (inCode(line.from) || inComp(line.from)) {
         // code — as it is
+      } else if (line.number === 1 && sharedDocOf(line.text)) {
+        // a shared note's mark: a small sign instead (its text with the cursor on it)
+        if (!touched(line.from, line.to)) out.push(Decoration.replace({ widget: sharedSign }).range(line.from, line.to))
       } else if (im) {
         // the picture; with the cursor on its line — its text, and the picture under it
         if (touched(line.from, line.to)) out.push(Decoration.widget({ widget: new ImageWidget(im[1], true), side: 1 }).range(line.to))

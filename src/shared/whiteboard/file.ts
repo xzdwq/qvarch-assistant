@@ -96,7 +96,8 @@ export function parseBoard(text: string): Board {
   }
   const b = newBoard()
   if (!raw || typeof raw !== 'object') return b
-  const r = raw as { bg?: Partial<BoardBg>; items?: unknown[] }
+  const r = raw as { bg?: Partial<BoardBg>; items?: unknown[]; shared?: unknown }
+  if (typeof r.shared === 'string' && /^[0-9a-f-]{36}$/.test(r.shared)) b.shared = r.shared
   const bg = r.bg ?? {}
   b.bg = {
     color: str(bg.color, DEFAULT_BG.color),
@@ -116,5 +117,5 @@ export function parseBoard(text: string): Board {
 /** A board → its file (points rounded: coordinates to 0.1, pressure to 0.01 — the file stays small). */
 export function serializeBoard(b: Board): string {
   const items = b.items.map((i) => (i.type === 'ink' ? { ...i, pts: i.pts.map((n, k) => (k % 3 === 2 ? Math.round(n * 100) / 100 : Math.round(n * 10) / 10)) } : i))
-  return JSON.stringify({ v: 1, bg: b.bg, items })
+  return JSON.stringify({ v: 1, ...(b.shared ? { shared: b.shared } : {}), bg: b.bg, items })
 }

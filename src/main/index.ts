@@ -24,6 +24,7 @@ import { Probe } from './probe'
 import { runSnap } from './snap'
 import { Store } from './store'
 import { Tracker } from './tracker'
+import { Transport } from './transport/transport'
 import { Activity } from './tracker/activity'
 import { checkReminders } from './tracker/reminders'
 import { Series } from './tracker/series'
@@ -40,6 +41,9 @@ const ISLAND_HOTKEY = 'Control+Alt+Space'
 // development pictures of the windows (see snap.ts): on a copy of the data, nothing shown, nothing tracked
 const SNAP = process.env.QA_SNAP && process.env.QA_SNAP_HOME ? process.env.QA_SNAP : undefined
 if (SNAP) app.setPath('userData', process.env.QA_SNAP_HOME!)
+// another profile on the same computer — its own data and key, another device to the server («… --profile=2»)
+const PROFILE = process.argv.find((a) => a.startsWith('--profile='))?.slice('--profile='.length).replace(/[^\w-]/g, '')
+if (PROFILE && !SNAP) app.setPath('userData', `${app.getPath('userData')}-${PROFILE}`)
 if (!app.requestSingleInstanceLock()) app.quit()
 app.setAppUserModelId(APP_ID)
 
@@ -76,6 +80,7 @@ app.whenReady().then(() => {
   ctx.recording.start()
   ctx.jira.start()
   ctx.outlook.start()
+  ctx.transport.configure()
   ctx.probe.setTitles(ctx.store.cfg.captureTitles)
   ctx.probe.setKeys(ctx.store.cfg.countKeys)
   ctx.probe.start()
@@ -127,6 +132,8 @@ function makeServices(): Activity {
   )
   ctx.vault = new Vault(store.root, (paths) => ctx.emitToMain('onVault', paths))
   ctx.vault.watch()
+  // after the vault: the chats get their documents in the notebook
+  ctx.transport = new Transport(ctx)
   ctx.voice = new Voice(store.root, () => (isWhisperModel(store.cfg.voice.model) ? store.cfg.voice.model : 'small'), (s) => ctx.emitToAll('onVoice', s))
   return activity
 }
@@ -164,6 +171,7 @@ app.on('before-quit', () => {
   ctx.tracker?.stop()
   ctx.jira?.stop()
   ctx.outlook?.stop()
+  ctx.transport?.stop()
   ctx.voice?.stop()
   ctx.vault?.stop()
   ctx.terminals?.killAll()

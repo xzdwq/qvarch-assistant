@@ -171,18 +171,29 @@ export class Vault {
   search(q: string, limit = 60): VaultHit[] {
     return searchNotes(this.tree(), (p) => this.read(p), q, limit)
   }
+  /** The notes and boards that have this text as it is (`limit` — at most this many found). */
+  notesWith(needle: string, limit = Infinity): string[] {
+    const out: string[] = []
+    const walk = (ns: VaultNode[]): void => {
+      for (const n of ns) {
+        if (out.length >= limit) return
+        if (n.dir) walk(n.children ?? [])
+        else if (this.readOr(n.path).includes(needle)) out.push(n.path)
+      }
+    }
+    walk(this.tree())
+    return out
+  }
+  private readOr(rel: string): string {
+    try {
+      return this.read(rel)
+    } catch {
+      return ''
+    }
+  }
   /** Some note or board has this text. */
   private usedBy(needle: string): boolean {
-    const walk = (ns: VaultNode[]): boolean =>
-      ns.some((n) => {
-        if (n.dir) return walk(n.children ?? [])
-        try {
-          return this.read(n.path).includes(needle)
-        } catch {
-          return false
-        }
-      })
-    return walk(this.tree())
+    return this.notesWith(needle, 1).length > 0
   }
 
   // ---------- audio and pictures of the notes ----------

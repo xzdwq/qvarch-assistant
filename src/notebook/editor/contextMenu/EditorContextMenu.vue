@@ -20,6 +20,7 @@ const { panelRef, style } = usePopover(() => props.menu.open, {}, open)
       <template v-if="menu.open.sel">
         <hr />
         <button class="ev" @click="menu.act('event')"><Icon name="plus" :size="14" />В событие</button>
+        <button v-if="menu.open.comment" @click="menu.act('comment')"><Icon name="chat" :size="14" />Комментировать</button>
         <hr />
         <button @click="menu.act('code')"><Icon name="code" :size="14" />Код</button>
         <button @click="menu.act('bold')"><Icon name="bold" :size="14" />Жирный<kbd>Ctrl+B</kbd></button>

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DEFAULT_KINDS } from '../shared/kinds'
 import { DEFAULT_UI, mergeUi } from '../shared/ui'
 import { attrRemovals, cleanAttrs, withoutRemoved } from '../shared/tracker/attributes'
+import { cleanChat, cleanTransport, DEFAULT_CHAT, DEFAULT_TRANSPORT } from '../shared/transport/constants'
 import { dayKey, unnest } from '../shared/timeline'
 import { nextTaskKey, taskNo } from '../shared/board'
 import type { DayData, KindDef, LocalTask, PublicSettings, SearchHit, Settings, SettingsPatch } from '../shared/types'
@@ -19,6 +20,8 @@ const DEFAULT_SETTINGS: Settings = {
   // the user's own app registration "Qvarch Assistant" (ids are not secrets; no client secret is used)
   outlook: { source: 'local', clientId: '5c35351a-f465-4638-9b90-dce342691ad3', tenantId: 'fe57acdf-2f79-4073-bfea-a0011702442f', syncMin: 10, meetings: true, presence: true },
   voice: { enabled: true, autoTranscribe: true, model: 'small' },
+  transport: DEFAULT_TRANSPORT,
+  chat: DEFAULT_CHAT,
   idleThresholdSec: 300,
   sampleIntervalMs: 2000,
   autoStart: true,
@@ -79,6 +82,8 @@ export class Store {
       jira: { ...DEFAULT_SETTINGS.jira, ...raw.jira },
       outlook: { ...DEFAULT_SETTINGS.outlook, ...raw.outlook },
       voice: { ...DEFAULT_SETTINGS.voice, ...raw.voice },
+      transport: cleanTransport(raw.transport),
+      chat: cleanChat(raw.chat),
       ui: mergeUi(DEFAULT_UI, raw.ui),
     }
     delete (this.settings.island as Record<string, unknown>).windowHours
@@ -210,6 +215,8 @@ export class Store {
     if (patch.jira) s.jira = { ...s.jira, ...patch.jira, syncMin: Math.max(1, Math.min(240, Number(patch.jira.syncMin ?? s.jira.syncMin) || 10)) }
     if (patch.outlook) s.outlook = { ...s.outlook, ...patch.outlook, syncMin: Math.max(1, Math.min(240, Number(patch.outlook.syncMin ?? s.outlook.syncMin) || 10)) }
     if (patch.voice) s.voice = { ...s.voice, ...patch.voice }
+    if (patch.transport) s.transport = cleanTransport({ ...s.transport, ...patch.transport })
+    if (patch.chat) s.chat = cleanChat({ ...s.chat, ...patch.chat })
     if (patch.island) s.island = { ...s.island, ...patch.island }
     if (patch.ui) s.ui = mergeUi(s.ui, patch.ui)
     if (patch.idleThresholdSec !== undefined) s.idleThresholdSec = patch.idleThresholdSec

@@ -79,8 +79,13 @@ const RUNS_BUDGET = 12 * 1024 * 1024
 /** How many of a loop's last passes keep their blocks' runs when the file is over its budget. */
 const PASSES_KEPT = 50
 
-/** The note's runs saved in a moment (800 ms; 4 s while a loop runs — its passes come fast). */
+/** Who wants to know a note's runs changed (a shared note's — sent to the others). */
+const changeListeners: Array<(path: string) => void> = []
+export const onRunsChanged = (fn: (path: string) => void) => void changeListeners.push(fn)
+
+/** The note's runs saved in a moment (800 ms; 4 s while a loop runs — its passes come fast); told to whoever listens. */
 export function saveRunsSoon(path: string): void {
+  for (const fn of changeListeners) fn(path)
   clearTimeout(saveTimers.get(path))
   const busy = Object.values(notes.get(path)?.loops ?? {}).some((l) => l.state === 'run')
   saveTimers.set(

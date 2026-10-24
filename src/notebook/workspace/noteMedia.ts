@@ -1,4 +1,5 @@
 import { audiosOf, imagesOf } from '@shared/vault'
+import type { MediaReport } from '@shared/transport/space'
 import { remoteError } from '../../shared/remoteError'
 import { cancelTranscribe } from './transcription'
 
@@ -45,6 +46,103 @@ async function syncMedia(kind: MediaKind, before: string, after: string): Promis
 
 /** A picture of the vault as an address the page can show (made once per run). */
 const imageUrls = new Map<string, Promise<string>>()
+/** Who waits for a media file not on this computer yet (a shared note's — it comes from the server). */
+const waiting = new Map<string, Set<() => void>>()
+/** The files that came this run (one who starts waiting a moment too late is not left waiting). */
+const arrived = new Set<string>()
+/** A media file that is missing now has come: `fn` then (come already — at once); the unsubscribe returned. */
+function onMediaArrives(rel: string, fn: () => void): () => void {
+  if (arrived.has(rel)) {
+    fn()
+    return () => undefined
+  }
+  const set = waiting.get(rel) ?? waiting.set(rel, new Set()).get(rel)!
+  set.add(fn)
+  return () => set.delete(fn)
+}
+/** A media file that is missing now has come: resolves then (come already — at once). */
+export const whenMediaArrives = (rel: string): Promise<void> => new Promise((ok) => void onMediaArrives(rel, ok))
+/** Media files written to this computer (fetched for a shared note): whoever waits for them shows them. */
+export function mediaArrived(rels: readonly string[]): void {
+  for (const rel of rels) {
+    arrived.add(rel)
+    problems.delete(rel)
+    const fns = [...(waiting.get(rel) ?? [])]
+    waiting.delete(rel)
+    for (const fn of fns) fn()
+  }
+}
+
+/** A picture not here: looked at again this often, this many times (while it is followed). */
+const LOOK_AGAIN_MS = 5000
+const LOOK_AGAIN_TIMES = 60
+/** What a picture's follower is told: its address once it is here; while it is not — why (as far as known). */
+export interface ImageWatch {
+  shown: (url: string) => void
+  missing: (why: string) => void
+}
+/**
+ * A picture shown as soon as it is here: now, or when it comes — told of its coming (a shared note's file fetched)
+ * and looked at again now and then (a file written meanwhile is never missed). The stop returned (the view gone).
+ */
+export function followImage(rel: string, w: ImageWatch): () => void {
+  let stopped = false
+  let failed = false
+  let tries = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let unwatch = () => {}
+  let unwait = () => {}
+  const stop = () => {
+    stopped = true
+    clearTimeout(timer)
+    unwatch()
+    unwait()
+  }
+  const look = (): void => {
+    if (stopped) return
+    imageUrl(rel).then(
+      (u) => {
+        if (stopped) return
+        if (failed) window.qa.sharedLog(`image shown at last ${rel}`)
+        stop()
+        w.shown(u)
+      },
+      (e: Error) => {
+        if (stopped) return
+        if (!failed) {
+          failed = true
+          window.qa.sharedLog(`image missing ${rel}: ${e.message}`)
+          w.missing('')
+          unwatch = watchMediaProblem(rel, w.missing)
+          unwait = onMediaArrives(rel, look)
+        }
+        clearTimeout(timer)
+        if (++tries <= LOOK_AGAIN_TIMES) timer = setTimeout(look, LOOK_AGAIN_MS)
+      },
+    )
+  }
+  look()
+  return stop
+}
+/** Why a shared note's file is not here (as the last sync said), and who shows it. */
+const problems = new Map<string, string>()
+const problemSeen = new Map<string, Set<(why: string) => void>>()
+/** A sync of a shared note's files done: the fetched shown, the reasons of the others told. */
+export function mediaReported(r: MediaReport): void {
+  mediaArrived(r.fetched)
+  for (const [rel, why] of Object.entries(r.problems)) {
+    problems.set(rel, why)
+    for (const fn of problemSeen.get(rel) ?? []) fn(why)
+  }
+}
+/** Why a file is not here — now and whenever it is told again (the unsubscribe returned). */
+export function watchMediaProblem(rel: string, fn: (why: string) => void): () => void {
+  const now = problems.get(rel)
+  if (now) fn(now)
+  const set = problemSeen.get(rel) ?? problemSeen.set(rel, new Set()).get(rel)!
+  set.add(fn)
+  return () => set.delete(fn)
+}
 export function imageUrl(rel: string): Promise<string> {
   let u = imageUrls.get(rel)
   if (!u) {

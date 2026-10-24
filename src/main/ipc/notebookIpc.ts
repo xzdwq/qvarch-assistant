@@ -24,6 +24,7 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('vaultMove', (_e, from, toDir, name) => vault.move(str(from), str(toDir), name === undefined ? undefined : str(name)))
   handle('vaultDelete', (_e, p) => vault.remove(str(p)))
   handle('vaultSearch', (_e, q) => vault.search(str(q)))
+  handle('vaultNotesWith', (_e, needle) => (str(needle) ? vault.notesWith(str(needle), 20) : []))
   handle('eventMentions', () => vault.eventMentions())
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
   handle('vaultPair', (_e, a, b) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))

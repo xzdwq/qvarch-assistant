@@ -3,6 +3,7 @@ import TabletView from '../TabletView.vue'
 import AiSection from './AiSection.vue'
 import AttributesSection from './AttributesSection.vue'
 import BrowserSection from './BrowserSection.vue'
+import ChatSection from './ChatSection.vue'
 import GeneralSection from './GeneralSection.vue'
 import InterfaceSection from './InterfaceSection.vue'
 import JiraSection from './JiraSection.vue'
@@ -10,6 +11,7 @@ import KindsSection from './KindsSection.vue'
 import LookSection from './LookSection.vue'
 import OutlookSection from './OutlookSection.vue'
 import ScheduleSection from './ScheduleSection.vue'
+import ServerSection from './ServerSection.vue'
 import VoiceSection from './VoiceSection.vue'
 import type { SettingsCategoryId } from './settingsCategories'
 
@@ -35,6 +37,8 @@ export const SETTINGS_PANELS: SettingsPanel[] = [
   { id: 'browser', category: 'browser', component: BrowserSection, mount: 'always' },
   { id: 'ai', category: 'ai', component: AiSection, mount: 'always' },
   { id: 'jira', category: 'jira', component: JiraSection, mount: 'always' },
+  { id: 'server', category: 'server', component: ServerSection, mount: 'always' },
+  { id: 'chat', category: 'server', component: ChatSection, mount: 'always' },
   { id: 'voice', category: 'voice', component: VoiceSection, mount: 'always' },
   { id: 'general', category: 'general', component: GeneralSection, mount: 'always' },
 ]

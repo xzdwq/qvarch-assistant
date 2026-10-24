@@ -11,5 +11,10 @@ paths:
 - **release:** `main/release/git/` (git-слой, тексты конфликтов), `core/` (план), `session/` (жизненный цикл сессии); экран — `app/release/`, чистая логика экрана — `shared/releaseView.ts`.
 - **tracker:** чистая логика — `shared/tracker/` (`constants.ts`: встроенные виды `BUILTIN_KINDS`, `isKind`); island — `island/` (`islandState.ts` собирает composables, `pill/`, `panel/`); календарь, таймлайн, табель, отчёты, доска дня — `renderer/src/tracker/*`. Цвет вида в настройках — hex или `var(--kind-…)` (виды по умолчанию); где нужен hex — `kindColorHex`.
 - **integrations:** настройки — `app/settings/` (реестры разделов и панелей); терминал — `app/terminal/` + `main/terminal/` (встроенные переменные — реестр `BUILTIN_VARS` в `shared/terminal.ts`); HTTP — `app/http/` + `shared/http.ts` (таблицы тел и авторизации); Jira — `main/jira/`; темы — `shared/theme.ts` + `styles/colors/theme.css`.
+- **transport** (сервер и чат):
+  - протокол и модели — `shared/transport/` (`protocol.ts` — кадры, методы `TransportMethods`, события `TransportEvents`);
+  - клиент — `main/transport/` (`client.ts` без Electron, `keys.ts` — ключи, общие с сервером, `transport.ts` — сервис, `chatFiles.ts` — файлы чатов с кэшем `data/chat-files`, `sharedLog.ts` — журнал `data/shared.log`);
+  - чат — блоки блокнота `notebook/blocks/chat/` и `chatfeed/` (лента), состояние окна — `renderer/src/lib/chat.ts`, действия (создать, переименовать, добавить человека, ветки) — `lib/chatActions.ts`, файлы — `lib/chatFiles.ts`; настройки — `app/settings/ServerSection.vue` и `ChatSection.vue`;
+  - сервер — `server/` (свой `package.json`, модули `server/src/modules/`, тесты `server/tests/` на встроенном PostgreSQL).
 - **инструменты:** доска — `components/board/` (реестр инструментов `tools.ts`, жесты, отрисовка) + модель `shared/whiteboard/`; кодировки — `components/tools/codec/`; подпись PDF — `app/pdf/`.
 - **Общее:** ошибки из main — `remoteError` (`shared/remoteError.ts`); всплывающие меню — `usePopover` / `<Popover>`; вложенность меню — `shared/popoverLayers.ts`.

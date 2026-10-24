@@ -3,11 +3,16 @@ import type { Board } from '@shared/whiteboard'
 
 /**
  * Undo / redo of each board, by its path — kept while the app runs, so leaving the board (another section,
- * another tab) and coming back keeps the history. A change made outside clears it (the board calls `clear`).
+ * another tab) and coming back keeps the history. A step is the board before and after one's own change: undoing it
+ * changes only those items (someone else's strokes on a shared board, a change from another pane — stay).
  */
+export interface BoardStep {
+  before: Board
+  after: Board
+}
 export interface BoardHistory {
-  undo: Board[]
-  redo: Board[]
+  undo: BoardStep[]
+  redo: BoardStep[]
 }
 const all = new Map<string, BoardHistory>()
 

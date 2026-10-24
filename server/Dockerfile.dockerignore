@@ -1,0 +1,8 @@
+# Only what the image is built from (the context is the repository's root).
+**
+!server/package.json
+!server/package-lock.json
+!server/build.mjs
+!server/src/**
+!src/shared/transport/**
+!src/main/transport/keys.ts

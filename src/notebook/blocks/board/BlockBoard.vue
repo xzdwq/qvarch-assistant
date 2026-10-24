@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { BOARD_MODES, boardMd, boardModeOf, boardPathOf, type BoardMode } from './model'
+import { BOARD_MODES, boardDocOf, boardMd, boardModeOf, boardPathOf, type BoardMode } from './model'
+import { pathOfShared } from '@nb/workspace/sharedAttachments'
 import { imageEmbed } from '@shared/vault'
 import { doc, files, openFile, setText, tree } from '@renderer/lib/notebook'
+import { sharedPathHere } from '@nb/workspace/sharedFolders'
 import BoardView from '@renderer/components/BoardView.vue'
 import Icon from '@renderer/components/Icon.vue'
 
@@ -12,7 +14,20 @@ import Icon from '@renderer/components/Icon.vue'
  * edge; the plain wheel scrolls the note, Ctrl + the wheel zooms). «Снимок» puts a PNG of it in its place.
  */
 const props = defineProps<{ src: string; onChange?: (src: string) => void }>()
-const path = computed(() => boardPathOf(props.src))
+/** The board as the block names it (in a shared note — maybe in someone else's notebook). */
+const written = computed(() => boardPathOf(props.src))
+const inTree = (p: string) => {
+  void files.value
+  const find = (ns: typeof tree.value): boolean => ns.some((n) => n.path === p || (!!n.children && find(n.children)))
+  return find(tree.value)
+}
+/** A shared note's board: its document (found by it only — a board of the same name here is someone's own). */
+const sharedDoc = computed(() => boardDocOf(props.src))
+/** The board here: a shared one — by its document; else the path as written, or the same board of a shared folder. */
+const path = computed(() => {
+  if (sharedDoc.value) return pathOfShared(sharedDoc.value) ?? ''
+  return inTree(written.value) ? written.value : (sharedPathHere(written.value) ?? written.value)
+})
 const mode = computed(() => boardModeOf(props.src))
 const MODE_LABEL: Record<BoardMode, string> = { view: 'Смотреть', edit: 'Рисовать' }
 const MODE_ICON: Record<BoardMode, string> = { view: 'eye', edit: 'penTool' }
@@ -21,15 +36,12 @@ const MODE_TITLE: Record<BoardMode, string> = {
   edit: 'Рисовать прямо в заметке (и ручкой планшета). Колесо — прокрутка заметки, Ctrl + колесо — масштаб',
 }
 function setMode(m: BoardMode): void {
-  if (m !== mode.value) props.onChange?.(boardMd(path.value, m))
+  // the path stays as written (the others' notebooks know it so)
+  if (m !== mode.value) props.onChange?.(boardMd(written.value, m, boardDocOf(props.src)))
 }
 const d = computed(() => (path.value ? doc(path.value) : undefined))
-const exists = computed(() => {
-  void files.value
-  const find = (ns: typeof tree.value): boolean => ns.some((n) => n.path === path.value || (!!n.children && find(n.children)))
-  return find(tree.value)
-})
-const name = computed(() => (path.value.split('/').pop() ?? '').replace(/\.qboard$/i, ''))
+const exists = computed(() => inTree(path.value))
+const name = computed(() => ((path.value || written.value).split('/').pop() ?? '').replace(/\.qboard$/i, ''))
 const view = ref<InstanceType<typeof BoardView>>()
 const busy = ref(false)
 const error = ref('')
@@ -64,7 +76,7 @@ async function snapshot(): Promise<void> {
       <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:text-[12px]" v-if="exists" title="Открыть доску для рисования" @mousedown.prevent @click="openFile(path)"><Icon name="external" :size="13" />Открыть</button>
       <button v-if="exists" class="primary tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:text-[12px]" :disabled="busy" title="Сохранить картинку доски сейчас — она встанет на это место, связь с доской разорвётся" @mousedown.prevent @click="snapshot"><Icon name="image" :size="13" />{{ busy ? 'Снимаю…' : 'Снимок' }}</button>
     </div>
-    <div v-if="!exists" class="bb-miss tw:p-16 tw:text-muted tw:text-[13px]">Доска «{{ name || path }}» не найдена — её удалили или переименовали.</div>
+    <div v-if="!exists" class="bb-miss tw:p-16 tw:text-muted tw:text-[13px]">{{ sharedDoc ? `Доска «${name}» общая — она появится здесь, как только придёт с сервера.` : `Доска «${name || path}» не найдена — её удалили, переименовали или она не в общей папке.` }}</div>
     <div v-else-if="d?.loaded" class="bb-view tw:h-480 tw:overflow-hidden tw:rounded-[6px]">
       <BoardView v-if="mode === 'edit'" ref="view" :key="`e:${path}`" :path="path" :text="d.text" inline @change="(t) => setText(path, t)" @warn="(t) => (error = t)" />
       <BoardView v-else ref="view" :key="`v:${path}`" :path="path" :text="d.text" preview />

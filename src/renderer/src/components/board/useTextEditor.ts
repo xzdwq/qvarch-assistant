@@ -74,14 +74,14 @@ export function useTextEditor(o: {
     const was = e.id ? items.find((i) => i.id === e.id) : undefined
     if (!text) {
       // an emptied text goes
-      if (was) doc.commit({ ...doc.board.value, items: items.filter((i) => i !== was) })
+      if (was) doc.commit({ ...doc.board.value, items: items.filter((i) => i.id !== was.id) })
       else frames.schedule()
       return
     }
     const m = measureText(text, e.size)
     const item: TextItem = { id: e.id ?? itemId(), type: 'text', x: e.x, y: e.y, text, size: e.size, color: e.color, w: m.w, h: m.h, ...(e.rot ? { rot: e.rot } : {}) }
     if (was && was.type === 'text' && was.text === item.text && was.color === item.color && was.size === item.size) return void frames.schedule()
-    doc.commit({ ...doc.board.value, items: was ? items.map((i) => (i === was ? item : i)) : [...items, item] })
+    doc.commit({ ...doc.board.value, items: was ? items.map((i) => (i.id === was.id ? item : i)) : [...items, item] })
   }
 
   /** Keys in the textarea stay there; Esc / Ctrl+Enter — done. */

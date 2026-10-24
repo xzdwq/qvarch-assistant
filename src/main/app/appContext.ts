@@ -15,6 +15,7 @@ import type { TabletService } from '../tablet'
 import type { Terminals } from '../terminal'
 import { TestFiles } from '../testFiles'
 import type { Tracker } from '../tracker'
+import type { Transport } from '../transport/transport'
 import type { Recording } from '../tracker/recording'
 import type { Vault } from '../vault'
 import type { Voice } from '../voice'
@@ -31,6 +32,7 @@ export class AppContext {
   probe!: Probe
   jira!: Jira
   outlook!: Outlook
+  transport!: Transport
   voice!: Voice
   vault!: Vault
   tablet?: TabletService

@@ -5,7 +5,7 @@ import type { NoteCommand } from '../commands/command'
  * A component of a note: what kinds there are, where one is in the text, and the description every kind
  * registers (`BlockSpec`) — how it is recognized, its name, its size before it is drawn, its «@» commands.
  */
-export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser' | 'regress' | 'files' | 'sql' | 'tpl' | 'loop' | 'loopEnd'
+export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'chat' | 'chatfeed' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser' | 'regress' | 'files' | 'sql' | 'tpl' | 'loop' | 'loopEnd'
 
 /** A component found in the note's text. */
 export interface NoteBlock {

@@ -1,5 +1,5 @@
 import { ref, shallowRef, watch } from 'vue'
-import { parseBoard, serializeBoard, type Board, type BoardBg, type BoardItem } from '@shared/whiteboard'
+import { applyBoardDiff, applyItems, diffBoards, diffItems, parseBoard, serializeBoard, type Board, type BoardBg, type BoardItem } from '@shared/whiteboard'
 import { historyOf } from '../../lib/boardHistory'
 import { rememberBg } from '../../lib/boardPrefs'
 import type { FrameScheduler } from './frames'
@@ -22,7 +22,7 @@ export interface BoardDocOptions {
 
 /**
  * The board and its file: every change committed (to undo / redo — the history lives outside, kept while the
- * board is left), the file's text written; a change made elsewhere taken (the history no longer applies).
+ * board is left), the file's text written; a change made elsewhere taken (one's own undo still applies to one's own items).
  */
 export function useBoardDoc(o: BoardDocOptions) {
   const board = shallowRef<Board>(parseBoard(o.props.text))
@@ -37,13 +37,14 @@ export function useBoardDoc(o: BoardDocOptions) {
     () => o.props.text,
     (t) => {
       if (t === lastJson) return
-      // changed outside (another pane, another editor): take it, the history no longer applies
+      // changed elsewhere (another pane, someone else on a shared board): taken; one's own undo stays (it changes
+      // only one's own items), a gesture going on carries on over the new state
+      const was = board.value
+      const next = parseBoard(t)
+      if (o.scene.preview) o.scene.preview = applyItems(next.items, diffItems(was.items, o.scene.preview))
       lastJson = t
-      board.value = parseBoard(t)
+      board.value = next
       o.onReplaced()
-      hist.undo.length = 0
-      hist.redo.length = 0
-      sel.value = new Set()
       o.frames.schedule()
     },
   )
@@ -51,7 +52,7 @@ export function useBoardDoc(o: BoardDocOptions) {
   /** A new state of the board: shown, written to the file and (unless undoing) kept for undo. */
   function commit(next: Board, undoable = true): void {
     if (undoable) {
-      hist.undo.push(board.value)
+      hist.undo.push({ before: board.value, after: next })
       if (hist.undo.length > UNDO_DEPTH) hist.undo.shift()
       hist.redo.length = 0
     }
@@ -77,17 +78,18 @@ export function useBoardDoc(o: BoardDocOptions) {
     { immediate: true },
   )
 
+  /** A step taken back / again: only its items changed on the board as it is now. */
   function undo(): void {
-    const prev = hist.undo.pop()
-    if (!prev) return
-    hist.redo.push(board.value)
-    commit(prev, false)
+    const step = hist.undo.pop()
+    if (!step) return
+    hist.redo.push(step)
+    commit(applyBoardDiff(board.value, diffBoards(step.after, step.before)), false)
   }
   function redo(): void {
-    const next = hist.redo.pop()
-    if (!next) return
-    hist.undo.push(board.value)
-    commit(next, false)
+    const step = hist.redo.pop()
+    if (!step) return
+    hist.undo.push(step)
+    commit(applyBoardDiff(board.value, diffBoards(step.before, step.after)), false)
   }
   function clearAll(): void {
     if (!board.value.items.length) return

@@ -1,0 +1,18 @@
+{
+  "name": "qvarch-transport",
+  "version": "0.9.0",
+  "description": "Transport server of Qvarch Assistant: devices, chats, shared notes and boards; modules over one WebSocket and PostgreSQL",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "yjs": "^13.6.33"
+  }
+}

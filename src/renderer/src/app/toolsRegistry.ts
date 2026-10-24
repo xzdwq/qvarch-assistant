@@ -31,8 +31,7 @@ export const TOOL_ITEMS: Record<ToolId, ToolItem> = {
   time: { icon: 'timer', label: 'Timestamp', hint: 'Unix-время, ISO, RFC, часовые пояса', view: TimestampTool },
   cron: { icon: 'repeat', label: 'Cron', hint: 'Выражение ↔ расписание словами, ближайшие запуски', view: CronTool },
   clip: { icon: 'clipboard', label: 'Буфер обмена', hint: 'Всё, что вы копировали', view: ClipTool },
-  pdf: { icon: 'signature', label: 'Подпись PDF', hint: 'Подписать PDF-документ', view: PdfSignView },
-}
+  pdf: { icon: 'signature', label: 'Подпись PDF', hint: 'Подписать PDF-документ', view: PdfSignView },}
 /** The sections as items of «Инструменты» (when moved there). The terminal and the browser stay once opened. */
 export const SECTION_ITEMS: Record<MovableSection, ToolItem> = {
   notebook: { icon: 'notebook', label: 'Блокнот', hint: 'Заметки, исполняемые блоки, доски', view: NotebookView },

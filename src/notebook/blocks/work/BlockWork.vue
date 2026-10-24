@@ -5,13 +5,14 @@ import { isProductive } from '@shared/kinds'
 import type { KindDef } from '@shared/types'
 import DateRangePicker from '@renderer/components/DateRangePicker.vue'
 import Icon from '@renderer/components/Icon.vue'
+import { useSharedWork } from './useSharedWork'
 
 /**
  * «Работа»: the productive events of a period (today, a week, a month, own dates) — as a table or a list,
  * by days, each with its kind, title, task, time and length; then the hours per kind and the total
  * (parallel events counted once). A relative period («эта неделя») moves with the calendar.
  */
-const props = defineProps<{ src: string; autofocus?: boolean }>()
+const props = defineProps<{ src: string; path?: string; line?: number; autofocus?: boolean }>()
 const emit = defineEmits<{ change: [src: string] }>()
 const m = ref<WorkModel>(parseWork(props.src))
 let mine = props.src
@@ -96,8 +97,20 @@ const report = shallowRef<WorkReport>()
 const kindCounts = shallowRef<Array<[string, number]>>([])
 const loading = ref(false)
 const now = ref(Date.now())
+// a shared note: the block is its owner's — the others see the owner's report, not their own work
+const shared = useSharedWork({ path: () => props.path ?? '', line: () => props.line ?? 0, m, save, report, kindCounts, kinds })
+watch(
+  shared.theirs,
+  (t) => {
+    if (!t) return
+    report.value = t.report
+    kindCounts.value = t.kindCounts
+  },
+  { immediate: true },
+)
 let seq = 0
 async function load(): Promise<void> {
+  if (shared.foreign.value) return
   const my = ++seq
   loading.value = true
   try {
@@ -133,7 +146,7 @@ onBeforeUnmount(() => {
 })
 
 // ---------- how it reads ----------
-const kindOf = (id: string) => kinds.value.find((k) => k.id === id)
+const kindOf = (id: string) => (shared.theirs.value?.kinds ?? kinds.value).find((k) => k.id === id)
 const hm = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 function dur(ms: number): string {
   const min = Math.round(ms / 60000)
@@ -156,7 +169,7 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
 <template>
   <div class="wk tw:flex tw:flex-col tw:gap-8 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
     <div class="wk-h tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
-      <span class="wk-k tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12px]"><Icon name="briefcase" :size="14" />Работа</span>
+      <span class="wk-k tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12px]"><Icon name="briefcase" :size="14" />Работа<b v-if="shared.foreign.value" class="tw:font-medium tw:text-text-2" :title="'Работа участника из его трекера — у каждого видна она, а не своя'">: {{ shared.ownerName.value }}</b></span>
       <span class="wk-nav tw:inline-flex tw:items-center tw:gap-2" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
         <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Назад" @mousedown.prevent @click="shift(-1)"><Icon name="chevronLeft" :size="13" /></button>
         <button ref="pickEl" class="wk-p tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-9 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-[12.5px] tw:font-semibold tw:whitespace-nowrap tw:[&.on]:border-accent/60 tw:first-letter:uppercase" :class="{ on: pickOpen }" title="Выбрать день или период" @mousedown.prevent @click="pickOpen = !pickOpen"><Icon name="calendar" :size="12" />{{ periodText }}</button>

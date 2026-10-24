@@ -5,6 +5,8 @@ import { boardView } from '../blocks/board/view'
 import { browserView } from '../blocks/browser/view'
 import { calloutView } from '../blocks/callout/view'
 import { chartView } from '../blocks/chart/view'
+import { chatView } from '../blocks/chat/view'
+import { chatfeedView } from '../blocks/chatfeed/view'
 import { codeView } from '../blocks/code/view'
 import { dataView } from '../blocks/data/view'
 import { filesView } from '../blocks/files/view'
@@ -36,6 +38,8 @@ export const BLOCK_VIEWS: { readonly [K in BlockKind]: K extends RunnableKind ? 
   audio: audioView,
   image: imageView,
   board: boardView,
+  chat: chatView,
+  chatfeed: chatfeedView,
   http: httpView,
   code: codeView,
   data: dataView,

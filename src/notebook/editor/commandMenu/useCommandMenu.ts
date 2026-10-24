@@ -6,6 +6,14 @@ import { startCompletion } from '@codemirror/autocomplete'
 import { eventLink, jiraLink, pickGroups, type EventRef } from '@shared/noteEvents'
 import type { JiraIssue } from '@shared/jira'
 import { boardMd } from '@nb/blocks/board/model'
+import { chatFeedMd, chatMd } from '@nb/blocks/chat/model'
+import { chatTitleOf, isComment, type ChatRoom } from '@shared/transport/chat'
+import { chatOnline, chatRooms } from '@renderer/lib/chat'
+import { serverCall } from '@renderer/lib/transport'
+import { createChat as newOwnChat } from '@renderer/lib/chatActions'
+import { ROLE_RIGHTS } from '@shared/transport/space'
+import { noteName } from '@nb/domain/notePaths'
+import { spaceOfPath } from '@nb/workspace/sharedDocs'
 import { newTable, tableMd } from '@nb/blocks/table/model'
 import { TABLE_VAR_BASE } from '@nb/domain/tableVars'
 import type { CommandEffect, NoteCommand } from '@nb/commands/command'
@@ -36,7 +44,7 @@ export interface MenuPlace {
   y: number
   up: boolean
 }
-export type MenuRow = { head: string; more?: number } | { cmd: NoteCommand } | { emojis: Emoji[] } | { board: string } | { newBoard: string } | { ev: EventRef } | { jira: JiraIssue }
+export type MenuRow = { head: string; more?: number } | { cmd: NoteCommand } | { emojis: Emoji[] } | { board: string } | { newBoard: string } | { chatRoom: ChatRoom } | { newChat: string } | { chatFeed: true } | { ev: EventRef } | { jira: JiraIssue }
 
 /** «@» right before the cursor, and the query typed after it. */
 const AT = /(?:^|[\s(«"'])@([^\n@]{0,60})$/
@@ -58,6 +66,14 @@ function allBoards(): string[] {
 function boardsFor(q: string): string[] {
   const w = q.toLowerCase().split(/\s+/).filter(Boolean)
   return allBoards().filter((p) => w.every((x) => p.toLowerCase().includes(x)))
+}
+/**
+ * The chats a note may hold that a query names (all — for an empty one): a shared note — its space's chats (the
+ * others of it see them), any other note — the chats of no space.
+ */
+function chatsFor(q: string, space?: string): ChatRoom[] {
+  const w = q.toLowerCase().split(/\s+/).filter(Boolean)
+  return chatRooms.value.filter((r) => r.space === space && !isComment(r) && w.every((x) => `${r.title} ${r.members.map((m) => m.name).join(' ')}`.toLowerCase().includes(x)))
 }
 
 export function useCommandMenu(getView: () => EditorView | undefined) {
@@ -151,6 +167,19 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
       for (const board of bs.slice(0, 50)) out.push({ board })
       return out
     }
+    // «@чат …»: the chats only
+    if (mode.value?.mode === 'chat') {
+      const space = noteSpace()
+      const cs = chatsFor(mode.value.q, space?.id)
+      if (!chatOnline.value) out.push({ head: 'Чаты — сервер не подключён (Настройки → Сервер и чат)' })
+      else if (space) out.push({ head: 'Чаты документа' }, ...(ROLE_RIGHTS[space.role].chat ? [{ newChat: mode.value.q.trim() }] : []))
+      // a plain note: a new chat of one's own (people are added from its head)
+      else out.push({ head: 'Чаты' }, { newChat: mode.value.q.trim() })
+      // every chat in one place — wherever one wants it
+      out.push({ chatFeed: true })
+      for (const chatRoom of cs.slice(0, 50)) out.push({ chatRoom })
+      return out
+    }
     const g = pickGroups(events.value, p.query, chipClock.value, todayKey.value)
     const cmds = matchCommands(p.query)
     if (cmds.length) {
@@ -169,6 +198,11 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
       if (bs.length) {
         out.push({ head: 'Доски' })
         for (const board of bs) out.push({ board })
+      }
+      const cs = chatsFor(q, noteSpace()?.id).slice(0, 3)
+      if (cs.length) {
+        out.push({ head: 'Чаты' })
+        for (const chatRoom of cs) out.push({ chatRoom })
       }
     }
     const group = (head: string, list: EventRef[], more?: number) => {
@@ -260,6 +294,9 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     if ('emojis' in r) return pickEmoji(r.emojis[Math.min(stripIdx.value, r.emojis.length - 1)])
     if ('board' in r) return insertBlock(boardMd(r.board, 'edit'))
     if ('newBoard' in r) return void createBoard(r.newBoard, v.state.facet(editorHost).notePath())
+    if ('chatRoom' in r) return insertBlock(chatMd(r.chatRoom.id))
+    if ('newChat' in r) return void createChat(r.newChat, v.state.facet(editorHost).notePath())
+    if ('chatFeed' in r) return insertBlock(chatFeedMd())
     const ins = 'ev' in r ? eventLink(r.ev) : 'jira' in r ? jiraLink(r.jira.key, r.jira.summary) : ''
     v.dispatch({ changes: { from: p.from, to: p.to, insert: `${ins} ` }, selection: { anchor: p.from + ins.length + 1 }, scrollIntoView: true })
     close()
@@ -271,6 +308,19 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     const path = await window.qa.vaultCreate(dir, 'board', name || undefined, serializeBoard(freshBoard()))
     await loadTree()
     insertBlock(boardMd(path, 'edit'))
+  }
+  /** The space of the note being edited (a shared note's). */
+  function noteSpace() {
+    const v = getView()
+    return v ? spaceOfPath(v.state.facet(editorHost).notePath()) : undefined
+  }
+/** A new chat put in: a shared note's — of its space (its members); a plain note's — one's own alone (people added later). */
+  async function createChat(title: string, notePath: string): Promise<void> {
+    const space = spaceOfPath(notePath)
+    const name = title || chatTitleOf(noteName(notePath), new Date())
+    const made = space ? serverCall('space.chat', { space: space.id, title: name }) : newOwnChat(name)
+    const room = await made.catch((e: Error) => (getView()?.state.facet(editorHost).warn(e.message), undefined))
+    if (room) insertBlock(chatMd(room.id))
   }
   function pickEmoji(e: Emoji | undefined): void {
     if (!e) return
