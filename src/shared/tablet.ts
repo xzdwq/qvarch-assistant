@@ -52,7 +52,11 @@ export interface TabletPrefs {
   button2: TabletButton
   /** The tablet's 8 express keys (K1…K8): a key combination each ("Ctrl+Z", "Space", "" — nothing). */
   keys: string[]
+  /** Several boards on screen: how long the pen is held at an edge before it goes over to the next one, ms. */
+  hopMs: number
 }
+/** The pen held at an edge before it goes over: the bounds of the setting, ms. */
+export const HOP_MS_RANGE = { min: 150, max: 2000 } as const
 
 export const DEFAULT_TABLET: TabletPrefs = {
   enabled: false,
@@ -72,6 +76,7 @@ export const DEFAULT_TABLET: TabletPrefs = {
   button2: 'middle',
   // as printed on the Deco mini7 V2: brush, eraser, Alt, Space, undo, zoom in / out, (the driver panel — none)
   keys: ['B', 'E', 'Alt', 'Space', 'Ctrl+Z', 'Ctrl+=', 'Ctrl+-', ''],
+  hopMs: 450,
 }
 
 /** A monitor as the helper sees it — physical pixels, Windows device name. */
@@ -152,6 +157,7 @@ export function clampPrefs(p: Partial<TabletPrefs>): TabletPrefs {
     button1: btn(p.button1, d.button1),
     button2: btn(p.button2, d.button2),
     keys: Array.from({ length: 8 }, (_, i) => (Array.isArray(p.keys) && typeof p.keys[i] === 'string' && (p.keys[i] === '' || comboToVk(p.keys[i]) !== undefined) ? p.keys[i] : d.keys[i])),
+    hopMs: Math.round(num(p.hopMs, HOP_MS_RANGE.min, HOP_MS_RANGE.max, d.hopMs)),
   }
 }
 

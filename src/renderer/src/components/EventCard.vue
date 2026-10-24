@@ -5,6 +5,7 @@ import type { Entry, KindDef } from '@shared/types'
 import { formatDuration, formatHM } from '@shared/timeline'
 import EntryModal from './EntryModal.vue'
 import Icon from './Icon.vue'
+import AttrChips from './AttrChips.vue'
 import { notesOf, noteTitle, openEventInWork, openNote, refreshMentions } from '../lib/mentions'
 
 /**
@@ -53,6 +54,7 @@ function toWork(): void {
         </div>
         <b class="t tw:text-[14.5px]">{{ entry.label || kind?.label }}</b>
         <p class="when tw:flex tw:items-center tw:gap-5 tw:m-0 tw:text-text-2 tw:text-[12.5px]">{{ dayText }} · {{ formatHM(entry.start) }}–{{ formatHM(entry.end) }} · {{ formatDuration(entry.end - entry.start) }}<template v-if="entry.outlook"> · Outlook</template></p>
+        <AttrChips v-if="entry.attrs" full :attrs="entry.attrs" />
         <p v-if="entry.task" class="task tw:flex tw:items-center tw:gap-5 tw:m-0 tw:text-text-2 tw:text-[12.5px]"><Icon name="jira" :size="12" /><b>{{ entry.task.key }}</b> {{ entry.task.summary }}</p>
         <p v-if="entry.description" class="desc tw:my-2 tw:mx-0 tw:py-6 tw:px-8 tw:border-l-2 tw:border-l-border-2 tw:text-text tw:whitespace-pre-wrap tw:[word-break:break-word]">{{ entry.description }}</p>
         <p v-else class="muted small tw:m-0 tw:text-muted tw:text-[12px]">Без описания</p>

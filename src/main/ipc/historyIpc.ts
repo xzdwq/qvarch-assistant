@@ -14,7 +14,7 @@ export function registerHistoryIpc(app: AppContext, activity: Activity): void {
     for (const day of store.listDays()) {
       const d = store.peek(day)
       if (!d) continue
-      for (const e of d.entries) out.push({ day, id: e.id, label: e.label, kind: e.kind, start: e.start, end: e.end, outlook: !!e.outlook, ...(e.task ? { task: e.task.key } : {}), ...(e.created ? { created: e.created } : {}) })
+      for (const e of d.entries) out.push({ day, id: e.id, label: e.label, kind: e.kind, start: e.start, end: e.end, outlook: !!e.outlook, ...(e.task ? { task: e.task.key } : {}), ...(e.created ? { created: e.created } : {}), ...(e.attrs ? { attrs: e.attrs } : {}) })
     }
     return out
   })

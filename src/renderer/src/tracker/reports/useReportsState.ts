@@ -1,6 +1,6 @@
 import { computed, inject, onBeforeUnmount, onMounted, provide, ref, watch, type InjectionKey } from 'vue'
 import { shiftDay } from '@shared/timeline'
-import { daysBetween, matches, unionOf, type GroupBy, type RangeDay, type ReportFilter, type ReportItem } from '@shared/report'
+import { daysBetween, matches, unionOf, type RangeDay, type ReportFilter, type ReportGroupBy, type ReportItem } from '@shared/report'
 import { isProductive } from '@shared/kinds'
 import { eventsOf, heatOf } from '@shared/analytics'
 import type { Entry } from '@shared/types'
@@ -17,7 +17,7 @@ export interface ReportState {
   from: string
   to: string
   filter: ReportFilter
-  group: GroupBy
+  group: ReportGroupBy
   color: ChartColor
   /** Only the productive kinds (no lunch, break…) — as the calendar's button. */
   onlyProd?: boolean
@@ -118,6 +118,9 @@ export function createReportsState() {
   const filterField = (k: 'kinds' | 'tasks' | 'taskType' | 'sources') =>
     computed<string[]>({ get: () => st.value.filter[k] ?? [], set: (v) => (st.value.filter = { ...st.value.filter, [k]: v } as ReportFilter) })
   const fKinds = filterField('kinds')
+  /** An attribute's filter as a v-model (the values wanted; '' — without a value). */
+  const attrField = (id: string) =>
+    computed<string[]>({ get: () => st.value.filter.attrs?.[id] ?? [], set: (v) => (st.value.filter = { ...st.value.filter, attrs: { ...st.value.filter.attrs, [id]: v } }) })
 
   // ---------- totals ----------
   const total = computed(() => unionOf(items.value))
@@ -126,7 +129,7 @@ export function createReportsState() {
   const heat = computed(() => heatOf(items.value))
   const insights = computed(() => reportInsights({ items: items.value, total: total.value, events: events.value, kpi: kpi.value, days: allDays.value, heat: heat.value, kindLabel }))
 
-  return { st, range, allDays, shift, isCurrent, label, customLabel, days, loading, load, all, items, filterField, fKinds, total, kpi, events, heat, insights }
+  return { st, range, allDays, shift, isCurrent, label, customLabel, days, loading, load, all, items, filterField, fKinds, attrField, total, kpi, events, heat, insights }
 }
 
 export type ReportsState = ReturnType<typeof createReportsState>

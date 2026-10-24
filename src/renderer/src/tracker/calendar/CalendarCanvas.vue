@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Icon from '../../components/Icon.vue'
+import AttrChips from '../../components/AttrChips.vue'
 import { noteIcon } from '@shared/tracker/constants'
 import { useCalendarState } from './useTaskCalendar'
 
@@ -74,6 +75,7 @@ const { els, g, hourPx, onDown, onMove, onUp, onDbl, onContext, hover, visibleNu
       <template v-if="p.w >= 40">
         <div v-if="p.lines" class="et tw:font-semibold tw:whitespace-normal tw:[word-break:break-word] tw:overflow-hidden tw:[display:-webkit-box] tw:[-webkit-box-orient:vertical] tw:[-webkit-line-clamp:var(--lines)]"><Icon :name="entryIcon(p.e)" :size="10" :stroke="2.4" class="eic tw:[&&]:inline-block tw:mr-2 tw:[&&]:[vertical-align:-1px]" /><span v-if="p.e.task" class="key tw:text-info-fg tw:font-semibold">{{ p.e.task.key }}</span> {{ titleOf(p.e) }}<Icon v-if="p.e.series" name="repeat" :size="9" :stroke="2.4" class="eflag tw:[&&]:inline-block tw:ml-4 tw:[&&]:[vertical-align:-1px] tw:opacity-80" /><Icon v-if="p.e.remind && !p.e.remind.fired" name="bell" :size="9" :stroke="2.4" class="eflag tw:[&&]:inline-block tw:ml-4 tw:[&&]:[vertical-align:-1px] tw:opacity-80" /></div>
         <div v-if="p.time" class="em tw:text-[10px] tw:text-muted tw:whitespace-nowrap">{{ formatHM(p.e.start) }}–{{ formatHM(p.e.end) }}</div>
+        <AttrChips v-if="p.e.attrs" class="tw:mt-2" :attrs="p.e.attrs" />
       </template>
     </div>
 

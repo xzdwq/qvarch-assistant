@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { dayStart, MINUTE } from '@shared/timeline'
 import type { EntryKind, Ms } from '@shared/types'
 import type { TaskRef } from '@shared/jira'
+import type { EntryAttrs } from '@shared/tracker/attributes'
 import type { QuickParsed } from '../../components/QuickField.vue'
 import { kinds } from '../../lib/palette'
 import type { EntryEditorEmit, EntryEditorProps } from './entryTypes'
@@ -16,6 +17,8 @@ export function useEntryForm(props: EntryEditorProps, emit: EntryEditorEmit) {
   const kind = ref<EntryKind>('task')
   /** The Jira task this time goes to. */
   const tasks = ref<TaskRef[]>([])
+  /** Its attributes' values (attribute id → value id). */
+  const attrs = ref<EntryAttrs>({})
   const error = ref('')
   const busy = ref(false)
   /** "Continue that topic": what was taken. */
@@ -64,7 +67,7 @@ export function useEntryForm(props: EntryEditorProps, emit: EntryEditorEmit) {
   /** Kinds offered: the shown ones and the block's own (even if hidden). */
   const shown = computed(() => kinds.value.filter((x) => !x.hidden || x.id === kind.value))
 
-  return { start, end, followsNow, startsNow, label, kind, tasks, error, busy, copied, parsed, isNew, readonly, date, dayShift, setDate, addTask, effectiveEnd, setRange, shown }
+  return { start, end, followsNow, startsNow, label, kind, tasks, attrs, error, busy, copied, parsed, isNew, readonly, date, dayShift, setDate, addTask, effectiveEnd, setRange, shown }
 }
 
 export type EntryForm = ReturnType<typeof useEntryForm>

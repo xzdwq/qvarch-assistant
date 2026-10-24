@@ -1,5 +1,6 @@
 import { formatDuration, formatHM, shiftDay } from '../timeline'
-import { sourceOf, taskType, unionOf, type GroupBy, type ReportItem } from '../report'
+import { groupItems, sourceOf, taskType, unionOf, type GroupBy, type ReportGroupBy, type ReportItem } from '../report'
+import { attrDim, attrOfDim, attrValue, optionColor, optionLabel, type AttrDef } from './attributes'
 import type { EventStat } from '../analytics'
 import { fmtDay } from './reportPeriod'
 import { isKind, TASK_TYPE_LOOK } from './constants'
@@ -95,14 +96,37 @@ const GROUP_HEADS: Record<GroupBy, (key: string, kind: KindLook, summaryOf: (tas
   day: (key) => ({ name: fmtDay(key, { weekday: 'short', day: 'numeric', month: 'short' }), color: 'var(--accent)' }),
   week: (key) => ({ name: `${fmtDay(key, { day: 'numeric', month: 'short' })} – ${fmtDay(shiftDay(key, 6), { day: 'numeric', month: 'short' })}`, color: 'var(--accent)' }),
 }
-export const groupHead = (key: string, by: GroupBy, kind: KindLook, summaryOf: (taskKey: string) => string): GroupHead => GROUP_HEADS[by](key, kind, summaryOf)
+/** A row's head by its grouping — an attribute's: its value, in the attribute's colour. */
+export function groupHead(key: string, by: ReportGroupBy, kind: KindLook, summaryOf: (taskKey: string) => string, attrs: readonly AttrDef[] = []): GroupHead {
+  const id = attrOfDim(by)
+  if (id === undefined) return GROUP_HEADS[by as GroupBy](key, kind, summaryOf)
+  const def = attrs.find((a) => a.id === id)
+  return { name: optionLabel(def, key), color: optionColor(def, key) }
+}
+
+/** An attribute's values over the period: time (overlaps once), how many events, the colour — the biggest first. */
+export interface AttrRow {
+  value: string
+  label: string
+  color: string
+  ms: number
+  count: number
+}
+/** Every attribute's values over the items (with «Без значения»; an attribute nobody set — left out). */
+export function attrBreakdown(items: ReportItem[], defs: readonly AttrDef[]): Array<{ def: AttrDef; rows: AttrRow[]; total: number }> {
+  return defs.flatMap((def) => {
+    const rows = groupItems(items, attrDim(def.id)).map((g) => ({ value: g.key, label: optionLabel(def, g.key), color: optionColor(def, g.key), ms: g.ms, count: g.count }))
+    if (!rows.some((r) => r.value)) return []
+    return [{ def, rows, total: rows.reduce((s, r) => s + r.ms, 0) }]
+  })
+}
 
 const HOUR = 3_600_000
-/** The items as CSV (Excel-friendly: «;», decimal comma, BOM), in time order. */
-export function reportCsv(items: ReportItem[], kindLabel: (kind: string) => string): string {
+/** The items as CSV (Excel-friendly: «;», decimal comma, BOM), in time order; a column per attribute at the end. */
+export function reportCsv(items: ReportItem[], kindLabel: (kind: string) => string, attrs: readonly AttrDef[] = []): string {
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`
-  const rows = [['Дата', 'Начало', 'Конец', 'Часы', 'Вид', 'Задача', 'Название задачи', 'Запись', 'Источник'].join(';')]
+  const rows = [['Дата', 'Начало', 'Конец', 'Часы', 'Вид', 'Задача', 'Название задачи', 'Запись', 'Источник', ...attrs.map((a) => q(a.name))].join(';')]
   for (const i of [...items].sort((a, b) => a.e.start - b.e.start))
-    rows.push([i.day, formatHM(i.e.start), formatHM(i.e.end), ((i.e.end - i.e.start) / HOUR).toFixed(2).replace('.', ','), q(kindLabel(i.e.kind)), i.e.task?.key ?? '', q(i.e.task?.summary ?? ''), q(i.e.label), sourceOf(i.e)].join(';'))
+    rows.push([i.day, formatHM(i.e.start), formatHM(i.e.end), ((i.e.end - i.e.start) / HOUR).toFixed(2).replace('.', ','), q(kindLabel(i.e.kind)), i.e.task?.key ?? '', q(i.e.task?.summary ?? ''), q(i.e.label), sourceOf(i.e), ...attrs.map((a) => (attrValue(i.e, a.id) ? q(optionLabel(a, attrValue(i.e, a.id))) : ''))].join(';'))
   return '﻿' + rows.join('\r\n')
 }

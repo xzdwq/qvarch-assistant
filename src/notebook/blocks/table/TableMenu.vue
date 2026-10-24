@@ -26,8 +26,9 @@ const menuOpen = openWhile(menu)
 const menuAnchor = ref<HTMLElement>()
 const MENU_W = 250
 const menuPlace = besidePlace(MENU_W, 330)
-/** Opened by a column's ▾ or a row's handle. */
+/** Opened by a column's ▾ or a row's handle; the same one again — closed. */
 function open(kind: 'col' | 'row', i: number, e: MouseEvent): void {
+  if (menu.value?.kind === kind && menu.value.i === i) return void (menu.value = undefined)
   menuAnchor.value = e.currentTarget as HTMLElement
   menu.value = { kind, i }
 }

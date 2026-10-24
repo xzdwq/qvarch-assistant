@@ -4,11 +4,13 @@ import ReportsTotals from '../tracker/reports/ReportsTotals.vue'
 import ReportsAnalytics from '../tracker/reports/ReportsAnalytics.vue'
 import ReportsChart from '../tracker/reports/ReportsChart.vue'
 import ReportsBreakdown from '../tracker/reports/ReportsBreakdown.vue'
+import ReportsAttrs from '../tracker/reports/ReportsAttrs.vue'
 import { provideReports } from '../tracker/reports/useReportsState'
 
 /**
- * Отчёты — where the time went over a period: totals, a chart by day / week / month and a breakdown by
- * kind / task / day / week (two levels deep, down to the blocks). Filters and the view are remembered;
+ * Отчёты — where the time went over a period: totals, a chart by day / week / month, the events' attributes
+ * (each one's values: time, events, share) and a breakdown by kind / task / day / week / an attribute (two levels
+ * deep, down to the blocks). Filters and the view are remembered;
  * a view can be saved under a name.
  */
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
@@ -27,6 +29,9 @@ provideReports()
 
       <!-- the chart -->
       <ReportsChart @go="(v, d, id) => emit('go', v, d, id)" />
+
+      <!-- by the events' attributes -->
+      <ReportsAttrs />
 
       <!-- the breakdown -->
       <ReportsBreakdown @go="(v, d, id) => emit('go', v, d, id)" />

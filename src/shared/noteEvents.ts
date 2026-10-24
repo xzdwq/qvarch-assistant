@@ -3,6 +3,8 @@
  * own address — readable in any Markdown viewer, shown in the notebook as a live chip (its kind, title, when,
  * done / going on / ahead). `@` in a note opens the list of events to pick from.
  */
+import type { EntryAttrs } from './tracker/attributes'
+
 export interface EventRef {
   day: string
   id: string
@@ -16,6 +18,8 @@ export interface EventRef {
   task?: string
   /** When the event was made (unknown for older ones). */
   created?: number
+  /** Its attributes' values (shared/tracker/attributes). */
+  attrs?: EntryAttrs
 }
 
 export const EVENT_SCHEME = 'qvarch://'

@@ -10,7 +10,7 @@ const id = () => `id${++n}`
 const day = (entries: Entry[] = []): DayData => ({ day: DAY, calls: [], entries, notes: [] })
 const ev = (p: Partial<OutlookEvent>): OutlookEvent => ({
   id: 'ev1',
-  subject: 'DOS: Daily',
+  subject: 'ABC: Daily',
   start: t('10:15'),
   end: t('10:30'),
   allDay: false,
@@ -27,7 +27,7 @@ describe('Outlook meetings on the timeline', () => {
     const d = day()
     expect(applyMeetings(d, [ev({})], DEFAULT_KINDS, id)).toBe(true)
     expect(d.entries).toHaveLength(1)
-    expect(d.entries[0]).toMatchObject({ kind: 'meeting', label: 'DOS: Daily', source: 'outlook', start: t('10:15') })
+    expect(d.entries[0]).toMatchObject({ kind: 'meeting', label: 'ABC: Daily', source: 'outlook', start: t('10:15') })
     applyMeetings(d, [ev({ start: t('10:20'), end: t('10:40') })], DEFAULT_KINDS, id)
     expect(d.entries[0]).toMatchObject({ start: t('10:20'), end: t('10:40') })
   })

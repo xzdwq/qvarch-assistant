@@ -11,20 +11,4 @@
   align-items: flex-start;
   gap: 8px;
 }
-/* one row of equal chips (task, links, voice, reminder, repeat) */
-.bar :deep(.chip),
-.bar :deep(.dict) {
-  height: 32px;
-  min-width: 32px;
-  padding: 0 10px;
-  font-size: 12.5px;
-}
-.bar :deep(.dict) {
-  padding: 0;
-  width: 32px;
-  border-radius: 4px;
-}
-.bar :deep(.dict.on) {
-  width: auto;
-  padding: 0 10px;
-}
+/* the row of small square buttons (task, attributes, voice, reminder, repeat) — their own `square` look, 26 px */

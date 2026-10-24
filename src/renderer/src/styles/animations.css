@@ -109,6 +109,11 @@
   }
 }
 
+@keyframes RecDot-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
 @keyframes WorkBoard-live-blink {
   50% {
     opacity: 0.3;

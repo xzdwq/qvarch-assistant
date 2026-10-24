@@ -37,7 +37,7 @@ async function applyJiraEvery(): Promise<void> {
       <div class="fields tw:grid tw:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] tw:gap-12">
         <label class="tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted">Client ID <input class="tw:[.secret_&]:flex-1" v-model="f.jiraClientId" spellcheck="false" placeholder="из Settings приложения" /></label>
         <label class="tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted">Secret <input class="tw:[.secret_&]:flex-1" v-model="f.jiraSecret" type="password" spellcheck="false" :placeholder="jira.hasSecret ? 'сохранён — введите, чтобы заменить' : 'Client secret'" /></label>
-        <label class="span2 tw:col-span-full tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted">Проекты (ключи или ссылки на доски) <input class="tw:[.secret_&]:flex-1" v-model="f.jiraProjects" spellcheck="false" placeholder="DOS, RND, AI" /></label>
+        <label class="span2 tw:col-span-full tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted">Проекты (ключи или ссылки на доски) <input class="tw:[.secret_&]:flex-1" v-model="f.jiraProjects" spellcheck="false" placeholder="ABC, XYZ" /></label>
         <label class="tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted">
           Синхронизация каждые
           <select v-model.number="f.jiraSyncMin" @change="applyJiraEvery">

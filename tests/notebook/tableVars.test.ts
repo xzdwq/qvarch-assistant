@@ -11,8 +11,8 @@ const note = (...parts: string[]) => parts.join('\n\n')
 
 describe('a table\'s value', () => {
   it('rows as objects; a merged head names each column it spans, a key met twice numbered', () => {
-    const t = parseTable(['<!-- qa:table merge=-1.0.1.2 -->', '| Заказ |  | Заказ |', '| --- | --- | --- |', '| 1 | Иванов | x |'].join('\n'))
-    expect(tableValue(t)).toEqual([{ Заказ: '1', 'Заказ 2': 'Иванов', 'Заказ 3': 'x' }])
+    const t = parseTable(['<!-- qa:table merge=-1.0.1.2 -->', '| Заказ |  | Заказ |', '| --- | --- | --- |', '| 1 | Альфа | x |'].join('\n'))
+    expect(tableValue(t)).toEqual([{ Заказ: '1', 'Заказ 2': 'Альфа', 'Заказ 3': 'x' }])
   })
   it('a merged body cell: every row it covers has its text (each row whole)', () => {
     const t = parseTable(table('merge=0.1.2.1', '| Болт | 10 |', '| Гайка |  |'))

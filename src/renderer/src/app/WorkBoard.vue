@@ -58,7 +58,7 @@ async function onQuick(q: QuickDraft): Promise<void> {
     <BoardHead />
     <BoardTop />
 
-    <QuickAdd ref="quick" class="qadd" :day="day" :week-start="mondayOf(day)" :place="placeQ" :recording="!!rec.state.value" @add="onQuick" @record="onRecord" @stop-record="rec.stop" />
+    <QuickAdd ref="quick" class="qadd" :day="day" :week-start="mondayOf(day)" :place="placeQ" @add="onQuick" @record="onRecord" />
     <p v-if="err" class="err tw:m-0 tw:text-down-fg tw:text-[12px]">{{ err }}</p>
 
     <div class="wgrid tw:flex-1 tw:min-h-0 tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(360px,460px)] tw:gap-12 tw:items-stretch tw:[&&]:@max-[900px]:grid-cols-[minmax(0,1fr)] tw:@max-[900px]:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">

@@ -3,6 +3,7 @@ import type { ReportItem } from '../report'
 import { fmtDay } from './reportPeriod'
 import type { KindLook } from './reportStats'
 import { TASK_TYPE_LOOK, type ChartUnit } from './constants'
+import { attrOfDim, attrValue, optionColor, optionLabel, type AttrDef, type AttrDimension } from './attributes'
 
 /** One bar of the chart (as `bars` of shared/report builds it). */
 export interface Bar {
@@ -22,16 +23,21 @@ const TASK_EXTRAS = new Map<string, { label: string; color: string }>([
   ['', TASK_TYPE_LOOK.none],
   ['*', { label: 'Другие задачи', color: 'var(--report-series-rest)' }],
 ])
-export type ChartColor = 'kind' | 'task'
+export type ChartColor = 'kind' | 'task' | AttrDimension
 
-/** How the chart splits its bars: by kind, or by the top tasks. */
+/** How the chart splits its bars: by kind, by the top tasks, or by an attribute's values. */
 export interface SeriesScheme {
   of: (i: ReportItem) => string
   color: (s: string) => string
   label: (s: string) => string
 }
-export function seriesScheme(by: ChartColor, topTasks: string[], kind: KindLook): SeriesScheme {
+export function seriesScheme(by: ChartColor, topTasks: string[], kind: KindLook, attrs: readonly AttrDef[] = []): SeriesScheme {
   if (by === 'kind') return { of: (i) => i.e.kind, color: kind.color, label: kind.label }
+  const id = attrOfDim(by)
+  if (id !== undefined) {
+    const def = attrs.find((a) => a.id === id)
+    return { of: (i) => attrValue(i.e, id), color: (s) => optionColor(def, s), label: (s) => optionLabel(def, s) }
+  }
   return {
     of: (i) => (!i.e.task ? '' : topTasks.includes(i.e.task.key) ? i.e.task.key : '*'),
     color: (s) => TASK_EXTRAS.get(s)?.color ?? taskSeriesColor(topTasks.indexOf(s)),

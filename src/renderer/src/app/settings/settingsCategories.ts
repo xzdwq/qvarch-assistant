@@ -1,5 +1,5 @@
 /** The settings' sections (like System Settings): a sidebar, or tabs on top in a narrow window. */
-export type SettingsCategoryId = 'general' | 'kinds' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira' | 'browser' | 'ai'
+export type SettingsCategoryId = 'general' | 'kinds' | 'attributes' | 'look' | 'ui' | 'voice' | 'tablet' | 'outlook' | 'jira' | 'browser' | 'ai'
 
 export interface SettingsCategory {
   id: SettingsCategoryId
@@ -13,6 +13,7 @@ export interface SettingsCategory {
 const CATEGORY: Record<SettingsCategoryId, Omit<SettingsCategory, 'id'>> = {
   general: { icon: 'clock', label: 'Основное' },
   kinds: { icon: 'tag', label: 'Виды занятости' },
+  attributes: { icon: 'layers', label: 'Атрибуты', appliesAtOnce: true },
   look: { icon: 'palette', label: 'Оформление' },
   ui: { icon: 'layers', label: 'Интерфейс', appliesAtOnce: true },
   voice: { icon: 'mic', label: 'Голос', appliesAtOnce: true },

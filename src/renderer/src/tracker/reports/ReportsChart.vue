@@ -2,7 +2,9 @@
 import { computed } from 'vue'
 import { bars, groupItems } from '@shared/report'
 import { HOUR } from '@shared/timeline'
-import { barCaption, barSegments, barTooltip, chartUnit, isWeekendBar, seriesOrder, seriesScheme, yScale, yTicks as ticksOf, type Bar } from '@shared/tracker/reportChart'
+import { barCaption, barSegments, barTooltip, chartUnit, isWeekendBar, seriesOrder, seriesScheme, yScale, yTicks as ticksOf, type Bar, type ChartColor } from '@shared/tracker/reportChart'
+import { attrDim } from '@shared/tracker/attributes'
+import { attrDefs } from '../../lib/attributes'
 import { KIND_LOOK, todayDay as today, useReports } from './useReportsState'
 
 /** The report's chart: a bar per day / week / month, split by kind or by the top tasks. */
@@ -11,7 +13,13 @@ const { st, allDays, items } = useReports()
 
 /** The 9 biggest tasks get their colours, the rest are "другое". */
 const topTasks = computed(() => groupItems(items.value, 'task').filter((g) => g.key).slice(0, 9).map((g) => g.key))
-const scheme = computed(() => seriesScheme(st.value.color, topTasks.value, KIND_LOOK))
+const scheme = computed(() => seriesScheme(st.value.color, topTasks.value, KIND_LOOK, attrDefs.value))
+/** The bars split by: kind, task, or an attribute (its letters). */
+const COLORS = computed<Array<{ id: ChartColor; label: string; title?: string }>>(() => [
+  { id: 'kind', label: 'Вид' },
+  { id: 'task', label: 'Задача' },
+  ...attrDefs.value.map((a) => ({ id: attrDim(a.id), label: a.short, title: `По атрибуту «${a.name}»` })),
+])
 const seriesColor = (s: string) => scheme.value.color(s)
 const seriesLabel = (s: string) => scheme.value.label(s)
 const unit = computed(() => chartUnit(allDays.value.length))
@@ -39,8 +47,7 @@ function openBar(key: string): void {
       <span class="ct tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">{{ unit === 'day' ? 'По дням' : unit === 'week' ? 'По неделям' : 'По месяцам' }}</span>
       <span class="sp tw:flex-1"></span>
       <div class="seg sm tw:inline-flex tw:p-2 tw:rounded-[4px] tw:bg-white/4 tw:border tw:border-border">
-        <button class="tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:whitespace-nowrap tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:h-22 tw:py-0 tw:px-8 tw:text-[11.5px]" :class="{ on: st.color === 'kind' }" @click="st.color = 'kind'">Вид</button>
-        <button class="tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:whitespace-nowrap tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:h-22 tw:py-0 tw:px-8 tw:text-[11.5px]" :class="{ on: st.color === 'task' }" @click="st.color = 'task'">Задача</button>
+        <button v-for="c in COLORS" :key="c.id" class="tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:whitespace-nowrap tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:h-22 tw:py-0 tw:px-8 tw:text-[11.5px]" :class="{ on: st.color === c.id }" :title="c.title" @click="st.color = c.id">{{ c.label }}</button>
       </div>
     </div>
     <div class="chart tw:flex tw:h-200">

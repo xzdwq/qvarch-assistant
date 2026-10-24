@@ -1,25 +1,30 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { formatDuration, formatHM } from '@shared/timeline'
-import { groupItems, type GroupBy } from '@shared/report'
+import { groupItems, type ReportGroupBy } from '@shared/report'
+import { attrDim } from '@shared/tracker/attributes'
+import { attrDefs } from '../../lib/attributes'
 import { entryIcon, kindColor } from '../../lib/palette'
 import Icon from '../../components/Icon.vue'
 import NoteLinks from '../../components/NoteLinks.vue'
+import AttrChips from '../../components/AttrChips.vue'
 import { fmtDay as fmt } from '@shared/tracker/reportPeriod'
 import { groupHead } from '@shared/tracker/reportStats'
 import { KIND_LOOK, useReports } from './useReportsState'
 
-/** The report's breakdown: groups by kind / task / day / week, two levels deep, down to the blocks. */
+/** The report's breakdown: groups by kind / task / day / week / an attribute, two levels deep, down to the blocks. */
 const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
 const { st, loading, all, items } = useReports()
 
-const GROUPS: Array<{ id: GroupBy; label: string }> = [
+/** The groupings: the fixed ones, then one per attribute (its letters; its name in the tooltip). */
+const GROUPS = computed<Array<{ id: ReportGroupBy; label: string; title?: string }>>(() => [
   { id: 'kind', label: 'Вид' },
   { id: 'task', label: 'Задача' },
   { id: 'day', label: 'День' },
   { id: 'week', label: 'Неделя' },
-]
-const subBy = computed<GroupBy>(() => (st.value.group === 'kind' ? 'task' : 'kind'))
+  ...attrDefs.value.map((a) => ({ id: attrDim(a.id), label: a.short, title: `По атрибуту «${a.name}»` })),
+])
+const subBy = computed<ReportGroupBy>(() => (st.value.group === 'kind' ? 'task' : 'kind'))
 const groups = computed(() => groupItems(items.value, st.value.group))
 const maxGroup = computed(() => Math.max(1, ...groups.value.map((g) => g.ms)))
 const openKeys = ref(new Set<string>())
@@ -31,7 +36,7 @@ function flip(k: string): void {
 }
 watch(() => st.value.group, () => (openKeys.value = new Set()))
 const summaryOf = (key: string) => all.value.find((i) => i.e.task?.key === key)?.e.task?.summary ?? ''
-const groupName = (key: string, by: GroupBy) => groupHead(key, by, KIND_LOOK, summaryOf)
+const groupName = (key: string, by: ReportGroupBy) => groupHead(key, by, KIND_LOOK, summaryOf, attrDefs.value)
 /** Shares of the groups' sum (groups may overlap in time — the shares still add up to 100%). */
 const groupSum = computed(() => groups.value.reduce((s, g) => s + g.ms, 0))
 const pct = (ms: number) => (groupSum.value ? Math.round((ms / groupSum.value) * 100) : 0)
@@ -43,7 +48,7 @@ const pct = (ms: number) => (groupSum.value ? Math.round((ms / groupSum.value) *
       <span class="ct tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Разбивка</span>
       <span class="sp tw:flex-1"></span>
       <div class="seg sm tw:inline-flex tw:p-2 tw:rounded-[4px] tw:bg-white/4 tw:border tw:border-border">
-        <button class="tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:whitespace-nowrap tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:h-22 tw:py-0 tw:px-8 tw:text-[11.5px]" v-for="g in GROUPS" :key="g.id" :class="{ on: st.group === g.id }" @click="st.group = g.id">{{ g.label }}</button>
+        <button class="tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:whitespace-nowrap tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/25 tw:[&.on]:text-text-hi tw:h-22 tw:py-0 tw:px-8 tw:text-[11.5px]" v-for="g in GROUPS" :key="g.id" :class="{ on: st.group === g.id }" :title="g.title" @click="st.group = g.id">{{ g.label }}</button>
       </div>
     </div>
     <!-- the shares in one line -->
@@ -78,6 +83,7 @@ const pct = (ms: number) => (groupSum.value ? Math.round((ms / groupSum.value) *
                 <span class="ed tw:flex-none tw:text-muted tw:tabular-nums tw:font-data tw:w-48">{{ fmt(i.day, { day: 'numeric', month: 'short' }) }}</span>
                 <span class="et tw:flex-none tw:text-muted tw:tabular-nums tw:font-data">{{ formatHM(i.e.start) }}–{{ formatHM(i.e.end) }}</span>
                 <span class="el tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ i.e.label }}</span>
+                <AttrChips :attrs="i.e.attrs" />
                 <NoteLinks :id="i.e.id" />
                 <span class="eh tw:flex-none tw:text-muted tw:tabular-nums tw:font-data">{{ formatDuration(i.e.end - i.e.start) }}</span>
               </button>

@@ -11,9 +11,9 @@ const SIZE_HINT_MS = 900
 /**
  * The pointer on the sheet: a press starts the current tool's gesture (the middle / right button, Space or the
  * hand — the view pans), moves follow it, the release commits it. The wheel sizes the tool (Ctrl — zooms,
- * Shift / Alt — pans).
+ * Shift / Alt — pans); `pageWheel` (a board inside a note) — the plain wheel is the page's: it scrolls the note.
  */
-export function useBoardPointer(b: BoardCtx, liveCanvas: Ref<HTMLCanvasElement | undefined>, reportCanvas: () => void) {
+export function useBoardPointer(b: BoardCtx, liveCanvas: Ref<HTMLCanvasElement | undefined>, reportCanvas: () => void, opts: { pageWheel?: boolean } = {}) {
   const { scene, viewport, tools } = b
   let gesture: Gesture | undefined
 
@@ -62,6 +62,7 @@ export function useBoardPointer(b: BoardCtx, liveCanvas: Ref<HTMLCanvasElement |
   }
 
   function onWheel(e: WheelEvent): void {
+    if (opts.pageWheel && !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey)) return
     e.preventDefault()
     const v = viewport.view.value
     if (!v || gesture) return

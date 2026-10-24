@@ -1,0 +1,6 @@
+/* MenuPlaces: what its template cannot carry as utilities (scoped). */
+
+/* a row moving to its new place while dragged */
+.mrow-move {
+  transition: transform 0.15s ease;
+}

@@ -17,6 +17,8 @@ export function registerAppIpc(app: AppContext): void {
     if (patch.captureTitles !== undefined) app.probe.setTitles(patch.captureTitles)
     if (patch.countKeys !== undefined) app.probe.setKeys(patch.countKeys)
     if (patch.voice) app.emitToAll('onVoice', app.voice.state())
+    // attributes deleted / values taken out: the days they went off are shown again
+    if (patch.attributes) app.broadcast()
     const s = store.publicSettings()
     app.emitToAll('onSettings', s)
     return s

@@ -66,9 +66,9 @@ export class AppContext {
       this.emitToAll('onDayState', msg)
     }, 250)
   }
-  /** What goes on now: the clock, a call, a recording. */
+  /** What goes on now: the clock, a call. */
   live(): LiveStatus {
-    return { ...this.tracker.live, now: Date.now(), recording: this.recording?.state }
+    return { ...this.tracker.live, now: Date.now() }
   }
   /** An event to the main window and the island. */
   emitToAll<K extends EventMethod>(name: K, ...args: EventArgs<K>): void {

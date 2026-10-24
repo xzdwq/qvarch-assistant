@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { remoteError } from '../../../shared/remoteError'
 import Icon from './Icon.vue'
+import type { HopSide } from '@shared/tabletHop'
 import { useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
 import { provideBoard, type BoardCtx } from './board/boardContext'
 import BoardToolbar from './board/BoardToolbar.vue'
@@ -31,8 +32,11 @@ import { useToolPrefs } from './board/useToolPrefs'
  * The visible area is the tablet's "Qvarch canvas". The parts live in ./board: the document, the view, the
  * tools (a registry), the gestures, the painter.
  */
-/** `preview`: only shown (a board inside a note) — no tools, no input, always the whole board in view. */
-const props = defineProps<{ path: string; text: string; preview?: boolean }>()
+/**
+ * `preview`: only shown — no tools, no input, always the whole board in view. `inline`: drawn on inside a note — the
+ * plain wheel scrolls the note (Ctrl — zooms), its view its own; one of several surfaces the pen goes between.
+ */
+const props = defineProps<{ path: string; text: string; preview?: boolean; inline?: boolean }>()
 const emit = defineEmits<{ change: [text: string]; info: [text: string]; warn: [text: string] }>()
 
 if (!props.preview) useTabletLive()
@@ -74,7 +78,15 @@ const b: BoardCtx = { doc, viewport, tools, text, scene, frames, hint, pictures,
 // a preview in a note is no tablet surface
 const canvasTarget = useTabletCanvas(props.preview ? ref<HTMLElement>() : sheet)
 const canvas = useBoardCanvas(b, painter, !!props.preview, { cv, lv, mm })
-const pointer = useBoardPointer(b, lv, () => canvasTarget.report())
+const pointer = useBoardPointer(b, lv, () => canvasTarget.report(), { pageWheel: props.inline })
+/** The pen about to come over from another board: a bar filling along the edge it comes in at. */
+const hop = canvasTarget.hop
+const HOP_BAR: Record<HopSide, (p: number) => Record<string, string>> = {
+  left: (p) => ({ left: '0', top: '0', width: '4px', height: `${p * 100}%` }),
+  right: (p) => ({ right: '0', top: '0', width: '4px', height: `${p * 100}%` }),
+  top: (p) => ({ top: '0', left: '0', height: '4px', width: `${p * 100}%` }),
+  bottom: (p) => ({ bottom: '0', left: '0', height: '4px', width: `${p * 100}%` }),
+}
 const images = useBoardImages(b, imgInput)
 const actions = useSelectionActions(b, images)
 const keys = useBoardKeys(b, actions, () => canvasTarget.isActive())
@@ -140,6 +152,7 @@ const sizeHint = hint.text
         @blur="finishText"
         @pointerdown.stop
       ></textarea>
+      <i v-if="hop" class="hopbar tw:absolute tw:z-5 tw:bg-accent tw:pointer-events-none tw:[box-shadow:0_0_10px_var(--accent)]" title="Ручка переходит на эту доску" :style="HOP_BAR[hop.from](hop.progress)"></i>
       <span v-if="sizeHint" class="hint tw:absolute tw:left-[50%] tw:top-10 tw:[transform:translateX(-50%)] tw:py-3 tw:px-10 tw:rounded-[4px] tw:bg-bg/82 tw:text-text tw:text-[12px] tw:pointer-events-none">{{ sizeHint }}</span>
       <div v-if="tp.minimap" class="mini tw:group/mini tw:absolute tw:right-10 tw:bottom-10 tw:z-3 tw:border tw:border-accent/45 tw:rounded-[4px] tw:overflow-hidden tw:[box-shadow:0_6px_18px_rgba(0,0,0,0.3)]" title="Миникарта: клик или перетаскивание — перейти">
         <canvas class="tw:inset-0 tw:w-full tw:h-full tw:static tw:block tw:cursor-pointer" ref="mm" :style="{ width: `${MM_W}px`, height: `${MM_H}px` }" @pointerdown.stop="mmGo" @pointermove="mmGo"></canvas>

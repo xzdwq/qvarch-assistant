@@ -7,7 +7,7 @@ import type { Entry, Ms } from '../types'
  */
 
 /** What a copy is made of (an event as the card shows it — maybe edited, not saved yet). */
-export type CopySource = Pick<Entry, 'start' | 'end' | 'label' | 'kind'> & Partial<Pick<Entry, 'description' | 'task'>>
+export type CopySource = Pick<Entry, 'start' | 'end' | 'label' | 'kind'> & Partial<Pick<Entry, 'description' | 'task' | 'attrs'>>
 export interface CopyPlace {
   start: Ms
   end: Ms
@@ -22,7 +22,7 @@ export function sameTimesOn(p: CopyPlace, from: string, to: string): CopyPlace {
   const shift = dayStart(to) - dayStart(from)
   return { start: p.start + shift, end: p.end + shift }
 }
-/** The new event: the source's kind, text and task at the place given — a plain manual one. */
+/** The new event: the source's kind, text, task and attributes at the place given — a plain manual one. */
 export function copyDraft(e: CopySource, at: CopyPlace): Omit<Entry, 'id'> {
-  return { start: at.start, end: at.end, lane: at.lane, label: e.label, description: e.description, task: e.task, kind: e.kind, source: 'manual' }
+  return { start: at.start, end: at.end, lane: at.lane, label: e.label, description: e.description, task: e.task, kind: e.kind, source: 'manual', ...(e.attrs ? { attrs: { ...e.attrs } } : {}) }
 }

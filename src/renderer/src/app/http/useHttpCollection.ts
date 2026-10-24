@@ -20,6 +20,13 @@ export function useHttpCollection() {
       // fine
     }
   })
+  // a request sent here from another section (the browser's recording) while this one stays on (in «Инструменты»)
+  const onSelect = (e: Event) => {
+    const id = (e as CustomEvent<string>).detail
+    if (id) sel.value = id
+  }
+  window.addEventListener('qa:http-select', onSelect)
+  onBeforeUnmount(() => window.removeEventListener('qa:http-select', onSelect))
   void window.qa.httpLoad().then((d) => {
     doc.items = d.items
     doc.vars = d.vars

@@ -1,31 +1,36 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import type { HttpKV } from '@shared/http'
 import Icon from './Icon.vue'
 
 /**
- * Rows «key = value» with an on/off box; one empty row is always at the end (typing in it adds a row).
+ * Rows «key = value» with an on/off box; exactly one empty row, at the end (typing in it adds a row; a row emptied
+ * goes once it is left — never under the cursor).
  * `secrets` — the variables' editor: a lock per row makes the value a secret (hidden, kept encrypted).
  */
 const props = defineProps<{ rows: HttpKV[]; keyHint?: string; valueHint?: string; secrets?: boolean }>()
 /** Secret values shown for a moment (the eye). */
 const shown = reactive(new Set<number>())
-// the empty last row
-watch(
-  () => props.rows.length && props.rows[props.rows.length - 1],
-  () => {
-    const last = props.rows[props.rows.length - 1]
-    if (!last || last.key || last.value) props.rows.push({ on: true, key: '', value: '' })
-  },
-  { immediate: true, deep: true },
-)
+const root = ref<HTMLElement>()
+const isEmpty = (r: HttpKV) => !r.key && !r.value
+/** The empty rows but the last one gone (not the one being typed in), one empty row at the end. */
+function tidy(): void {
+  const typing = root.value?.querySelector('.kr:focus-within')
+  const rowEls = root.value ? [...root.value.querySelectorAll('.kr')] : []
+  for (let i = props.rows.length - 2; i >= 0; i--) if (isEmpty(props.rows[i]) && rowEls[i] !== typing) props.rows.splice(i, 1)
+  const last = props.rows[props.rows.length - 1]
+  if (!last || !isEmpty(last)) props.rows.push({ on: true, key: '', value: '' })
+}
+watch(() => props.rows.map((r) => `${r.key}\u0000${r.value}`).join('\u0001'), tidy, { immediate: true })
+/** A row left: emptied — it goes now. */
+const onLeave = () => void nextTick(tidy)
 function drop(i: number): void {
   props.rows.splice(i, 1)
 }
 </script>
 
 <template>
-  <div class="kv tw:group/kv tw:flex tw:flex-col tw:border tw:border-border tw:rounded-r2 tw:overflow-hidden" :class="{ sec: secrets }">
+  <div ref="root" class="kv tw:group/kv tw:flex tw:flex-col tw:border tw:border-border tw:rounded-r2 tw:overflow-hidden" :class="{ sec: secrets }" @focusout="onLeave">
     <div v-for="(r, i) in rows" :key="i" class="kr tw:group/kr tw:grid tw:grid-cols-[28px_minmax(0,1fr)_minmax(0,2fr)_28px] tw:items-center tw:border-b tw:border-b-border tw:group-[.sec]/kv:grid-cols-[28px_minmax(0,1fr)_minmax(0,2fr)_28px_28px] tw:last:border-b-0" :class="{ off: !r.on }">
       <input class="tw:justify-self-center tw:[&:not([type='checkbox'])]:h-30 tw:[&:not([type='checkbox'])]:py-0 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border-0 tw:[&&]:[&:not([type='checkbox'])]:border-l tw:[&&]:[&:not([type='checkbox'])]:border-l-border tw:[&:not([type='checkbox'])]:rounded-none tw:[&:not([type='checkbox'])]:bg-transparent tw:[&:not([type='checkbox'])]:font-data tw:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:focus:bg-field tw:[&:not([type='checkbox'])]:focus:[box-shadow:var(--shadow-ring-accent)] tw:group-[.off]/kr:[&:not([type='checkbox'])]:opacity-45" v-model="r.on" type="checkbox" title="Отправлять" :disabled="!r.key && !r.value" />
       <input v-model="r.key" class="k tw:[&:not([type='checkbox'])]:h-30 tw:[&:not([type='checkbox'])]:py-0 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border-0 tw:[&&]:[&:not([type='checkbox'])]:border-l tw:[&&]:[&:not([type='checkbox'])]:border-l-border tw:[&:not([type='checkbox'])]:rounded-none tw:[&:not([type='checkbox'])]:bg-transparent tw:[&:not([type='checkbox'])]:font-data tw:[&:not([type='checkbox'])]:text-[12.5px] tw:[&:not([type='checkbox'])]:focus:bg-field tw:[&:not([type='checkbox'])]:focus:[box-shadow:var(--shadow-ring-accent)] tw:group-[.off]/kr:[&:not([type='checkbox'])]:opacity-45" :placeholder="keyHint ?? 'ключ'" spellcheck="false" />

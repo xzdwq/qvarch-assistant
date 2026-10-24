@@ -2,6 +2,7 @@ import type { Remind, RepeatRule } from './repeat'
 import type { OutlookSource } from './outlook'
 import type { Contrast } from './contrast'
 import type { AudioNoteKind } from './tracker/constants'
+import type { AttrDef, EntryAttrs } from './tracker/attributes'
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -68,6 +69,10 @@ export interface Entry {
   series?: { id: string; rule: RepeatRule }
   /** When it was made (events made before 0.106 have none). */
   created?: Ms
+  /** «Запись»: its end follows the clock (now, or once its time comes) until stopped (shared/tracker/recording). */
+  recording?: true
+  /** Its attributes' values: attribute id → option id (shared/tracker/attributes). */
+  attrs?: EntryAttrs
 }
 
 /** A planned block of the day ("План на день") — kept apart from what actually happened (Entry). */
@@ -204,8 +209,11 @@ export interface UiPrefs {
   timeline: { follow: boolean; stepSec: number; leftPx: number; idleSec: number; zoom: 'keep' | 'fixed'; spanMin: number; countdown: 'any' | 'outlook' }
   /** The look: contrast, the accent colour, the panels' corners (px), numbers in the mono face. */
   theme: { contrast: Contrast; accent: string; radius: number; mono: boolean }
-  /** The main menu: the sections in the user's order; hidden ones are not shown. */
-  menu: { order: string[]; hidden: string[] }
+  /**
+   * The main menu: the bar's sections in the user's order (hidden ones are not shown); `tools` — what stands in
+   * «Инструменты», in its order (the sections moved there and its own tools — shared/places).
+   */
+  menu: { order: string[]; hidden: string[]; tools: string[] }
 }
 export type UiPrefsPatch = { [K in keyof UiPrefs]?: Partial<UiPrefs[K]> }
 
@@ -213,6 +221,8 @@ export type UiPrefsPatch = { [K in keyof UiPrefs]?: Partial<UiPrefs[K]> }
 export interface Settings {
   schedule: WorkSchedule
   kinds: KindDef[]
+  /** The events' attributes: the person's lists (shared/tracker/attributes). */
+  attributes: AttrDef[]
   /** Record window/tab titles of active apps (privacy: off by default). */
   captureTitles: boolean
   /** Count key presses for the typing combo (only the moments — never which keys). */
@@ -239,6 +249,8 @@ export type PublicSettings = Settings
 export interface SettingsPatch {
   schedule?: Partial<WorkSchedule>
   kinds?: KindDef[]
+  /** The whole list: an attribute left out is deleted — its values go off every event (as do values taken out of a list). */
+  attributes?: AttrDef[]
   captureTitles?: boolean
   countKeys?: boolean
   jira?: { clientId?: string; projects?: string[]; site?: string; syncMin?: number }
@@ -255,13 +267,6 @@ export interface LiveStatus {
   now: Ms
   inCall: boolean
   callApp?: string
-  /** «Запись» going on (an event whose end follows the clock). */
-  recording?: RecordingState
-}
-/** A recording going on: its event and the day it is on (shared/tracker/recording). */
-export interface RecordingState {
-  day: string
-  entryId: string
 }
 
 /**

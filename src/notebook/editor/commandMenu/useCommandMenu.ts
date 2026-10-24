@@ -12,7 +12,9 @@ import type { CommandEffect, NoteCommand } from '@nb/commands/command'
 import { matchCommands, pickerMode } from '@nb/commands/registry'
 import { events, eventsNow, eventsTick } from '@renderer/lib/noteEvents'
 import { todayKey } from '@renderer/lib/today'
-import { tree } from '@renderer/lib/notebook'
+import { loadTree, tree } from '@renderer/lib/notebook'
+import { freshBoard } from '@renderer/lib/boardPrefs'
+import { serializeBoard } from '@shared/whiteboard'
 import { visibleRect } from '@renderer/lib/floating'
 import { loadEmoji, searchEmoji, useEmoji, type Emoji } from '@renderer/lib/emoji'
 import { focusNewBlock } from '../components/componentWidget'
@@ -34,7 +36,7 @@ export interface MenuPlace {
   y: number
   up: boolean
 }
-export type MenuRow = { head: string; more?: number } | { cmd: NoteCommand } | { emojis: Emoji[] } | { board: string } | { ev: EventRef } | { jira: JiraIssue }
+export type MenuRow = { head: string; more?: number } | { cmd: NoteCommand } | { emojis: Emoji[] } | { board: string } | { newBoard: string } | { ev: EventRef } | { jira: JiraIssue }
 
 /** «@» right before the cursor, and the query typed after it. */
 const AT = /(?:^|[\s(«"'])@([^\n@]{0,60})$/
@@ -144,7 +146,8 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     // «@доска …»: the boards only
     if (mode.value?.mode === 'board') {
       const bs = boardsFor(mode.value.q)
-      out.push({ head: bs.length ? 'Доски' : 'Досок не найдено' })
+      out.push({ head: 'Доски' })
+      out.push({ newBoard: mode.value.q.trim() })
       for (const board of bs.slice(0, 50)) out.push({ board })
       return out
     }
@@ -255,11 +258,19 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     if (!r || !p || !v) return
     if ('cmd' in r) return applyEffect(r.cmd.run(commandContext(v, v.state.facet(editorHost).notePath(), p.query)))
     if ('emojis' in r) return pickEmoji(r.emojis[Math.min(stripIdx.value, r.emojis.length - 1)])
-    if ('board' in r) return insertBlock(boardMd(r.board))
+    if ('board' in r) return insertBlock(boardMd(r.board, 'edit'))
+    if ('newBoard' in r) return void createBoard(r.newBoard, v.state.facet(editorHost).notePath())
     const ins = 'ev' in r ? eventLink(r.ev) : 'jira' in r ? jiraLink(r.jira.key, r.jira.summary) : ''
     v.dispatch({ changes: { from: p.from, to: p.to, insert: `${ins} ` }, selection: { anchor: p.from + ins.length + 1 }, scrollIntoView: true })
     close()
     v.focus()
+  }
+  /** A new board next to the note (named as typed after «@доска»), put in to be drawn on right there. */
+  async function createBoard(name: string, notePath: string): Promise<void> {
+    const dir = notePath.split('/').slice(0, -1).join('/')
+    const path = await window.qa.vaultCreate(dir, 'board', name || undefined, serializeBoard(freshBoard()))
+    await loadTree()
+    insertBlock(boardMd(path, 'edit'))
   }
   function pickEmoji(e: Emoji | undefined): void {
     if (!e) return

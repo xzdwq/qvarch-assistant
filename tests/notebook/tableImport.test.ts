@@ -7,8 +7,8 @@ import type { CellGrid } from '../../src/shared/tableData'
 const GRID: CellGrid = {
   rows: [
     ['Заказ №', '', 'Сумма'],
-    ['1', 'Иванов', ''],
-    ['2', 'Петров', '1500'],
+    ['1', 'Альфа', ''],
+    ['2', 'Бета', '1500'],
   ],
   merges: [
     { r: 0, c: 0, rs: 1, cs: 2 },
@@ -21,8 +21,8 @@ describe('a grid as a table', () => {
     const s = tableShape(GRID, true)
     expect(s.head).toEqual(['Заказ №', '', 'Сумма'])
     expect(s.rows).toEqual([
-      ['1', 'Иванов', ''],
-      ['2', 'Петров', '1500'],
+      ['1', 'Альфа', ''],
+      ['2', 'Бета', '1500'],
     ])
     // the head's colspan; «Сумма» down one more row — a single body cell, not a merge
     expect(s.merges).toEqual([{ r: -1, c: 0, rs: 1, cs: 2 }])
@@ -74,7 +74,7 @@ describe('a paste into a table', () => {
 })
 
 describe('merged cells of the head', () => {
-  const md = ['<!-- qa:table merge=-1.0.1.2 -->', '| Заказ |  | Сумма |', '| --- | --- | --- |', '| 1 | Иванов | 10 |'].join('\n')
+  const md = ['<!-- qa:table merge=-1.0.1.2 -->', '| Заказ |  | Сумма |', '| --- | --- | --- |', '| 1 | Альфа | 10 |'].join('\n')
   it('kept in the file and read back', () => {
     const t = parseTable(md)
     expect(t.merges).toEqual([{ r: -1, c: 0, rs: 1, cs: 2 }])
@@ -90,8 +90,8 @@ describe('merged cells of the head', () => {
     expect(t.merges).toEqual([{ r: -1, c: 0, rs: 1, cs: 2 }])
   })
   it('do not keep the rows from being sorted', () => {
-    const t = parseTable([...md.split('\n'), '| 2 | Петров | 5 |'].join('\n'))
+    const t = parseTable([...md.split('\n'), '| 2 | Бета | 5 |'].join('\n'))
     expect(sortRowsBy(t, 2, 1)).toBe(true)
-    expect(t.rows.map((r) => r[1])).toEqual(['Петров', 'Иванов'])
+    expect(t.rows.map((r) => r[1])).toEqual(['Бета', 'Альфа'])
   })
 })

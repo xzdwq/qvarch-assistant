@@ -14,7 +14,9 @@ import type { EntryReminder } from './useEntryReminder'
 
 /** What the card does with the event: save (a series asks this one / all), copy (what of it, where it went), delete. */
 export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, form: EntryForm, rem: EntryReminder) {
-  const { start, label, kind, tasks, error, busy, isNew, readonly, date, dayShift, effectiveEnd, followsNow, parsed } = form
+  const { start, label, kind, tasks, attrs, error, busy, isNew, readonly, date, dayShift, effectiveEnd, followsNow, parsed } = form
+  /** The attributes as saved: none set — no field. */
+  const savedAttrs = () => (Object.keys(attrs.value).length ? { ...attrs.value } : undefined)
   /** A series asks once per editing: this one or all of them. */
   let seriesScope: 'one' | 'all' | undefined
   const forgetSeriesScope = () => (seriesScope = undefined)
@@ -40,6 +42,7 @@ export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, 
       task: t,
       kind: kind.value,
       remind: rem.remind.value,
+      attrs: savedAttrs(),
     }
     await window.qa.seriesSave(props.day, next)
     emit('saved', await moveToDate(next), date.value)
@@ -103,6 +106,7 @@ export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, 
           kind: kind.value,
           source: props.entry.id ? props.entry.source : 'manual',
           remind: rem.remind.value,
+          attrs: savedAttrs(),
           // only the first one replaces the edited block; the rest are new
           ...(n > 0 ? { id: undefined, lane: undefined, series: undefined } : {}),
         }, { overlap: true })
@@ -130,7 +134,7 @@ export function useEntryActions(props: EntryEditorProps, emit: EntryEditorEmit, 
   const copySource = computed<CopySource>(() => {
     const parts = splitTitle(label.value)
     const t = tasks.value[0] ? plainTask(tasks.value[0]) : undefined
-    return { start: start.value, end: effectiveEnd.value, label: blockLabel(parts.label, t, kindLabel(kind.value)), description: parts.description, task: t, kind: kind.value }
+    return { start: start.value, end: effectiveEnd.value, label: blockLabel(parts.label, t, kindLabel(kind.value)), description: parts.description, task: t, kind: kind.value, attrs: savedAttrs() }
   })
   /** A copy made (right after, or on the date and times picked in «Копия»): said where; the event itself stays. */
   const copiedTo = ref('')

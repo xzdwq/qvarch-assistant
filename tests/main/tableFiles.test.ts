@@ -8,8 +8,8 @@ async function workbook(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Заказы')
   ws.addRow(['Заказ', null, 'Сумма'])
-  ws.addRow([1, 'Иванов', 10])
-  ws.addRow([2, 'Петров', { formula: 'C2*2', result: 20 }])
+  ws.addRow([1, 'Альфа', 10])
+  ws.addRow([2, 'Бета', { formula: 'C2*2', result: 20 }])
   ws.addRow([new Date(Date.UTC(2026, 0, 31)), 'дата', null])
   ws.mergeCells('A1:B1')
   ws.mergeCells('C1:C1')
@@ -24,8 +24,8 @@ describe('an Excel file read', () => {
     const g = sheets[0].grid
     expect(g.rows).toEqual([
       ['Заказ', '', 'Сумма'],
-      ['1', 'Иванов', '10'],
-      ['2', 'Петров', '20'],
+      ['1', 'Альфа', '10'],
+      ['2', 'Бета', '20'],
       ['31.01.2026', 'дата', ''],
     ])
     expect(g.merges).toEqual([{ r: 0, c: 0, rs: 1, cs: 2 }])

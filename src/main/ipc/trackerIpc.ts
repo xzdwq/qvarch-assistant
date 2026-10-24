@@ -19,12 +19,12 @@ export function registerTrackerIpc(app: AppContext, series: Series): void {
 
   handle('getDay', (_e, day) => store.day(day))
   handle('getLive', () => app.live())
-  // the recording's event: edited as any, its end stays the recording's
-  handle('saveEntry', (_e, day, input, opts) => saveEntry(app, day, app.recording.owns(input.id) ? { ...input, end: app.recording.currentEnd() ?? input.end } : input, opts))
+  // a recorded event: edited as any, its mark and its stretched end stay the recording's
+  handle('saveEntry', (_e, day, input, opts) => saveEntry(app, day, app.recording.guard(day, input), opts))
 
-  // ---------- «Запись»: an event whose end follows the clock ----------
-  handle('recordStart', (_e, kind, label) => app.recording.start(kind, label))
-  handle('recordStop', () => app.recording.stop())
+  // ---------- «Запись»: events whose end follows the clock ----------
+  handle('recordStart', (_e, kind, label) => app.recording.begin(kind, label))
+  handle('recordSet', (_e, day, id, on) => app.recording.set(day, id, on))
   handle('mergeEntries', (_e, day, ids) => {
     const d = store.day(day)
     if (d.entries.some((e) => ids.includes(e.id) && e.outlook)) throw new Error(OUTLOOK_RO)

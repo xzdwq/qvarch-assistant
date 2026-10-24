@@ -13,6 +13,14 @@ const { doc, loaded, sel, rows, renaming, addRequest, addFolder, remove, duplica
 const { sideHidden, varsOpen, setOpen, dragSide } = side
 /** «{{имя}}» as text (a mustache inside a mustache would close it). */
 const VAR = '{{имя}}'
+/** The variables ticked (filled ones): how many — what «Очистить» takes away at once. */
+const checkedVars = () => doc.vars.filter((v) => v.on && (v.key || v.value))
+function clearChecked(): void {
+  const vars = doc.vars
+  const n = checkedVars().length
+  if (!n || !confirm(`Удалить отмеченные переменные (${n})? Секреты удалятся тоже.`)) return
+  for (let i = vars.length - 1; i >= 0; i--) if (vars[i].on && (vars[i].key || vars[i].value)) vars.splice(i, 1)
+}
 
 // drag & drop: onto a folder — into it; onto a request — before it; onto the empty space — to the top level
 const dragId = ref<string>()
@@ -70,7 +78,7 @@ function onDrop(target?: HttpNode): void {
       </div>
       <!-- the variables -->
       <div v-if="varsOpen" class="vars tw:max-h-[45%] tw:overflow-auto tw:p-8 tw:border-t tw:border-t-border">
-        <div class="cap vh tw:mb-6">Переменные · <span class="muted tw:normal-case tw:tracking-[0] tw:font-ui">{{ VAR }} в адресе, параметрах, заголовках, теле</span></div>
+        <div class="cap vh tw:flex tw:items-center tw:gap-4 tw:mb-6 tw:whitespace-nowrap"><span class="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">Переменные · <span class="muted tw:normal-case tw:tracking-[0] tw:font-ui">{{ VAR }} в адресе, параметрах, заголовках, теле</span></span><button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:w-24 tw:h-22 tw:ml-auto tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:text-down-fg tw:hover:enabled:bg-hover tw:disabled:opacity-35" :disabled="!checkedVars().length" :title="`Удалить отмеченные галочкой переменные (${checkedVars().length})`" @click="clearChecked"><Icon name="trash" :size="13" /></button></div>
         <KvEditor :rows="doc.vars" key-hint="имя" value-hint="значение" secrets />
         <p class="hint tw:mt-6 tw:mr-0 tw:mb-0 tw:ml-0 tw:text-muted tw:text-[12px]">🔒 — секрет: значение скрыто и хранится зашифрованным (токены, куки, пароли).</p>
       </div>

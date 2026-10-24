@@ -2,6 +2,7 @@ import type { Entry, Ms } from './types'
 import { dayKey, dayStart, mergeIntervals, MINUTE, shiftDay, unionMs } from './timeline'
 import { isOwnTask } from './work'
 import type { ChartUnit, EntryOrigin, GroupBy, TaskType } from './tracker/constants'
+import { attrOfDim, attrValue, type AttrDimension } from './tracker/attributes'
 
 /**
  * Reports over a period and the week sheet: durations typed by hand, where new time goes in a day,
@@ -124,7 +125,11 @@ export interface ReportFilter {
   taskType?: TaskType[]
   sources?: EntryOrigin[]
   text?: string
+  /** Per attribute: the values wanted ('' — without a value). */
+  attrs?: Record<string, string[]>
 }
+/** A report's grouping: by kind / task / day / week, or by an attribute's values. */
+export type ReportGroupBy = GroupBy | AttrDimension
 export interface RangeDay {
   day: string
   entries: Entry[]
@@ -145,6 +150,7 @@ export function matches(e: Entry, f: ReportFilter): boolean {
   if (f.sources?.length && !f.sources.includes(sourceOf(e))) return false
   const q = f.text?.trim().toLowerCase()
   if (q && !`${e.label} ${e.description ?? ''} ${e.task?.key ?? ''} ${e.task?.summary ?? ''}`.toLowerCase().includes(q)) return false
+  for (const [id, want] of Object.entries(f.attrs ?? {})) if (want.length && !want.includes(attrValue(e, id))) return false
   return true
 }
 
@@ -166,21 +172,26 @@ const GROUP_KEYS: Record<GroupBy, (it: ReportItem) => string> = {
   day: (it) => it.day,
   week: (it) => weekStart(it.day),
 }
-export const groupKey = (it: ReportItem, by: GroupBy): string => GROUP_KEYS[by](it)
+/** A block's group key: by its grouping — an attribute's: its value ('' — none). */
+export function groupKey(it: ReportItem, by: ReportGroupBy): string {
+  const attr = attrOfDim(by)
+  return attr !== undefined ? attrValue(it.e, attr) : GROUP_KEYS[by as GroupBy](it)
+}
 
 const byTime = (a: Group, b: Group): number => a.key.localeCompare(b.key)
 const bySize = (a: Group, b: Group): number => b.ms - a.ms
-/** Groups by a period go in time order, the others — the biggest first. */
+/** Groups by a period go in time order, the others (an attribute's too) — the biggest first. */
 const GROUP_ORDER: Record<GroupBy, (a: Group, b: Group) => number> = { kind: bySize, task: bySize, day: byTime, week: byTime }
+const groupOrder = (by: ReportGroupBy) => (attrOfDim(by) !== undefined ? bySize : GROUP_ORDER[by as GroupBy])
 
 /** Time per group — a group's own overlaps counted once (a call inside a meeting is not double time). */
-export function groupItems(items: ReportItem[], by: GroupBy): Group[] {
+export function groupItems(items: ReportItem[], by: ReportGroupBy): Group[] {
   const m = new Map<string, ReportItem[]>()
   for (const it of items) {
     const k = groupKey(it, by)
     m.set(k, [...(m.get(k) ?? []), it])
   }
-  return [...m].map(([key, list]) => ({ key, ms: unionOf(list), count: list.length, items: list })).sort(GROUP_ORDER[by])
+  return [...m].map(([key, list]) => ({ key, ms: unionOf(list), count: list.length, items: list })).sort(groupOrder(by))
 }
 
 /** Time of blocks over several days, overlaps counted once. */

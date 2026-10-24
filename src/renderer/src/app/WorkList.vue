@@ -2,6 +2,7 @@
 import { isProductive } from '@shared/kinds'
 import { isCall, isMeeting } from '@shared/work'
 import NoteLinks from '../components/NoteLinks.vue'
+import AttrChips from '../components/AttrChips.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
 import type { Entry, Note, PlanBlock } from '@shared/types'
@@ -263,6 +264,7 @@ function exportCsv(): void {
             </span>
             <span v-if="isLive(it.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[WorkList-live-blink_1s_steps(2)_infinite]"></i>идёт</span>
             <span v-if="it.e.task" class="tchip tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]" :title="it.e.task.summary">{{ it.e.task.key }}</span>
+            <AttrChips :attrs="it.e.attrs" />
             <NoteLinks :id="it.e.id" />
             <span v-if="it.e.outlook" class="badge tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:text-[10.5px]">Outlook</span>
             <span class="kl tw:flex-none tw:w-90 tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px] tw:text-right">{{ kindLabel(it.e.kind) }}</span>

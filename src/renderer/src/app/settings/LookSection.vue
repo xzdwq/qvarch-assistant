@@ -1,11 +1,10 @@
 <script setup lang="ts">
-/** Settings · the look (contrast, accent, rounding, digits font) and the menu (order by dragging, hide with the eye). */
-import { computed, ref } from 'vue'
+/** Settings · the look (contrast, accent, rounding, digits font) and the menu (the bar and «Инструменты» — MenuPlaces). */
+import { computed } from 'vue'
 import { CONTRAST_LABELS, CONTRASTS, DEFAULT_THEME, type Theme } from '@shared/theme'
 import Icon from '../../components/Icon.vue'
 import { cssHex } from '../../lib/cssColor'
-import { orderedViews, VIEWS } from '../../lib/views'
-import { startListDrag } from '../../lib/listDrag'
+import MenuPlaces from './MenuPlaces.vue'
 import { useSettingsContext } from './settingsContext'
 
 const { ui, applyUi } = useSettingsContext()
@@ -28,43 +27,6 @@ function setTheme(p: Partial<Theme>): void {
   void applyUi()
 }
 
-// ---------- the menu: order by dragging, hide with the eye ----------
-const menuViews = computed(() => orderedViews(ui.menu))
-const isHidden = (id: string) => ui.menu.hidden.includes(id)
-function toggleHidden(id: string): void {
-  const h = new Set(ui.menu.hidden)
-  if (h.has(id)) h.delete(id)
-  else if (VIEWS.length - h.size > 1) h.add(id) // at least one section stays
-  ui.menu.hidden = [...h]
-  void applyUi()
-}
-const mlist = ref<HTMLElement>()
-const dragId = ref<string>()
-function startDrag(e: PointerEvent, id: string): void {
-  const list = mlist.value?.firstElementChild as HTMLElement | null
-  if (!list) return
-  dragId.value = id
-  startListDrag(e, {
-    list,
-    index: menuViews.value.findIndex((v) => v.id === id),
-    move: (from, to) => {
-      const ids = menuViews.value.map((v) => v.id as string)
-      const [x] = ids.splice(from, 1)
-      ids.splice(to, 0, x)
-      ui.menu.order = ids
-    },
-    done: () => {
-      dragId.value = undefined
-      void applyUi()
-    },
-  })
-}
-/** The menu's own order and hidden sections dropped. */
-function resetMenu(): void {
-  ui.menu.order = []
-  ui.menu.hidden = []
-  void applyUi()
-}
 </script>
 
 <template>
@@ -103,19 +65,7 @@ function resetMenu(): void {
         <div><button class="tw:[.seg3_button+&]:border-l tw:[.seg3_button+&]:border-l-border-2" @click="setTheme({ ...DEFAULT_THEME })">Сбросить оформление</button></div>
       </div>
 
-      <h3 class="mt tw:mt-0 tw:mr-0 tw:mb-8 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2 tw:[&&]:mt-26">Меню</h3>
-      <p class="muted small tw:mt-0 tw:mr-0 tw:mb-12 tw:ml-0 tw:text-[12px]">Перетащите раздел за ручку, чтобы поменять порядок. Глаз — показать или скрыть.</p>
-      <div ref="mlist">
-        <TransitionGroup tag="div" class="mlist tw:flex tw:flex-col tw:gap-4 tw:max-w-420 tw:mb-10" name="mrow">
-          <div v-for="v in menuViews" :key="v.id" class="mrow tw:group/mrow tw:flex tw:items-center tw:gap-10 tw:h-36 tw:pt-0 tw:pr-6 tw:pb-0 tw:pl-4 tw:border tw:border-border tw:rounded-r2 tw:bg-panel tw:select-none tw:[&.drag]:border-accent tw:[&.drag]:bg-panel-2" :data-mid="v.id" :class="{ drag: dragId === v.id, off: isHidden(v.id) }">
-            <span class="mgrip tw:inline-flex tw:py-6 tw:px-4 tw:text-dim tw:cursor-grab tw:touch-none tw:group-[.drag]/mrow:cursor-grabbing tw:group-[.drag]/mrow:text-accent-fg" title="Перетащить" @pointerdown="startDrag($event, v.id)"><Icon name="grip" :size="14" /></span>
-            <Icon :name="v.icon" :size="15" />
-            <span class="mlabel tw:flex-1">{{ v.label }}</span>
-            <button class="mini tw:[.order_&]:py-0 tw:[.order_&]:px-4 tw:[.order_&]:leading-[1] tw:inline-flex tw:items-center tw:justify-center tw:py-5 tw:px-7 tw:[.seg3_button+&]:border-l tw:[.seg3_button+&]:border-l-border-2" :title="isHidden(v.id) ? 'Показать в меню' : 'Скрыть из меню'" @click="toggleHidden(v.id)"><Icon :name="isHidden(v.id) ? 'eyeOff' : 'eye'" :size="14" /></button>
-          </div>
-        </TransitionGroup>
-      </div>
-      <div><button class="tw:[.seg3_button+&]:border-l tw:[.seg3_button+&]:border-l-border-2" @click="resetMenu">Порядок по умолчанию</button></div>
+      <MenuPlaces />
     </section>
 </template>
 

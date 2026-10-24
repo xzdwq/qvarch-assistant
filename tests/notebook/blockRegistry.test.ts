@@ -38,7 +38,7 @@ describe('block registry', () => {
     expect(h('ref', lines(5))).toBe(90)
     expect(h('audio', lines(1))).toBe(48)
     expect(h('image', lines(1))).toBe(320)
-    expect(h('board', lines(3))).toBe(440)
+    expect(h('board', lines(3))).toBe(560)
     expect(h('regress', lines(3))).toBe(320)
     expect(h('files', lines(3))).toBe(220)
     expect(h('table', lines(4))).toBe(160)

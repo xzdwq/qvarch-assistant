@@ -56,7 +56,15 @@ const setList = (el: unknown) => (props.menu.listEl = (el as HTMLElement | null)
           <span class="pk-ic cmd"><Icon name="presentation" :size="14" /></span>
           <span class="pk-b">
             <span class="pk-t">{{ boardName(r.board) }}</span>
-            <span class="pk-m">Доска{{ boardDir(r.board) ? ` · ${boardDir(r.board)}` : '' }} — покажется в заметке вживую</span>
+            <span class="pk-m">Доска{{ boardDir(r.board) ? ` · ${boardDir(r.board)}` : '' }} — встанет в заметку, рисовать можно прямо здесь</span>
+          </span>
+          <span></span>
+        </button>
+        <button v-else-if="'newBoard' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
+          <span class="pk-ic cmd"><Icon name="plus" :size="14" /></span>
+          <span class="pk-b">
+            <span class="pk-t">{{ r.newBoard ? `Новая доска «${r.newBoard}»` : 'Новая доска' }}</span>
+            <span class="pk-m">Создаётся рядом с заметкой и встаёт сюда; название — словами после «@доска»</span>
           </span>
           <span></span>
         </button>

@@ -6,6 +6,8 @@ import { openUrl } from '@renderer/lib/links'
 import type { JiraStatusCategory } from '@shared/jira'
 import { iconSvg } from '@renderer/components/Icon.vue'
 import { refreshDecorations } from './editorHost'
+import { attrChips } from '@shared/tracker/attributes'
+import { attrDefs } from '@renderer/lib/attributes'
 
 /**
  * An event of the timeline or a Jira task mentioned in a note: a live chip (its status, its period) instead of the
@@ -74,6 +76,12 @@ export class EventChip extends WidgetType {
     const st = statusOf(e, now)
     box.append(part('cm-ev-t', e.label || this.text), part('cm-ev-p', `${periodText(e, now)} · ${durText(e.end - e.start)}`), part(`cm-ev-st ${st}`, statusText(e, now)))
     if (e.created) box.append(part('cm-ev-c', `созд. ${shortDate(e.created)}`, `Создано ${new Date(e.created).toLocaleString('ru-RU')}`))
+    // its attributes: each value's letters in its attribute's colour
+    for (const c of attrChips(attrDefs.value, e.attrs)) {
+      const a = part('cm-ev-a', c.short, `${c.name}: ${c.value}`)
+      a.style.setProperty('--attr', c.color)
+      box.append(a)
+    }
     box.title = `${k?.label ?? e.kind}${e.outlook ? ' · встреча Outlook' : ''}${e.task ? ` · ${e.task}` : ''} — клик: карточка события (прочитать, изменить, открыть в Моей работе)`
     box.onclick = () => {
       const r = box.getBoundingClientRect()

@@ -1,73 +1,107 @@
 import { randomUUID } from 'node:crypto'
-import { dayEnd, dayKey, MINUTE, scheduleRanges } from '../../shared/timeline'
-import { extendRecording, recordingEnd } from '../../shared/tracker/recording'
-import type { Entry, RecordingState } from '../../shared/types'
+import { dayEnd, dayKey, MINUTE, scheduleRanges, shiftDay } from '../../shared/timeline'
+import { canRecord, extendRecording, isStaleRecording, recordingStep } from '../../shared/tracker/recording'
+import type { Entry } from '../../shared/types'
 import type { AppContext } from '../app/appContext'
 import { addEntryOnFreeLane } from './dayEdits'
 
-/** How often a recording's end catches up with the clock. */
+/** How often the recorded events' ends catch up with the clock. */
 const TICK_MS = 15_000
 
 /**
- * «Запись»: an event started now whose end follows the clock until it is stopped (shared/tracker/recording) — here,
- * so it goes on with the window closed. Its event is the person's to edit meanwhile (kind, text, task, its start);
- * its end stays the recording's. Not kept over a restart: the event stays as far as it got.
+ * «Запись» (shared/tracker/recording): the events marked as recorded stretch with the clock — here, so they go on
+ * with the window closed; any number of them. Each is the person's to edit meanwhile (kind, text, task, its start);
+ * its end stays the recording's. A recording the app was closed through ends where it got (on the next start).
  */
 export class Recording {
-  state?: RecordingState
   private timer?: NodeJS.Timeout
 
   constructor(private app: AppContext) {}
 
-  /** A recording begun now (one going on is stopped first): its event on the first free lane. */
-  start(kind: string, label: string): Entry {
-    this.stop()
+  /** Following the recordings (the ones left from a closed app — ended first). */
+  start(): void {
+    const now = Date.now()
+    for (const day of this.days(now)) {
+      const d = this.app.store.day(day)
+      let changed = false
+      d.entries = d.entries.map((e) => {
+        if (!e.recording || !isStaleRecording(e, now)) return e
+        changed = true
+        return { ...e, recording: undefined }
+      })
+      if (changed) this.app.store.markDirty(day)
+    }
+    this.app.store.flush()
+    this.timer = setInterval(() => this.tick(), TICK_MS)
+  }
+  stop(): void {
+    this.tick()
+    clearInterval(this.timer)
+  }
+
+  /** A recording begun now: a new event of this kind on the first free lane, its end following the clock. */
+  begin(kind: string, label: string): Entry {
     const now = Date.now()
     const day = dayKey(now)
     const start = Math.floor(now / MINUTE) * MINUTE
-    const entry = addEntryOnFreeLane(this.app, day, { id: randomUUID(), start, end: start + MINUTE, kind, label: label.trim() || kind, source: 'manual', created: now })
-    this.state = { day, entryId: entry.id }
+    const entry = addEntryOnFreeLane(this.app, day, { id: randomUUID(), start, end: start + MINUTE, kind, label: label.trim() || kind, source: 'manual', created: now, recording: true })
     this.saved(day)
-    this.timer = setInterval(() => this.tick(), TICK_MS)
     return entry
   }
 
-  /** The event is the recording's (its end is not taken from a save). */
-  owns(id: string | undefined): boolean {
-    return !!id && this.state?.entryId === id
-  }
-  /** The recording's event as far as it got (a save from the card keeps this end). */
-  currentEnd(): number | undefined {
-    const s = this.state
-    return s && this.app.store.day(s.day).entries.find((e) => e.id === s.entryId)?.end
+  /** A recording started on an event (going on or ahead) / stopped (its end — the moment, when it is going on). */
+  set(day: string, id: string, on: boolean): void {
+    const d = this.app.store.day(day)
+    const e = d.entries.find((x) => x.id === id)
+    if (!e) throw new Error('Событие не найдено')
+    if (on && !canRecord(e, Date.now())) throw new Error('Запись можно включить только для идущего или будущего события')
+    if (on) e.recording = true
+    else {
+      this.stepOn(day)
+      const cur = d.entries.find((x) => x.id === id)
+      if (cur) delete cur.recording
+    }
+    this.saved(day)
+    if (on) this.tick()
   }
 
-  /** The end caught up with the clock; the event gone (deleted, moved to another day) — the recording ends. */
+  /** A save from the card: the recording's mark and its stretched end stay the recording's. */
+  guard<T extends { id?: string; end: number; recording?: true }>(day: string, input: T): T {
+    const prev = input.id ? this.app.store.day(day).entries.find((e) => e.id === input.id) : undefined
+    const out = { ...input, recording: prev?.recording }
+    if (prev?.recording && Date.now() >= prev.start) out.end = Math.max(input.end, prev.end)
+    return out
+  }
+
+  /** The ends caught up with the clock; one at its limit (the work day's end, midnight) — stopped. */
   tick(): void {
-    const s = this.state
-    if (!s) return
+    for (const day of this.days(Date.now())) if (this.stepOn(day)) this.saved(day)
+  }
+  /** The day's recordings stepped; whether anything changed. */
+  private stepOn(day: string): boolean {
     const { store } = this.app
-    const d = store.day(s.day)
-    const e = d.entries.find((x) => x.id === s.entryId)
-    if (!e) return this.clear()
-    const r = recordingEnd(e.start, Date.now(), { workEnd: scheduleRanges(s.day, store.cfg.schedule).work?.[1], stopAtWorkEnd: store.cfg.schedule.stopRecordingAtEnd !== false, dayEnd: dayEnd(s.day) })
-    d.entries = extendRecording(d.entries, e.id, r.end)
-    this.saved(s.day)
-    if (r.stop) this.clear()
+    const d = store.day(day)
+    const now = Date.now()
+    const limits = { workEnd: scheduleRanges(day, store.cfg.schedule).work?.[1], stopAtWorkEnd: store.cfg.schedule.stopRecordingAtEnd !== false, dayEnd: dayEnd(day) }
+    let changed = false
+    for (const e of d.entries.filter((x) => x.recording)) {
+      const r = recordingStep(e, now, limits)
+      if (r.end !== e.end) {
+        d.entries = extendRecording(d.entries, e.id, r.end)
+        changed = true
+      }
+      if (r.stop) {
+        const x = d.entries.find((y) => y.id === e.id)
+        if (x) delete x.recording
+        changed = true
+      }
+    }
+    return changed
   }
-
-  /** Stopped by the person: the end at the moment, the recording over. */
-  stop(): void {
-    if (!this.state) return
-    this.tick()
-    this.clear()
-  }
-
-  private clear(): void {
-    clearInterval(this.timer)
-    this.timer = undefined
-    this.state = undefined
-    this.app.broadcast()
+  /** The days a recording may be on now: today, and yesterday (one going on at midnight ends there). */
+  private days(now: number): string[] {
+    const today = dayKey(now)
+    return [shiftDay(today, -1), today]
   }
   private saved(day: string): void {
     this.app.store.markDirty(day)

@@ -1,3 +1,4 @@
+import { DEFAULT_IN_TOOLS } from './places'
 import { cleanTheme, DEFAULT_THEME } from './theme'
 import type { UiPrefs, UiPrefsPatch } from './types'
 
@@ -9,7 +10,7 @@ export const DEFAULT_UI: UiPrefs = {
   main: { allStats: false, plan: true },
   timeline: { follow: false, stepSec: 60, leftPx: 200, idleSec: 10, zoom: 'keep', spanMin: 240, countdown: 'any' },
   theme: DEFAULT_THEME,
-  menu: { order: [], hidden: [] },
+  menu: { order: [], hidden: [], tools: [...DEFAULT_IN_TOOLS] },
 }
 
 /** Only the keys the defaults have (settings of removed features drop out). */
@@ -32,7 +33,7 @@ export function mergeUi(base: UiPrefs, patch?: UiPrefsPatch): UiPrefs {
 }
 function cleanMenu(m: UiPrefs['menu']): UiPrefs['menu'] {
   const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : [])
-  return { order: ids(m.order), hidden: ids(m.hidden) }
+  return { order: ids(m.order), hidden: ids(m.hidden), tools: ids(m.tools) }
 }
 function clampTimeline(t: UiPrefs['timeline']): UiPrefs['timeline'] {
   const n = (v: unknown, lo: number, hi: number, d: number) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d)

@@ -40,10 +40,10 @@ export interface QaApi {
    * with `overlap` (moving a block) they are left alone and the overlap is shown in parallel.
    */
   saveEntry(day: string, entry: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }): Promise<Entry>
-  /** «Запись» begun now: an event of this kind whose end follows the clock until `recordStop` (one going on stops first). */
+  /** «Запись» begun now: a new event of this kind whose end follows the clock until stopped (any number at once). */
   recordStart(kind: string, label: string): Promise<Entry>
-  /** The recording stopped: its event ends now. */
-  recordStop(): Promise<void>
+  /** A recording started on an event (going on or ahead) / stopped (it ends at the moment). */
+  recordSet(day: string, id: string, on: boolean): Promise<void>
   /** Merge entries into the earliest one (spanning all); entries in between go parallel. */
   mergeEntries(day: string, ids: string[]): Promise<Entry | undefined>
   /** History calendar: per-day summaries for a month (YYYY-MM). */
@@ -65,6 +65,7 @@ export interface QaApi {
   tabletSet(patch: Partial<TabletPrefs>): Promise<TabletState>
   tabletLive(on: boolean): Promise<void>
   /** The active board's visible area in physical px from the window's client corner (null — no board on screen). */
+  /** The board the pen is mapped onto now (none — the window). */
   tabletCanvas(rect: { x: number; y: number; w: number; h: number } | null): Promise<void>
   onTablet(cb: (msg: TabletMsg) => void): () => void
   /** PDF signing: the saved drawings (signatures, a handwritten date…) as PNG data URLs. */

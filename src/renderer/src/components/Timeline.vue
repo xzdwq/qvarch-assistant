@@ -3,9 +3,16 @@ import { computed, nextTick, ref } from 'vue'
 import { labelWithoutKey } from '@shared/jira'
 import { formatDuration, formatHM, sortByStart } from '@shared/timeline'
 import { afterEvent } from '@shared/tracker/entryCopy'
+import { canRecord } from '@shared/tracker/recording'
+import RecDot from './RecDot.vue'
+import AttrChips from './AttrChips.vue'
+import Popover from './Popover.vue'
+import AttrFields from '../tracker/entry/AttrFields.vue'
+import { attrDefs } from '../lib/attributes'
+import type { EntryAttrs } from '@shared/tracker/attributes'
 import type { DayData, Entry, Ms, Note, Selection, UiPrefs } from '@shared/types'
 import EntryCopyMenu from '../tracker/entry/EntryCopyMenu.vue'
-import { entryIcon, kindColor, kindLabel } from '../lib/palette'
+import { entryIcon, kindColor } from '../lib/palette'
 import Icon from './Icon.vue'
 import ActivityWave from './ActivityWave.vue'
 import KindMenu from './KindMenu.vue'
@@ -69,6 +76,10 @@ const emit = defineEmits<{
   copy: [change: { id: string; start: Ms; end: Ms; lane?: number }]
   /** a copy of a block made on the date and times picked (its menu) */
   copied: [e: Entry, day: string]
+  /** a block's recording started / stopped (its menu) */
+  record: [change: { id: string; on: boolean }]
+  /** a block's attributes set / changed / taken off (its menu) */
+  attrs: [change: { id: string; attrs: EntryAttrs }]
   /** Ctrl-selected blocks merged into one */
   merge: [ids: string[]]
   /** a note pin clicked (open it / close it again) */
@@ -110,6 +121,35 @@ function revealSide(side: 'left' | 'right'): void {
 }
 const main = computed(() => visible(sortByStart(shownEntries.value), from.value, to.value))
 
+// ---------- a block's attributes from its menu: set, changed, taken off ----------
+const menuEntry = computed(() => props.data.entries.find((x) => x.id === menu.value?.entryId))
+const attrsOf = ref<{ id: string; attrs: EntryAttrs }>()
+const attrsAnchor = ref<HTMLElement>()
+const attrsOpen = computed({ get: () => !!attrsOf.value, set: (v) => void (v || (attrsOf.value = undefined)) })
+function editAttrs(): void {
+  const e = menuEntry.value
+  menu.value = undefined
+  if (!e) return
+  attrsAnchor.value = canvas.value?.querySelector<HTMLElement>(`[data-entry="${e.id}"]`) ?? undefined
+  attrsOf.value = { id: e.id, attrs: { ...e.attrs } }
+}
+function setAttrs(attrs: EntryAttrs): void {
+  if (!attrsOf.value) return
+  attrsOf.value = { ...attrsOf.value, attrs }
+  emit('attrs', { id: attrsOf.value.id, attrs })
+}
+
+// ---------- a block's recording from its menu: stopped, or started (going on or ahead) ----------
+const recordAction = computed(() => {
+  const e = props.data.entries.find((x) => x.id === menu.value?.entryId)
+  return e ? (e.recording ? 'stop' : canRecord(e, props.now ?? Date.now()) ? 'start' : undefined) : undefined
+})
+function toggleRecording(): void {
+  const e = props.data.entries.find((x) => x.id === menu.value?.entryId)
+  menu.value = undefined
+  if (e) emit('record', { id: e.id, on: !e.recording })
+}
+
 // ---------- a block's copy from its menu: right after it, or on the date and times picked ----------
 const copyMenu = ref<InstanceType<typeof EntryCopyMenu>>()
 const copyOf = ref<Entry>()
@@ -127,7 +167,6 @@ async function copyBlockTo(): Promise<void> {
   if (el && copyOf.value) copyMenu.value?.show(el)
 }
 const calls = computed(() => visible(props.data.calls, from.value, to.value))
-const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind))] }))
 </script>
 
 <template>
@@ -244,6 +283,7 @@ const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind
             <span v-if="wide(e)" class="rh l tw:absolute tw:top-0 tw:bottom-0 tw:z-1 tw:w-6 tw:cursor-ew-resize tw:[transition:background_0.15s] tw:left-0 tw:rounded-[var(--r2)_0_0_var(--r2)] tw:group-hover/seg:not-group-[.selected]/seg:bg-white/35 tw:group-[.selected]/seg:bg-white/35" @pointerdown="onResizeDown($event, e, 'start')"></span>
             <!-- the icon starts the text; the text wraps to a second line only when it does not fit -->
             <span class="txt tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:py-0 tw:px-3 tw:text-[10.5px] tw:leading-[12px] tw:whitespace-normal tw:[word-break:break-word] tw:text-clip tw:[display:-webkit-box] tw:[-webkit-line-clamp:2] tw:[-webkit-box-orient:vertical] tw:[&&]:pl-4!" :title="e.outlook ? `Встреча Outlook: ${e.label}` : undefined">
+              <RecDot v-if="e.recording" :size="6" class="tw:mr-3 tw:[vertical-align:1px]" />
               <Icon :name="entryIcon(e)" :size="11" :stroke="2.4" class="sic tw:opacity-95 tw:[&&]:inline-block tw:mt-0 tw:mr-3 tw:mb-0 tw:ml-0 tw:[&&]:[vertical-align:-2px]" />
               <template v-if="e.outlook"><b class="tw:font-semibold">{{ e.label }}</b></template>
               <template v-else-if="e.task"><b class="tw:font-semibold">{{ e.task.key }}</b> {{ labelWithoutKey(e.label, e.task.key) }}</template>
@@ -288,19 +328,6 @@ const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind
     </div>
   </div>
 
-  <div class="legend tw:flex tw:items-center tw:flex-wrap tw:gap-y-4 tw:gap-x-14 tw:mt-8 tw:py-0 tw:px-8 tw:text-[12px]">
-    <span class="tw:inline-flex tw:items-center tw:gap-6" v-for="k in legend.kinds" :key="k"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:flex-none" :style="{ background: kindColor(k) }"></i>{{ kindLabel(k) }}</span>
-    <span class="tw:inline-flex tw:items-center tw:gap-6" v-if="schedule.work"><i class="sq work tw:top-6 tw:w-8 tw:h-8 tw:flex-none tw:rounded-[2px] tw:bg-accent/35 tw:[box-shadow:inset_0_0_0_1px_var(--accent-fg)]"></i>Рабочее время</span>
-    <span class="tw:inline-flex tw:items-center tw:gap-6" v-if="schedule.lunch"><i class="sq lunch tw:top-6 tw:w-8 tw:h-8 tw:flex-none tw:rounded-[2px] tw:bg-[color-mix(in_srgb,var(--lunch-mark)_40%,transparent)] tw:[box-shadow:inset_0_0_0_1px_var(--lunch-mark-fg)]"></i>Обед</span>
-    <span class="spacer tw:inline-flex tw:items-center tw:gap-6 tw:flex-1"></span>
-    <button
-      v-if="follow && now !== undefined"
-      class="ltog ico tw:inline-flex tw:items-center tw:gap-4 tw:py-2 tw:px-9 tw:rounded-r2 tw:border tw:border-border tw:bg-transparent tw:text-muted tw:text-[11px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/16 tw:[&.on]:text-text tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[&.on]:border-border-3"
-      :class="{ on: follow.follow }"
-      title="Автопрокрутка"
-      @click="toggleFollow"
-    ><Icon name="follow" :size="13" /></button>
-  </div>
   <KindMenu v-if="menu" :x="menu.x" :y="menu.y" :title="menu.title" :current="menu.current" :no-kinds="menu.outlook || !!menu.planId" @pick="onMenuPick" @close="menu = undefined">
     <template v-if="menu.planId">
       <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" :disabled="planDoneIds.has(menu.planId)" @click="planMenu('done')"><Icon name="check" :size="14" />{{ planDoneIds.has(menu.planId) ? 'Уже сделано по плану' : 'Сделано по плану' }}</button>
@@ -317,11 +344,16 @@ const legend = computed(() => ({ kinds: [...new Set(main.value.map((e) => e.kind
     </template>
     <template v-else-if="menu.entryId">
       <div class="msep tw:h-1 tw:m-4 tw:bg-border"></div>
+      <button v-if="attrDefs.length && !menuEntry?.outlook" class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Поставить, изменить или снять атрибуты события" @click="editAttrs"><Icon name="layers" :size="14" />Атрибуты…<AttrChips class="tw:ml-auto" :attrs="menuEntry?.attrs" /></button>
+      <button v-if="recordAction" class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" :title="recordAction === 'start' ? 'Конец события будет продлеваться сам (будущее — когда наступит его время)' : ''" @click="toggleRecording"><Icon :name="recordAction === 'stop' ? 'stop' : 'rec'" :size="14" />{{ recordAction === 'stop' ? 'Остановить запись' : 'Начать запись' }}</button>
       <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Или перетащите блок с зажатым Ctrl" @click="copyAfterBlock"><Icon name="copy" :size="14" />Копия сразу после</button>
       <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" @click="copyBlockTo"><Icon name="calendar" :size="14" />Копия в дату и время…</button>
       <button class="mdel tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:text-down-fg tw:hover:bg-down/15 tw:hover:enabled:border-border-3" @click="onMenuDelete"><Icon name="trash" :size="14" />Удалить отрезок</button>
     </template>
   </KindMenu>
+  <Popover v-if="attrsOf" v-model:open="attrsOpen" :anchor="attrsAnchor" :width="360" class="tw:fixed tw:z-5000 tw:p-10 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+    <AttrFields :model-value="attrsOf.attrs" @update:model-value="setAttrs" />
+  </Popover>
   <EntryCopyMenu v-if="copyOf" ref="copyMenu" no-button :day="data.day" :source="copyOf" @copied="(c, d) => emit('copied', c, d)" />
   </div>
 </template>

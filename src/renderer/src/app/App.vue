@@ -6,6 +6,7 @@ import type { PublicSettings } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import ZoomChip from '../components/ZoomChip.vue'
 import { setKinds } from '../lib/palette'
+import { setAttrDefs } from '../lib/attributes'
 import SettingsView from './SettingsView.vue'
 import WorkView from './WorkView.vue'
 import NotebookView from './NotebookView.vue'
@@ -28,8 +29,8 @@ startBrowser()
 watchPwRec()
 startMcpBridge()
 
-import { orderedViews, VIEWS, type View } from '../lib/views'
-const view = ref<View>('work')
+import { openHttp, openPlace, orderedViews, setMenu, view, VIEWS, type View } from '../lib/views'
+import { placeOf } from '@shared/places'
 /** A day (and a block on it) to show — Моя работа opens it. */
 const focus = ref<{ day: string; entryId?: string; n: number }>()
 let focusN = 0
@@ -44,14 +45,18 @@ const menuOpen = ref(false)
 let navigated = false
 void window.qa.getSettings().then((s) => {
   settings.value = s
+  setMenu(s.ui.menu)
   setKinds(s.kinds)
+  setAttrDefs(s.attributes)
   // the window opens on the first section of the user's menu
   if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'work'
 })
 
 function onSettings(s: PublicSettings): void {
   settings.value = s
+  setMenu(s.ui.menu)
   setKinds(s.kinds)
+  setAttrDefs(s.attributes)
 }
 
 const offSettings = window.qa.onSettings(onSettings)
@@ -64,7 +69,7 @@ const off = window.qa.onNavigate((nav) => {
   if (!v || DAY_VIEW_ALIASES.has(v)) {
     if (nav.day || nav.entryId) openDay(nav.day ?? todayKey.value, nav.entryId)
     else view.value = 'work'
-  } else view.value = v as View
+  } else openPlace(v)
 })
 onBeforeUnmount(off)
 
@@ -76,27 +81,29 @@ function run(cmd: AppCommand): void {
   window.qa.command(cmd)
 }
 
-/** Sections in the user's order (hidden ones are left out — the open one always shows). */
-/** Once opened, the terminal stays mounted (hidden in other sections). */
+/** Once opened, the terminal stays mounted (hidden in other sections) — while it is on the bar (in «Инструменты» they keep it). */
 const termOpened = ref(false)
 watch(view, (v) => v === 'terminal' && (termOpened.value = true), { immediate: true })
 /** The browser too: once opened it stays (its pages live in the main process; hidden in other sections). */
 const brOpened = ref(false)
 watch(view, (v) => v === 'browser' && (brOpened.value = true), { immediate: true })
-/** A chain recorded in the browser went to HTTP: open it there, its first request picked. */
-function openHttp(id: string): void {
-  try {
-    localStorage.setItem('qa.http.sel', id)
-  } catch {
-    // fine
-  }
-  view.value = 'http'
-}
+/** «Инструменты» too: the terminal / the browser moved there live in it. */
+const toolsOpened = ref(false)
+watch(view, (v) => v === 'tools' && (toolsOpened.value = true), { immediate: true })
+// a section moved into «Инструменты» lives there now (never twice)
+watch(
+  () => settings.value?.ui.menu,
+  (m) => {
+    if (!m) return
+    if (placeOf(m, 'terminal') === 'tools') termOpened.value = false
+    if (placeOf(m, 'browser') === 'tools') brOpened.value = false
+  },
+)
 /** The sections one may ask for from inside another (the scenario recording: to the Браузер and back to the note). */
 const VIEWS_ASKED_FROM_INSIDE: ReadonlySet<string> = new Set<View>(['notebook', 'browser', 'work'])
 const onView = (e: Event) => {
   const v = (e as CustomEvent<string>).detail
-  if (VIEWS_ASKED_FROM_INSIDE.has(v)) view.value = v as View
+  if (VIEWS_ASKED_FROM_INSIDE.has(v)) openPlace(v)
 }
 onMounted(() => window.addEventListener('qa:view', onView))
 onBeforeUnmount(() => window.removeEventListener('qa:view', onView))
@@ -200,13 +207,14 @@ function setAppZoom(z: number): void {
         <HttpView v-else-if="view === 'http'" />
         <div v-else-if="view === 'terminal'" class="termslot tw:hidden"></div>
         <div v-else-if="view === 'browser'" class="termslot tw:hidden"></div>
-        <ToolsView v-else-if="view === 'tools'" />
+        <div v-else-if="view === 'tools'" class="termslot tw:hidden"></div>
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
       <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep tw:[&&]:h-full" />
       <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep tw:[&&]:h-full" :active="view === 'browser'" @open-http="openHttp" />
+      <div v-if="toolsOpened" v-show="view === 'tools'" class="toolskeep tw:h-full"><ToolsView :menu="settings.ui.menu" /></div>
     </main>
-    <StatusBar :section="sectionName" @terminal="view = 'terminal'" @browser="view = 'browser'" />
+    <StatusBar :section="sectionName" @terminal="openPlace('terminal')" @browser="openPlace('browser')" />
       <ImageMenu />
   </div>
 </template>

@@ -32,8 +32,9 @@ const busy = ref(false)
 const error = ref('')
 const after = computed(() => afterEvent(props.source))
 
-/** The menu at an element: the date — the event's day, the times — right after it. */
+/** The menu at an element: the date — the event's day, the times — right after it; open from that element — closed. */
 function show(el: HTMLElement): void {
+  if (open.value && anchor.value === el) return void (open.value = false)
   anchor.value = el
   date.value = props.day
   at.value = after.value

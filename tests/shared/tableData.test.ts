@@ -11,11 +11,11 @@ const EXCEL_HTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office"><hea
  </tr>
  <tr height=20>
   <td height=20 align=right>1</td>
-  <td>Иванов &amp; Ко</td>
+  <td>Альфа &amp; Ко</td>
  </tr>
  <tr height=20>
   <td align=right x:num>2</td>
-  <td>Петров</td>
+  <td>Бета</td>
   <td align=right x:num="1500">1 500</td>
  </tr>
 <!--EndFragment--></table></body></html>`
@@ -23,7 +23,7 @@ const EXCEL_HTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office"><hea
 describe('a table from a spreadsheet\'s HTML', () => {
   it('reads cells with their spans, text as shown (entities, <br>, white space)', () => {
     const rows = htmlTableCells(EXCEL_HTML)!
-    expect(rows.map((r) => r.map((c) => c.text))).toEqual([['Заказ №', 'Сумма,\nруб.'], ['1', 'Иванов & Ко'], ['2', 'Петров', '1 500']])
+    expect(rows.map((r) => r.map((c) => c.text))).toEqual([['Заказ №', 'Сумма,\nруб.'], ['1', 'Альфа & Ко'], ['2', 'Бета', '1 500']])
     expect(rows[0][0].colSpan).toBe(2)
     expect(rows[0][1].rowSpan).toBe(2)
   })
@@ -31,8 +31,8 @@ describe('a table from a spreadsheet\'s HTML', () => {
     const g = layoutSpans(htmlTableCells(EXCEL_HTML)!)
     expect(g.rows).toEqual([
       ['Заказ №', '', 'Сумма,\nруб.'],
-      ['1', 'Иванов & Ко', ''],
-      ['2', 'Петров', '1 500'],
+      ['1', 'Альфа & Ко', ''],
+      ['2', 'Бета', '1 500'],
     ])
     expect(g.merges).toEqual([
       { r: 0, c: 0, rs: 1, cs: 2 },
@@ -78,7 +78,7 @@ describe('the clipboard', () => {
     expect(g.merges).toHaveLength(2)
   })
   it('reads plain text by tabs only: a comma in copied text is text', () => {
-    expect(gridFromClipboard({ text: 'Иванов, Петров' })!.rows).toEqual([['Иванов, Петров']])
+    expect(gridFromClipboard({ text: 'Альфа, Бета' })!.rows).toEqual([['Альфа, Бета']])
     expect(gridFromClipboard({ text: 'a\tb\n1\t2\n' })!.rows).toEqual([
       ['a', 'b'],
       ['1', '2'],
@@ -88,7 +88,7 @@ describe('the clipboard', () => {
     expect(isTableClipboard({ html: EXCEL_HTML })).toBe(true)
     expect(isTableClipboard({ text: 'a\tb' })).toBe(true)
     expect(isTableClipboard({ text: 'строка\nвторая строка' })).toBe(false)
-    expect(isTableClipboard({ text: 'Иванов, Петров' })).toBe(false)
+    expect(isTableClipboard({ text: 'Альфа, Бета' })).toBe(false)
     expect(isTableClipboard({ text: 'одно' })).toBe(false)
   })
 })

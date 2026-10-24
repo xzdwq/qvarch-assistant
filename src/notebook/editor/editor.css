@@ -162,6 +162,16 @@
   color: var(--muted);
   font-size: 0.8em;
 }
+/* an attribute's value: its letters in the attribute's colour (set by code) */
+.mde .cm-ev-a {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--attr);
+  color: var(--text-hi);
+  font-family: var(--font-data);
+  font-size: 0.72em;
+  font-weight: 700;
+}
 .mde .cm-ev.gone .cm-ev-t {
   color: var(--muted);
   text-decoration: line-through;

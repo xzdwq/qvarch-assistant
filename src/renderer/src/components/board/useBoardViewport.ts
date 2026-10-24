@@ -7,13 +7,14 @@ const SAVE_VIEW_MS = 400
 
 /**
  * The board's view: pan & zoom over a W×H sheet (screen px). Each board remembers its view (a board inside a
- * note — `preview` — does not: it always shows the whole board).
+ * note — `preview` — does not: it always shows the whole board; one drawn on inside a note — `inline` — keeps its
+ * own, apart from the board's tab).
  */
-export function useBoardViewport(props: { path: string; preview?: boolean }, items: () => BoardItem[], frames: FrameScheduler) {
+export function useBoardViewport(props: { path: string; preview?: boolean; inline?: boolean }, items: () => BoardItem[], frames: FrameScheduler) {
   const W = ref(1)
   const H = ref(1)
   const view = ref<View>()
-  const viewKey = () => `qa.board.view:${props.path}`
+  const viewKey = () => `qa.board.view:${props.path}${props.inline ? ':note' : ''}`
 
   let viewTimer: ReturnType<typeof setTimeout> | undefined
   watch(view, (v) => {

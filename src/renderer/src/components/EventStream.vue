@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import NoteLinks from './NoteLinks.vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import { formatDuration, formatHM, MINUTE, scheduleRanges } from '@shared/timeline'
+import { dayEnd, dayKey, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges } from '@shared/timeline'
 import type { Entry, Ms, WorkSchedule } from '@shared/types'
 import type { RangeDay } from '../lib/useRange'
 import { entryIcon, kindColor, kindLabel } from '../lib/palette'
@@ -9,6 +9,7 @@ import { todayKey } from '../lib/today'
 import type { Recent } from './LabelInput.vue'
 import EntryEditor, { type Draft } from './EntryEditor.vue'
 import Icon from './Icon.vue'
+import AttrChips from './AttrChips.vue'
 
 /**
  * The events of a period as one stream, day by day: every block, the free time of the working day between them
@@ -57,11 +58,22 @@ const groups = computed(() => {
 })
 
 // ---------- the open event / a new one in a free gap ----------
-const draft = ref<{ day: string; entry: Draft }>()
+/** A new event being filled in: in a free gap, or from the day's «+» (`head` — under the day's header). */
+const draft = ref<{ day: string; entry: Draft; head?: boolean }>()
 function fillGap(day: string, start: Ms, end: Ms): void {
   emit('open', undefined)
   draft.value = { day, entry: { start, end, kind: 'task', label: '', source: 'manual' } }
   void nextTick(() => scrollTo(`d${day}${start}`, false))
+}
+/** A new event of the day picked: the card under its header, at the time it is now (on that day), half an hour. */
+const NEW_EVENT_MIN = 30
+function addOn(day: string): void {
+  emit('open', undefined)
+  const now = Date.now()
+  const at = Math.floor((now - dayStart(dayKey(now))) / MINUTE) * MINUTE
+  const start = Math.min(dayStart(day) + at, dayEnd(day) - NEW_EVENT_MIN * MINUTE)
+  draft.value = { day, head: true, entry: { start, end: start + NEW_EVENT_MIN * MINUTE, kind: 'task', label: '', source: 'manual' } }
+  void nextTick(() => scrollTo(`n${day}`, false))
 }
 watch(
   () => props.openId,
@@ -113,11 +125,18 @@ watch(
     <section v-for="g in groups" :key="g.day" class="eg">
       <div class="eh tw:group/eh tw:sticky tw:top-0 tw:z-2 tw:flex tw:justify-between tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-b tw:border-b-border tw:bg-panel-2 tw:text-[12px] tw:font-semibold tw:text-text-hi" :data-k="`h${g.day}`" :class="{ today: g.day === todayKey, off: g.off }">
         <span class="tw:group-[.off]/eh:first:not-group-[.today]/eh:text-down-fg tw:group-[.today]/eh:first:text-accent-fg">{{ g.title }}</span>
-        <span class="et num tw:font-data tw:tabular-nums tw:group-[.off]/eh:first:not-group-[.today]/eh:text-down-fg tw:group-[.today]/eh:first:text-accent-fg tw:text-muted tw:text-[11px] tw:font-normal">{{ g.total ? formatDuration(g.total) : '' }}</span>
+        <span class="tw:inline-flex tw:items-center tw:gap-6">
+          <span class="et num tw:font-data tw:tabular-nums tw:group-[.off]/eh:first:not-group-[.today]/eh:text-down-fg tw:group-[.today]/eh:first:text-accent-fg tw:text-muted tw:text-[11px] tw:font-normal">{{ g.total ? formatDuration(g.total) : '' }}</span>
+          <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-accent-fg" :title="`Новое событие на ${g.title} — с текущего времени`" @click="addOn(g.day)"><Icon name="plus" :size="13" /></button>
+        </span>
+      </div>
+      <div v-if="draft?.head && draft.day === g.day" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`n${g.day}`">
+        <EntryEditor :key="`n${g.day}`" :day="g.day" :entry="draft.entry" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
+        <button class="ex tw:absolute tw:top-8 tw:right-8 tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
       </div>
       <template v-for="r in g.rows" :key="r.key">
         <template v-if="r.t === 'gap'">
-          <div v-if="draft?.day === g.day && draft.entry.start === r.start" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`d${g.day}${r.start}`">
+          <div v-if="!draft?.head && draft?.day === g.day && draft.entry.start === r.start" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`d${g.day}${r.start}`">
             <EntryEditor :key="`d${r.start}`" :day="g.day" :entry="draft.entry" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
             <button class="ex tw:absolute tw:top-8 tw:right-8 tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
           </div>
@@ -134,6 +153,7 @@ watch(
           <span class="num tm tw:font-data tw:tabular-nums tw:flex-none tw:w-84 tw:text-text-2 tw:text-[11.5px]">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
           <Icon :name="entryIcon(r.e)" :size="13" class="ic tw:group-[.live]/erow:animate-[EventStream-es-pulse_1.4s_ease-in-out_infinite] tw:[&&]:flex-none tw:text-(--c)" />
           <span class="tl tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">{{ r.e.label || kindLabel(r.e.kind) }}<small class="tw:text-info-fg tw:font-data" v-if="r.e.task"> · {{ r.e.task.key }}</small></span>
+          <AttrChips :attrs="r.e.attrs" />
           <NoteLinks :id="r.e.id" />
           <span class="num du tw:font-data tw:tabular-nums tw:flex-none tw:text-text-2 tw:text-[11.5px]">{{ formatDuration(r.e.end - r.e.start) }}</span>
         </button>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import NoteLinks from './NoteLinks.vue'
 import { openUrl } from '../lib/links'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { formatDuration, joinTitle } from '@shared/timeline'
 import type { Entry, Ms, Note } from '@shared/types'
 import { kindLabel } from '../lib/palette'
@@ -21,6 +21,9 @@ import { useEntryForm } from '../tracker/entry/useEntryForm'
 import { useEntryReminder } from '../tracker/entry/useEntryReminder'
 import { useEntryActions } from '../tracker/entry/useEntryActions'
 import EntryCopyMenu from '../tracker/entry/EntryCopyMenu.vue'
+import { useRecording } from '../tracker/entry/useRecording'
+import RecDot from './RecDot.vue'
+import AttrPicker from '../tracker/entry/AttrPicker.vue'
 import { useEntryAutosave } from '../tracker/entry/useEntryAutosave'
 
 /**
@@ -63,7 +66,7 @@ const emit = defineEmits<{
 }>()
 
 const form = useEntryForm(props, emit)
-const { start, followsNow, startsNow, label, kind, tasks, error, busy, copied, parsed, isNew, readonly, date, setDate, addTask, effectiveEnd, setRange, shown } = form
+const { start, followsNow, startsNow, label, kind, tasks, attrs, error, busy, copied, parsed, isNew, readonly, date, setDate, addTask, effectiveEnd, setRange, shown } = form
 const reminder = useEntryReminder(props, start)
 const { remindMode, remindTime, repeatRule, repeatCount, remindOpen, repeatOpen, remindShort, repeatShort, seriesText } = reminder
 const actions = useEntryActions(props, emit, form, reminder)
@@ -90,6 +93,17 @@ function setAdd(p: Partial<AddPrefs>): void {
   if (props.add) emit('update:add', { ...props.add, ...p })
 }
 const openJoin = (url: string) => openUrl(url)
+/** «Запись» of this event: stopped / started (going on or ahead) — the card shows it as the day comes back. */
+const rec = useRecording()
+const recordAction = computed(() => (props.entry.id ? rec.action({ ...props.entry, recording: props.entry.recording }, props.now ?? Date.now()) : undefined))
+async function toggleRecording(): Promise<void> {
+  if (!props.entry.id) return
+  try {
+    await rec.set(props.day, props.entry.id, !props.entry.recording)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
 /** Time already spent on the picked task (all days) — the same task taken again adds up. */
 const taskTotals = ref<Record<string, number>>({})
 watch(
@@ -110,6 +124,7 @@ watch(
       <button v-if="entry.outlook?.joinUrl && (now ?? 0) < entry.end" class="join tw:inline-flex tw:items-center tw:gap-4 tw:py-2 tw:px-8 tw:rounded-r2 tw:text-[12px] tw:text-accent-fg" title="Подключиться к встрече в Teams" @click="openJoin(entry.outlook.joinUrl)"><Icon name="users" :size="13" />Teams</button>
       <span class="spacer tw:flex-1"></span>
       <span v-if="entry.series" class="badge rep tw:text-[10px] tw:py-2 tw:px-6 tw:rounded-r2 tw:inline-flex tw:items-center tw:gap-4 tw:bg-accent/25 tw:text-accent-fg" :title="`Повторяется ${seriesText} — изменения можно применить ко всей серии`"><Icon name="repeat" :size="11" />{{ seriesText }}</span>
+      <button v-if="entry.id && recordAction" class="hbtn rec tw:inline-flex tw:items-center tw:justify-center tw:gap-5 tw:h-28 tw:py-0 tw:px-7 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:hover:bg-hover tw:hover:text-down-fg tw:[&.on]:text-down-fg" :class="{ on: entry.recording }" :title="entry.recording ? 'Остановить запись: событие закончится сейчас' : 'Начать запись: конец события будет продлеваться сам (будущее — когда наступит его время)'" @click="toggleRecording"><RecDot v-if="entry.recording" /><Icon :name="entry.recording ? 'stop' : 'rec'" :size="13" />{{ entry.recording ? 'Запись' : '' }}</button>
       <button v-if="entry.id && !readonly" class="hbtn danger tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-down-fg tw:hover:enabled:border-border-3" title="Удалить событие" @click="remove"><Icon name="trash" :size="15" /></button>
       <!-- a new block's form is always there — nothing to close -->
       <button v-if="entry.id" class="hbtn tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:hover:enabled:border-border-3" title="Закрыть (Esc)" @click="close"><Icon name="x" :size="16" /></button>
@@ -194,12 +209,13 @@ watch(
       @pick="(s) => s.kind && (kind = s.kind)"
     />
 
-    <!-- everything else — one row of equal chips; their choices open as lists (the card never jumps) -->
+    <!-- everything else — one row of equal small square buttons; their choices open as lists (the card never jumps) -->
     <div class="bar tw:flex tw:items-center tw:flex-wrap tw:gap-6">
       <NoteLinks v-if="entry.id" :id="entry.id" />
-      <TaskPicker v-if="!readonly" v-model="tasks" :single="!!entry.id" compact />
-      <DictateButton v-if="!readonly" compact @recorded="(r) => save(r)" />
-      <PopChip v-model:open="remindOpen" icon="bell" :label="remindShort" :active="remindMode !== 'off'" :title="remindMode === 'off' ? 'Напомнить — уведомление Windows' : `Напоминание: ${remindShort}`">
+      <TaskPicker v-if="!readonly" v-model="tasks" :single="!!entry.id" compact square />
+      <AttrPicker v-if="!readonly" v-model="attrs" />
+      <DictateButton v-if="!readonly" square @recorded="(r) => save(r)" />
+      <PopChip v-model:open="remindOpen" square icon="bell" :label="remindShort" :active="remindMode !== 'off'" :title="remindMode === 'off' ? 'Напомнить — уведомление Windows' : `Напоминание: ${remindShort}`">
         <button class="pci" :class="{ cur: remindMode === 'off' }" @click="(remindMode = 'off'), (remindOpen = false)">Не напоминать</button>
         <button v-for="m in REMIND_BEFORE" :key="m" class="pci tw:[&.badge]:text-[10px] tw:[&.badge]:py-2 tw:[&.badge]:px-6 tw:[&.badge]:rounded-r2 tw:[&.badge]:bg-accent tw:[&.bar]:flex tw:[&.bar]:items-center tw:[&.bar]:flex-wrap tw:[&.bar]:gap-6 tw:hover:enabled:bg-hover" :class="{ cur: remindMode === `b${m}` }" @click="(remindMode = `b${m}`), (remindOpen = false)">Напомнить {{ beforeLabel(m) }}</button>
         <div class="pcsep"></div>
@@ -211,6 +227,7 @@ watch(
       <PopChip
         v-if="!entry.id && !readonly"
         v-model:open="repeatOpen"
+        square
         icon="repeat"
         :label="repeatShort"
         :active="!!repeatRule"

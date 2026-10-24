@@ -14,15 +14,17 @@ import { dayFeed, plural } from '@shared/tracker/boardTime'
 import { useWorkBoard } from './useWorkBoard'
 import EntryCopyMenu from '../entry/EntryCopyMenu.vue'
 import { useRecording } from '../entry/useRecording'
+import RecDot from '../../components/RecDot.vue'
+import AttrChips from '../../components/AttrChips.vue'
 
 /** The chosen day as a feed (done → now → plan, free gaps in between) — or the period's sheet. */
 const emit = defineEmits<{ openDay: [day: string] }>()
 const { settings, day, weekStart, weekEnd, weekTitle, reload, now, isToday, cur, fail, flash, flashFor, top, feedTab, feedOrder, openId, hoverId, addTaskToDay, quick } = useWorkBoard()
 
-/** «Запись» going on (its event's end follows the clock; it is stopped from its row too). */
+/** «Запись» on an event: started / stopped from its row too. */
 const rec = useRecording()
 /** Going on now: started, and its end is now or ahead (a detected call / a recording is extended every few seconds). */
-const isLive = (e: Entry) => rec.isRecording(e.id) || (e.start <= now.value && e.end >= now.value - 90_000 && (e.source === 'detected' || e.end > now.value))
+const isLive = (e: Entry) => e.start <= now.value && e.end >= now.value - 90_000 && (e.source === 'detected' || !!e.recording || e.end > now.value)
 const feed = computed(() => dayFeed(cur.value, { now: now.value, today: todayKey.value, work: scheduleRanges(cur.value.day, settings.value.schedule).work, order: feedOrder.value }))
 /** Blocks of the day at the same time: under the later one — with which, when, how long. */
 const overlaps = computed(() => overlapPairs(cur.value.entries))
@@ -49,9 +51,14 @@ async function removeEntry(e: Entry): Promise<void> {
     fail(x)
   }
 }
-async function stopRecording(): Promise<void> {
-  await rec.stop()
-  await reload()
+/** The row's record button: the recording stopped / started (an event going on or ahead). */
+async function toggleRecording(e: Entry): Promise<void> {
+  try {
+    await rec.set(day.value, e.id, !e.recording)
+    await reload()
+  } catch (x) {
+    fail(x)
+  }
 }
 /** A copy made from a row: on this day — lit in the list; on another — that day opened. */
 async function onCopied(c: Entry, d: string): Promise<void> {
@@ -122,6 +129,8 @@ async function toggleJira(e: Entry): Promise<void> {
       <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-40 tw:my-0 tw:mx-6 tw:pt-4 tw:pr-8 tw:pb-4 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:hover:not-[&.on]:not-[&.live]:bg-hover tw:[&.on]:not-[&.live]:bg-accent-soft tw:[&.flash]:animate-[WorkBoard-flash_1.6s_ease-out] tw:[&.plan]:[border-left-style:dashed] tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[WorkBoard-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ plan: r.plan && !isLive(r.e), on: openId === r.e.id, flash: flash === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @mouseenter="hoverId = r.e.id" @click="openId = openId === r.e.id ? undefined : r.e.id">
         <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
         <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[WorkBoard-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="13" /></span>
+        <RecDot v-if="r.e.recording" />
+        <AttrChips :attrs="r.e.attrs" />
         <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col">
           <span class="ttl tw:group-[.plan]/row:text-text-2 tw:overflow-hidden tw:text-ellipsis tw:text-text tw:text-[13px]">{{ r.e.label || kindLabel(r.e.kind) }}</span>
           <span v-if="r.e.description" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ r.e.description.split('\n')[0] }}</span>
@@ -142,7 +151,7 @@ async function toggleJira(e: Entry): Promise<void> {
         <span class="acts tw:inline-flex tw:flex-none tw:gap-2 tw:opacity-0 tw:group-hover/row:opacity-100" @click.stop>
           <button class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text-hi tw:[.seg_&]:not-[.quick_&]:h-22 tw:[.seg_&]:not-[.quick_&]:py-0 tw:[.seg_&]:not-[.quick_&]:px-10 tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:not-hover:not-[.quick_&]:text-muted tw:[.seg_&]:not-[.quick_&]:font-data tw:[.seg_&]:not-[.quick_&]:text-[10.5px] tw:[.seg_&]:uppercase tw:[.quick_&]:h-22 tw:[.quick_&]:py-0 tw:[.quick_&]:px-6 tw:[.quick_&]:font-data tw:[.quick_&]:text-[10.5px] tw:[.quick_&]:not-hover:text-text-2 tw:[.quick_&]:hover:border-accent tw:[.quick_&]:hover:text-accent-fg" title="Показать на таймлайне" @click="(top = 'timeline'), (openId = r.e.id)"><Icon name="timeline" :size="13" /></button>
           <EntryCopyMenu :day="day" :source="r.e" @copied="onCopied" />
-          <button v-if="rec.isRecording(r.e.id)" class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-down-fg tw:hover:text-text-hi" title="Остановить запись" @click="stopRecording"><Icon name="stop" :size="13" /></button>
+          <button v-if="rec.action(r.e, now)" class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-down-fg tw:[&.on]:text-down-fg" :class="{ on: r.e.recording }" :title="r.e.recording ? 'Остановить запись' : 'Начать запись: конец события будет продлеваться сам (будущее — когда наступит его время)'" @click="toggleRecording(r.e)"><Icon :name="r.e.recording ? 'stop' : 'rec'" :size="13" /></button>
           <button class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text-hi tw:[.seg_&]:not-[.quick_&]:h-22 tw:[.seg_&]:not-[.quick_&]:py-0 tw:[.seg_&]:not-[.quick_&]:px-10 tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:not-hover:not-[.quick_&]:text-muted tw:[.seg_&]:not-[.quick_&]:font-data tw:[.seg_&]:not-[.quick_&]:text-[10.5px] tw:[.seg_&]:uppercase tw:[.quick_&]:h-22 tw:[.quick_&]:py-0 tw:[.quick_&]:px-6 tw:[.quick_&]:font-data tw:[.quick_&]:text-[10.5px] tw:[.quick_&]:not-hover:text-text-2 tw:[.quick_&]:hover:border-accent tw:[.quick_&]:hover:text-accent-fg" v-if="!r.e.outlook" title="Удалить" @click="removeEntry(r.e)"><Icon name="trash" :size="13" /></button>
         </span>
       </div>

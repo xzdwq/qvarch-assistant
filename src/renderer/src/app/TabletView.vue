@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { activeArea, comboOf, isModifiersOnly, isQuarterTurn, monitorsBounds, pressureCurve, TABLET_BUTTONS, TABLET_MM, TABLET_ROTATIONS, type TabletButton, type TabletMonitor, type TabletPrefs } from '@shared/tablet'
+import { activeArea, comboOf, HOP_MS_RANGE, isModifiersOnly, isQuarterTurn, monitorsBounds, pressureCurve, TABLET_BUTTONS, TABLET_MM, TABLET_ROTATIONS, type TabletButton, type TabletMonitor, type TabletPrefs } from '@shared/tablet'
 import Icon from '../components/Icon.vue'
 import { cssColor } from '../lib/cssColor'
 import { useTablet, useTabletCanvas, useTabletLive } from '../lib/tablet'
@@ -106,6 +106,8 @@ const areaStyle = computed(() => {
 })
 const penDot = computed(() => (sample.value?.in ? { left: `${sample.value.x * 100}%`, top: `${sample.value.y * 100}%` } : undefined))
 const ROTS = TABLET_ROTATIONS
+/** The hop's wait while its slider is dragged (set when let go). */
+const hopDraft = ref<number>()
 
 // ---------- the pen (sliders commit on release; the preview follows the drag) ----------
 const draft = ref<Partial<TabletPrefs>>({})
@@ -217,6 +219,11 @@ const statusText = computed(() => {
             <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'window' }" title="Когда окно скрыто — главный монитор" @click="set({ target: { kind: 'window' } })"><Icon name="layers" :size="13" />Окно Qvarch</button>
             <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[&.on]:bg-accent/22 tw:[&.on]:text-text-hi" :class="{ on: prefs?.target.kind === 'canvas' }" title="Только видимая область открытой доски, как бы её ни двигали и ни масштабировали; доски нет — всё окно Qvarch" @click="set({ target: { kind: 'canvas' } })"><Icon name="penTool" :size="13" />Полотно Qvarch</button>
           </div>
+          <label v-if="prefs?.target.kind === 'canvas'" class="sl tw:flex tw:items-center tw:gap-8 tw:mt-10 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Несколько досок на экране (в заметке): ручка, не касаясь планшета, подведена к краю доски и задержана там — переходит на соседнюю доску за этим краем">
+            <span>Переход между досками</span>
+            <input class="tw:flex-1 tw:min-w-60 tw:[accent-color:var(--accent)]" type="range" :min="HOP_MS_RANGE.min" :max="HOP_MS_RANGE.max" step="50" :value="hopDraft ?? prefs.hopMs" @input="hopDraft = Number(($event.target as HTMLInputElement).value)" @change="(set({ hopMs: hopDraft ?? prefs.hopMs }), (hopDraft = undefined))" />
+            <b class="tw:min-w-52 tw:text-right tw:text-text-2 tw:font-data tw:tabular-nums">{{ ((hopDraft ?? prefs.hopMs) / 1000).toFixed(2) }} с</b>
+          </label>
         </section>
 
         <!-- the area -->

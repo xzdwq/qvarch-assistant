@@ -4,6 +4,7 @@ import { Db } from './db'
 import { join } from 'node:path'
 import { DEFAULT_KINDS } from '../shared/kinds'
 import { DEFAULT_UI, mergeUi } from '../shared/ui'
+import { attrRemovals, cleanAttrs, withoutRemoved } from '../shared/tracker/attributes'
 import { dayKey, unnest } from '../shared/timeline'
 import { nextTaskKey, taskNo } from '../shared/board'
 import type { DayData, KindDef, LocalTask, PublicSettings, SearchHit, Settings, SettingsPatch } from '../shared/types'
@@ -11,6 +12,7 @@ import type { DayData, KindDef, LocalTask, PublicSettings, SearchHit, Settings, 
 const DEFAULT_SETTINGS: Settings = {
   schedule: { start: '09:00', end: '18:00', lunchStart: '13:00', lunchEnd: '14:00', workDays: [1, 2, 3, 4, 5] },
   kinds: DEFAULT_KINDS,
+  attributes: [],
   captureTitles: false,
   countKeys: true,
   jira: { projects: ['DOS', 'RND', 'AI'], site: 'https://aoavant.atlassian.net', syncMin: 10 },
@@ -72,6 +74,7 @@ export class Store {
       schedule: { ...DEFAULT_SETTINGS.schedule, ...raw.schedule },
       // the old "nested" flag of kinds is dropped
       kinds: raw.kinds?.length ? raw.kinds.map(({ nested: _n, ...k }: KindDef & { nested?: boolean }) => k) : DEFAULT_KINDS,
+      attributes: cleanAttrs(raw.attributes),
       island: { ...DEFAULT_SETTINGS.island, ...raw.island },
       jira: { ...DEFAULT_SETTINGS.jira, ...raw.jira },
       outlook: { ...DEFAULT_SETTINGS.outlook, ...raw.outlook },
@@ -197,6 +200,11 @@ export class Store {
     const s = this.settings
     if (patch.schedule) s.schedule = { ...s.schedule, ...patch.schedule }
     if (patch.kinds?.length) s.kinds = patch.kinds
+    if (patch.attributes) {
+      const next = cleanAttrs(patch.attributes)
+      this.dropAttrValues(attrRemovals(s.attributes, next))
+      s.attributes = next
+    }
     if (patch.captureTitles !== undefined) s.captureTitles = patch.captureTitles
     if (patch.countKeys !== undefined) s.countKeys = patch.countKeys
     if (patch.jira) s.jira = { ...s.jira, ...patch.jira, syncMin: Math.max(1, Math.min(240, Number(patch.jira.syncMin ?? s.jira.syncMin) || 10)) }
@@ -208,6 +216,22 @@ export class Store {
     if (patch.sampleIntervalMs !== undefined) s.sampleIntervalMs = patch.sampleIntervalMs
     if (patch.autoStart !== undefined) s.autoStart = patch.autoStart
     writeAtomic(this.settingsFile, JSON.stringify(s, null, 2))
+  }
+
+  /** Attributes deleted / values taken out of a list: off every event of every day. */
+  private dropAttrValues(removals: ReturnType<typeof attrRemovals>): void {
+    if (!removals.size) return
+    for (const day of this.listDays()) {
+      const d = this.day(day)
+      let changed = false
+      d.entries = d.entries.map((e) => {
+        const x = withoutRemoved(e, removals)
+        if (x) changed = true
+        return x ?? e
+      })
+      if (changed) this.markDirty(day)
+    }
+    this.flush()
   }
 
   /** Days that have data, YYYY-MM-DD, ascending (unsaved changes of cached days included). */

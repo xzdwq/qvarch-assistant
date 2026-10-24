@@ -1,6 +1,7 @@
 import type { Component } from 'vue'
 import TabletView from '../TabletView.vue'
 import AiSection from './AiSection.vue'
+import AttributesSection from './AttributesSection.vue'
 import BrowserSection from './BrowserSection.vue'
 import GeneralSection from './GeneralSection.vue'
 import InterfaceSection from './InterfaceSection.vue'
@@ -26,6 +27,7 @@ export interface SettingsPanel {
 export const SETTINGS_PANELS: SettingsPanel[] = [
   { id: 'schedule', category: 'general', component: ScheduleSection, mount: 'always' },
   { id: 'kinds', category: 'kinds', component: KindsSection, mount: 'always' },
+  { id: 'attributes', category: 'attributes', component: AttributesSection, mount: 'always' },
   { id: 'look', category: 'look', component: LookSection, mount: 'always' },
   { id: 'interface', category: 'ui', component: InterfaceSection, mount: 'always' },
   { id: 'tablet', category: 'tablet', component: TabletView, props: { embedded: true }, mount: 'whenOpen' },

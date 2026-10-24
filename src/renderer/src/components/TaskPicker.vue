@@ -13,7 +13,8 @@ import Icon from './Icon.vue'
  * Several tasks (checkboxes) → one parallel block per task for the same time; `single` → just one.
  * The list fits into the space the host leaves (the island clips — and clicks outside it go through).
  */
-const props = defineProps<{ single?: boolean; compact?: boolean }>()
+/** `square` — the card's row of small square buttons (no task — the icon alone). */
+const props = defineProps<{ single?: boolean; compact?: boolean; square?: boolean }>()
 const tasks = defineModel<TaskRef[]>({ default: () => [] })
 
 const q = ref('')
@@ -57,13 +58,13 @@ function pick(i: TaskRef): void {
   <div class="tp tw:relative tw:flex-none" :class="{ compact: props.compact }">
     <button
       ref="btn"
-      class="chip tw:inline-flex tw:items-center tw:gap-6 tw:max-w-180 tw:h-36 tw:box-border tw:py-0 tw:px-12 tw:rounded-[4px] tw:border tw:border-border tw:bg-field tw:text-muted tw:text-[13px] tw:cursor-pointer tw:[transition:border-color_0.15s,color_0.15s] tw:hover:not-[&.on]:border-accent tw:hover:not-[&.on]:text-text tw:[&.on]:border-info/70 tw:[&.on]:bg-info/14 tw:[&.on]:text-info-fg tw:hover:enabled:not-[&.on]:bg-hover"
-      :class="{ on: tasks.length }"
+      class="chip tw:inline-flex tw:items-center tw:justify-center tw:gap-6 tw:max-w-180 tw:h-36 tw:box-border tw:py-0 tw:px-12 tw:[&.sq]:h-26 tw:[&.sq]:min-w-26 tw:[&.sq]:px-6 tw:[&.sq]:text-[12px] tw:rounded-[4px] tw:border tw:border-border tw:bg-field tw:text-muted tw:text-[13px] tw:cursor-pointer tw:[transition:border-color_0.15s,color_0.15s] tw:hover:not-[&.on]:border-accent tw:hover:not-[&.on]:text-text tw:[&.on]:border-info/70 tw:[&.on]:bg-info/14 tw:[&.on]:text-info-fg tw:hover:enabled:not-[&.on]:bg-hover"
+      :class="{ on: tasks.length, sq: props.square }"
       :title="tasks.length ? tasks.map((t) => `${t.key} — ${t.summary}`).join('\n') : 'Задача'"
       @click="toggle"
     >
       <Icon :name="isOwn(tasks[0]?.key) ? 'checkSquare' : 'jira'" :size="13" />
-      <span class="lbl tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-semibold">{{ label }}</span>
+      <span v-if="!props.square || tasks.length" class="lbl tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-semibold">{{ label }}</span>
       <span v-if="tasks.length" class="x tw:inline-flex tw:opacity-70 tw:hover:opacity-100" title="Отвязать" @click.stop="tasks = []"><Icon name="x" :size="11" /></span>
     </button>
     <Teleport to="body">

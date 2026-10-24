@@ -55,6 +55,15 @@ async function tlCopy(c: { id: string; start: Ms; end: Ms; lane?: number }): Pro
     fail(x)
   }
 }
+/** A block's recording started / stopped from its menu. */
+async function tlRecord(c: { id: string; on: boolean }): Promise<void> {
+  try {
+    await window.qa.recordSet(day.value, c.id, c.on)
+  } catch (x) {
+    fail(x)
+  }
+  await reloadAll()
+}
 /** A copy made: its day shown, the copy opened. */
 async function onCopied(c: Entry, d: string): Promise<void> {
   day.value = d
@@ -103,6 +112,8 @@ async function tlMerge(ids: string[]): Promise<void> {
       @resize="(c) => tlSave(c.id, { start: c.start, end: c.end })"
       @move="(c) => tlSave(c.id, { start: c.start, end: c.end, lane: c.lane })"
       @copy="tlCopy"
+      @record="tlRecord"
+      @attrs="(c) => tlSave(c.id, { attrs: Object.keys(c.attrs).length ? c.attrs : undefined })"
       @copied="(c, d) => onCopied(c, d)"
       @change-kind="(c) => tlSave(c.id, { kind: c.kind })"
       @cut-as="tlCut"

@@ -73,6 +73,7 @@ app.whenReady().then(() => {
     return
   }
   ctx.tracker.start()
+  ctx.recording.start()
   ctx.jira.start()
   ctx.outlook.start()
   ctx.probe.setTitles(ctx.store.cfg.captureTitles)
@@ -158,7 +159,7 @@ app.on('before-quit', () => {
   globalShortcut.unregisterAll()
   ctx.probe?.stop()
   ctx.tablet?.stop()
-  // a recording: its event ends now (it is not taken up again after a restart)
+  // the recordings: their ends caught up once more (one the app stays closed through ends there on the next start)
   ctx.recording?.stop()
   ctx.tracker?.stop()
   ctx.jira?.stop()

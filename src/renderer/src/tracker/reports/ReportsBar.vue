@@ -9,10 +9,12 @@ import { PERIODS } from '@shared/tracker/reportPeriod'
 import { reportCsv } from '@shared/tracker/reportStats'
 import { ENTRY_ORIGINS, ORIGIN_LOOK, TASK_TYPE_LOOK, TASK_TYPES } from '@shared/tracker/constants'
 import { todayDay as today, useReports } from './useReportsState'
+import { NO_VALUE, NO_VALUE_LABEL } from '@shared/tracker/attributes'
+import { attrDefs } from '../../lib/attributes'
 import { useSavedViews } from './useSavedViews'
 
 /** The report's bar: the period and its arrows, filters, saved views, export and reload. */
-const { st, range, shift, isCurrent, label: periodLabel, customLabel, loading, load, all, items, filterField, fKinds } = useReports()
+const { st, range, shift, isCurrent, label: periodLabel, customLabel, loading, load, all, items, filterField, fKinds, attrField } = useReports()
 
 /** The wheel over the dates: a period forward (up) / back (down) — one step per notch, a touchpad not racing. */
 let wheelAt = 0
@@ -36,9 +38,13 @@ const SOURCE_OPTS = ENTRY_ORIGINS.map((id) => ({ id, ...ORIGIN_LOOK[id] }))
 const fTasks = filterField('tasks')
 const fType = filterField('taskType')
 const fSource = filterField('sources')
+/** A filter per attribute: its values and «без значения». */
+const attrFilters = computed(() =>
+  attrDefs.value.map((a) => ({ def: a, model: attrField(a.id), options: [...a.options.map((o) => ({ id: o.id, label: o.label, color: a.color })), { id: NO_VALUE, label: NO_VALUE_LABEL }] })),
+)
 const anyFilter = computed(() => {
   const x = st.value.filter
-  return !!(x.kinds?.length || x.tasks?.length || x.taskType?.length || x.sources?.length || x.text?.trim())
+  return !!(x.kinds?.length || x.tasks?.length || x.taskType?.length || x.sources?.length || x.text?.trim() || Object.values(x.attrs ?? {}).some((v) => v.length))
 })
 
 const savedEl = ref<HTMLElement>()
@@ -46,7 +52,7 @@ const { saved, open: savedOpen, newName, saveView, applyView } = useSavedViews(s
 
 /** The shown items as a CSV file download. */
 function exportCsv(): void {
-  const blob = new Blob([reportCsv(items.value, kindLabel)], { type: 'text/csv;charset=utf-8' })
+  const blob = new Blob([reportCsv(items.value, kindLabel, attrDefs.value)], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = `qvarch-${range.value[0]}_${range.value[1]}.csv`
@@ -77,6 +83,7 @@ function exportCsv(): void {
       <FilterMenu v-model="fTasks" label="Задачи" icon="jira" :options="taskOpts" />
       <FilterMenu v-model="fType" label="Тип" icon="checkSquare" :options="TYPE_OPTS" title="Jira / свои / без задачи" />
       <FilterMenu v-model="fSource" label="Источник" icon="outlook" :options="SOURCE_OPTS" />
+      <FilterMenu v-for="f in attrFilters" :key="f.def.id" v-model="f.model.value" :label="f.def.short" icon="layers" :options="f.options" :title="`Атрибут «${f.def.name}»`" />
       <label class="srch tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:text-muted tw:[&.on]:border-accent/60" :class="{ on: st.filter.text }">
         <Icon name="search" :size="13" />
         <input class="tw:w-90 tw:border-0 tw:outline-none tw:bg-transparent tw:text-text tw:text-[12px]" :value="st.filter.text ?? ''" placeholder="Текст" @input="st.filter = { ...st.filter, text: ($event.target as HTMLInputElement).value }" />

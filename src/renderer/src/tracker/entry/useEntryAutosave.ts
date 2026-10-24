@@ -19,7 +19,7 @@ export function useEntryAutosave(
   /** The card's element: a press / focus outside it (but in the app) is leaving it. */
   rootEl: Ref<HTMLElement | undefined>,
 ) {
-  const { start, end, followsNow, startsNow, label, kind, tasks, error, busy, copied, date } = form
+  const { start, end, followsNow, startsNow, label, kind, tasks, attrs, error, busy, copied, date } = form
   // the autosave's state (declared before the watchers below use it)
   let savedKey = ''
   const saveState = ref<'idle' | 'pending' | 'saving' | 'saved'>('idle')
@@ -31,7 +31,7 @@ export function useEntryAutosave(
 
   /** The form as it is — what the save compares with the last saved state. */
   function formKey(): string {
-    return JSON.stringify([start.value, end.value, followsNow.value, label.value, kind.value, tasks.value.map((t) => t.key), rem.remindMode.value, rem.remindTime.value, date.value])
+    return JSON.stringify([start.value, end.value, followsNow.value, label.value, kind.value, tasks.value.map((t) => t.key), rem.remindMode.value, rem.remindTime.value, date.value, Object.entries(attrs.value).sort()])
   }
 
   // identity of the thing being edited: re-init the text fields only when it changes
@@ -42,6 +42,7 @@ export function useEntryAutosave(
       label.value = joinTitle(props.entry.label, props.entry.description)
       tasks.value = props.entry.task ? [props.entry.task] : []
       kind.value = props.entry.kind
+      attrs.value = { ...props.entry.attrs }
       error.value = ''
       copied.value = ''
       rem.initRemind()
