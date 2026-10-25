@@ -1,5 +1,5 @@
 import { MEDIA_PATH, TICKET_HEADER, type TransportMethods } from '../../shared/transport/protocol'
-import { isSpaceFile, type MediaReport } from '../../shared/transport/space'
+import { isSpaceFile, mediaWhy, type MediaReport } from '../../shared/transport/space'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Vault } from '../vault'
@@ -55,17 +55,17 @@ export class SharedMedia {
   /** What became of each file (written to the journal too): fetched, and why the others are not here (for the person). */
   async sync(space: string, rels: readonly string[], ways: MediaWays = {}): Promise<MediaReport> {
     const report = await this.syncFiles(space, rels, ways)
-    for (const rel of rels) this.log(`media ${space.slice(0, 8)} ${rel}: ${report.fetched.includes(rel) ? 'загружено' : (report.problems[rel] ?? 'на месте')}`)
+    for (const rel of rels) this.log(`media ${space.slice(0, 8)} ${rel}: ${report.fetched.includes(rel) ? 'загружено' : (mediaWhy(report, rel) ?? 'на месте')}`)
     return report
   }
   private async syncFiles(space: string, rels: readonly string[], ways: MediaWays): Promise<MediaReport> {
     const { send = true, fetch: take = true } = ways
-    const report: MediaReport = { fetched: [], problems: {} }
+    const report: MediaReport = { fetched: [], absent: [], failed: {} }
     const wanted = rels.filter((r) => isSpaceFile(r))
     const base = this.base()
     if (!wanted.length) return report
     if (!base) {
-      for (const rel of wanted) report.problems[rel] = 'нет связи с сервером'
+      for (const rel of wanted) report.failed[rel] = 'нет связи с сервером'
       return report
     }
     const url = (rel: string) => `${base}${MEDIA_PATH}${space}/${rel.split('/').map(encodeURIComponent).join('/')}`
@@ -75,25 +75,25 @@ export class SharedMedia {
       const local = readLocal(this.vault, rel)
       if (send && local && serverLacks.has(rel)) {
         const r = await this.passes.request(space, (pass) => fetch(url(rel), { method: 'PUT', body: Buffer.from(local), headers: { [TICKET_HEADER]: pass } })).catch((e: Error) => e)
-        if (r instanceof Error) report.problems[rel] = `не отправлено: ${r.message}`
-        else if (!r.ok) report.problems[rel] = `сервер не принял: ${await said(r)}`
+        if (r instanceof Error) report.failed[rel] = `не отправлено: ${r.message}`
+        else if (!r.ok) report.failed[rel] = `сервер не принял: ${await said(r)}`
         else this.log(`media ${space.slice(0, 8)} ${rel}: отправлено`)
       }
       if (!take || local) continue
       if (serverLacks.has(rel)) {
-        report.problems[rel] = 'ещё нет на сервере — у добавившего должно быть открыто приложение'
+        report.absent.push(rel)
         continue
       }
       const r = await this.passes.request(space, (pass) => fetch(url(rel), { headers: { [TICKET_HEADER]: pass } })).catch((e: Error) => e)
       if (r instanceof Error || !r.ok) {
-        report.problems[rel] = r instanceof Error ? `не загружено: ${r.message}` : `не загружено: ${await said(r)}`
+        report.failed[rel] = r instanceof Error ? `не загружено: ${r.message}` : `не загружено: ${await said(r)}`
         continue
       }
       try {
         kindOf(rel).write(this.vault, rel, new Uint8Array(await r.arrayBuffer()))
         report.fetched.push(rel)
       } catch (e) {
-        report.problems[rel] = `не записано: ${(e as Error).message}`
+        report.failed[rel] = `не записано: ${(e as Error).message}`
       }
     }
     return report

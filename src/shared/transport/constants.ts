@@ -41,6 +41,8 @@ export interface TransportState {
   server?: string
   /** An access code is kept for this server. */
   hasCode: boolean
+  /** The server's clock minus this computer's, ms (the last known; none — never online). */
+  skew?: number
 }
 
 /** The settings kept as read (unknown keys dropped, wrong values — the defaults). */
@@ -87,3 +89,8 @@ export function socketUrl(input: string, path: string): string | null {
   const port = u.port || (/^[a-z]+:\/\//i.test(s) ? '' : String(DEFAULT_PORT))
   return `${scheme}//${u.hostname}${port ? `:${port}` : ''}${path}`
 }
+
+/** Something that failed with the server (a sync, a send, a file) is tried again after these pauses — the last one from then on. */
+export const RETRY_MS = [2000, 5000, 15_000, 30_000, 60_000] as const
+/** The pause before the next try after this many failures in a row (1 — the first). */
+export const retryDelay = (fails: number): number => RETRY_MS[Math.min(Math.max(fails, 1), RETRY_MS.length) - 1]

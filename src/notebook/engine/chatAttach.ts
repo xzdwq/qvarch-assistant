@@ -1,11 +1,11 @@
-import { ATTACH_MAX, type AttachKind, type ChatAttach, type FileKind } from '../../shared/transport/chat'
+import { ATTACH_MAX, attachBytes, type AttachKind, type ChatAttach, type FileKind } from '../../shared/transport/chat'
 import type { BlockRun } from './runTypes'
 import { scrubRun } from './sharedRuns'
 
 /**
  * A block as a chat's message carries it: each kind — what of it goes (a query — its columns and rows, a request —
- * what was asked and answered, code — its value, a browser test — its whole block as written). Secrets taken off (the
- * request's and answer's authorization, cookies, tokens); a table cut to fit a message, the rest counted.
+ * what was asked and answered, code — its whole block and its value, a browser test — its whole block as written).
+ * Secrets taken off (the request's and answer's authorization, cookies, tokens); a table cut to fit, the rest counted.
  */
 export interface SqlShot {
   columns: string[]
@@ -28,6 +28,12 @@ export interface HttpShot {
 }
 export interface ValueShot {
   value: unknown
+}
+/** Code as it is written (its whole block — pasted into a note, it runs there) and, run already, its value. */
+export interface CodeShot {
+  source: string
+  value?: unknown
+  hasValue: boolean
 }
 /** A browser test as it is written: its whole block (pasted into a note — it runs there), not how it went. */
 export interface PwShot {
@@ -56,7 +62,7 @@ const SHOTS: Record<ShotKind, { needsRun: boolean; shot: (f: { run: BlockRun; sr
       r.request &&
       r.response && { method: r.request.method, url: r.request.url, status: r.response.status, statusText: r.response.statusText, ms: r.response.time, body: clip(r.response.body, BODY_MAX), cut: r.response.body.length > BODY_MAX } satisfies HttpShot,
   },
-  code: { needsRun: true, shot: ({ run: r }) => (r.hasValue ? ({ value: r.value } satisfies ValueShot) : undefined) },
+  code: { needsRun: false, shot: ({ run: r, src }) => (src.trim() ? ({ source: src, hasValue: !!r.hasValue, ...(r.hasValue ? { value: r.value } : {}) } satisfies CodeShot) : undefined) },
   value: { needsRun: true, shot: ({ run: r }) => ({ value: r.value }) satisfies ValueShot },
   pw: { needsRun: false, shot: ({ src }) => (src.trim() ? ({ source: src } satisfies PwShot) : undefined) },
 }
@@ -70,10 +76,10 @@ export function attachOf(kind: ShotKind, from: ShotFrom, title: string): ChatAtt
   const data = s.shot({ run: from.run ? scrubRun(from.run) : { state: 'ok', at: 0 }, src: from.src })
   if (data === undefined) return undefined
   const a: ChatAttach = { kind, title: clip(title, 200), data }
-  if (kind !== 'sql') return JSON.stringify(a).length <= ATTACH_MAX ? a : undefined
+  if (kind !== 'sql') return attachBytes(a) <= ATTACH_MAX ? a : undefined
   // a table too big: its rows halved until it fits
   const shot = data as SqlShot
   let rows = shot.rows
-  while (rows.length && JSON.stringify({ ...a, data: { ...shot, rows } }).length > ATTACH_MAX) rows = rows.slice(0, Math.floor(rows.length / 2))
+  while (rows.length && attachBytes({ ...a, data: { ...shot, rows } }) > ATTACH_MAX) rows = rows.slice(0, Math.floor(rows.length / 2))
   return { ...a, data: { ...shot, rows } }
 }

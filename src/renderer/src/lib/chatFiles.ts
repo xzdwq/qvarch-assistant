@@ -1,3 +1,4 @@
+import { BUNDLE_EXT } from '@shared/docBundle'
 import { CHAT_FILE_MAX, fileKindOf, type ChatFile } from '@shared/transport/chat'
 import { sendAttach } from './chatActions'
 
@@ -29,6 +30,15 @@ export async function sendFile(room: string, f: File, text: string): Promise<voi
   const file = await window.qa.chatFilePut(room, nameOf(f), f.type, new Uint8Array(await f.arrayBuffer()))
   await sendAttach(room, { kind: fileKindOf(file.mime), title: file.name, data: file }, text)
 }
+/** A note / a folder of the notebook sent into a room as one file (its export: the one who gets it puts it into their notebook). */
+export async function sendNotes(room: string, rel: string, withRuns: boolean, text: string): Promise<void> {
+  const file = await window.qa.chatFileFromNotes(room, rel, withRuns)
+  await sendAttach(room, { kind: 'file', title: file.name, data: file }, text)
+}
+/** A file that is a note / a folder of a notebook (it goes into this one in a click). */
+export const isNotesFile = (f: ChatFile) => f.name.toLowerCase().endsWith(`.${BUNDLE_EXT}`)
+/** A received note / folder put into the notebook (its top): what was made. */
+export const notesToNotebook = (room: string, f: ChatFile) => window.qa.chatFileToNotes(room, f.id, '')
 /** A file's size in words. */
 export function sizeText(n: number): string {
   if (n < 1024) return `${n} Б`

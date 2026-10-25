@@ -1,4 +1,4 @@
-import { followImage } from '@nb/workspace/noteMedia'
+import { followImage } from '@nb/workspace/mediaFollow'
 
 /** A picture of the board: loading (no img yet), loaded (img) or not here (failed — until it comes). */
 export interface Picture {

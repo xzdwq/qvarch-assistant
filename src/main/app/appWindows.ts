@@ -60,8 +60,9 @@ export class AppWindows {
   }
 
   // ---------- the island ----------
-  createIsland(): void {
-    this.island = new Island(this.app.store.cfg.island, (pos) => this.app.store.update({ island: pos }))
+  /** The island made (shown once ready — or not: the app starting keeps it closed until it is asked for). */
+  createIsland(show = true): void {
+    this.island = new Island(this.app.store.cfg.island, (pos) => this.app.store.update({ island: pos }), show)
   }
   toggleIsland(): void {
     if (!this.island || this.island.win.isDestroyed()) this.createIsland()

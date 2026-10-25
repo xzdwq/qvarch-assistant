@@ -8,8 +8,12 @@ import { findBlocks } from './findBlocks'
  * every part of the app lists the note's blocks (runs, reports, the AI tools, regression, recording).
  */
 
-/** The key a block's run is kept under: its name, or its kind and first line (an unnamed one). */
-export const blockRunKey = (name: string | undefined, kind: BlockKind | string, line: number) => name || `_${kind}${line}`
+/**
+ * The key a block's run is kept under: its own id (it keeps its results wherever it moves; a new block of the same
+ * name never shows another's); one without an id yet (an older note's) — its name, or its kind and first line. Its
+ * name is what it publishes its value under ({{name}}), not where its results are kept.
+ */
+export const blockRunKey = (name: string | undefined, kind: BlockKind | string, line: number, id?: string) => (id ? `_${id}` : name || `_${kind}${line}`)
 
 export interface FencedNoteBlock extends NoteBlock {
   fence: string
@@ -25,6 +29,6 @@ export function fencedBlocksOf(text: string): FencedNoteBlock[] {
     .filter((b) => /^(`{3,}|~{3,})/.test(b.src))
     .map((b) => {
       const { fence, info, body } = splitFence(b.src)
-      return { ...b, fence, info, body, key: blockRunKey(info.name, b.kind, b.line0) }
+      return { ...b, fence, info, body, key: blockRunKey(info.name, b.kind, b.line0, info.id) }
     })
 }

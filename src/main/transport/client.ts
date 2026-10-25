@@ -1,4 +1,4 @@
-import { FAIL_TEXT, parseServerFrame, PROTOCOL_VERSION, type ClientFrame, type DeviceInfo, type FailCode, type MethodName, type RpcError, type ServerFrame, type TransportEvent, type TransportMethods } from '../../shared/transport/protocol'
+import { FAIL_TEXT, FRAME_MAX, parseServerFrame, PROTOCOL_VERSION, type ClientFrame, type DeviceInfo, type FailCode, type MethodName, type RpcError, type ServerFrame, type TransportEvent, type TransportMethods } from '../../shared/transport/protocol'
 import type { TransportStatus } from '../../shared/transport/constants'
 import type { Signer } from './keys'
 
@@ -16,6 +16,8 @@ export interface ClientState {
   message?: string
   device?: DeviceInfo
   server?: string
+  /** The server's clock minus this computer's, ms (known once online). */
+  skew?: number
 }
 export interface ClientOptions {
   /** The socket's full address. */
@@ -70,13 +72,16 @@ export class TransportClient {
     const ws = this.ws
     if (this.state.status !== 'online' || !ws) return Promise.reject(new TransportError('offline', 'Нет связи с сервером'))
     const id = this.nextId++
+    const frame = JSON.stringify({ t: 'req', id, m, p } satisfies ClientFrame)
+    // too big for the socket: refused here (sent, it would close the connection — and be sent again on reconnecting)
+    if (Buffer.byteLength(frame) > FRAME_MAX) return Promise.reject(new TransportError('bad', `Слишком большое изменение для отправки (больше ${FRAME_MAX / 1024 / 1024} МБ)`))
     return new Promise((ok, fail) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         fail(new TransportError('timeout', 'Сервер не ответил'))
       }, REQUEST_MS)
       this.pending.set(id, { ok: ok as (r: unknown) => void, fail, timer })
-      this.send({ t: 'req', id, m, p })
+      if (ws.readyState === 1) ws.send(frame)
     })
   }
 
@@ -114,7 +119,7 @@ export class TransportClient {
     },
     ready: (f) => {
       this.tries = 0
-      this.set({ status: 'online', device: f.device, server: this.state.server })
+      this.set({ status: 'online', device: f.device, server: this.state.server, ...(typeof f.now === 'number' ? { skew: f.now - Date.now() } : {}) })
       clearInterval(this.ping)
       this.ping = setInterval(() => {
         if (Date.now() - this.heard > DEAD_MS) this.ws?.close()

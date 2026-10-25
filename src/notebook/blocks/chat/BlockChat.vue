@@ -4,10 +4,11 @@
  * notes is the same chat. Read as it is shown: on screen and with the window in front.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { CHAT_ROWS, chatRoomOf, ROW_PX, rowsOf, withChatRoom, withRows } from './model'
+import { CHAT_ROWS, chatRoomOf, heldTitleOf, ROW_PX, rowsOf, withChatRoom, withoutHeldTitle, withRows } from './model'
 import RowsGrip from './RowsGrip.vue'
+import { mayWriteIn } from './roomRights'
 import Icon from '@renderer/components/Icon.vue'
-import { branchesOf, chatOnline, chatRooms, showRoom, watchRoom } from '@renderer/lib/chat'
+import { branchesOf, chatOnline, chatRooms, holdRoom, isHeld, showRoom, watchRoom } from '@renderer/lib/chat'
 import { useTransport } from '@renderer/lib/transport'
 import ChatHeader from './ChatHeader.vue'
 import ChatThread from './ChatThread.vue'
@@ -29,11 +30,29 @@ watch(
 /** Why there is nothing to show (none — the chat is shown). */
 const notice = computed(() => {
   if (!roomId.value) return 'В блоке не указан чат (room: …)'
+  if (room.value) return ''
   if (transport.value.status === 'off') return 'Сервер не подключён — Настройки → Сервер и чат'
-  if (!chatOnline.value && !room.value) return transport.value.message || 'Подключение к серверу…'
-  if (chatOnline.value && !room.value) return 'Этого чата нет среди ваших: он удалён или вас в нём нет'
-  return ''
+  if (!chatOnline.value) return transport.value.message || 'Подключение к серверу…'
+  return 'Этого чата нет среди ваших: он удалён или вас в нём нет'
 })
+/** The chat shown with no server: what becomes of what one writes. */
+const offline = computed(() => {
+  if (!room.value || chatOnline.value) return ''
+  const later = transport.value.status === 'off' ? 'когда сервер будет подключён (Настройки → Сервер и чат)' : 'когда появится связь'
+  return isHeld(room.value.id) ? `Чат пока только здесь — он появится на сервере, а сообщения уйдут, ${later}` : `Нет связи — сообщения отправятся, ${later}`
+})
+
+// a chat made with no server: held here by its block (its title in it) until the server makes it — then the title goes
+watch(
+  () => [roomId.value, heldTitleOf(props.src), chatRooms.value.length] as const,
+  ([id, title]) => title && id && !room.value && holdRoom(id, title),
+  { immediate: true },
+)
+watch(
+  () => !!heldTitleOf(props.src) && !!room.value && !isHeld(roomId.value),
+  (made) => made && props.onChange?.(withoutHeldTitle(props.src)),
+  { immediate: true },
+)
 watch(
   () => [roomId.value, chatOnline.value, !!room.value],
   () => {
@@ -65,9 +84,9 @@ onBeforeUnmount(() => {
   <div ref="el" class="tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:px-10 tw:pb-2 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
     <ChatHeader v-if="room" :room="room" @switched="(id) => onChange?.(withChatRoom(src, id))" />
     <span v-else class="tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12.5px]"><Icon name="chat" :size="14" />Чат</span>
-    <span v-if="room && !chatOnline" class="tw:text-down-fg tw:text-[11.5px]">нет связи — сообщения отправятся, когда она появится</span>
+    <span v-if="offline" class="tw:text-muted tw:text-[11.5px]">{{ offline }}</span>
     <p v-if="notice" class="tw:my-6 tw:text-muted tw:text-[13px]">{{ notice }}</p>
-    <ChatThread v-if="room" :room="room.id" :also="branches" :height="rows * ROW_PX" />
+    <ChatThread v-if="room" :room="room.id" :also="branches" :height="rows * ROW_PX" :readonly="!mayWriteIn(room)" />
     <span v-if="error" class="tw:text-down-fg tw:text-[12px]">{{ error }}</span>
     <RowsGrip v-if="room" :rows="rows" @drag="(n) => (rows = n)" @done="(n) => onChange?.(withRows(src, n))" />
   </div>

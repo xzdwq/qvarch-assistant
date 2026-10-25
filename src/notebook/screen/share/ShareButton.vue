@@ -9,18 +9,19 @@ import { INVITE_ROLES, ROLE_LABEL, ROLE_RIGHTS, showInvite, type SpaceRole } fro
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
-import { serverCall, useTransport } from '@renderer/lib/transport'
+import { serverCall, serverOnline, useTransport } from '@renderer/lib/transport'
 import { noteName } from '@nb/domain/notePaths'
 import { openFile } from '@nb/workspace/paneLayout'
 import { loadTree } from '@nb/workspace/vaultTreeStore'
 import { shareNote, sharedDocOfPath, sharedInfo, spaceOfPath } from '@nb/workspace/sharedDocs'
 import { joinByCode } from '@nb/workspace/sharedFolders'
+import { peerColor } from '@nb/editor/peerCursors'
 
 const props = defineProps<{ path: string }>()
 const btn = ref<HTMLElement>()
 const open = ref(false)
 const transport = useTransport()
-const online = computed(() => transport.value.status === 'online')
+const online = serverOnline
 const doc = computed(() => sharedDocOfPath(props.path))
 const inf = computed(() => sharedInfo.get(doc.value))
 const space = computed(() => spaceOfPath(props.path))
@@ -101,7 +102,10 @@ const join = () =>
         <div v-if="space" class="tw:grid tw:grid-cols-[8px_minmax(0,1fr)_128px_26px] tw:items-center tw:gap-x-8 tw:gap-y-6">
           <template v-for="m in space.members" :key="m.id">
             <span class="tw:w-7 tw:h-7 tw:rounded-[50%]" :class="here(m.id) ? 'tw:bg-up' : 'tw:bg-white/14'" :title="here(m.id) ? 'Сейчас в документе' : 'Не в документе'"></span>
-            <span class="tw:truncate tw:text-text">{{ m.name }}<template v-if="m.id === me"> (вы)</template></span>
+            <span class="tw:flex tw:items-center tw:gap-6 tw:min-w-0">
+              <i class="tw:flex-none tw:w-3 tw:h-12 tw:rounded-[2px]" :style="{ background: peerColor(m.id) }" title="Цвет участника: его курсор и строки, которые он менял последним"></i>
+              <span class="tw:truncate tw:text-text">{{ m.name }}<template v-if="m.id === me"> (вы)</template></span>
+            </span>
             <select v-if="manage && m.role !== 'owner'" class="tw:w-full tw:h-30 tw:text-[12px]" :value="m.role" :disabled="busy" @change="setRole(m.id, ($event.target as HTMLSelectElement).value as SpaceRole)">
               <option v-for="r in INVITE_ROLES" :key="r" :value="r">{{ ROLE_LABEL[r] }}</option>
             </select>

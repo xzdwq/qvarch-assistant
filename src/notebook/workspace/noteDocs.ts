@@ -66,8 +66,11 @@ export async function save(path: string): Promise<void> {
     d.error = e instanceof Error ? e.message : String(e)
   }
 }
+/** What else is written with the notes (the shared documents' kept states — never older than their files). */
+const withSaveAll: Array<() => Promise<void>> = []
+export const onSaveAll = (fn: () => Promise<void>) => void withSaveAll.push(fn)
 export async function saveAll(): Promise<void> {
-  await Promise.all([...docs.keys()].map(save))
+  await Promise.all([...[...docs.keys()].map(save), ...withSaveAll.map((fn) => fn())])
 }
 window.addEventListener('beforeunload', () => void saveAll())
 /** Has typing not yet on disk. */

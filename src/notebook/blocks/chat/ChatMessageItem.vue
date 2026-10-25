@@ -44,7 +44,7 @@ const picking = ref(false)
         <button
           v-for="[e, who] in reactions"
           :key="e"
-          class="tw:inline-flex tw:items-center tw:gap-3 tw:h-22 tw:px-6 tw:border tw:border-border-2 tw:rounded-[11px] tw:bg-bg/50 tw:text-[13px] tw:leading-none tw:[&.on]:border-accent tw:[&.on]:bg-accent/15"
+          class="tw:inline-flex tw:items-center tw:gap-3 tw:h-22 tw:py-0 tw:px-6 tw:border tw:border-border-2 tw:rounded-[11px] tw:bg-bg/50 tw:text-[13px] tw:leading-none tw:[&.on]:border-accent tw:[&.on]:bg-accent/15"
           :class="{ on: who.some((d) => d.id === me) }"
           :title="who.map((d) => d.name).join(', ')"
           :disabled="readonly"
@@ -53,11 +53,11 @@ const picking = ref(false)
           {{ e }}<span class="tw:text-muted tw:font-data tw:text-[11px]">{{ who.length }}</span>
         </button>
       </div>
-      <!-- the corner's button: the reactions to put (shown on hover, and while open) -->
+      <!-- the corner's button: the reactions to put (shown on hover, and while open); over the next message's bubble -->
       <button
         v-if="!readonly"
         ref="addBtn"
-        class="tw:absolute tw:-bottom-8 tw:inline-flex tw:items-center tw:justify-center tw:w-22 tw:h-22 tw:p-0 tw:border tw:border-border-2 tw:rounded-[11px] tw:bg-pop tw:text-muted tw:opacity-0 tw:group-hover/msg:opacity-100 tw:hover:text-text tw:[&.on]:opacity-100"
+        class="tw:absolute tw:z-2 tw:-bottom-8tw:inline-flex tw:items-center tw:justify-center tw:w-22 tw:h-22 tw:p-0 tw:border tw:border-border-2 tw:rounded-[11px] tw:bg-pop tw:text-muted tw:opacity-0 tw:group-hover/msg:opacity-100 tw:hover:text-text tw:[&.on]:opacity-100"
         :class="[{ on: picking }, mine ? 'tw:-left-8' : 'tw:-right-8']"
         title="Реакция"
         @click="picking = !picking"

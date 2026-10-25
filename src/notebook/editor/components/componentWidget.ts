@@ -18,13 +18,16 @@ import { dragComponent } from './dragDrop'
  * view) inside a CodeMirror block widget — its props updated in place while its kind stays, its size followed.
  */
 
-/** A component just put in by «@» (its text): its first field takes the focus once it is drawn. */
-export const focusNewBlock = StateEffect.define<string>()
-const pendingFocusField = StateField.define<{ src: string }>({
-  create: () => ({ src: '' }),
+/**
+ * A component just put in by «@» (where it starts — followed through the edits, an id given to it in the same change
+ * included): its first field takes the focus once it is drawn.
+ */
+export const focusNewBlock = StateEffect.define<number>({ map: (pos, ch) => ch.mapPos(pos) })
+const pendingFocusField = StateField.define<{ pos: number }>({
+  create: () => ({ pos: -1 }),
   update: (v, tr) => {
-    for (const e of tr.effects) if (e.is(focusNewBlock)) return { src: e.value }
-    return v
+    for (const e of tr.effects) if (e.is(focusNewBlock)) return { pos: e.value }
+    return v.pos < 0 || !tr.docChanged ? v : { pos: tr.changes.mapPos(v.pos) }
   },
 })
 
@@ -50,8 +53,8 @@ class ComponentWidget extends WidgetType {
     dom.className = 'cm-comp'
     setLoopBand(dom, r.band)
     const pending = view.state.field(pendingFocusField)
-    const autofocus = !!pending.src && pending.src === r.src
-    if (autofocus) pending.src = ''
+    const autofocus = pending.pos >= 0 && pending.pos === r.from
+    if (autofocus) pending.pos = -1
     const host = view.state.facet(editorHost)
     const hp = reactive({
       kind: r.kind,

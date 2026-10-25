@@ -32,12 +32,15 @@ export class VaultMedia {
     private files: VaultFiles,
     /** Some note or board has this text. */
     private usedBy: (needle: string) => boolean,
+    /** A media file written (new, or put back): whoever waits for it shows it. */
+    private onWritten: (rel: string) => void = () => undefined,
   ) {}
 
   private writeNew(rel: string, bytes: Uint8Array): void {
     const file = this.files.abs(rel)
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, bytes)
+    this.onWritten(rel)
   }
   private checked(rel: string, valid: RegExp): string {
     if (!valid.test(rel)) throw new Error('Недопустимый путь')
@@ -55,6 +58,7 @@ export class VaultMedia {
     if (existsSync(file)) return
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, bytes)
+    this.onWritten(this.files.rel(file))
   }
 
   // ---------- audio ----------

@@ -4,7 +4,7 @@ import { fenceBodyLines } from '../../domain/fence'
  * A chat in a note: ```chat / room: <the room's id on the server> ```. The link is the room's id — the note may be
  * renamed or moved, the text around it edited, the block copied elsewhere: it is the same chat.
  */
-export const chatMd = (room: string) => `\`\`\`chat\nroom: ${room}\n\`\`\``
+export const chatMd = (room: string, title?: string) => `\`\`\`chat\nroom: ${room}\n${title ? `title: ${title.replace(/\s+/g, ' ')}\n` : ''}\`\`\``
 /** The feed of every chat and discussion (```chatfeed) — put wherever one wants it, as many as one wants. */
 export const chatFeedMd = () => '```chatfeed\n```'
 /** The text a note with a feed has (a notification's chat is opened in one). */
@@ -36,6 +36,16 @@ export function chatRoomOf(src: string): string {
 }
 /** A block's text with another room (the chat it shows went on as another conversation). */
 export const withChatRoom = (src: string, room: string) => withField(src, 'room', room)
+/**
+ * A chat made with no server keeps its title in its block (`title: …`) until the server has made it — the note
+ * itself is what makes it then, after any restart ('' — none: the chat is on the server).
+ */
+export const heldTitleOf = (src: string) => fieldOf(src, 'title')
+/** The block's text without the held title (the server has made the chat). */
+export function withoutHeldTitle(src: string): string {
+  const lines = src.split('\n')
+  return lines.filter((l, i) => i === 0 || i === lines.length - 1 || !/^\s*title\s*:/i.test(l)).join('\n')
+}
 
 /** A chat's height in lines (its bottom edge dragged: a line at a time), kept in its block (`rows: …`). */
 export const ROW_PX = 20

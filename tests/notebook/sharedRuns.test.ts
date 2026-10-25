@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NoteRun } from '../../src/notebook/engine/runTypes'
-import { applyEntry, entriesToSend, HIDDEN, runEntries } from '../../src/notebook/engine/sharedRuns'
+import { hideInBody, hideInQuery, HIDDEN, localEntry, putEntry, runEntries, scrubRun } from '../../src/notebook/engine/sharedRuns'
 
 const note = (): NoteRun => ({
   ctx: { token: { value: 'abc', at: 5, from: 'http', block: 'login' } },
@@ -18,6 +18,24 @@ const note = (): NoteRun => ({
   loaded: true,
 })
 
+describe('a run\'s secrets as the others get it', () => {
+  it('a query\'s secret parameters hidden, the others kept', () => {
+    expect(hideInQuery('https://app.example.com/a?token=abc&page=2&api_key=k#top')).toBe(`https://app.example.com/a?token=${HIDDEN}&page=2&api_key=${HIDDEN}#top`)
+    expect(hideInQuery('https://app.example.com/a?q=1')).toBe('https://app.example.com/a?q=1')
+  })
+  it('a body: a JSON\'s secret fields at any depth (laid out as it was), a form\'s parameters', () => {
+    expect(hideInBody('{"access_token":"t1","user":{"name":"Альфа","password":"p"},"count":3}')).toBe(`{"access_token":"${HIDDEN}","user":{"name":"Альфа","password":"${HIDDEN}"},"count":3}`)
+    expect(hideInBody('{\n  "refresh_token": "t"\n}')).toBe(`{\n  "refresh_token": "${HIDDEN}"\n}`)
+    expect(hideInBody('login=alpha&password=secret')).toBe(`login=alpha&password=${HIDDEN}`)
+    expect(hideInBody('просто текст = не форма')).toBe('просто текст = не форма')
+    expect(hideInBody('{не json')).toBe('{не json')
+  })
+  it('a request\'s run: its address, body and headers scrubbed together', () => {
+    const r = scrubRun({ state: 'ok', at: 1, request: { method: 'POST', url: 'https://app.example.com/login?session=s', headers: [['Cookie', 'c']], body: '{"password":"p"}', missing: [] } })
+    expect(JSON.stringify(r)).not.toMatch(/"p"|=s\b|"c"/)
+  })
+})
+
 describe('a shared note\'s run results', () => {
   it('this device\'s ended runs and values go out, the secret headers hidden; running ones and others\' — not', () => {
     const e = runEntries(note())
@@ -26,24 +44,15 @@ describe('a shared note\'s run results', () => {
     expect(login.request.headers).toEqual([['Authorization', HIDDEN], ['Accept', '*/*']])
     expect(login.response.headers).toEqual([['Set-Cookie', HIDDEN], ['Content-Type', 'application/json']])
   })
-  it('only what changed since sent goes; a result taken away — null', () => {
-    const now = runEntries(note())
-    const sent = new Map(Object.entries(now).map(([k, v]) => [k, JSON.stringify(v.value)]))
-    expect(entriesToSend(sent, now)).toEqual({})
-    sent.set('run:old', '{}')
+  it('an entry put in as given — someone else\'s marked with who ran it, one\'s own not; null — taken away', () => {
     const n = note()
-    n.runs.login.at = 20
-    expect(Object.keys(entriesToSend(sent, runEntries(n))).sort()).toEqual(['run:login', 'run:old'])
-    expect(entriesToSend(sent, runEntries(n))['run:old']).toBeNull()
-  })
-  it('someone\'s result put in (who marked); a newer one of mine or one running here stays; null — taken away', () => {
-    const n = note()
-    expect(applyEntry(n, 'run:login', { state: 'ok', at: 30, table: { rows: [] } }, 'Бета')).toBe(true)
+    expect(putEntry(n, 'run:login', { state: 'ok', at: 30, table: { rows: [] } }, 'Бета')).toBe(true)
     expect(n.runs.login).toMatchObject({ at: 30, by: 'Бета' })
-    expect(applyEntry(n, 'run:login', { state: 'ok', at: 25 }, 'Гамма')).toBe(false)
-    expect(applyEntry(n, 'run:rows', { state: 'ok', at: 99 }, 'Бета')).toBe(false)
-    expect(applyEntry(n, 'ctx:token', null, 'Бета')).toBe(true)
+    expect(putEntry(n, 'run:mine', { state: 'ok', at: 31 })).toBe(true)
+    expect(n.runs.mine.by).toBeUndefined()
+    expect(putEntry(n, 'ctx:token', null)).toBe(true)
     expect(n.ctx.token).toBeUndefined()
-    expect(applyEntry(n, 'bad:x', { at: 1 }, 'Бета')).toBe(false)
+    expect(putEntry(n, 'bad:x', { at: 1 })).toBe(false)
+    expect(localEntry(n, 'run:rows')?.state).toBe('run')
   })
 })

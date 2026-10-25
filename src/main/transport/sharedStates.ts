@@ -3,6 +3,7 @@ import { extname, join, relative, resolve, sep } from 'node:path'
 import { SPACE_LINK_FILE } from '../../shared/transport/space'
 import { SHARED_FORMATS } from '../../shared/transport/sharedFormats'
 import type { SharedFolderLink } from '../../shared/transport/sharedFolder'
+import type { KeptState } from '../../shared/transport/sharedText'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -31,19 +32,26 @@ export class SharedStates {
   ) {
     this.dir = join(root, 'shared')
   }
-  /** A document's file (an id that is not one — refused: it names a file). */
-  private file(doc: string): string {
+  /** A document's file — its state (`ystate`) or the text it was kept with (`ytext`); an id that is not one — refused. */
+  private file(doc: string, ext: 'ystate' | 'ytext' = 'ystate'): string {
     if (!UUID.test(doc)) throw new Error('Неверный идентификатор документа')
-    return join(this.dir, `${doc}.ystate`)
+    return join(this.dir, `${doc}.${ext}`)
   }
-  load(doc: string): string {
+  /** A document as kept: its state and the text it was kept with (none kept — null). */
+  load(doc: string): KeptState | null {
     const f = this.file(doc)
-    return existsSync(f) ? readFileSync(f).toString('base64') : ''
+    if (!existsSync(f)) return null
+    const t = this.file(doc, 'ytext')
+    return { state: readFileSync(f).toString('base64'), ...(existsSync(t) ? { text: readFileSync(t, 'utf8') } : {}) }
   }
-  save(doc: string, state: string): void {
+  /** A document kept: its text first, then its state (each written whole, then put in place). */
+  save(doc: string, kept: KeptState): void {
     const f = this.file(doc)
+    const t = this.file(doc, 'ytext')
     mkdirSync(this.dir, { recursive: true })
-    writeFileSync(`${f}.tmp`, Buffer.from(state, 'base64'))
+    writeFileSync(`${t}.tmp`, kept.text ?? '')
+    writeFileSync(`${f}.tmp`, Buffer.from(kept.state, 'base64'))
+    renameSync(`${t}.tmp`, t)
     renameSync(`${f}.tmp`, f)
   }
 

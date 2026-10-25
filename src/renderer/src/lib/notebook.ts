@@ -5,7 +5,7 @@
  */
 export { tree, files, loadTree } from '@nb/workspace/vaultTreeStore'
 export { type Doc, docs, doc, setText, save, saveAll, isDirty } from '@nb/workspace/noteDocs'
-export { imageUrl, audioUrl, takeImages, hasImages, draggedImageUrl } from '@nb/workspace/noteMedia'
+export { takeImages, hasImages, draggedImageUrl } from '@nb/workspace/noteMedia'
 export { transcribing, transcribeError, cancelTranscribe, TranscribeCancelled, transcribe } from '@nb/workspace/transcription'
 export { type Tab, type Pane, layout, curPane, activePath, openFile, closeTab, closeEverywhere, toggleSplit, swapTab, splitWith, moveTab } from '@nb/workspace/paneLayout'
 export { remap, onOutside, dropAudio, putTranscript } from '@nb/workspace/noteSync'

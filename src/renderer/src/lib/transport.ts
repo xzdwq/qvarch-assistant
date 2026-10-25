@@ -1,4 +1,4 @@
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { TransportState } from '@shared/transport/constants'
 import type { MethodName, TransportMethods } from '@shared/transport/protocol'
 
@@ -14,6 +14,15 @@ export function useTransport() {
   }
   return state
 }
+
+/** Connected to the server now (one for every context of the window). */
+export const serverOnline = computed(() => useTransport().value.status === 'online')
+
+/**
+ * Now by the server's clock (epoch ms) — what the app stamps on shared things: the same for everyone, whatever the
+ * computer's clock or time zone (never online yet — this computer's).
+ */
+export const serverNow = (): number => Date.now() + (useTransport().value.skew ?? 0)
 
 /** A method of the server (the chat's, the shared spaces' and documents'), typed by the protocol. */
 export const serverCall = <M extends Extract<MethodName, `${'chat' | 'space' | 'doc'}.${string}`>>(m: M, p: TransportMethods[M]['p']): Promise<TransportMethods[M]['r']> =>

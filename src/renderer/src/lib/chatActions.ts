@@ -1,6 +1,6 @@
 import { mentionsIn, type ChatAttach, type ChatRoom } from '@shared/transport/chat'
 import type { DeviceInfo } from '@shared/transport/protocol'
-import { chatPrefs, received, roomOf, upsertRoom } from './chat'
+import { chatOnline, chatPrefs, holdRoom, received, roomOf, upsertRoom } from './chat'
 import { serverCall } from './transport'
 
 /**
@@ -8,11 +8,18 @@ import { serverCall } from './transport'
  * main conversation with them goes on, or this one becomes its branch), a chat told or silenced, a block's result sent.
  */
 
-/** A new chat of one's own (no one else in it yet). */
-export async function createChat(title?: string): Promise<ChatRoom> {
-  const r = await serverCall('chat.create', title ? { title } : {})
-  upsertRoom(r)
-  return r
+/**
+ * A new chat of one's own (no one else in it yet), by its own id: made on the server now — or, with no server, held
+ * here (`held` — its block keeps the title then) and made once the server is there.
+ */
+export async function newChat(title: string): Promise<{ id: string; held: boolean }> {
+  const id = crypto.randomUUID()
+  if (!chatOnline.value) {
+    holdRoom(id, title)
+    return { id, held: true }
+  }
+  upsertRoom(await serverCall('chat.create', { id, title }))
+  return { id, held: false }
 }
 export async function renameChat(room: string, title: string): Promise<void> {
   upsertRoom(await serverCall('chat.rename', { room, title }))

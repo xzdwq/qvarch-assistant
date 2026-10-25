@@ -2,6 +2,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
+import { PEER_SLOTS } from './peerCursors'
 
 /** The note editor's look: Markdown and code colours, the editor's own theme, the search panel in Russian. */
 
@@ -120,6 +121,29 @@ const editorTheme = EditorView.theme(
     '.cm-comment': { backgroundColor: 'rgb(var(--accent-rgb) / 0.12)', borderBottom: '2px solid rgb(var(--accent-rgb) / 0.55)', cursor: 'pointer' },
     '.cm-comment-gutter .cm-gutterElement': { padding: '0 2px', cursor: 'pointer' },
     '.cm-comment-sign': { display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--accent-fg)' },
+    // the other participants of a shared note: a thin caret of their colour gliding, their name over it for a moment
+    '.cm-peer-carets': { pointerEvents: 'none' },
+    '.cm-peer-caret': { position: 'absolute', width: '2px', marginLeft: '-1px', borderRadius: '1px', backgroundColor: 'var(--peer)', transition: 'left 0.12s ease-out, top 0.12s ease-out, height 0.12s ease-out', pointerEvents: 'auto' },
+    '.cm-peer-label': {
+      position: 'absolute',
+      bottom: '100%',
+      left: '-1px',
+      padding: '0 4px',
+      borderRadius: '3px 3px 3px 0',
+      backgroundColor: 'var(--peer)',
+      color: 'var(--peer-label-text)',
+      fontFamily: 'var(--font-ui, inherit)',
+      fontSize: '10px',
+      lineHeight: '14px',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      animation: 'PeerCursor-label 3s ease forwards',
+    },
+    '.cm-peer-caret:hover .cm-peer-label': { animation: 'none', opacity: '1' },
+    // who changed a line last: a thin bar of their colour left of the line numbers
+    '.cm-authors .cm-gutterElement': { padding: '0 1px 0 3px' },
+    '.cm-author-bar': { width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
+    ...Object.fromEntries(Array.from({ length: PEER_SLOTS }, (_, i) => [`.cm-peer-sel-${i + 1}`, { backgroundColor: `color-mix(in srgb, var(--peer-${i + 1}) 20%, transparent)` }])),
     '.cm-lp-shared': { display: 'inline-block', padding: '0 7px', borderRadius: '4px', backgroundColor: 'rgb(var(--accent-rgb) / 0.14)', color: 'var(--accent-fg)', fontSize: '0.78em', lineHeight: '1.7' },
     '.cm-lp-hr': { display: 'inline-block', width: '100%', height: '0', borderTop: '1px solid var(--editor-rule)', verticalAlign: 'middle' },
     '.cm-lp-quote': { borderLeft: '3px solid rgb(var(--accent-rgb) / 0.6)', paddingLeft: '12px !important', color: 'var(--syntax-quote)' },

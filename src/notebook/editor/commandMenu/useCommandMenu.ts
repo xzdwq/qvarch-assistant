@@ -10,7 +10,8 @@ import { chatFeedMd, chatMd } from '@nb/blocks/chat/model'
 import { chatTitleOf, isComment, type ChatRoom } from '@shared/transport/chat'
 import { chatOnline, chatRooms } from '@renderer/lib/chat'
 import { serverCall } from '@renderer/lib/transport'
-import { createChat as newOwnChat } from '@renderer/lib/chatActions'
+import { newChat } from '@renderer/lib/chatActions'
+import { remoteError } from '@shared/remoteError'
 import { ROLE_RIGHTS } from '@shared/transport/space'
 import { noteName } from '@nb/domain/notePaths'
 import { spaceOfPath } from '@nb/workspace/sharedDocs'
@@ -171,10 +172,10 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     if (mode.value?.mode === 'chat') {
       const space = noteSpace()
       const cs = chatsFor(mode.value.q, space?.id)
-      if (!chatOnline.value) out.push({ head: 'Чаты — сервер не подключён (Настройки → Сервер и чат)' })
-      else if (space) out.push({ head: 'Чаты документа' }, ...(ROLE_RIGHTS[space.role].chat ? [{ newChat: mode.value.q.trim() }] : []))
-      // a plain note: a new chat of one's own (people are added from its head)
-      else out.push({ head: 'Чаты' }, { newChat: mode.value.q.trim() })
+      // a shared note's chat is of its space's members — made on the server only
+      if (space) out.push(chatOnline.value ? { head: 'Чаты документа' } : { head: 'Чаты документа — сервер не подключён' }, ...(chatOnline.value && ROLE_RIGHTS[space.role].chat ? [{ newChat: mode.value.q.trim() }] : []))
+      // a plain note: a new chat of one's own (people are added from its head) — with no server too: made once it is there
+      else out.push({ head: chatOnline.value ? 'Чаты' : 'Чаты — сервер не подключён: новый чат появится на нём при подключении' }, { newChat: mode.value.q.trim() })
       // every chat in one place — wherever one wants it
       out.push({ chatFeed: true })
       for (const chatRoom of cs.slice(0, 50)) out.push({ chatRoom })
@@ -258,7 +259,7 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     // after it, always — to write on after the component (the rest of the line goes there)
     const prev = line.number > 1 ? v.state.doc.line(line.number - 1).text : ''
     const ins = `${before.trim() ? '\n\n' : prev.trim() ? '\n' : ''}${md}\n`
-    v.dispatch({ changes: { from, to, insert: ins }, selection: { anchor: from + ins.length }, effects: focusNewBlock.of(md), annotations: Transaction.userEvent.of(COMPONENT_INPUT), scrollIntoView: true })
+    v.dispatch({ changes: { from, to, insert: ins }, selection: { anchor: from + ins.length }, effects: focusNewBlock.of(from + ins.length - md.length - 1), annotations: Transaction.userEvent.of(COMPONENT_INPUT), scrollIntoView: true })
     close()
   }
   /** What a command asked for, carried out. */
@@ -314,13 +315,22 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     const v = getView()
     return v ? spaceOfPath(v.state.facet(editorHost).notePath()) : undefined
   }
-/** A new chat put in: a shared note's — of its space (its members); a plain note's — one's own alone (people added later). */
+  /**
+   * A new chat put in: a shared note's — of its space (its members); a plain note's — one's own alone (people added
+   * later), with no server too (its block keeps its title until the server makes it).
+   */
   async function createChat(title: string, notePath: string): Promise<void> {
     const space = spaceOfPath(notePath)
     const name = title || chatTitleOf(noteName(notePath), new Date())
-    const made = space ? serverCall('space.chat', { space: space.id, title: name }) : newOwnChat(name)
-    const room = await made.catch((e: Error) => (getView()?.state.facet(editorHost).warn(e.message), undefined))
-    if (room) insertBlock(chatMd(room.id))
+    try {
+      if (space) insertBlock(chatMd((await serverCall('space.chat', { space: space.id, title: name })).id))
+      else {
+        const made = await newChat(name)
+        insertBlock(chatMd(made.id, made.held ? name : undefined))
+      }
+    } catch (e) {
+      getView()?.state.facet(editorHost).warn(remoteError(e))
+    }
   }
   function pickEmoji(e: Emoji | undefined): void {
     if (!e) return

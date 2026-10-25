@@ -62,15 +62,17 @@ export const cleanFileName = (name: string): string =>
     .replace(/[\u0000-\u001f]/g, '')
     .trim()
     .slice(0, NAME_MAX) || 'файл'
-/** An attachment's size at most in a message (a table is cut to fit before). */
+/** An attachment's size at most in a message, bytes (a table is cut to fit before). */
 export const ATTACH_MAX = 180 * 1024
+/** Its size as sent (UTF-8 bytes: a Cyrillic letter is two). */
+export const attachBytes = (a: unknown): number => new TextEncoder().encode(JSON.stringify(a)).length
 export const isAttach = (x: unknown): x is ChatAttach =>
   !!x &&
   typeof x === 'object' &&
   (ATTACH_KINDS as readonly unknown[]).includes((x as ChatAttach).kind) &&
   typeof (x as ChatAttach).title === 'string' &&
   (!isFileKind((x as ChatAttach).kind) || isChatFile((x as ChatAttach).data)) &&
-  JSON.stringify(x).length <= ATTACH_MAX
+  attachBytes(x) <= ATTACH_MAX
 /** A message's attachment in a word (a room's last message in a list). */
 export const attachWord = (a: ChatAttach): string => (a.kind === 'image' ? `🖼 ${a.title}` : a.kind === 'file' ? `📎 ${a.title}` : a.title)
 

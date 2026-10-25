@@ -1,7 +1,8 @@
 import { Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { BLOCK_SPECS } from '@nb/blocks/specs'
-import { COMPONENT_MOVE } from '../editorHost'
+import { markOrigin, originsIn } from '@nb/workspace/sharedPlaces'
+import { COMPONENT_MOVE, editorHost } from '../editorHost'
 import { componentRanges } from './componentField'
 import { componentAt, cutRangeOf, wholeComponent } from './componentOps'
 
@@ -70,7 +71,12 @@ export function dragComponent(view: EditorView, dom: HTMLElement, e0: PointerEve
     const prevText = at >= len ? lineAt.text : lineAt.number > 1 ? doc.line(lineAt.number - 1).text : ''
     const nextText = at >= len ? '' : lineAt.text
     const ins = at >= len && view.state.sliceDoc(len - 1, len) !== '\n' ? `\n\n${r.src}` : `${prevText.trim() && at < len ? '\n' : ''}${r.src}\n${nextText.trim() ? '\n' : ''}`
-    view.dispatch({ changes: [{ ...cut, insert: '' }, { from: at, insert: ins }], annotations: Transaction.userEvent.of(COMPONENT_MOVE), scrollIntoView: true })
+    // a shared note: its origin (who put it in, when) goes with it — its text is put in anew where it lands
+    const path = view.state.facet(editorHost).notePath()
+    const origin = originsIn(path).get(r.line)
+    const tr = view.state.update({ changes: [{ ...cut, insert: '' }, { from: at, insert: ins }], annotations: Transaction.userEvent.of(COMPONENT_MOVE), scrollIntoView: true })
+    view.dispatch(tr)
+    if (origin) markOrigin(path, tr.changes.mapPos(at, -1) + ins.indexOf(r.src), origin)
   }
   const esc = (ev: KeyboardEvent) => {
     if (ev.key !== 'Escape') return

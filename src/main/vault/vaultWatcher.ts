@@ -1,10 +1,14 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { sep } from 'node:path'
+import { IMAGE_REL } from '../../shared/vault'
+import { AUDIO_REL } from './vaultMedia'
 import type { VaultFiles } from './vaultFiles'
+
+const isMediaRel = (rel: string) => IMAGE_REL.test(rel) || AUDIO_REL.test(rel)
 
 /**
  * Changes made outside (another editor, Explorer): gathered for a moment, our own saves left out, then reported
- * (their paths). Dot folders and temp files are not watched.
+ * (their paths). Dot folders and temp files are not watched — but the media files (a picture put there is told at once).
  */
 export class VaultWatcher {
   private watcher?: FSWatcher
@@ -14,6 +18,8 @@ export class VaultWatcher {
   constructor(
     private files: VaultFiles,
     private onChange: (paths: string[]) => void,
+    /** A picture / a recording put into the vault outside the app (its dot folder is watched for that only). */
+    private onMedia: (rels: string[]) => void = () => undefined,
   ) {}
 
   start(): void {
@@ -21,6 +27,7 @@ export class VaultWatcher {
       this.watcher = watch(this.files.root, { recursive: true }, (_ev, name) => {
         if (!name) return
         const rel = String(name).split(sep).join('/')
+        if (isMediaRel(rel)) return this.onMedia([rel])
         if (rel.split('/').some((p) => p.startsWith('.')) || rel.endsWith('.tmp')) return
         this.pending.add(rel)
         clearTimeout(this.timer)

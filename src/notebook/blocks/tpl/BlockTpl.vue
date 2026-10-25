@@ -21,7 +21,7 @@ const props = defineProps<{ src: string; path: string; line: number; inLoop?: bo
 const fence = useFenceSource(props)
 const { parts, body } = fence
 const rename = (name: string | undefined) => fence.patchInfo({ name })
-const key = computed(() => blockRunKey(parts.value.info.name, 'tpl', props.line))
+const key = computed(() => blockRunKey(parts.value.info.name, 'tpl', props.line, parts.value.info.id))
 
 /** The text filled with the note's values now (what is missing — said, the text not published with holes). */
 const filled = computed(() => {

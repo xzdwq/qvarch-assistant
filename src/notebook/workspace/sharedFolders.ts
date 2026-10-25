@@ -1,11 +1,12 @@
-import { computed, shallowRef, watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 import type { VaultNode } from '@shared/vault'
 import { findNode } from '@shared/vaultTree'
-import { planFolder, type FolderStep, type LocalNote, type SharedFolderLink } from '@shared/transport/sharedFolder'
+import { guardDeletions, planFolder, type FolderStep, type LocalNote, type SharedFolderLink } from '@shared/transport/sharedFolder'
 import { formatOf, sharedDocOfFile } from '@shared/transport/sharedFormats'
 import { toB64 } from '@shared/transport/sharedText'
 import { docTitleOf, ROLE_RIGHTS, type Space } from '@shared/transport/space'
-import { serverCall, useTransport } from '@renderer/lib/transport'
+import { serverCall, serverOnline } from '@renderer/lib/transport'
+import { onServerEvents } from '@renderer/lib/serverEvents'
 import { docs, setText } from './noteDocs'
 import { closeEverywhere } from './paneLayout'
 import { adopt, fetchText, joinDoc, SHARED_FOLDER, spaces, track, untrack } from './sharedDocs'
@@ -17,8 +18,7 @@ import { loadTree, tree } from './vaultTreeStore'
  * list of its documents — a note added, moved, renamed or deleted here goes to everyone, and theirs come here;
  * every document of it is kept in step though not open (others' edits written to its file).
  */
-const transport = useTransport()
-const online = computed(() => transport.value.status === 'online')
+const online = serverOnline
 const SYNC_MS = 700
 
 /** A path in the folder → in the notebook, and back. */
@@ -32,11 +32,28 @@ async function textOf(path: string): Promise<string> {
   const d = docs.get(path)
   return d?.loaded ? d.text : window.qa.vaultRead(path)
 }
-/** The notes and boards of a folder (its subfolders too). */
-function notesUnder(dir: string): string[] {
+/** The notes and boards of a folder (its subfolders too) in a tree; the folder not in it — undefined (not «empty»). */
+function notesUnder(dir: string, nodes: VaultNode[] = tree.value): string[] | undefined {
+  const top = dir ? findNode(nodes, dir) : undefined
+  if (dir && !top?.dir) return undefined
   const out: string[] = []
   const walk = (ns: VaultNode[]) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : formatOf(n.path) && out.push(n.path)))
-  walk(dir ? (findNode(tree.value, dir)?.children ?? []) : tree.value)
+  walk(top ? (top.children ?? []) : nodes)
+  return out
+}
+/**
+ * The folder's notes as they are on the disk now, each with its document — read anew (the page's tree may not be
+ * loaded yet); the folder not found or a note not read — undefined: nothing may be planned from a listing not sure.
+ */
+async function listFolder(dir: string): Promise<LocalNote[] | undefined> {
+  const paths = notesUnder(dir, await window.qa.vaultTree())
+  if (!paths) return undefined
+  const out: LocalNote[] = []
+  for (const path of paths) {
+    const text = await textOf(path).catch(() => undefined)
+    if (text === undefined) return undefined
+    out.push({ path: relIn(dir, path), doc: sharedDocOfFile(path, text) })
+  }
   return out
 }
 /** A note moved within the notebook (open tabs follow); its new path. */
@@ -114,12 +131,14 @@ function asFollower(s: FolderStep, known: Record<string, string>): FolderStep | 
 async function bringIntoStep(link: SharedFolderLink): Promise<void> {
   const sp = spaces.get(link.space)
   if (!sp || sp.kind !== 'folder') return
-  const local: LocalNote[] = []
-  for (const path of notesUnder(link.dir)) local.push({ path: relIn(link.dir, path), doc: sharedDocOfFile(path, await textOf(path).catch(() => '')) })
+  const local = await listFolder(link.dir)
+  if (!local) return void window.qa.sharedLog(`folder ${link.dir}: not read — skipped this time`)
   const known = { ...link.docs }
   const mayEdit = ROLE_RIGHTS[sp.role].edit
   let changedTree = false
-  for (const planned of planFolder(sp.docs, local, link.docs)) {
+  const plan = guardDeletions(planFolder(sp.docs, local, link.docs), sp.docs)
+  if (plan.held) window.qa.sharedLog(`folder ${link.dir}: ${plan.held} documents «deleted here» at once — held back, fetched again`)
+  for (const planned of plan.steps) {
     const s = mayEdit ? planned : asFollower(planned, link.docs)
     if (!s) continue
     if (s.do !== 'keep') changedTree = true
@@ -177,7 +196,7 @@ export function startSharedFolders(): void {
   watch(tree, soon)
   watch(() => [...spaces.values()].filter((s) => s.kind === 'folder').map((s) => JSON.stringify(s.docs)), soon)
   // the space gone for this device: its folder stays as plain notes
-  window.qa.onServer((ev) => ev.e === 'space.gone' && void unlinkFolder(ev.p.space).catch(() => undefined))
+  onServerEvents({ 'space.gone': (p) => void unlinkFolder(p.space).catch(() => undefined) })
 }
 
 /** A shared note or folder joined by a code: its note / folder made here. Its path. */
@@ -215,7 +234,7 @@ export async function unlinkFolder(space: string): Promise<void> {
   const link = (await window.qa.sharedFolders()).find((l) => l.space === space)
   if (!link) return
   await window.qa.sharedFolderLink(link.dir, null)
-  for (const path of notesUnder(link.dir)) {
+  for (const path of notesUnder(link.dir, await window.qa.vaultTree()) ?? []) {
     const text = await textOf(path).catch(() => '')
     const doc = sharedDocOfFile(path, text)
     if (doc && link.docs[doc] !== undefined) await writeNote(path, formatOf(path)!.unmark(text))

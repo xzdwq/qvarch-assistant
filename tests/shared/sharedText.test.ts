@@ -1,9 +1,108 @@
 import { describe, expect, it } from 'vitest'
-import { fromB64, isEmptyUpdate, SharedText, toB64 } from '../../src/shared/transport/sharedText'
+import { fromB64, isEmptyUpdate, isPeerSel, SharedText, toB64 } from '../../src/shared/transport/sharedText'
 import { normalizeInvite, sharedDocOf, showInvite, withSharedMark } from '../../src/shared/transport/space'
 import { spliceOf, splicesOf } from '../../src/shared/textSplice'
 
 const DOC = '0b5f8c1e-2a3d-4e5f-9a8b-7c6d5e4f3a2b'
+
+describe('a component\'s origin in a shared note', () => {
+  const pair = () => {
+    const a = new SharedText()
+    const b = new SharedText()
+    a.onUpdate((u, o) => o === 'local' && b.apply(u, 'remote'))
+    b.onUpdate((u, o) => o === 'local' && a.apply(u, 'remote'))
+    return { a, b }
+  }
+  const who = { by: 'Альфа', device: 'dev-a', at: 1_000 }
+  it('marked by the one who put it in — the others see it, at its first sign, wherever edits move it', () => {
+    const { a, b } = pair()
+    a.setLocal('Текст\n```sql\nselect 1\n```\n')
+    a.markOrigin(6, who)
+    expect([...b.originsNow()]).toEqual([[6, who]])
+    // a line typed above it (by the other one): the origin follows the component
+    b.setLocal('Новая строка\nТекст\n```sql\nselect 1\n```\n')
+    expect([...a.originsNow()]).toEqual([[19, who]])
+    // its own lines edited — still its
+    a.setLocal('Новая строка\nТекст\n```sql name=rows\nselect 2\n```\n')
+    expect(b.originsNow().get(19)).toEqual(who)
+  })
+  it('the component deleted — its origin gone (another one put in at the same place is not taken for it)', () => {
+    const { a, b } = pair()
+    a.setLocal('```sql\nselect 1\n```\n')
+    a.markOrigin(0, who)
+    b.setLocal('')
+    b.setLocal('```sql\nselect 2\n```\n')
+    expect(a.originsNow().size).toBe(0)
+  })
+  it('a caret is one place: someone typing right at it — their text goes after it, never «selected» by it', () => {
+    const { a, b } = pair()
+    a.setLocal('слово')
+    const caret = { ...a.caret(5), caretAtStart: false }
+    b.setLocal('слово дальше')
+    expect(a.resolve(caret)).toMatchObject({ from: 5, to: 5 })
+  })
+  it('each line knows who changed it last (a deletion too); unmarked text — nobody', () => {
+    const { a, b } = pair()
+    let t = 100
+    a.stamp = () => ({ device: 'dev-a', at: (t += 1) })
+    b.stamp = () => ({ device: 'dev-b', at: (t += 1) })
+    a.setLocal('первая\nвторая\nтретья')
+    expect([...b.lineAuthors()]).toEqual([[0, 'dev-a'], [1, 'dev-a'], [2, 'dev-a']])
+    // Бета continues Альфа's word on the second line — the line is hers now; her text never takes Альфа's mark
+    b.setLocal('первая\nвторая-ещё\nтретья')
+    expect([...a.lineAuthors()]).toEqual([[0, 'dev-a'], [1, 'dev-b'], [2, 'dev-a']])
+    // a deletion alone on the third line — the line is the one who deleted's
+    a.setLocal('первая\nвторая-ещё\nтреть')
+    expect(b.lineAuthors().get(2)).toBe('dev-a')
+    a.setLocal('первая\nвторая-ещё\nтреть')
+    const plain = new SharedText()
+    plain.setLocal('без отметок')
+    expect(plain.lineAuthors().size).toBe(0)
+  })
+  it('a cursor told as a place that follows the text; a wrong one refused', () => {
+    const a = new SharedText()
+    a.setLocal('abcdef')
+    const sel = { ...a.anchor(2, 4), caretAtStart: true }
+    expect(isPeerSel(sel)).toBe(true)
+    expect(isPeerSel({ ...sel, start: 'не base64!' })).toBe(false)
+    expect(isPeerSel({ start: sel.start, end: sel.end })).toBe(false)
+    a.setLocal('XXabcdef')
+    expect(a.resolve(sel)).toMatchObject({ from: 4, to: 6 })
+  })
+})
+
+describe('a shared note after a restart', () => {
+  /** The server's copy and this computer's: typed here, sent there. */
+  function typed() {
+    const here = new SharedText()
+    const server = new SharedText()
+    here.onUpdate((u) => server.apply(u, 'remote'))
+    here.setLocal('Привет')
+    return { here, server }
+  }
+  it('kept with the text it holds — the same file: nothing typed twice when it meets the server again', () => {
+    const { here, server } = typed()
+    const kept = { state: toB64(here.state()), text: here.value }
+    const again = new SharedText()
+    again.resume(kept, 'Привет')
+    server.apply(again.missingFor(server.stateVector()), 'remote')
+    again.apply(server.missingFor(again.stateVector()), 'remote')
+    expect([again.value, server.value]).toEqual(['Привет', 'Привет'])
+  })
+  it('the file changed while the app was closed — the change goes in once', () => {
+    const { here, server } = typed()
+    const again = new SharedText()
+    again.resume({ state: toB64(here.state()), text: here.value }, 'Привет, мир')
+    server.apply(again.missingFor(server.stateVector()), 'remote')
+    expect(server.value).toBe('Привет, мир')
+  })
+  it('a state kept before its text was (an older app) — the file counts as changed', () => {
+    const { here } = typed()
+    const again = new SharedText()
+    again.resume({ state: toB64(here.state()) }, 'Привет!')
+    expect(again.value).toBe('Привет!')
+  })
+})
 
 /** Two copies of one document kept in step by their updates (as the server passes them). */
 function pair() {

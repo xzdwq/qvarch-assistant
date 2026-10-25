@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { attachWord, CHAT_FILE_MAX, cleanChatText, cleanFileName, CHAT_TEXT_MAX, fileKindOf, isAttach, mentionParts, mentionsIn, mergeMessages, roomWithMessage, sortRooms, unreadOf, type ChatFile, type ChatMessage, type ChatRoom } from '../../src/shared/transport/chat'
 import { cleanChat, cleanTransport, notifiesIn, socketUrl } from '../../src/shared/transport/constants'
 import { parseClientFrame, parseServerFrame } from '../../src/shared/transport/protocol'
+import { mediaWaitsOf, mediaWaitText, mediaWhy } from '../../src/shared/transport/space'
+
+describe('a shared note\'s file while it is not here', () => {
+  const r = { fetched: ['.images/a.png'], absent: ['.images/b.png'], failed: { '.images/c.png': 'сеть' } }
+  it('each asked file — where it stands after a sync: fetched or here — none; the server has it not — waiting; failed — why', () => {
+    expect(mediaWaitsOf(r, ['.images/a.png', '.images/b.png', '.images/c.png', '.images/d.png'])).toEqual({
+      '.images/a.png': null,
+      '.images/b.png': { state: 'absent' },
+      '.images/c.png': { state: 'failed', why: 'сеть' },
+      '.images/d.png': null,
+    })
+  })
+  it('said in words: on its way, waiting for the connection, for the one who added it, failed (tried again)', () => {
+    expect(mediaWaitText({ state: 'loading' })).toMatch(/загружается/)
+    expect(mediaWaitText({ state: 'offline' })).toMatch(/связь/)
+    expect(mediaWaitText({ state: 'absent' })).toMatch(/добавивший/)
+    expect(mediaWaitText({ state: 'failed', why: 'сеть' })).toMatch(/сеть.*ещё раз/)
+    expect([mediaWhy(r, '.images/a.png'), mediaWhy(r, '.images/b.png')]).toEqual([undefined, mediaWaitText({ state: 'absent' })])
+  })
+})
 
 const msg = (seq: number, author = 'a', at = seq * 1000): ChatMessage => ({ room: 'r', seq, id: `m${seq}`, author: { id: author, name: author }, text: `t${seq}`, at })
 const room = (over: Partial<ChatRoom> = {}): ChatRoom => ({ id: 'r', title: 'R', members: [], lastSeq: 0, readSeq: 0, ...over })

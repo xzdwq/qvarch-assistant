@@ -1,12 +1,13 @@
-import { computed, reactive, watch, watchEffect } from 'vue'
-import type { DeviceInfo, TransportEvent } from '@shared/transport/protocol'
+import { reactive, watch, watchEffect } from 'vue'
+import type { DeviceInfo } from '@shared/transport/protocol'
 import { formatOf, sharedDocOfFile, type SharedFormat } from '@shared/transport/sharedFormats'
 import { fromB64, isEmptyUpdate, mergeUpdates, SharedText, toB64, type SharedModel, type UpdateOrigin } from '@shared/transport/sharedText'
-import { QUOTE_MAX, type CommentAnchor } from '@shared/transport/chat'
-import { ROLE_RIGHTS, sharedMark, type Space, type SpaceRole } from '@shared/transport/space'
-import { serverCall, useTransport } from '@renderer/lib/transport'
-import { docs, setText } from './noteDocs'
-import { mediaReported } from './noteMedia'
+import { NO_MEDIA, ROLE_RIGHTS, sharedMark, type MediaReport, type Space, type SpaceRole } from '@shared/transport/space'
+import { serverCall, serverNow, serverOnline, useTransport } from '@renderer/lib/transport'
+import { retryDelay } from '@shared/transport/constants'
+import { onServerEvents, type ServerEventHandlers } from '@renderer/lib/serverEvents'
+import { docs, onSaveAll, setText } from './noteDocs'
+import { mediaAsked, mediaExpected, mediaReported } from './mediaFollow'
 
 /**
  * The shared files of this window — notes and boards: a file marked as a server's document (a note — its first line
@@ -25,8 +26,11 @@ interface Live {
   sendTimer?: ReturnType<typeof setTimeout>
   saveTimer?: ReturnType<typeof setTimeout>
   mediaTimer?: ReturnType<typeof setTimeout>
-  /** Asks for its files not here yet, in a row. */
-  mediaRetries?: number
+  syncTimer?: ReturnType<typeof setTimeout>
+  /** Syncs failed in a row (the next waits longer). */
+  syncFails?: number
+  /** Asks for its files that failed, in a row (the next waits longer). */
+  mediaFails?: number
   /** Its file's text as last read or written (a shared folder's document not open). */
   fileText?: string
   starting?: Promise<void>
@@ -41,11 +45,9 @@ export interface SharedInfo {
   live: boolean
 }
 const SEND_MS = 40
-const SAVE_MS = 800
+/** (sooner than the file's own save: the state is never older than the file it goes with) */
+const SAVE_MS = 250
 const MEDIA_MS = 1500
-/** A file not here yet: asked again this often, this many times (then — on the next change). */
-const MEDIA_RETRY_MS = 15_000
-const MEDIA_RETRIES = 40
 /** Shared notes and folders joined by a code go here. */
 export const SHARED_FOLDER = 'Общие'
 
@@ -53,8 +55,7 @@ const lives = new Map<string, Live>()
 export const sharedInfo = reactive(new Map<string, SharedInfo>())
 /** The spaces of this device (members, roles), as the server last said. */
 export const spaces = reactive(new Map<string, Space>())
-const transport = useTransport()
-const online = computed(() => transport.value.status === 'online')
+const online = serverOnline
 
 const info = (doc: string): SharedInfo => {
   if (!sharedInfo.has(doc)) sharedInfo.set(doc, { presence: [], live: false })
@@ -106,34 +107,48 @@ function send(doc: string, l: Live): void {
   l.sendTimer = setTimeout(() => {
     if (!l.queue.length || !online.value || !info(doc).live) return
     const update = mergeUpdates(l.queue.splice(0))
-    // not sent (the connection dropped): the next sync sends whatever the server lacks
-    serverCall('doc.update', { doc, update: toB64(update) }).catch(() => (info(doc).live = false))
+    // not sent (refused, too busy, the connection dropped): a sync a while later sends whatever the server lacks
+    serverCall('doc.update', { doc, update: toB64(update) }).catch((e: Error) => failed(doc, l, e))
   }, SEND_MS)
 }
+/** The document's state kept now, with the text it holds. */
+function keepNow(doc: string, l: Live): Promise<void> {
+  clearTimeout(l.saveTimer)
+  l.saveTimer = undefined
+  return window.qa.sharedSave(doc, { state: toB64(l.st.state()), text: l.st.value }).catch(() => undefined)
+}
+/** Every state waiting to be kept — kept now (the notes are being saved: the window closes, reloads). */
+async function keepAll(): Promise<void> {
+  await Promise.all([...lives].filter(([, l]) => l.saveTimer).map(([doc, l]) => keepNow(doc, l)))
+}
+onSaveAll(keepAll)
 function keep(doc: string, l: Live): void {
   clearTimeout(l.saveTimer)
-  l.saveTimer = setTimeout(() => void window.qa.sharedSave(doc, toB64(l.st.state())), SAVE_MS)
-  l.mediaRetries = 0
+  l.saveTimer = setTimeout(() => keepNow(doc, l), SAVE_MS)
+  // the files it names: expected at once (shown as on their way, never «not found» for a moment), asked a moment after
+  mediaExpected(l.fmt.media(l.st.value), online.value)
   mediaSoon(doc, l)
 }
 /**
- * The pictures and recordings the file shows in step with the server (a moment after it settles); one not here yet —
- * asked again in a while (an event of its coming may be missed), as long as the document is held.
+ * The pictures and recordings the file shows in step with the server, a moment after it settles (each sync — on
+ * opening, on coming online — asks too: what came meanwhile is never missed). A file the server has not yet — its
+ * coming is an event (`media.added`); one that failed (the network, the disk) — asked again later and later.
  */
 function mediaSoon(doc: string, l: Live, wait = MEDIA_MS): void {
   clearTimeout(l.mediaTimer)
   l.mediaTimer = setTimeout(() => {
     const space = info(doc).space
     const rels = l.fmt.media(l.st.value)
-    if (rels.length) window.qa.sharedLog(`media ask ${doc.slice(0, 8)} space=${space?.slice(0, 8) ?? '—'} online=${online.value} ${rels.join(', ')}`)
     if (!space || !rels.length || !online.value) return
+    mediaAsked(rels)
     window.qa
       .sharedMedia(space, rels)
+      .catch((e: Error): MediaReport => ({ ...NO_MEDIA, failed: Object.fromEntries(rels.map((x) => [x, e.message])) }))
       .then((r) => {
-        mediaReported(r)
-        if (Object.keys(r.problems).length && lives.get(doc) === l && (l.mediaRetries = (l.mediaRetries ?? 0) + 1) <= MEDIA_RETRIES) mediaSoon(doc, l, MEDIA_RETRY_MS)
+        mediaReported(r, rels)
+        if (!Object.keys(r.failed).length) return void (l.mediaFails = 0)
+        if (lives.get(doc) === l) mediaSoon(doc, l, retryDelay((l.mediaFails = (l.mediaFails ?? 0) + 1)))
       })
-      .catch((e: Error) => mediaReported({ fetched: [], problems: Object.fromEntries(rels.map((x) => [x, e.message])) }))
   }, wait)
 }
 
@@ -143,6 +158,8 @@ function hold(doc: string, fmt: SharedFormat, st: SharedModel = fmt.model()): Li
   if (l) return l
   l = { fmt, st, ready: false, queue: [] }
   const live = l
+  // this person's changes of a note marked with them and the server's time (every line knows who changed it last)
+  if (st instanceof SharedText) st.stamp = () => ({ device: useTransport().value.deviceId, at: serverNow() })
   st.onUpdate((u: Uint8Array, origin: UpdateOrigin) => {
     sharedTick.n++
     keep(doc, live)
@@ -156,6 +173,31 @@ function hold(doc: string, fmt: SharedFormat, st: SharedModel = fmt.model()): Li
   return l
 }
 
+/** Out of step (a sync or a send failed): said in the journal, tried again later and later — while online and held. */
+function failed(doc: string, l: Live, e: Error): void {
+  info(doc).live = false
+  window.qa.sharedLog(`doc ${doc.slice(0, 8)}: ${e.message}`)
+  clearTimeout(l.syncTimer)
+  l.syncFails = (l.syncFails ?? 0) + 1
+  const wait = retryDelay(l.syncFails)
+  l.syncTimer = setTimeout(() => online.value && lives.get(doc) === l && void syncOrRetry(doc, l), wait)
+}
+/** In step with the server — or, failing, tried again later. */
+async function syncOrRetry(doc: string, l: Live): Promise<void> {
+  try {
+    await sync(doc, l)
+    l.syncFails = 0
+  } catch (e) {
+    failed(doc, l, e as Error)
+  }
+}
+/** A document let go (deleted, its space left): nothing of it runs later. */
+function release(doc: string): void {
+  const l = lives.get(doc)
+  if (l) for (const t of [l.sendTimer, l.saveTimer, l.mediaTimer, l.syncTimer]) clearTimeout(t)
+  lives.delete(doc)
+  sharedInfo.delete(doc)
+}
 /** In step with the server: what it has taken, what it lacks sent; its role, the space; its changes come from now on. */
 async function sync(doc: string, l: Live): Promise<void> {
   const r = await serverCall('doc.open', { doc, sv: toB64(l.st.stateVector()) })
@@ -183,11 +225,10 @@ function start(doc: string, fmt: SharedFormat, fileText: string): void {
   l.starting = (async () => {
     const kept = await window.qa.sharedLoad(doc)
     if (kept) {
-      l.st.apply(fromB64(kept), 'load')
-      l.st.setLocal(fileText)
+      l.st.resume(kept, fileText)
       l.ready = true
     }
-    if (online.value) await sync(doc, l)
+    if (online.value) await syncOrRetry(doc, l)
   })().catch(() => undefined)
 }
 
@@ -213,10 +254,11 @@ watchEffect(() => {
 watch(
   online,
   (on) => {
-    for (const [doc, l] of lives) {
-      if (on) void sync(doc, l).catch(() => undefined)
-      else info(doc).live = false
-    }
+    // (one after another: dozens at once would be refused by the server as a flood)
+    if (on) void (async () => {
+      for (const [doc, l] of [...lives]) if (lives.get(doc) === l) await syncOrRetry(doc, l)
+    })()
+    else for (const doc of lives.keys()) info(doc).live = false
     if (on) void loadSpaces()
   },
   { immediate: true },
@@ -234,8 +276,7 @@ function leftSpace(space: string): void {
   for (const [doc, inf] of sharedInfo) {
     if (inf.space !== space) continue
     for (const p of pathsOf(doc)) setText(p, formatOf(p)!.unmark(docs.get(p)!.text))
-    lives.delete(doc)
-    sharedInfo.delete(doc)
+    release(doc)
   }
 }
 /** The files' changes not in the document yet (made a moment ago) go in first: someone else's change never drops them. */
@@ -243,7 +284,8 @@ function absorb(doc: string, l: Live): void {
   if (!l.ready) return
   for (const p of pathsOf(doc)) if (!readonlyPath(p)) l.st.setLocal(docs.get(p)!.text)
 }
-const EVENTS: Partial<{ [K in TransportEvent['e']]: (p: Extract<TransportEvent, { e: K }>['p']) => void }> = {
+/** The shared documents' events of the server. */
+const EVENTS: ServerEventHandlers = {
   'doc.update': (p) => {
     const l = lives.get(p.doc)
     if (!l) return
@@ -261,10 +303,15 @@ const EVENTS: Partial<{ [K in TransportEvent['e']]: (p: Extract<TransportEvent, 
     const embedded = new Set([...lives.values()].flatMap((l) => l.fmt.media(l.st.value)))
     const rels = p.rels.filter((r) => embedded.has(r))
     window.qa.sharedLog(`media.added ${p.rels.join(', ')} → embedded here: ${rels.join(', ') || 'нет'}`)
-    if (rels.length) void window.qa.sharedMedia(p.space, rels).then(mediaReported).catch(() => undefined)
+    if (!rels.length) return
+    mediaAsked(rels)
+    void window.qa
+      .sharedMedia(p.space, rels)
+      .then((r) => mediaReported(r, rels))
+      .catch(() => undefined)
   },
 }
-window.qa.onServer((ev) => (EVENTS[ev.e] as ((p: unknown) => void) | undefined)?.(ev.p))
+onServerEvents(EVENTS)
 
 /**
  * A file's text made a document of a space (the server gave it its id): its mark put in (the same for everyone), the
@@ -318,30 +365,27 @@ export function track(doc: string, path: string, text: string): void {
 export function untrack(doc: string): void {
   files.delete(doc)
   docPaths.delete(doc)
-  lives.delete(doc)
-  sharedInfo.delete(doc)
+  release(doc)
   void serverCall('doc.close', { doc }).catch(() => undefined)
 }
-/** A place of a shared note (its editor's positions) as a comment's anchor; not a shared note's — none. */
-export function anchorFor(path: string, from: number, to: number): CommentAnchor | undefined {
-  const l = lives.get(sharedDocOfPath(path))
+/**
+ * A shared note's text model (not a shared note here, or not in step yet — none). `fresh` — the editor's latest typing
+ * put in first (a place is being made from the editor's positions); reading places never changes the document. The
+ * places in its text (comments, cursors, components' origins): sharedPlaces.
+ */
+export function sharedTextOf(path: string, fresh = false): SharedText | undefined {
+  const doc = sharedDocOfPath(path)
+  const l = lives.get(doc)
   if (!l?.ready || !(l.st instanceof SharedText)) return undefined
-  // (what was typed a moment ago first: the positions are the editor's)
-  absorb(sharedDocOfPath(path), l)
-  return { ...l.st.anchor(from, to), quote: l.st.value.slice(from, to).slice(0, QUOTE_MAX) }
-}
-/** Where a comment's place is in a shared note now (its text gone — `gone`); not known here — none. */
-export function rangeFor(path: string, a: CommentAnchor): { from: number; to: number; gone: boolean } | undefined {
-  const l = lives.get(sharedDocOfPath(path))
-  if (!l?.ready || !(l.st instanceof SharedText)) return undefined
-  return l.st.resolve(a) ?? undefined
+  if (fresh) absorb(doc, l)
+  return l.st
 }
 /** A document's text fetched from the server as a new file of this kind: its text, and its state kept here. */
 export async function fetchText(doc: string, fmt: SharedFormat): Promise<string> {
   const st = fmt.model()
   const r = await serverCall('doc.open', { doc, sv: toB64(st.stateVector()) })
   st.apply(fromB64(r.update), 'remote')
-  await window.qa.sharedSave(doc, toB64(st.state()))
+  await window.qa.sharedSave(doc, { state: toB64(st.state()), text: st.value })
   return st.value
 }
 

@@ -10,6 +10,7 @@ import { Identity } from './identity'
 import { SharedMedia, type MediaReport, type MediaWays, type SharedMediaAsk } from './sharedMedia'
 import { SharedLog } from './sharedLog'
 import { SharedResults } from './sharedResults'
+import { SharedStates } from './sharedStates'
 import { SpacePasses } from './spacePasses'
 import { deviceIdOf, signerOf } from './keys'
 
@@ -32,6 +33,8 @@ export class Transport {
   private madeWith = ''
   /** The connection's last state. */
   private link: ClientState = { status: 'off' }
+  /** The server's clock minus this computer's, as last known (kept while offline). */
+  private skew?: number
 
   /** The shared notes' pictures and recordings. */
   private readonly media: SharedMedia
@@ -42,6 +45,8 @@ export class Transport {
   readonly results: SharedResults
   /** The chats' files (pictures, documents sent into a chat). */
   readonly files: ChatFiles
+  /** The shared documents' states kept here, the shared folders' links. */
+  readonly states: SharedStates
   /** The shared notes' journal (what was asked for their files, what came of it). */
   readonly log: SharedLog
 
@@ -54,6 +59,7 @@ export class Transport {
     this.media = new SharedMedia(app.vault, ask, passes, base, (l) => this.log.write(l))
     this.results = new SharedResults(passes, base)
     const roomPasses = new SpacePasses(async (room) => (await (this.client?.request('chat.fileTicket', { room }) ?? Promise.reject(new Error('Сервер не подключён')))).ticket)
+    this.states = new SharedStates(app.store.root, app.vault.root)
     this.files = new ChatFiles(roomPasses, base, join(app.store.root, 'chat-files'))
   }
   /** A shared note's media in step with the server (the files fetched — returned). */
@@ -104,6 +110,7 @@ export class Transport {
       name: s.device?.name,
       server: s.server,
       hasCode: !!this.identity.code,
+      ...(this.skew !== undefined ? { skew: this.skew } : {}),
     }
   }
   /** A window's request to the server (only the methods of the areas windows use). */
@@ -118,25 +125,18 @@ export class Transport {
 
   private setState(s: ClientState): void {
     this.link = s
+    if (s.skew !== undefined) this.skew = s.skew
     this.app.emitToAll('onTransport', this.state())
   }
   /** Each event's handling here (all of them go on to the main window). */
-  private readonly EVENTS: { [K in TransportEvent['e']]: (p: Extract<TransportEvent, { e: K }>['p']) => void } = {
+  /** What the app itself does with an event (the window handles its own: every event goes on to it). */
+  private readonly EVENTS: { [K in TransportEvent['e']]?: (p: Extract<TransportEvent, { e: K }>['p']) => void } = {
     'chat.message': (m) => this.notify(m.room, m.author.id, m.author.name, m.text || (m.attach ? attachWord(m.attach) : ''), !!m.mentions?.includes(this.link.device?.id ?? '')),
-    // (a message's reactions changed — not a new message: no notice)
-    'chat.edited': () => undefined,
-    'chat.room': () => undefined,
-    'chat.typing': () => undefined,
-    'space.changed': () => undefined,
-    'space.gone': () => undefined,
-    'doc.update': () => undefined,
-    'doc.presence': () => undefined,
-    'doc.results': () => undefined,
     'media.added': (p) => this.log.write(`event media.added ${p.space.slice(0, 8)} ${p.rels.join(', ')}`),
   }
   private onEvent(ev: TransportEvent): void {
     try {
-      ;(this.EVENTS[ev.e] as (p: unknown) => void)(ev.p)
+      ;(this.EVENTS[ev.e] as ((p: unknown) => void) | undefined)?.(ev.p)
     } catch (e) {
       console.error(`${ev.e}:`, (e as Error).message)
     }

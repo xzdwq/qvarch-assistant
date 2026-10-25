@@ -3,7 +3,8 @@ import { isComment, type ChatRoom } from '@shared/transport/chat'
 import { ROLE_RIGHTS } from '@shared/transport/space'
 import { chatRooms } from '@renderer/lib/chat'
 import { serverCall } from '@renderer/lib/transport'
-import { anchorFor, rangeFor, sharedDocOfPath, sharedInfo, sharedTick } from './sharedDocs'
+import { sharedDocOfPath, sharedInfo, sharedTick } from './sharedDocs'
+import { anchorFor, rangeFor } from './sharedPlaces'
 
 /**
  * The comments of a shared note: each a discussion of the space's members about a place of the note (it goes with the

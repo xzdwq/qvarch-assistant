@@ -1,5 +1,6 @@
 import type { ChatAttach, ChatMessage, ChatRoom, CommentAnchor } from './chat'
 import type { Space, SpaceKind, SpaceRole } from './space'
+import type { PeerSel } from './places'
 
 /** The HTTP path of a space's media files: `/media/<space>/<rel>`; the pass — in this header. */
 export const MEDIA_PATH = '/media/'
@@ -19,17 +20,35 @@ export const RESULTS_PATH = '/results/'
 export const CHAT_FILES_PATH = '/chat-files/'
 export const FILE_NAME_HEADER = 'x-qa-name'
 export const RESULTS_MAX = 32 * 1024 * 1024
-/** One result as the others get it: its value (none — taken away), who ran it, when it was kept. */
+/**
+ * One result as the others get it: its value (none — taken away), who ran it, when the server took it (the server's
+ * clock — the same for everyone, whatever their time zone or their computer's clock), its revision (the server's
+ * number: the order of the results is the order they reached it).
+ */
 export interface SharedResult {
   value: unknown
   by: string
   device: string
   at: number
+  seq: number
 }
 export interface ResultsPage {
   /** The last change's number (the next ask — after it). */
   seq: number
   entries: Record<string, SharedResult>
+}
+/**
+ * Results sent (`PUT`): each — its value (null — taken away) and the revision it was made over (the one this device
+ * had then; none — 0). The server takes it only when nothing newer came meanwhile — else answers with what it has.
+ */
+export interface ResultsPut {
+  changes: Record<string, { value: unknown; base: number }>
+}
+export interface ResultsPutReply {
+  /** Taken: each one's new revision. */
+  accepted: Record<string, number>
+  /** Not taken (something newer came meanwhile): what the server has instead. */
+  current: Record<string, SharedResult>
 }
 
 /**
@@ -39,6 +58,8 @@ export interface ResultsPage {
  * A module of the server owns a namespace of methods and events (`chat.*`); a new module adds its own lines here.
  */
 export const PROTOCOL_VERSION = 1
+/** A socket frame's size at most, bytes (a bigger one would close the connection — the app refuses to send it). */
+export const FRAME_MAX = 16 * 1024 * 1024
 /** The socket's path (a new incompatible protocol gets a new one). */
 export const TRANSPORT_PATH = '/v1'
 
@@ -67,7 +88,7 @@ export interface TransportMethods {
   /** `mentions` — the members the text mentions (`@Имя`; others are dropped); `attach` — a block's result (the text may be empty then). */
   'chat.send': { p: { room: string; text: string; clientId: string; mentions?: string[]; attach?: ChatAttach }; r: ChatMessage }
   /** A chat of one's own (no one else yet — add people to it). */
-  'chat.create': { p: { title?: string }; r: ChatRoom }
+  'chat.create': { p: { title?: string; id?: string }; r: ChatRoom }
   /** A chat renamed (by the one who made it). */
   'chat.rename': { p: { room: string; title: string }; r: ChatRoom }
   /** The people one may add to a chat: those one shares a chat or a shared note with. */
@@ -83,6 +104,8 @@ export interface TransportMethods {
   /** A reaction put / taken back (one of REACTIONS); the message as it is now. */
   'chat.react': { p: { room: string; seq: number; emoji: string; on: boolean }; r: ChatMessage }
   'chat.read': { p: { room: string; seq: number }; r: null }
+  /** «Печатает…» told to the room's others. */
+  'chat.typing': { p: { room: string }; r: null }
   /** A pass for the room's files over HTTP (a member's). */
   'chat.fileTicket': { p: { room: string }; r: { ticket: string } }
   /**
@@ -120,6 +143,8 @@ export interface TransportMethods {
   'doc.open': { p: { doc: string; sv: string }; r: { update: string; sv: string; role: SpaceRole; space: string } }
   'doc.update': { p: { doc: string; update: string }; r: null }
   'doc.close': { p: { doc: string }; r: null }
+  /** This device's cursor in an open document (none — gone): the others who have it open see it. */
+  'doc.cursor': { p: { doc: string; sel: PeerSel | null }; r: null }
 }
 export type MethodName = keyof TransportMethods
 /** The events the server sends. */
@@ -137,6 +162,8 @@ export interface TransportEvents {
   'doc.update': { doc: string; update: string; by: string }
   /** Who has the document open now. */
   'doc.presence': { doc: string; devices: DeviceInfo[] }
+  /** Someone's cursor in a document this device has open (none — gone). */
+  'doc.cursor': { doc: string; device: DeviceInfo; sel: PeerSel | null }
   /** Media files came to a space (sent by a member): whoever lacks them fetches them. */
   'media.added': { space: string; rels: string[]; by: string }
   /** A shared note's run results changed (fetched over HTTP after `seq`). */
@@ -147,7 +174,8 @@ export type TransportEvent = { [K in EventName]: { e: K; p: TransportEvents[K] }
 
 export type ServerFrame =
   | { t: 'hello'; v: number; nonce: string; server: string }
-  | { t: 'ready'; device: DeviceInfo }
+  /** Signed in: who this device is to the server, the server's clock (epoch ms) as it answered. */
+  | { t: 'ready'; device: DeviceInfo; now?: number }
   | { t: 'fail'; code: FailCode; message: string }
   | { t: 'res'; id: number; r?: unknown; err?: RpcError }
   | ({ t: 'ev' } & TransportEvent)

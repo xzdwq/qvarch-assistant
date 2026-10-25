@@ -42,6 +42,11 @@ export const spaceModule: ModuleFactory = (ctx: ServerContext) => {
   const store = new SpaceStore(ctx.db)
   const docs = new DocStore(ctx.db)
   const chat = new Chat(ctx)
+  // its chats and comments: written by the roles that may
+  ctx.spaceRules.mayChat = async (space, device) => {
+    const role = await store.roleOf(space, device)
+    return !!role && ROLE_RIGHTS[role].chat
+  }
 
   /** A member's role, or a refusal; `need` — the right the call needs. */
   async function roleIn(space: string, s: Session, need?: keyof (typeof ROLE_RIGHTS)['owner']): Promise<SpaceRole> {
@@ -192,7 +197,7 @@ export const spaceModule: ModuleFactory = (ctx: ServerContext) => {
         const body = cleanChatText(p.text)
         if (body === null) throw new RpcFail('bad', 'Пустой или слишком длинный комментарий')
         const title = anchor.quote.replace(/\s+/g, ' ').trim().slice(0, 80) || 'Комментарий'
-        const room = await chat.open(title, s.device.id, await store.members(space), space, { doc, anchor })
+        const room = await chat.open(title, s.device.id, await store.members(space), { space, comment: { doc, anchor } })
         await chat.post(room, s.device, body, text(p, 'clientId').slice(0, 64) || undefined)
         return (await chat.store.room(room, s.device.id))!
       },
@@ -208,7 +213,7 @@ export const spaceModule: ModuleFactory = (ctx: ServerContext) => {
       'space.chat': async (p, s) => {
         const space = uuid(p, 'space')
         await roleIn(space, s, 'chat')
-        const id = await chat.open(title(p), s.device.id, await store.members(space), space)
+        const id = await chat.open(title(p), s.device.id, await store.members(space), { space })
         return (await chat.store.room(id, s.device.id))!
       },
     },

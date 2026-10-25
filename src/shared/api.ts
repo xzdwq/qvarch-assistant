@@ -17,8 +17,9 @@ import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
 import type { ChatFile } from './transport/chat'
 import type { TransportState } from './transport/constants'
-import type { ResultsPage, TransportEvent } from './transport/protocol'
+import type { ResultsPage, ResultsPut, ResultsPutReply, TransportEvent } from './transport/protocol'
 import type { SharedFolderLink } from './transport/sharedFolder'
+import type { KeptState } from './transport/sharedText'
 import type { MediaReport } from './transport/space'
 import type { VaultEntryKind, VaultHit, VaultNode } from './vault'
 import type { Remind, RepeatRule } from './repeat'
@@ -173,15 +174,15 @@ export interface QaApi {
   /** A method of the server: chat, shared spaces, documents (renderer: lib/transport.ts types it by TransportMethods). */
   serverCall(method: string, params: unknown): Promise<unknown>
   /** A shared document's state as kept on this computer (Yjs, base64; '' — none) / kept. */
-  sharedLoad(doc: string): Promise<string>
-  sharedSave(doc: string, state: string): Promise<void>
+  sharedLoad(doc: string): Promise<KeptState | null>
+  sharedSave(doc: string, kept: KeptState): Promise<void>
   /**
    * A shared note's pictures, recordings, test files in step with the server: what it lacks sent, what this computer
    * lacks fetched (`ways` — only one of them); the files fetched.
    */
   sharedMedia(space: string, rels: string[], ways?: { send?: boolean; fetch?: boolean }): Promise<MediaReport>
   /** A shared note's run results: this device's sent (null — taken away) / what changed after a number fetched. */
-  sharedResultsPut(space: string, doc: string, entries: Record<string, unknown>): Promise<void>
+  sharedResultsPut(space: string, doc: string, changes: ResultsPut['changes']): Promise<ResultsPutReply>
   sharedResultsGet(space: string, doc: string, since: number): Promise<ResultsPage>
   /** A line into the shared notes' journal (data/shared.log) — what the window did with their files. */
   sharedLog(line: string): void
@@ -191,6 +192,10 @@ export interface QaApi {
   chatFileGet(room: string, id: string): Promise<Uint8Array>
   /** A chat's file saved where one picks (false — not saved). */
   chatFileSave(room: string, id: string, name: string): Promise<boolean>
+  /** A note / a folder of the notebook sent into a chat as one file (its export, .qvdoc; run results with it — or not). */
+  chatFileFromNotes(room: string, rel: string, withRuns: boolean): Promise<ChatFile>
+  /** A note / a folder received in a chat (a .qvdoc) put into the notebook (in `dir`): what was made. */
+  chatFileToNotes(room: string, id: string, dir: string): Promise<{ main: string; paths: string[]; folder?: string }>
   /** The note / board of the notebook that is this shared document, by its mark (never by name); '' — none. */
   sharedFind(doc: string): Promise<string>
   /** The shared folders of the notebook (their links: the space, where each document was last time). */
@@ -387,6 +392,8 @@ export interface QaApi {
   setRemind(day: string, id: string, remind: Remind | null): Promise<void>
   /** Files changed outside the app (another editor, Explorer). */
   onVault(cb: (paths: string[]) => void): () => void
+  /** A picture / a recording appeared in the vault (fetched for a shared note, pasted, put back, put there outside). */
+  onVaultMedia(cb: (rels: string[]) => void): () => void
 }
 
 

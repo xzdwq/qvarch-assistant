@@ -12,7 +12,7 @@ import { doc } from '@renderer/lib/notebook'
  * where it stands, its report, the values it sees.
  */
 export function useBlockRun(props: { path: string; line: number }, kind: RunnableKind, block: { info: ComputedRef<BlockInfo>; current: () => FenceParts }) {
-  const key = computed(() => blockRunKey(block.info.value.name, kind, props.line))
+  const key = computed(() => blockRunKey(block.info.value.name, kind, props.line, block.info.value.id))
   const run = computed<BlockRun | undefined>(() => noteRun(props.path).runs[key.value])
   const noteText = () => doc(props.path).text
   /** Runs the block as the component holds it now. */

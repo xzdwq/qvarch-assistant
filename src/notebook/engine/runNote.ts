@@ -68,7 +68,7 @@ export interface BlockAtLine {
   /** Its first line in the note (its env, an unnamed block's key). */
   line: number
 }
-const itemOf = (b: BlockAtLine): BlockItem => ({ kind: b.kind, info: b.info, body: b.body, key: blockRunKey(b.info.name, b.kind, b.line), line: b.line })
+const itemOf = (b: BlockAtLine): BlockItem => ({ kind: b.kind, info: b.info, body: b.body, key: blockRunKey(b.info.name, b.kind, b.line, b.info.id), line: b.line })
 
 /** A block run where it stands: the note's, or — in a loop — the pass shown again (its values, its result kept with it). */
 export function runBlockAt(path: string, noteText: string, block: BlockAtLine, opts: { sqlMode?: SqlMode } = {}): Promise<boolean> {

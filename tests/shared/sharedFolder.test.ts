@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { planFolder } from '../../src/shared/transport/sharedFolder'
+import { guardDeletions, planFolder } from '../../src/shared/transport/sharedFolder'
 import { cleanDocPath, freeDocPath, mediaRefs } from '../../src/shared/transport/space'
 
 const doc = (id: string, path: string, deleted = false) => ({ id, title: path, path, ...(deleted ? { deleted } : {}) })
+
+describe('a shared folder: a mass deletion held back', () => {
+  const server = [doc('a', 'A.md'), doc('b', 'B.md'), doc('c', 'C.md'), doc('d', 'D.md')]
+  const known = { a: 'A.md', b: 'B.md', c: 'C.md', d: 'D.md' }
+  it('the folder read as empty (not loaded yet) — nothing is deleted for everyone, the documents come back here', () => {
+    const r = guardDeletions(planFolder(server, [], known), server)
+    expect(r.held).toBe(4)
+    expect(r.steps.map((s) => s.do)).toEqual(['fetch', 'fetch', 'fetch', 'fetch'])
+    expect(r.steps[0]).toEqual({ do: 'fetch', doc: 'a', path: 'A.md' })
+  })
+  it('one or two notes deleted by hand — deleted for everyone as before', () => {
+    const local = [{ path: 'A.md', doc: 'a' }, { path: 'B.md', doc: 'b' }]
+    const r = guardDeletions(planFolder(server, local, known), server)
+    expect(r.held).toBe(0)
+    expect(r.steps.filter((s) => s.do === 'deleteServer').map((s) => s.doc)).toEqual(['c', 'd'])
+  })
+  it('a small folder: fewer than the least mass — kept as asked', () => {
+    const two = [doc('a', 'A.md'), doc('b', 'B.md')]
+    expect(guardDeletions(planFolder(two, [], { a: 'A.md', b: 'B.md' }), two).held).toBe(0)
+  })
+})
 
 describe('a shared folder brought into step', () => {
   it('in step — kept; new on the server — made here; new here — added', () => {

@@ -86,7 +86,8 @@ app.whenReady().then(() => {
   ctx.probe.start()
   ctx.tablet?.start()
   ctx.windows.createTray()
-  ctx.windows.createIsland()
+  // the island starts closed: the tray / the hotkey open it
+  ctx.windows.createIsland(false)
   if (!process.argv.includes('--hidden')) ctx.windows.showMain()
   ctx.windows.applyAutoStart()
   globalShortcut.register(ISLAND_HOTKEY, () => ctx.windows.focusIsland())
@@ -130,7 +131,7 @@ function makeServices(): Activity {
     },
     (inCall) => ctx.tracker.setPresenceCall(inCall),
   )
-  ctx.vault = new Vault(store.root, (paths) => ctx.emitToMain('onVault', paths))
+  ctx.vault = new Vault(store.root, { onChange: (paths) => ctx.emitToMain('onVault', paths), onMedia: (rels) => ctx.emitToMain('onVaultMedia', rels) })
   ctx.vault.watch()
   // after the vault: the chats get their documents in the notebook
   ctx.transport = new Transport(ctx)

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { FAIL_TEXT, parseClientFrame, PROTOCOL_VERSION, TRANSPORT_PATH, type ClientFrame, type FailCode, type ServerFrame, type TransportEvent } from '../../src/shared/transport/protocol'
+import { FAIL_TEXT, FRAME_MAX, parseClientFrame, PROTOCOL_VERSION, TRANSPORT_PATH, type ClientFrame, type FailCode, type ServerFrame, type TransportEvent } from '../../src/shared/transport/protocol'
 import { Bucket, checkProof, checkSignature, deviceIdOf } from './auth'
 import type { ServerConfig } from './config'
 import type { Db } from './db'
@@ -10,12 +10,12 @@ import { Bus, RpcFail, type Delivery, type Method, type ModuleFactory, type Serv
 import { DbFlags, Devices } from './modules/core'
 
 /** Limits of one connection: the frame size, the time to sign in, silence before it is dropped, requests a second. */
-const MAX_FRAME = 256 * 1024
 const AUTH_MS = 10_000
 const IDLE_MS = 90_000
 const SWEEP_MS = 30_000
-const BURST = 40
-const PER_SEC = 10
+// (coming online, an app brings every shared document of its folders into step at once)
+const BURST = 120
+const PER_SEC = 30
 
 /** One connection: signed in or still being asked. */
 class Conn {
@@ -63,7 +63,7 @@ export async function startTransport(config: ServerConfig, db: Db, factories: re
       for (const d of devices) for (const c of online.get(d) ?? []) c.send(frame)
     },
   }
-  const ctx: ServerContext = { config, db, bus: new Bus(), delivery, flags: new DbFlags(db) }
+  const ctx: ServerContext = { config, db, bus: new Bus(), delivery, flags: new DbFlags(db), spaceRules: { mayChat: async () => true } }
   const modules = factories.map((f) => f(ctx))
   const methods = methodTable(modules)
   const applied = await migrate(db, modules)
@@ -79,7 +79,7 @@ export async function startTransport(config: ServerConfig, db: Db, factories: re
     let set = online.get(session.device.id)
     if (!set) online.set(session.device.id, (set = new Set()))
     set.add(c)
-    c.send({ t: 'ready', device: session.device })
+    c.send({ t: 'ready', device: session.device, now: Date.now() })
     for (const m of modules) if (m.onReady) m.onReady(session).catch((e: Error) => console.error(`${m.name}.onReady:`, e.message))
   }
 
@@ -122,7 +122,7 @@ export async function startTransport(config: ServerConfig, db: Db, factories: re
       res.end()
     })
   })
-  const wss = new WebSocketServer({ server: http, path: TRANSPORT_PATH, maxPayload: MAX_FRAME })
+  const wss = new WebSocketServer({ server: http, path: TRANSPORT_PATH, maxPayload: FRAME_MAX })
   wss.on('connection', (ws) => {
     const c = new Conn(ws)
     conns.add(c)

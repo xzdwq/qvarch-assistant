@@ -11,6 +11,7 @@ import { startPg } from './pg'
 import { SharedMedia } from '../../src/main/transport/sharedMedia'
 import { SpacePasses } from '../../src/main/transport/spacePasses'
 import { ChatFiles } from '../../src/main/transport/chatFiles'
+import { SharedText } from '../../src/shared/transport/sharedText'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -222,6 +223,78 @@ describe('a shared document', () => {
     b.client.stop()
   }, 30_000)
 
+  it('cursors: passed to the others who have the note open (never kept); one who opens it sees them; one who leaves — gone', async () => {
+    const a = await app('Альфа-курсоры')
+    const b = await app('Бета-курсоры')
+    const c = await app('Гамма-курсоры')
+    a.text.insert(0, 'Привет, мир')
+    const { space, doc } = await shareNote(a, 'Курсоры')
+    for (const x of [b, c]) await x.client.request('space.join', { code: (await a.client.request('space.invite', { space: space.id, role: 'reader' })).code })
+    await a.open(doc)
+    await b.open(doc)
+    const t = new SharedText()
+    t.setLocal('Привет, мир')
+    const sel = { ...t.anchor(3, 3), caretAtStart: false }
+    // not open by this device — nothing told
+    expect(await c.client.request('doc.cursor', { doc, sel })).toBeNull()
+    await a.client.request('doc.cursor', { doc, sel })
+    await until(() => b.events.some((e) => e.e === 'doc.cursor' && e.p.device.name === 'Альфа-курсоры' && e.p.sel?.start === sel.start))
+    expect(c.events.some((e) => e.e === 'doc.cursor')).toBe(false)
+    await expect(a.client.request('doc.cursor', { doc, sel: { start: 'x y', end: '', caretAtStart: 1 } as never })).rejects.toMatchObject({ code: 'bad' })
+    // one opening it now sees the cursor there is
+    await c.open(doc)
+    await until(() => c.events.some((e) => e.e === 'doc.cursor' && e.p.device.name === 'Альфа-курсоры'))
+    // its owner leaves — gone for the others
+    await a.client.request('doc.close', { doc })
+    await until(() => b.events.some((e) => e.e === 'doc.cursor' && e.p.device.name === 'Альфа-курсоры' && e.p.sel === null))
+    for (const x of [a, b, c]) x.client.stop()
+  }, 30_000)
+
+  it('the server\'s clock is told when a device signs in (the app keeps how far its own one is)', async () => {
+    const before = Date.now()
+    const a = await app('Альфа-часы')
+    expect(a.client.state.skew).toBeDefined()
+    expect(Math.abs(a.client.state.skew!)).toBeLessThan(5_000)
+    expect(Date.now() + a.client.state.skew!).toBeGreaterThanOrEqual(before - 5_000)
+    a.client.stop()
+  }, 30_000)
+
+  it('a shared note\'s chats follow its roles: a reader reads, may not write, react or bring others in', async () => {
+    const a = await app('Альфа-роли')
+    const b = await app('Бета-роли')
+    const c = await app('Гамма-роли')
+    const { space } = await a.client.request('space.share', { title: 'Роли', update: b64(Y.encodeStateAsUpdate(a.y)) })
+    await b.client.request('space.join', { code: (await a.client.request('space.invite', { space: space.id, role: 'reader' })).code })
+    await c.client.request('space.join', { code: (await a.client.request('space.invite', { space: space.id, role: 'commenter' })).code })
+    const room = (await a.client.request('space.chat', { space: space.id, title: 'Обсуждение' })).id
+    const m = await a.client.request('chat.send', { room, text: 'Привет', clientId: 'r1' })
+    // a reader: the history — yes; writing, reacting, «печатает…» — no
+    expect((await b.client.request('chat.history', { room })).map((x) => x.text)).toEqual(['Привет'])
+    await expect(b.client.request('chat.send', { room, text: 'Можно?', clientId: 'r2' })).rejects.toMatchObject({ code: 'denied' })
+    await expect(b.client.request('chat.react', { room, seq: m.seq, emoji: '👍', on: true })).rejects.toMatchObject({ code: 'denied' })
+    await expect(b.client.request('chat.typing', { room })).rejects.toMatchObject({ code: 'denied' })
+    // a commenter writes
+    expect((await c.client.request('chat.send', { room, text: 'Да', clientId: 'r3' })).text).toBe('Да')
+    // a shared note's chat has the note's people only
+    const outsider = await app('Дельта-роли')
+    await expect(a.client.request('chat.add', { room, device: outsider.id(), as: 'branch' })).rejects.toMatchObject({ code: 'denied' })
+    for (const x of [a, b, c, outsider]) x.client.stop()
+  }, 30_000)
+
+  it('a chat made by the app\'s own id (made offline): made again — the same one; someone else\'s id — refused', async () => {
+    const a = await app('Альфа-офлайн')
+    const b = await app('Бета-офлайн')
+    const id = '6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5'
+    const first = await a.client.request('chat.create', { id, title: 'Без сервера' })
+    expect(first).toMatchObject({ id, title: 'Без сервера' })
+    // the app sends it again (it did not hear the answer) — the same chat, not a second one
+    expect((await a.client.request('chat.create', { id, title: 'Без сервера' })).id).toBe(id)
+    expect((await a.client.request('chat.rooms', {})).filter((r) => r.id === id)).toHaveLength(1)
+    await expect(b.client.request('chat.create', { id, title: 'Чужой' })).rejects.toMatchObject({ code: 'denied' })
+    a.client.stop()
+    b.client.stop()
+  }, 30_000)
+
   it('a chat\'s files: sent by a member, fetched by another (kept after), a message carries only its room\'s file; others refused', async () => {
     const a = await app('Альфа-файлы')
     const b = await app('Бета-файлы')
@@ -258,34 +331,49 @@ describe('a shared document', () => {
     c.client.stop()
   }, 30_000)
 
-  it('run results: one sends, the others are told and fetch; a late older run does not replace; a reader may not send', async () => {
+  it('run results: ordered by the server — revisions, its time; a send over an old revision refused with the newer one; a reader may not send', async () => {
     const a = await app('Альфа-результаты')
     const b = await app('Бета-результаты')
+    const c = await app('Гамма-результаты')
     a.text.insert(0, '```sql\nselect 1\n```')
     const { space, doc } = await shareNote(a, 'Запросы')
-    const { code } = await a.client.request('space.invite', { space: space.id, role: 'reader' })
-    await b.client.request('space.join', { code })
+    await b.client.request('space.join', { code: (await a.client.request('space.invite', { space: space.id, role: 'reader' })).code })
+    await c.client.request('space.join', { code: (await a.client.request('space.invite', { space: space.id, role: 'editor' })).code })
     const url = `http://127.0.0.1:${server.port}/results/${space.id}/${doc}`
-    const ta = (await a.client.request('media.ticket', { space: space.id })).ticket
-    const tb = (await b.client.request('media.ticket', { space: space.id })).ticket
-    const put = (t: string, entries: Record<string, unknown>) => fetch(url, { method: 'PUT', body: JSON.stringify({ entries }), headers: { 'x-qa-ticket': t } })
+    const pass = async (x: typeof a) => (await x.client.request('media.ticket', { space: space.id })).ticket
+    const [ta, tb, tc] = [await pass(a), await pass(b), await pass(c)]
+    const put = async (t: string, changes: Record<string, { value: unknown; base: number }>) => {
+      const r = await fetch(url, { method: 'PUT', body: JSON.stringify({ changes }), headers: { 'x-qa-ticket': t } })
+      return { status: r.status, reply: r.status === 200 ? ((await r.json()) as { accepted: Record<string, number>; current: Record<string, { value: { rows?: number } | null; seq: number }> }) : undefined }
+    }
+    const get = async (t: string, since = 0) => (await (await fetch(`${url}?since=${since}`, { headers: { 'x-qa-ticket': t } })).json()) as { seq: number; entries: Record<string, { value: { rows?: number; at: number } | null; by: string; at: number; seq: number }> }
 
-    expect((await put(ta, { 'run:q': { state: 'ok', at: 200, table: { rows: [[1]] } }, 'ctx:n': { value: 1, at: 200 } })).status).toBe(204)
+    // the first one: taken at the server's time (whatever the device's clock said)
+    const before = Date.now()
+    const first = await put(ta, { 'run:q': { value: { rows: 1, at: 9_999_999_999_999 }, base: 0 }, 'ctx:n': { value: { value: 1 }, base: 0 } })
+    expect(Object.keys(first.reply!.accepted).sort()).toEqual(['ctx:n', 'run:q'])
     await until(() => b.events.some((e) => e.e === 'doc.results' && e.p.doc === doc))
-    const page = (await (await fetch(`${url}?since=0`, { headers: { 'x-qa-ticket': tb } })).json()) as { seq: number; entries: Record<string, { value: { at: number }; by: string }> }
-    expect(page.entries['run:q']).toMatchObject({ by: 'Альфа-результаты', value: { at: 200 } })
+    const page = await get(tb)
+    expect(page.entries['run:q']).toMatchObject({ by: 'Альфа-результаты', value: { rows: 1 } })
+    expect(page.entries['run:q'].at).toBeGreaterThanOrEqual(before - 5_000)
+    expect(page.entries['run:q'].at).toBeLessThan(before + 60_000)
+    const rev = page.entries['run:q'].seq
 
-    // an older run sent late — the kept one stays; a newer one replaces; null takes it away
-    await put(ta, { 'run:q': { state: 'ok', at: 100 } })
-    await put(ta, { 'ctx:n': null })
-    const next = (await (await fetch(`${url}?since=${page.seq}`, { headers: { 'x-qa-ticket': tb } })).json()) as { entries: Record<string, { value: unknown }> }
-    expect(Object.keys(next.entries)).toEqual(['ctx:n'])
+    // Гамма runs it over that revision — taken; Альфа's run made offline over the old one — refused, Гамма's answered
+    expect(Object.keys((await put(tc, { 'run:q': { value: { rows: 2, at: 1 }, base: rev } })).reply!.accepted)).toEqual(['run:q'])
+    const late = await put(ta, { 'run:q': { value: { rows: 3, at: 2 }, base: rev } })
+    expect(late.reply!.accepted).toEqual({})
+    expect(late.reply!.current['run:q'].value).toMatchObject({ rows: 2 })
+    // taken away over the newest — gone for everyone
+    await put(ta, { 'ctx:n': { value: null, base: page.entries['ctx:n'].seq } })
+    const next = await get(tb, page.seq)
+    expect(Object.keys(next.entries).sort()).toEqual(['ctx:n', 'run:q'])
     expect(next.entries['ctx:n'].value).toBeNull()
+    expect(next.entries['run:q'].value).toMatchObject({ rows: 2 })
 
-    expect((await put(tb, { 'run:q': { state: 'ok', at: 999 } })).status).toBe(403)
+    expect((await put(tb, { 'run:q': { value: { rows: 9, at: 1 }, base: 999 } })).status).toBe(403)
     expect((await fetch(url, { headers: { 'x-qa-ticket': 'no-pass' } })).status).toBe(403)
-    a.client.stop()
-    b.client.stop()
+    for (const x of [a, b, c]) x.client.stop()
   }, 30_000)
 
   it('a picture through the app\'s own code: sent by the author, the others told, fetched by them; a stale pass — asked anew', async () => {
@@ -311,11 +399,10 @@ describe('a shared document', () => {
     }
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9, 9])
     const hers: Record<string, Uint8Array> = {}
-    // before the author sent it: nothing to fetch yet — and said why
+    // before the author sent it: nothing to fetch yet — absent (its coming is an event), not a failure to retry
     const early = await media(b, hers).sync(space.id, [rel])
-    expect(early.fetched).toEqual([])
-    expect(early.problems[rel]).toMatch(/ещё нет на сервере/)
-    expect((await media(a, { [rel]: png }, true).sync(space.id, [rel])).problems).toEqual({})
+    expect(early).toEqual({ fetched: [], absent: [rel], failed: {} })
+    expect((await media(a, { [rel]: png }, true).sync(space.id, [rel])).failed).toEqual({})
     await until(() => b.events.some((e) => e.e === 'media.added' && e.p.rels.includes(rel)))
     expect((await media(b, hers, true).sync(space.id, [rel])).fetched).toEqual([rel])
     expect(hers[rel]).toEqual(png)

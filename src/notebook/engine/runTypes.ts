@@ -83,12 +83,26 @@ export interface LoopRun {
   trimmed?: number
 }
 /** Everything run in a note: its context, its blocks' and loops' runs, «Выполнить всё» going on. */
+/** A shared note's result against the server's copy (the server's revisions — never a computer's clock). */
+export interface SyncMark {
+  /** The server's revision this entry is of — or (own, not sent yet) the one it was made over. */
+  rev: number
+  /** The local entry it stands for (its run's `at` — which run, not when). */
+  at: number
+  own: boolean
+  /** Own, not taken by the server yet (made offline, or failed to send). */
+  pending: boolean
+  /** Own, taken away here (to be taken away there). */
+  gone?: boolean
+}
 export interface NoteRun {
   ctx: Record<string, CtxItem>
   runs: Record<string, BlockRun>
   /** The loops' runs (the latest of a loop inside a loop). */
   loops: Record<string, LoopRun>
   loaded: boolean
+  /** A shared note's: each result's place against the server's copy (resultSync — kept with the runs). */
+  sync?: Record<string, SyncMark>
   /** «Выполнить всё» going on: the block being run. */
   all?: { at: string; done: number; total: number; error?: string }
 }

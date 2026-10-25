@@ -5,9 +5,10 @@ import type { ChatSendKey } from '@shared/transport/constants'
 import Icon from '@renderer/components/Icon.vue'
 import { cleanChatText, groupMessages, mergeRooms } from '@shared/transport/chat'
 import { remoteError } from '@shared/remoteError'
-import { sendFile } from '@renderer/lib/chatFiles'
+import { sendFile, sendNotes } from '@renderer/lib/chatFiles'
+import ChatAttachMenu from './ChatAttachMenu.vue'
 import { useChatDrafts } from './useChatDrafts'
-import { chatMe, chatOnline, chatPrefs, discardMessage, isComplete, loadOlder, messagesOf, pendingOf, retryMessage, roomOf, sendMessage, showRoom, typingIn } from '@renderer/lib/chat'
+import { chatMe, chatOnline, chatPrefs, discardMessage, isComplete, loadOlder, messagesOf, pendingOf, retryMessage, roomOf, sendMessage, showRoom, tellTyping, typingIn } from '@renderer/lib/chat'
 import ChatMessageItem from './ChatMessageItem.vue'
 import { useMentionInput } from './useMentionInput'
 
@@ -87,12 +88,6 @@ function onKey(e: KeyboardEvent): void {
 }
 // ---------- files going with the message ----------
 const { drafts, refused, add: addDrafts, remove: removeDraft, onPaste, onDragOver, onDrop } = useChatDrafts()
-const pickFiles = ref<HTMLInputElement>()
-function onPicked(e: Event): void {
-  const el = e.target as HTMLInputElement
-  if (el.files) addDrafts(el.files)
-  el.value = ''
-}
 const sending = ref(false)
 const sendError = ref('')
 /** The files go one by one (each a message, the words with the first); one failed — it and the rest stay to retry. */
@@ -107,6 +102,21 @@ async function sendDrafts(): Promise<void> {
       text.value = ''
       removeDraft(d)
     }
+  } catch (e) {
+    sendError.value = remoteError(e)
+  } finally {
+    sending.value = false
+  }
+}
+/** A note / a folder of the notebook sent at once (one file; the words typed go with it). */
+async function sendNotesNow(rel: string, withRuns: boolean): Promise<void> {
+  const words = cleanChatText(text.value) ?? ''
+  sending.value = true
+  sendError.value = ''
+  try {
+    await sendNotes(props.room, rel, withRuns, words)
+    text.value = ''
+    void nextTick(toBottom)
   } catch (e) {
     sendError.value = remoteError(e)
   } finally {
@@ -130,18 +140,20 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
         <div v-if="newDay(i)" class="tw:my-8 tw:text-center tw:text-dim tw:text-[11.5px]">{{ day(m.at) }}</div>
         <ChatMessageItem :m="m" :me="me" :members="members" :readonly="readonly" :first="groups[i].first || newDay(i)" :last="groups[i].last || (i + 1 < messages.length && newDay(i + 1))" :branch="branchOf(m)" />
       </template>
-      <div v-for="o in pending" :key="o.clientId" class="tw:flex tw:justify-end tw:my-4">
-        <div class="tw:max-w-[75%] tw:py-6 tw:px-10 tw:rounded-r2 tw:bg-accent/10 tw:opacity-70">
+      <!-- on their way: one's own bubbles, their state beside them (waiting for the server, going, failed) -->
+      <div v-for="o in pending" :key="o.clientId" class="tw:flex tw:flex-row-reverse tw:items-end tw:gap-6 tw:mt-2">
+        <div class="tw:min-w-0 tw:max-w-[78%] tw:py-5 tw:px-10 tw:rounded-[12px] tw:bg-accent/20" :class="o.failed ? 'tw:[box-shadow:inset_0_0_0_1px_var(--down)]' : 'tw:opacity-70'">
           <div class="tw:text-text tw:text-[13px] tw:leading-[1.45] tw:whitespace-pre-wrap tw:wrap-anywhere">{{ o.text }}</div>
-          <div class="tw:flex tw:items-center tw:justify-end tw:gap-8 tw:mt-2 tw:text-[10.5px]">
-            <template v-if="o.failed">
-              <span class="tw:text-down-fg">{{ o.failed }}</span>
-              <button class="tw:h-20 tw:px-6 tw:text-[11px]" @click="retryMessage(o)">Повторить</button>
-              <button class="tw:h-20 tw:px-6 tw:text-[11px]" @click="discardMessage(o)">Убрать</button>
-            </template>
-            <span v-else class="tw:text-dim">отправляется…</span>
-          </div>
         </div>
+        <span class="tw:flex tw:flex-none tw:items-center tw:gap-2 tw:pb-1 tw:text-[10.5px]">
+          <template v-if="o.failed">
+            <span class="tw:max-w-160 tw:truncate tw:text-down-fg" :title="o.failed">{{ o.failed }}</span>
+            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text" title="Повторить" @click="retryMessage(o)"><Icon name="refresh" :size="12" /></button>
+            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text" title="Убрать" @click="discardMessage(o)"><Icon name="x" :size="12" /></button>
+          </template>
+          <span v-else-if="!chatOnline" class="tw:inline-flex tw:items-center tw:gap-3 tw:text-dim" title="Отправится, когда будет связь с сервером"><Icon name="clock" :size="11" />ждёт связи</span>
+          <span v-else class="tw:text-dim">отправляется…</span>
+        </span>
       </div>
     </div>
     <div class="tw:h-18 tw:px-4 tw:text-muted tw:text-[11.5px] tw:truncate">{{ typing ? `${typing} печатает…` : '' }}</div>
@@ -150,7 +162,7 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
       <button
         v-for="(d, k) in mention.options.value"
         :key="d.id"
-        class="tw:inline-flex tw:items-center tw:h-24 tw:px-8 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-[12px] tw:[&.on]:border-accent tw:[&.on]:bg-accent/15"
+        class="tw:inline-flex tw:items-center tw:h-24 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-[12px] tw:[&.on]:border-accent tw:[&.on]:bg-accent/15"
         :class="{ on: k === mention.pick.value }"
         @mousedown.prevent
         @click="mention.choose(d)"
@@ -168,8 +180,7 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
     </div>
     <span v-if="sendError || refused" class="tw:mb-4 tw:text-down-fg tw:text-[12px]">{{ sendError || refused }}</span>
     <div v-if="!readonly" class="tw:flex tw:items-end tw:gap-8">
-      <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:w-36 tw:h-36 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text" title="Приложить файлы или изображения (можно вставить Ctrl+V или перетащить сюда)" :disabled="sending" @click="pickFiles?.click()"><Icon name="paperclip" :size="16" /></button>
-      <input ref="pickFiles" type="file" multiple hidden @change="onPicked" />
+      <ChatAttachMenu :disabled="sending" @files="addDrafts" @notes="sendNotesNow" />
       <textarea
         ref="input"
         v-model="text"
@@ -178,7 +189,7 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
         :placeholder="placeholder"
         @keydown.stop="onKey"
         @paste="onPaste"
-        @input="mention.track"
+        @input="(mention.track(), text.trim() && tellTyping(room))"
         @click="mention.track"
         @keyup="mention.track"
       ></textarea>

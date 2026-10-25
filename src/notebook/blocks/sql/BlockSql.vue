@@ -100,14 +100,8 @@ async function go(sqlMode: 'run' | 'plan' | 'analyze' = 'run'): Promise<void> {
   fence.flush()
   await start({ sqlMode })
 }
+/** The connections' panel — opened by its button only (a block someone else put in a shared note never opens it here). */
 const conns = ref(false)
-watch(
-  () => [dbConns.value.length, parts.value.info.db] as const,
-  ([n, db]) => {
-    // nothing to go by yet: the connections at hand
-    if (n === 0 || (db && !conn.value)) conns.value = true
-  },
-)
 
 // ---------- the rows ----------
 // (folded or open — as it was left, back from another tab too)
@@ -150,8 +144,8 @@ const planItems = computed<MenuItem[]>(() => [
     <RunHead :report="report" send="sql" icon="database" kind="SQL" :name="parts.info.name" :run="run" name-placeholder="строки" @rename="rename" @run="go()" @stop="stop" />
     <div class="bs-bar tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap tw:flex-wrap">
       <select class="db tw:h-26 tw:min-w-0 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:max-w-360" :value="parts.info.db ?? ''" :title="conn ? `${kindTitle(conn.kind)} · ${connWhere(conn)}` : 'Через какое подключение'" @change="setDb(($event.target as HTMLSelectElement).value)">
-        <option value="" disabled>подключение…</option>
-        <option v-if="parts.info.db && !conn" :value="parts.info.db">{{ parts.info.db }} — нет такого</option>
+        <option value="" disabled>{{ dbConns.length ? 'подключение…' : 'нет подключений — ⚙ справа' }}</option>
+        <option v-if="parts.info.db && !conn" :value="parts.info.db">{{ parts.info.db }} — нет здесь (⚙ — добавить)</option>
         <option v-for="c in dbConns" :key="c.id" :value="c.name">{{ c.name }} · {{ kindTitle(c.kind) }} · {{ connWhere(c) }}{{ c.prod ? ' · прод' : '' }}</option>
       </select>
       <button class="ib tw:inline-grid tw:flex-none tw:place-items-center tw:w-26 tw:h-26 tw:p-0 tw:border tw:border-transparent tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:hover:not-[&.on]:border-border-2 tw:[&.on]:border-border-2 tw:hover:not-[&.on]:bg-hover tw:[&.on]:bg-hover tw:hover:not-[&.on]:text-text tw:[&.on]:text-text tw:[&.on]:overflow-hidden tw:[&.on]:text-ellipsis" :class="{ on: conns }" title="Подключения: добавить, изменить, проверить" @mousedown.prevent @click="conns = !conns"><Icon name="settings" :size="14" /></button>

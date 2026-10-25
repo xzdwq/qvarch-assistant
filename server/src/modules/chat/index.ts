@@ -1,10 +1,10 @@
-import { CHAT_PAGE, CHAT_TITLE, cleanChatText, isAttach, isReaction, TITLE_MAX, type ChatAttach, type ChatMessage, type CommentAnchor } from '../../../../src/shared/transport/chat'
+import { CHAT_PAGE, CHAT_TITLE, cleanChatText, isAttach, isReaction, TITLE_MAX, type ChatAttach, type ChatMessage } from '../../../../src/shared/transport/chat'
 import type { DeviceInfo } from '../../../../src/shared/transport/protocol'
 import { int, RpcFail, text, uuid, type ModuleFactory, type ServerContext, type Session } from '../../module'
 import { ticketOf } from '../../tickets'
 import { ChatFiles, CHAT_FILES_MIGRATION } from './chatFiles'
 import { ChatPeople } from './chatPeople'
-import { CHAT_BRANCHES_MIGRATION, CHAT_MIGRATIONS, CHAT_REACTIONS_MIGRATION, ChatStore } from './chatStore'
+import { CHAT_BRANCHES_MIGRATION, CHAT_MIGRATIONS, CHAT_REACTIONS_MIGRATION, ChatStore, type RoomPlace } from './chatStore'
 
 const CLIENT_ID_MAX = 64
 
@@ -26,8 +26,8 @@ export class Chat {
     return message
   }
   /** A room opened (of a shared space — when given; a comment — its place): every member online gets it at once. */
-  async open(title: string, createdBy: string, members: readonly string[], space?: string, comment?: { doc: string; anchor: CommentAnchor }): Promise<string> {
-    const id = await this.store.createRoom(title, createdBy, members, space, comment)
+  async open(title: string, createdBy: string, members: readonly string[], place: RoomPlace = {}): Promise<string> {
+    const id = await this.store.createRoom(title, createdBy, members, place)
     await this.told(id)
     return id
   }
@@ -54,6 +54,13 @@ export const chatModule: ModuleFactory = (ctx) => {
     if (!(await chat.store.isMember(room, s.device.id))) throw new RpcFail('denied', 'Нет доступа к этому чату')
     return room
   }
+  /** The room of a request — a member's who may write there (a shared space's: by the role in it). */
+  async function writableRoom(p: Record<string, unknown>, s: Session): Promise<string> {
+    const room = await memberRoom(p, s)
+    const { space } = await chat.store.placeOf(room)
+    if (space && !(await ctx.spaceRules.mayChat(space, s.device.id))) throw new RpcFail('denied', 'Ваша роль в этой заметке — только чтение')
+    return room
+  }
   return {
     name: 'chat',
     migrations: [
@@ -74,7 +81,7 @@ export const chatModule: ModuleFactory = (ctx) => {
         return chat.store.history(room, before, Math.min(Math.max(int(p, 'limit', CHAT_PAGE), 1), CHAT_PAGE * 4))
       },
       'chat.send': async (p, s) => {
-        const room = await memberRoom(p, s)
+        const room = await writableRoom(p, s)
         const attach = p.attach === undefined ? undefined : isAttach(p.attach) ? p.attach : null
         if (attach === null) throw new RpcFail('bad', 'Вложение не подходит (или больше 180 КБ)')
         if (attach && !(await files.attachFits(room, attach))) throw new RpcFail('bad', 'Файл не найден в этом чате — отправьте его заново')
@@ -87,13 +94,21 @@ export const chatModule: ModuleFactory = (ctx) => {
         return chat.post(room, s.device, body, clientId, mentions, attach)
       },
       'chat.create': async (p, s) => {
+        // made by the app's own id (offline at first): made again — the same chat, its maker's only
+        const own = p.id === undefined ? undefined : uuid(p, 'id')
+        if (own && (await people.makerOf(own)) !== undefined) {
+          const had = await chat.store.room(own, s.device.id)
+          if (!had) throw new RpcFail('denied', 'Нет доступа к этому чату')
+          return had
+        }
         const title = typeof p.title === 'string' && p.title.trim() ? p.title.trim().slice(0, TITLE_MAX) : CHAT_TITLE
-        const id = await chat.open(title, s.device.id, [s.device.id])
+        const id = await chat.open(title, s.device.id, [s.device.id], { id: own })
         return (await chat.store.room(id, s.device.id))!
       },
       'chat.rename': async (p, s) => {
         const room = await memberRoom(p, s)
         if ((await people.makerOf(room)) !== s.device.id) throw new RpcFail('denied', 'Переименовать чат может только тот, кто его создал')
+        await writableRoom(p, s)
         const title = text(p, 'title').trim().slice(0, TITLE_MAX)
         if (!title) throw new RpcFail('bad', 'Нужно название')
         await people.rename(room, title)
@@ -107,6 +122,7 @@ export const chatModule: ModuleFactory = (ctx) => {
       },
       'chat.add': async (p, s) => {
         const room = await memberRoom(p, s)
+        if ((await chat.store.placeOf(room)).space) throw new RpcFail('denied', 'Это чат общей заметки: в нём её участники')
         const other = text(p, 'device')
         if (other === s.device.id || !(await people.peopleOf(s.device.id)).some((d) => d.id === other)) throw new RpcFail('denied', 'Этого человека нельзя добавить')
         const main = await people.mainOf(s.device.id, other)
@@ -121,12 +137,16 @@ export const chatModule: ModuleFactory = (ctx) => {
         return (await chat.store.room(room, s.device.id))!
       },
       'chat.react': async (p, s) => {
-        const room = await memberRoom(p, s)
+        const room = await writableRoom(p, s)
         if (!isReaction(p.emoji)) throw new RpcFail('bad', 'Такой реакции нет')
         const m = await chat.store.react(room, int(p, 'seq'), s.device.id, p.emoji, p.on === true)
         if (!m) throw new RpcFail('missing', 'Сообщение не найдено')
         ctx.delivery.send(await chat.store.members(room), { e: 'chat.edited', p: m })
         return m
+      },
+      'chat.typing': async (p, s) => {
+        await chat.typing(await writableRoom(p, s), s.device)
+        return null
       },
       'chat.fileTicket': async (p, s) => ({ ticket: ticketOf(await memberRoom(p, s), s.device.id) }),
       'chat.read': async (p, s) => {

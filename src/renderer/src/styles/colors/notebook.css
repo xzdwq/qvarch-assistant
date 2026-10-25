@@ -16,6 +16,17 @@
   --syntax-variable: #e6e9f2;
   --syntax-special: #f07178;
 
+  /* the other participants of a shared note: their carets, names, selections (one colour each, by their device) */
+  --peer-1: #f472b6;
+  --peer-2: #38bdf8;
+  --peer-3: #a3e635;
+  --peer-4: #fb923c;
+  --peer-5: #c084fc;
+  --peer-6: #2dd4bf;
+  --peer-7: #facc15;
+  --peer-8: #f87171;
+  --peer-label-text: #0b0d12;
+
   /* the editor's own parts */
   --editor-placeholder: #5b6275;
   --editor-search-match: rgba(250, 204, 21, 0.22);

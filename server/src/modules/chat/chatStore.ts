@@ -48,6 +48,13 @@ export const CHAT_REACTIONS_MIGRATION = `create table chat_reactions (
 export const CHAT_BRANCHES_MIGRATION = `alter table chat_rooms add column parent uuid references chat_rooms (id) on delete set null;
    alter table chat_messages add column attach jsonb;`
 
+/** Where a new room belongs: a shared space, a comment's place; its id — the app's own (made offline), else a new one. */
+export interface RoomPlace {
+  space?: string
+  comment?: { doc: string; anchor: CommentAnchor }
+  id?: string
+}
+
 /** A message's columns with its author (the name as it is now), its mentions, its reactions (emoji → who). */
 const MESSAGE_COLS = `m.room, m.seq, m.id, m.text, m.client_id, m.mentions, m.attach, (extract(epoch from m.at) * 1000)::bigint as at, d.id as author_id, d.name as author_name, d.bot as author_bot,
     (select json_object_agg(g.emoji, g.people) from (select x.emoji, json_agg(json_build_object('id', p.id, 'name', p.name) order by x.at) as people
@@ -129,6 +136,11 @@ export class ChatStore {
     return (await this.db.rows<RoomRow>(ROOM_SELECT, [dev])).map(roomOf)
   }
   /** One room as a member sees it. */
+  /** Where a room belongs: a shared space (a comment — its document too); none — a chat of its own people. */
+  async placeOf(room: string): Promise<{ space?: string; doc?: string }> {
+    const r = await this.db.one<{ space: string | null; doc: string | null }>('select space, doc from chat_rooms where id = $1', [room])
+    return { ...(r?.space ? { space: r.space } : {}), ...(r?.doc ? { doc: r.doc } : {}) }
+  }
   async room(room: string, dev: string): Promise<ChatRoom | undefined> {
     const r = await this.db.one<RoomRow>(`${ROOM_SELECT} where r.id = $2`, [dev, room])
     return r && roomOf(r)
@@ -143,8 +155,7 @@ export class ChatStore {
     return rows.reverse().map(messageOf)
   }
   /** A room made with its members (of a shared space — when given; a comment — its document and place). */
-  async createRoom(title: string, createdBy: string, members: readonly string[], space?: string, comment?: { doc: string; anchor: CommentAnchor }): Promise<string> {
-    const id = randomUUID()
+  async createRoom(title: string, createdBy: string, members: readonly string[], { space, comment, id = randomUUID() }: RoomPlace = {}): Promise<string> {
     await this.db.tx(async (sql) => {
       await sql.rows('insert into chat_rooms (id, title, created_by, space, doc, anchor) values ($1, $2, $3, $4, $5, $6)', [id, title, createdBy, space ?? null, comment?.doc ?? null, comment ? JSON.stringify(comment.anchor) : null])
       await sql.rows('insert into chat_members (room, device) select $1, unnest($2::text[]) on conflict do nothing', [id, [...new Set(members)]])

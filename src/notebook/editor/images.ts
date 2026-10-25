@@ -1,7 +1,8 @@
 import { EditorView, WidgetType } from '@codemirror/view'
 import { imageEmbed } from '@shared/vault'
 import { draggedImageUrl, hasImages, takeImages } from '@renderer/lib/notebook'
-import { followImage } from '@nb/workspace/noteMedia'
+import { followImage } from '@nb/workspace/mediaFollow'
+import { mediaWaitText } from '@shared/transport/space'
 import { editorHost } from './editorHost'
 import { ICON_EXPAND, ICON_TRASH, widgetButton } from './icons'
 
@@ -83,8 +84,8 @@ export class ImageWidget extends WidgetType {
         missing.remove()
         inner.hidden = false
       },
-      missing: (why) => {
-        missing.textContent = why ? `Изображение не найдено — ${why}` : 'Изображение не найдено'
+      missing: (wait) => {
+        missing.textContent = wait ? `Изображение ${mediaWaitText(wait)}` : 'Изображение не найдено'
         box.classList.add('missing')
         box.title = this.rel
         inner.hidden = true

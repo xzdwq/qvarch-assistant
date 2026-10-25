@@ -74,10 +74,42 @@ export const SPACE_LINK_FILE = '.qa-space'
 
 /** A note's or a recording's media file as notes embed it (`.images/…`, `.audio/…`). */
 export const MEDIA_REL = /^\.(images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp)|audio\/[\w.-]+\.webm)$/i
-/** What a sync of a space's files did: the files fetched to this computer, and why others are not here (by file). */
+/**
+ * What a sync of a space's files did: the files fetched to this computer; the ones the server has not yet (the one
+ * who added them has not sent them — they come when the server is told: an event); the ones that failed (why — tried
+ * again later).
+ */
 export interface MediaReport {
   fetched: string[]
-  problems: Record<string, string>
+  absent: string[]
+  failed: Record<string, string>
+}
+export const NO_MEDIA: MediaReport = { fetched: [], absent: [], failed: {} }
+
+/**
+ * Where a shared note's file stands while it is not on this computer: on its way (asked from the server), waiting
+ * for the connection, waiting for the one who added it (the server has it not yet), failed (tried again later).
+ */
+export const MEDIA_WAITS = ['loading', 'offline', 'absent', 'failed'] as const
+export type MediaWait = { state: Exclude<(typeof MEDIA_WAITS)[number], 'failed'> } | { state: 'failed'; why: string }
+/** Each file asked by a sync: where it stands after it (here — null). */
+export function mediaWaitsOf(r: MediaReport, asked: readonly string[]): Record<string, MediaWait | null> {
+  const out: Record<string, MediaWait | null> = {}
+  for (const rel of asked) out[rel] = r.failed[rel] ? { state: 'failed', why: r.failed[rel] } : r.absent.includes(rel) ? { state: 'absent' } : null
+  return out
+}
+/** Each wait in words, for the person. */
+const WAIT_TEXT: { [K in MediaWait['state']]: (w: Extract<MediaWait, { state: K }>) => string } = {
+  loading: () => 'загружается…',
+  offline: () => 'загрузится, когда будет связь с сервером',
+  absent: () => 'ждёт отправки — появится, когда добавивший будет в сети',
+  failed: (w) => `не загрузилось: ${w.why} — попробуем ещё раз`,
+}
+export const mediaWaitText = (w: MediaWait): string => (WAIT_TEXT[w.state] as (w: MediaWait) => string)(w)
+/** Why a file of a sync is not here, for the person (none — it is). */
+export function mediaWhy(r: MediaReport, rel: string): string | undefined {
+  const w = mediaWaitsOf(r, [rel])[rel]
+  return w ? mediaWaitText(w) : undefined
 }
 /** A test file of a set (`.files/<набор>/<файл>`): no part starts with a dot (no `..`, no hidden files). */
 export const TEST_FILE_REL = /^\.files\/[^/\\.][^/\\]{0,119}\/[^/\\.][^/\\]{0,199}$/

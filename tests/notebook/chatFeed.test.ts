@@ -68,4 +68,10 @@ describe('a block\'s result in a chat', () => {
     expect(attachOf('pw', { src, run: { state: 'error', at: 1, error: 'упал' } }, 'Playwright')!.data).toEqual({ source: src })
     expect(attachOf('pw', { src: '  ' }, 'Playwright')).toBeUndefined()
   })
+  it('code goes with its code — and its value once it was run', () => {
+    const src = '```ts run name=total\nreturn 1 + 2\n```'
+    expect(sendsUnrun('code')).toBe(true)
+    expect(attachOf('code', { src }, 'Код')!.data).toEqual({ source: src, hasValue: false })
+    expect(attachOf('code', { src, run: { state: 'ok', at: 1, value: 3, hasValue: true } }, 'Код')!.data).toEqual({ source: src, hasValue: true, value: 3 })
+  })
 })

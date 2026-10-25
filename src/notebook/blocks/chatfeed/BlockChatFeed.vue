@@ -13,6 +13,7 @@ import { openNote } from '@renderer/lib/mentions'
 import ChatHeader from '../chat/ChatHeader.vue'
 import ChatThread from '../chat/ChatThread.vue'
 import RowsGrip from '../chat/RowsGrip.vue'
+import { mayWriteIn } from '../chat/roomRights'
 import { FEED_ROWS, ROW_PX, rowsOf, withRows } from '../chat/model'
 import { openComment } from '@nb/workspace/noteComments'
 import { pathOfShared } from '@nb/workspace/sharedAttachments'
@@ -105,9 +106,9 @@ async function toNote(r: ChatRoom): Promise<void> {
           <ChatHeader :room="picked" @switched="(id) => (feedRoom = id)" />
           <div v-if="isComment(picked)" class="tw:flex tw:items-center tw:gap-8 tw:text-[12px]">
             <span class="tw:flex-1 tw:min-w-0 tw:truncate tw:italic tw:text-text-2">«{{ picked.anchor?.quote }}»<template v-if="picked.resolved"> · решено</template></span>
-            <button class="tw:h-26 tw:px-8" @click="toNote(picked)">В заметке</button>
+            <button class="tw:h-26 tw:py-0 tw:px-8" @click="toNote(picked)">В заметке</button>
           </div>
-          <ChatThread :room="picked.id" :also="also" />
+          <ChatThread :room="picked.id" :also="also" :readonly="!mayWriteIn(picked)" />
         </template>
         <p v-else class="tw:m-auto tw:text-muted tw:text-[13px]">Выберите чат слева</p>
       </section>

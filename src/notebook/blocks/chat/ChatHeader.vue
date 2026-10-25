@@ -12,7 +12,7 @@ import type { DeviceInfo } from '@shared/transport/protocol'
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
-import { chatMe, chatPrefs, roomOf } from '@renderer/lib/chat'
+import { chatMe, chatOnline, chatPrefs, isHeld, roomOf } from '@renderer/lib/chat'
 import { addPerson, chatPeople, mainWith, renameChat, setChatNotify } from '@renderer/lib/chatActions'
 
 const props = defineProps<{ room: ChatRoom }>()
@@ -20,6 +20,9 @@ const emit = defineEmits<{ switched: [room: string] }>()
 const mineToName = computed(() => props.room.createdBy === chatMe.value)
 /** A chat of people (not a shared note's, not a comment): people may be added to it. */
 const addable = computed(() => !props.room.space && !props.room.doc)
+/** Renaming, adding people — the server's: the chat on it and it connected. */
+const live = computed(() => chatOnline.value && !isHeld(props.room.id))
+const offlineWhy = 'Нужен сервер: чат появится на нём при подключении'
 const error = ref('')
 const fail = (e: unknown) => (error.value = remoteError(e))
 
@@ -82,7 +85,7 @@ const parentTitle = computed(() => (props.room.parent ? roomOf(props.room.parent
     <input v-if="naming" ref="nameInput" v-model="title" class="tw:h-26 tw:min-w-0 tw:flex-1 tw:text-[13px]" :maxlength="TITLE_MAX" @keydown.enter.prevent="rename" @blur="rename" />
     <template v-else>
       <b class="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-text-hi">{{ room.title }}</b>
-      <button v-if="mineToName" class="tw:inline-flex tw:flex-none tw:w-22 tw:h-22 tw:p-0 tw:items-center tw:justify-center tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text" title="Переименовать" @click="startNaming"><Icon name="pencil" :size="12" /></button>
+      <button v-if="mineToName" class="tw:inline-flex tw:flex-none tw:w-22 tw:h-22 tw:p-0 tw:items-center tw:justify-center tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:text-text" :disabled="!live" :title="live ? 'Переименовать' : offlineWhy" @click="startNaming"><Icon name="pencil" :size="12" /></button>
     </template>
     <span v-if="parentTitle" class="tw:flex-none tw:px-5 tw:rounded-[4px] tw:bg-white/8 tw:text-muted tw:text-[11px]" :title="`Ветка разговора «${parentTitle}»`">↳ {{ parentTitle }}</span>
     <span class="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-muted">{{ room.members.map((m) => m.name).join(', ') }}</span>
@@ -91,17 +94,17 @@ const parentTitle = computed(() => (props.room.parent ? roomOf(props.room.parent
       <Icon :name="notifies ? 'bell' : 'bellOff'" :size="13" />
     </button>
     <span v-if="addable" ref="addBtn" class="tw:inline-flex tw:flex-none">
-      <button class="tw:inline-flex tw:items-center tw:gap-4 tw:h-26 tw:px-8" title="Добавить человека в чат" @click="openAdding"><Icon name="userPlus" :size="13" />Добавить</button>
+      <button class="tw:inline-flex tw:items-center tw:gap-4 tw:h-26 tw:py-0 tw:px-8" :disabled="!live" :title="live ? 'Добавить человека в чат' : offlineWhy" @click="openAdding"><Icon name="userPlus" :size="13" />Добавить</button>
     </span>
     <Popover v-model:open="adding" :anchor="addBtn" :width="300" class="tw:fixed tw:z-5000 tw:flex tw:flex-col tw:gap-6 tw:p-10 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:text-[12.5px] tw:whitespace-normal">
       <template v-if="asking">
         <span>С {{ asking.who.name }} уже есть разговор «{{ asking.main.title }}». Как продолжить?</span>
-        <button class="primary tw:h-30" @click="add(asking.who, 'branch')">Новая ветка</button>
-        <button class="tw:h-30" title="Этот чат уступит место общему разговору — в блоке будет он" @click="add(asking.who, 'main')">Продолжить общую ветку</button>
+        <button class="primary tw:h-30 tw:py-0" @click="add(asking.who, 'branch')">Новая ветка</button>
+        <button class="tw:h-30 tw:py-0" title="Этот чат уступит место общему разговору — в блоке будет он" @click="add(asking.who, 'main')">Продолжить общую ветку</button>
       </template>
       <template v-else>
         <span class="tw:text-muted">Люди, с которыми у вас общие чаты или заметки</span>
-        <button v-for="d in people" :key="d.id" class="tw:flex tw:items-center tw:h-30 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-left tw:hover:bg-hover" @click="pick(d)">{{ d.name }}</button>
+        <button v-for="d in people" :key="d.id" class="tw:flex tw:items-center tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-left tw:hover:bg-hover" @click="pick(d)">{{ d.name }}</button>
         <span v-if="!people.length" class="tw:text-muted">Пока никого — поделитесь заметкой, и её участники появятся здесь</span>
       </template>
       <span v-if="error" class="tw:text-down-fg">{{ error }}</span>

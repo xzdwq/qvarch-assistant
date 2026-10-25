@@ -70,6 +70,15 @@ export interface Flags {
   set(key: string, on: boolean): Promise<void>
 }
 
+/**
+ * What the chat asks about the rooms of a shared space (the space module answers by the member's role; until it
+ * does — any member may).
+ */
+export interface SpaceRules {
+  /** May this member of the space write in its chats and comments (a reader may only read). */
+  mayChat(space: string, device: string): Promise<boolean>
+}
+
 /** What a module gets. */
 export interface ServerContext {
   config: ServerConfig
@@ -77,6 +86,8 @@ export interface ServerContext {
   bus: Bus
   delivery: Delivery
   flags: Flags
+  /** The shared spaces' rules for their chats (set by the space module). */
+  spaceRules: SpaceRules
 }
 
 /** The parameter checks of a method: a wrong one — a refusal «bad». */

@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import type { DeviceInfo } from '../../../../src/shared/transport/protocol'
+import { isPeerSel, type PeerSel } from '../../../../src/shared/transport/places'
 import { ROLE_RIGHTS } from '../../../../src/shared/transport/space'
 import { RpcFail, text, uuid, type ModuleFactory, type Session } from '../../module'
 import { readUpdate } from '../space'
@@ -14,6 +15,8 @@ interface Live {
   open: Set<string>
   /** Updates kept since the last merge into the state. */
   since: number
+  /** Where each one who has it open is in it (told by them; never kept). */
+  cursors: Map<string, { device: DeviceInfo; sel: PeerSel }>
 }
 const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64')
 
@@ -30,7 +33,7 @@ export const docModule: ModuleFactory = (ctx) => {
   function hold(doc: string, space: string): Promise<Live> {
     let l = live.get(doc)
     if (!l) {
-      l = store.load(doc).then(({ y, pending }) => ({ y, space, open: new Set<string>(), since: pending }))
+      l = store.load(doc).then(({ y, pending }) => ({ y, space, open: new Set<string>(), since: pending, cursors: new Map() }))
       live.set(doc, l)
       l.catch(() => live.delete(doc))
     }
@@ -51,8 +54,11 @@ export const docModule: ModuleFactory = (ctx) => {
   async function close(doc: string, device: string): Promise<void> {
     const l = await live.get(doc)
     if (!l || !l.open.delete(device)) return
-    if (!l.open.size) live.delete(doc)
-    else await presence(doc, l)
+    if (!l.open.size) return void live.delete(doc)
+    const had = l.cursors.get(device)
+    l.cursors.delete(device)
+    if (had) ctx.delivery.send([...l.open], { e: 'doc.cursor', p: { doc, device: had.device, sel: null } })
+    await presence(doc, l)
   }
   const closeAll = (pick: (l: Live) => boolean, device: string) => {
     for (const [doc, p] of live)
@@ -82,6 +88,8 @@ export const docModule: ModuleFactory = (ctx) => {
         }
         l.open.add(s.device.id)
         await presence(doc, l)
+        // the cursors there are: seen at once
+        for (const [id, c] of l.cursors) if (id !== s.device.id) ctx.delivery.send([s.device.id], { e: 'doc.cursor', p: { doc, device: c.device, sel: c.sel } })
         return { update: b64(update), sv: b64(Y.encodeStateVector(l.y)), role, space }
       },
       'doc.update': async (p, s) => {
@@ -98,6 +106,17 @@ export const docModule: ModuleFactory = (ctx) => {
           l.since = 0
           await store.compact(doc, l.y)
         }
+        return null
+      },
+      'doc.cursor': async (p, s) => {
+        const doc = uuid(p, 'doc')
+        const l = await live.get(doc)
+        // (not open by this device — nothing to show: it opens it first)
+        if (!l?.open.has(s.device.id)) return null
+        if (p.sel !== null && !isPeerSel(p.sel)) throw new RpcFail('bad', 'sel: место курсора')
+        if (p.sel) l.cursors.set(s.device.id, { device: s.device, sel: p.sel })
+        else l.cursors.delete(s.device.id)
+        ctx.delivery.send([...l.open].filter((d) => d !== s.device.id), { e: 'doc.cursor', p: { doc, device: s.device, sel: p.sel } })
         return null
       },
       'doc.close': async (p, s) => {

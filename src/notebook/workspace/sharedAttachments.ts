@@ -1,9 +1,9 @@
-import { computed, watch } from 'vue'
+import { watch } from 'vue'
 import { boardBlocksOf, boardMd } from '@nb/blocks/board/model'
 import { formatOf, sharedDocOfFile } from '@shared/transport/sharedFormats'
 import { toB64 } from '@shared/transport/sharedText'
 import { docTitleOf, ROLE_RIGHTS } from '@shared/transport/space'
-import { serverCall, useTransport } from '@renderer/lib/transport'
+import { serverCall, serverOnline } from '@renderer/lib/transport'
 import { docs, setText } from './noteDocs'
 import { adopt, docPaths, fetchText, sharedOfPath, spaces, track } from './sharedDocs'
 import { loadTree, tree } from './vaultTreeStore'
@@ -14,8 +14,7 @@ import { loadTree, tree } from './vaultTreeStore'
  * never by its name: a participant's own board of the same name is never taken for it (a new one gets a free name).
  */
 const ATTACH_MS = 1200
-const transport = useTransport()
-const online = computed(() => transport.value.status === 'online')
+const online = serverOnline
 const parentOf = (path: string) => path.split('/').slice(0, -1).join('/')
 
 /** Documents looked for by their mark and not found (not asked again until the tree changes). */

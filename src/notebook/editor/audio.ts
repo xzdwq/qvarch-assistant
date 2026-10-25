@@ -1,7 +1,8 @@
 import { createApp, type App } from 'vue'
 import { EditorView, WidgetType } from '@codemirror/view'
-import { audioUrl, fixDuration } from '@renderer/lib/notebook'
-import { whenMediaArrives } from '@nb/workspace/noteMedia'
+import { fixDuration } from '@renderer/lib/notebook'
+import { followAudio } from '@nb/workspace/mediaFollow'
+import { mediaWaitText } from '@shared/transport/space'
 import ThinkingOrb from '@renderer/components/ThinkingOrb.vue'
 import { editorHost } from './editorHost'
 import { ICON_CAPTIONS, ICON_MIC, ICON_TRASH, widgetButton } from './icons'
@@ -32,17 +33,17 @@ export class AudioWidget extends WidgetType {
     a.controls = true
     a.preload = 'metadata'
     fixDuration(a)
-    const load = () =>
-      audioUrl(this.rel).then((u) => {
+    // not here (yet): said so — and why; a shared note's recording comes from the server — then it plays
+    ;(box as OrbHost)._stop = followAudio(this.rel, {
+      shown: (u) => {
         a.src = u
         box.classList.remove('missing')
         box.title = ''
-      })
-    // not here (yet): said so; a shared note's recording comes from the server — then it plays
-    load().catch(() => {
-      box.classList.add('missing')
-      box.title = 'Файл записи не найден'
-      void whenMediaArrives(this.rel).then(load).catch(() => undefined)
+      },
+      missing: (wait) => {
+        box.classList.add('missing')
+        box.title = wait ? `Запись ${mediaWaitText(wait)}` : 'Файл записи не найден'
+      },
     })
     // transcribing: the orb; else the button (the text goes on the line below the player)
     let tr: HTMLElement
@@ -67,9 +68,11 @@ export class AudioWidget extends WidgetType {
   }
   destroy(dom: HTMLElement): void {
     ;(dom as OrbHost)._orb?.unmount()
+    ;(dom as OrbHost)._stop?.()
   }
   ignoreEvent(): boolean {
     return true
   }
 }
-type OrbHost = HTMLElement & { _orb?: App }
+/** A player's element with what it runs: the orb, the wait for its file (both ended with it). */
+type OrbHost = HTMLElement & { _orb?: App; _stop?: () => void }

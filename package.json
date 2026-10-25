@@ -1,6 +1,6 @@
 {
   "name": "qvarch-assistant",
-  "version": "0.205.0",
+  "version": "0.212.0",
   "description": "Desktop work-time tracker with an always-on-top timeline island",
   "main": "./out/main/index.js",
   "scripts": {

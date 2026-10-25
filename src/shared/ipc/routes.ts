@@ -110,6 +110,8 @@ export const QA_ROUTES = {
   chatFilePut: invoke('qa:chatFilePut'),
   chatFileGet: invoke('qa:chatFileGet'),
   chatFileSave: invoke('qa:chatFileSave'),
+  chatFileFromNotes: invoke('qa:chatFileFromNotes'),
+  chatFileToNotes: invoke('qa:chatFileToNotes'),
   sharedResultsPut: invoke('qa:sharedResultsPut'),
   sharedResultsGet: invoke('qa:sharedResultsGet'),
   sharedFolderLink: invoke('qa:sharedFolderLink'),
@@ -228,6 +230,7 @@ export const QA_ROUTES = {
   seriesDelete: invoke('qa:seriesDelete'),
   setRemind: invoke('qa:setRemind'),
   onVault: event('qa:vault'),
+  onVaultMedia: event('qa:vaultMedia'),
 } satisfies { readonly [K in BridgedMethod]: Route<KindOf<QaApi[K]>> }
 
 /** The methods of each kind. */

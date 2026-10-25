@@ -62,3 +62,17 @@ export function planFolder(server: readonly SpaceDoc[], local: readonly LocalNot
   }
   return steps
 }
+
+/**
+ * So many of a folder's documents «deleted here» at once looks like a listing gone wrong (not read yet, the folder
+ * moved, a disk hiccup), not like a person's deleting: at least this many, and at least this share of its documents.
+ */
+export const MASS_DELETE = { atLeast: 3, share: 0.5 } as const
+/** The steps with a mass deletion held back: those documents fetched here again instead of deleted for everyone. */
+export function guardDeletions(steps: readonly FolderStep[], server: readonly SpaceDoc[]): { steps: FolderStep[]; held: number } {
+  const deletes = steps.filter((s) => s.do === 'deleteServer').length
+  const alive = server.filter((d) => !d.deleted).length
+  if (deletes < MASS_DELETE.atLeast || deletes < alive * MASS_DELETE.share) return { steps: [...steps], held: 0 }
+  const pathOf = new Map(server.map((d) => [d.id, d.path]))
+  return { steps: steps.map((s) => (s.do === 'deleteServer' ? { do: 'fetch', doc: s.doc, path: pathOf.get(s.doc)! } : s)), held: deletes }
+}

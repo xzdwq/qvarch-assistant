@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { commentMarks, setCommentMarks } from '@nb/editor/comments'
+import { peerCursors, setPeerCursors } from '@nb/editor/peerCursors'
+import { componentOrigins } from '@nb/editor/components/componentOrigins'
+import { lineAuthors, setLineAuthors } from '@nb/editor/lineAuthors'
+import { lineAuthorsIn } from '@nb/workspace/sharedPlaces'
+import { sharedTick } from '@nb/workspace/sharedDocs'
+import { blockIdentity } from '@nb/editor/components/blockIdentity'
+import { peerCursorsIn, tellCursor } from '@nb/workspace/sharedCursors'
 import { commentsOf } from '@nb/workspace/noteComments'
 import { Compartment, EditorState, Transaction } from '@codemirror/state'
 import { splicesOf } from '@shared/textSplice'
@@ -98,6 +105,7 @@ onMounted(() => {
         hostApi,
         readOnly.of(EditorState.readOnly.of(!!props.readonly)),
         history(),
+        lineAuthors,
         lineNumbers(),
         highlightActiveLineGutter(),
         EditorView.lineWrapping,
@@ -118,6 +126,7 @@ onMounted(() => {
         commandMenuExtensions,
         noteComponents,
         commentMarks,
+        peerCursors,
         loopBands,
         componentGuard,
         componentTail,
@@ -127,10 +136,16 @@ onMounted(() => {
         keymap.of([{ key: 'ArrowUp', run: exitUpFromFirstLine }]),
         keymap.of([{ key: 'Mod-b', run: wrapSelection('**') }, { key: 'Mod-i', run: wrapSelection('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
+          // this person's cursor in a shared note: told to the others (typing — once it pauses)
+          const sel = u.state.selection.main
+          const own = u.transactions.some((tr) => !tr.annotation(Transaction.remote))
+          if (props.path && own && u.view.hasFocus && (u.selectionSet || u.docChanged)) tellCursor(props.path, sel.anchor, sel.head, u.docChanged)
           if (!u.docChanged) return
           emit('change', u.state.doc.toString())
           scheduleSync()
         }),
+        componentOrigins,
+        blockIdentity,
       ],
     }),
   })
@@ -184,7 +199,8 @@ watch(
     if (!view) return
     // each changed place apart: the cursor and the marks between them stay where they are
     const ss = splicesOf(view.state.doc.toString(), text)
-    if (ss.length) view.dispatch({ changes: ss.map((s) => ({ from: s.at, to: s.at + s.del, insert: s.ins })), annotations: Transaction.addToHistory.of(false) })
+    // (marked remote: not this person's edit — no origin of theirs, no cursor told)
+    if (ss.length) view.dispatch({ changes: ss.map((s) => ({ from: s.at, to: s.at + s.del, insert: s.ins })), annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)] })
   },
 )
 // a shared note one may only read: no typing
@@ -201,6 +217,23 @@ watch(
   () => view?.dispatch({ effects: setCommentMarks.of(commentPlaces.value) }),
 )
 onMounted(() => view?.dispatch({ effects: setCommentMarks.of(commentPlaces.value) }))
+// a shared note's other participants: their cursors where they are now (they follow everyone's edits)
+const peerPlaces = computed(() => (props.path ? peerCursorsIn(props.path) : []))
+watch(
+  () => JSON.stringify(peerPlaces.value),
+  () => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }),
+)
+onMounted(() => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }))
+// a shared note: who changed each line last (their colour by the line numbers)
+const authors = computed(() => {
+  void sharedTick.n
+  return props.path ? lineAuthorsIn(props.path) : new Map<number, string>()
+})
+watch(
+  () => JSON.stringify([...authors.value]),
+  () => view?.dispatch({ effects: setLineAuthors.of(authors.value) }),
+)
+onMounted(() => view?.dispatch({ effects: setLineAuthors.of(authors.value) }))
 /** A place of this note shown (a comment's «к тексту»): selected and scrolled to. */
 function onGoto(e: Event): void {
   const d = (e as CustomEvent<{ path: string; from: number; to: number }>).detail

@@ -9,16 +9,27 @@ import type { LoopRun, NoteRun } from './runTypes'
  * loaded with the note, saved a moment after a change, trimmed when a long loop makes them huge.
  */
 const notes = reactive(new Map<string, NoteRun>())
+/** Each note's runs file read (or found missing): resolved then. */
+const loading = new Map<string, Promise<NoteRun>>()
 
 /** A note's runs (made, and loaded from its runs file, on first use). */
 export function noteRun(path: string): NoteRun {
   let n = notes.get(path)
   if (!n) {
     notes.set(path, { ctx: {}, runs: {}, loops: {}, loaded: false })
-    n = notes.get(path)!
-    void loadSavedRuns(path, n)
+    const into = notes.get(path)!
+    n = into
+    loading.set(
+      path,
+      loadSavedRuns(path, into).then(() => into),
+    )
   }
   return n
+}
+/** A note's runs once its runs file is in (what a run already wrote kept). */
+export function loadedRuns(path: string): Promise<NoteRun> {
+  noteRun(path)
+  return loading.get(path)!
 }
 /** A note's runs if they are in memory already (nothing made or loaded). */
 export const loadedNoteRun = (path: string): NoteRun | undefined => notes.get(path)
@@ -34,6 +45,7 @@ async function loadSavedRuns(path: string, into: NoteRun): Promise<void> {
     for (const [k, v] of Object.entries(d.ctx ?? {})) if (!(k in into.ctx)) into.ctx[k] = v
     for (const [k, v] of Object.entries(d.runs ?? {})) if (!(k in into.runs)) into.runs[k] = v
     for (const [k, v] of Object.entries(d.loops ?? {})) if (!(k in into.loops)) into.loops[k] = v
+    if (d.sync) into.sync = { ...d.sync, ...into.sync }
   } catch {
     // no runs file, or a broken one: the note starts clean
   } finally {
@@ -63,6 +75,16 @@ export function noteValues(path: string): Values {
 /** A value put into the note's context (a copy of it), the runs saved soon. */
 export function publishToNote(path: string, name: string, value: unknown, from: ValueSource, block: string): void {
   noteRun(path).ctx[name] = { value: jsonClone(value), at: Date.now(), from, block }
+  saveRunsSoon(path)
+}
+/** A block's results moved to another key (it got an id of its own: they stay with it). */
+export function moveRun(path: string, from: string, to: string): void {
+  const n = noteRun(path)
+  for (const o of [n.runs, n.loops] as Array<Record<string, unknown>>)
+    if (from in o && !(to in o)) {
+      o[to] = o[from]
+      delete o[from]
+    }
   saveRunsSoon(path)
 }
 /** The note's context and runs emptied (in place: a run going on writes into these very objects). */
@@ -104,10 +126,10 @@ function writeRuns(path: string): Promise<void> {
   const n = noteRun(path)
   let json: string
   try {
-    json = JSON.stringify({ ctx: n.ctx, runs: n.runs, loops: n.loops })
+    json = JSON.stringify({ ctx: n.ctx, runs: n.runs, loops: n.loops, sync: n.sync })
     if (json.length > RUNS_BUDGET) {
       for (const l of Object.values(n.loops)) trimLoop(l, PASSES_KEPT)
-      json = JSON.stringify({ ctx: n.ctx, runs: n.runs, loops: n.loops })
+      json = JSON.stringify({ ctx: n.ctx, runs: n.runs, loops: n.loops, sync: n.sync })
     }
   } catch {
     return Promise.resolve()
@@ -134,7 +156,11 @@ const isUnder = (path: string, p: string) => p === path || p.startsWith(`${path}
  * after the delete), so a new note of the same name starts clean.
  */
 export function forgetRuns(path: string): void {
-  for (const p of [...notes.keys()]) if (isUnder(path, p)) notes.delete(p)
+  for (const p of [...notes.keys()])
+    if (isUnder(path, p)) {
+      notes.delete(p)
+      loading.delete(p)
+    }
   for (const p of [...saveTimers.keys()])
     if (isUnder(path, p)) {
       clearTimeout(saveTimers.get(p))
@@ -146,7 +172,9 @@ export function moveRuns(from: string, to: string): void {
   for (const p of [...notes.keys()])
     if (isUnder(from, p)) {
       notes.set(to + p.slice(from.length), notes.get(p)!)
+      loading.set(to + p.slice(from.length), loading.get(p)!)
       notes.delete(p)
+      loading.delete(p)
     }
   for (const p of [...saveTimers.keys()])
     if (isUnder(from, p)) {

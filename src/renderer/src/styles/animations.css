@@ -299,3 +299,21 @@
     opacity: 0.3;
   }
 }
+
+/* another participant's name over their caret: shown as it moves, then gone (on hover — back) */
+@keyframes PeerCursor-label {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* a shared note's file on its way: its line breathes */
+@keyframes MediaWait-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}

@@ -131,6 +131,8 @@ export class Island {
   constructor(
     saved: { x?: number; y?: number; dock?: Dock },
     private persist: (pos: { x: number; y: number; dock?: Dock }) => void,
+    /** Shown once it is ready (the app starting — not: the tray / the hotkey show it). */
+    show = true,
   ) {
     this.pill = this.validPill(saved)
     this.dock = saved.x !== undefined && saved.dock ? saved.dock : undefined
@@ -156,7 +158,7 @@ export class Island {
     this.win.setIgnoreMouseEvents(true, { forward: true })
     load(this.win, 'island')
     forwardConsole(this.win, 'island')
-    this.win.once('ready-to-show', () => !Island.hidden && this.win.showInactive())
+    this.win.once('ready-to-show', () => show && !Island.hidden && this.win.showInactive())
     // the native drag ends with "moved" (Windows sends it once, on release)
     this.win.on('moved', () => this.onMoved())
     this.timers.push(setInterval(() => this.tick(), 40))

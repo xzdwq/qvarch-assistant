@@ -59,7 +59,12 @@ export interface BlockInfo {
   out?: LoopOutMode
   /** A data value shown as a table (```json ref=rows view=table). */
   view?: DataView
+  /** An unnamed runnable block's own id (its results are kept by it — not by its line, which moves). */
+  id?: string
 }
+
+/** A block's own id: eight small letters and digits. */
+export const BLOCK_ID = /^[a-z0-9]{8}$/
 
 /** The flags an info line may carry (a word without `=`), each setting its field to true. */
 const FLAGS = new Map<string, keyof BlockInfo>([
@@ -97,6 +102,9 @@ const SETTINGS: Record<string, (out: BlockInfo, v: string) => void> = {
   },
   browser: (out, v) => {
     if (oneOf(PW_BROWSERS, v)) out.browser = v
+  },
+  id: (out, v) => {
+    if (BLOCK_ID.test(v)) out.id = v
   },
 }
 
@@ -141,6 +149,7 @@ export function infoMd(i: BlockInfo): string {
     i.soft ? 'soft' : '',
     i.timeout ? `timeout=${i.timeout}` : '',
     i.out ? `out=${i.out}` : '',
+    i.id ? `id=${i.id}` : '',
   ]
     .filter(Boolean)
     .join(' ')

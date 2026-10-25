@@ -3,6 +3,7 @@ import type { TestFile } from '@shared/testFiles'
 import { remoteError } from '@shared/remoteError'
 import { noteRun, saveRunsSoon } from '@nb/engine/runStore'
 import { sharedOfPath } from '@nb/workspace/sharedDocs'
+import { mediaWhy } from '@shared/transport/space'
 import { useTransport } from '@renderer/lib/transport'
 
 /** A file of a set someone else has (and this computer has not). */
@@ -73,7 +74,7 @@ export function useSharedFiles(path: () => string, set: () => string, files: Ref
     try {
       const rel = relOf(set(), f.file.name)
       const got = await window.qa.sharedMedia(sh.space, [rel], { send: false })
-      if (!got.fetched.length) error.value = `«${f.file.name}»: ${got.problems[rel] ?? `не загружено — у ${f.by} приложение должно быть открыто`}`
+      if (!got.fetched.length) error.value = `«${f.file.name}»: ${mediaWhy(got, rel) ?? `не загружено — у ${f.by} приложение должно быть открыто`}`
       else {
         if (f.file.expect || f.file.note) await window.qa.files('meta', set(), f.file.name, { expect: f.file.expect ?? null, note: f.file.note ?? '' })
         await reload()

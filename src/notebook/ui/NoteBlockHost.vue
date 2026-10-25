@@ -10,6 +10,7 @@ import Popover from '@renderer/components/Popover.vue'
 import { besidePlace } from '@renderer/lib/usePopover'
 import { blockActionsFor, type BlockActionId, type BlockCaps } from '@nb/commands/blockActions'
 import type { BlockSelectHow } from '@nb/editor/components/blockSelection'
+import BlockOrigin from './BlockOrigin.vue'
 import LoopOut from './LoopOut.vue'
 import { BLOCK_VIEWS } from './blockViews'
 import { pickHostProps } from './blockView'
@@ -116,7 +117,7 @@ const inLoop = computed(() => {
   const kind = props.kind
   if (!props.loop || !isRunnableKind(kind)) return undefined
   const info = splitFence(props.src).info
-  return info.lib ? undefined : { kind, key: blockRunKey(info.name, kind, props.line), name: info.name, out: info.out }
+  return info.lib ? undefined : { kind, key: blockRunKey(info.name, kind, props.line, info.id), name: info.name, out: info.out }
 })
 /** How the block's results over the passes are shown (kept in its info line: out=). */
 function setOut(out: LoopOutMode | undefined): void {
@@ -133,6 +134,7 @@ function applyRaw(): void {
   <div class="nb tw:group/nb tw:contain-[inline-size] tw:min-w-0 tw:relative tw:mt-4 tw:mr-0 tw:mb-4 tw:-ml-30 tw:pl-32 tw:text-[0.95em] tw:leading-[1.5] tw:whitespace-normal tw:cursor-auto tw:rounded-[8px] tw:[&.sel]:bg-accent/8 tw:[&.sel]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.45)]" :class="[`k-${kind}`, { sel: selected }]">
     <button class="nb-h tw:absolute tw:top-4 tw:left-4 tw:touch-none tw:z-250 tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-24 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:opacity-40 tw:cursor-grab tw:[transition:opacity_0.12s] tw:group-hover/nb:not-group-focus-within/nb:opacity-100 tw:group-focus-within/nb:opacity-100 tw:[&.on]:not-group-hover/nb:not-group-focus-within/nb:not-hover:not-active:opacity-100 tw:hover:not-group-hover/nb:not-group-focus-within/nb:not-active:opacity-100 tw:active:not-group-hover/nb:not-group-focus-within/nb:opacity-100 tw:hover:not-active:bg-hover tw:active:bg-hover tw:hover:not-active:text-text tw:active:text-text tw:hover:enabled:border-border-3" :class="{ on: menu }" :title="`${spec.title}: потяните — переместить, клик — меню`" @pointerdown="onHandleDown"><Icon name="grip" :size="14" /></button>
     <span v-if="copied" class="nb-ok tw:absolute tw:z-4 tw:-top-18 tw:left-32 tw:text-up-fg tw:text-[11.5px]">Скопировано — вставьте в любую заметку</span>
+    <BlockOrigin :path="path" :line="line" />
     <div v-if="raw !== undefined" class="nb-raw tw:flex tw:flex-col tw:gap-6 tw:p-8 tw:border tw:border-accent/50 tw:rounded-[8px] tw:bg-panel">
       <div class="nb-rh tw:flex tw:items-center tw:gap-8 tw:text-[12px]"><b class="tw:text-text-2 tw:font-semibold">{{ spec.title }} — Markdown</b><span class="grow tw:flex-1"></span><button @mousedown.prevent @click="raw = undefined">Отмена</button><button class="primary" @mousedown.prevent @click="applyRaw">Готово</button></div>
       <textarea class="tw:min-h-80 tw:p-8 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg tw:text-text tw:font-data tw:text-[12.5px] tw:leading-[1.5] tw:field-sizing-content tw:resize-none tw:outline-none" v-model="raw" spellcheck="false" @keydown.ctrl.enter.prevent="applyRaw" @keydown.esc.prevent="raw = undefined"></textarea>

@@ -28,6 +28,12 @@ const NEW_KIND: Record<VaultEntryKind, { name: string; ext: string }> = {
  * This class is the vault's one face: it keeps the files, the marks, the runs, the media, the bundles and the
  * watcher in step (a move / delete reaches them all).
  */
+/** Who is told of the vault's changes: notes and folders changed outside; media files that appeared (any way). */
+export interface VaultListeners {
+  onChange: (paths: string[]) => void
+  onMedia: (rels: string[]) => void
+}
+
 export class Vault {
   readonly root: string
   private files: VaultFiles
@@ -37,15 +43,15 @@ export class Vault {
   private bundles: VaultBundles
   private watcher: VaultWatcher
 
-  constructor(dataRoot: string, onChange: (paths: string[]) => void) {
+  constructor(dataRoot: string, listen: VaultListeners) {
     this.root = join(dataRoot, 'vault')
     mkdirSync(this.root, { recursive: true })
     this.files = new VaultFiles(this.root)
     this.meta = new VaultMeta(this.files)
     this.runs = new VaultRuns(this.files)
-    this.media = new VaultMedia(this.files, (needle) => this.usedBy(needle))
+    this.media = new VaultMedia(this.files, (needle) => this.usedBy(needle), (rel) => listen.onMedia([rel]))
     this.bundles = new VaultBundles(this.files, this.meta, this.runs, this.media, (dir, kind, name, text) => this.create(dir, kind, name, text))
-    this.watcher = new VaultWatcher(this.files, onChange)
+    this.watcher = new VaultWatcher(this.files, listen.onChange, listen.onMedia)
   }
 
   // ---------- marks ----------

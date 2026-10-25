@@ -12,7 +12,7 @@ const dirs: string[] = []
 function vault(): InstanceType<typeof Vault> {
   const d = mkdtempSync(join(tmpdir(), 'qa-vault-'))
   dirs.push(d)
-  return new Vault(d, () => undefined)
+  return new Vault(d, { onChange: () => undefined, onMedia: () => undefined })
 }
 afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })))
 
