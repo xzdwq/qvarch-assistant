@@ -4,8 +4,9 @@ import { commentMarks, setCommentMarks } from '@nb/editor/comments'
 import { peerCursors, setPeerCursors } from '@nb/editor/peerCursors'
 import { componentOrigins } from '@nb/editor/components/componentOrigins'
 import { lineAuthors, setLineAuthors } from '@nb/editor/lineAuthors'
-import { lineAuthorsIn } from '@nb/workspace/sharedPlaces'
-import { sharedTick } from '@nb/workspace/sharedDocs'
+import { lineAuthorsOf } from '@nb/workspace/noteAuthors'
+import { NOTE_PLACE_EVENT, placeShown, placeWanted } from '@nb/workspace/noteGoto'
+import { placeLine } from '@shared/notebook/links'
 import { blockIdentity } from '@nb/editor/components/blockIdentity'
 import { peerCursorsIn, tellCursor } from '@nb/workspace/sharedCursors'
 import { commentsOf } from '@nb/workspace/noteComments'
@@ -224,11 +225,8 @@ watch(
   () => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }),
 )
 onMounted(() => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }))
-// a shared note: who changed each line last (their colour by the line numbers)
-const authors = computed(() => {
-  void sharedTick.n
-  return props.path ? lineAuthorsIn(props.path) : new Map<number, string>()
-})
+// who changed each line last (a person's colour, an AI agent's mark — by the line numbers)
+const authors = computed(() => (props.path ? lineAuthorsOf(props.path) : new Map()))
 watch(
   () => JSON.stringify([...authors.value]),
   () => view?.dispatch({ effects: setLineAuthors.of(authors.value) }),
@@ -244,6 +242,23 @@ function onGoto(e: Event): void {
 }
 onMounted(() => window.addEventListener('qa:note-goto', onGoto))
 onBeforeUnmount(() => window.removeEventListener('qa:note-goto', onGoto))
+/** A place a link asked for (noteGoto): its line selected, in the middle of the view — once the text is in. */
+function showPlace(): void {
+  const place = props.path ? placeWanted(props.path) : undefined
+  if (!view || !place || !props.text) return
+  placeShown(props.path!)
+  const at = placeLine(view.state.doc.toString(), place)
+  if (at === undefined) return
+  const line = view.state.doc.line(at + 1)
+  view.dispatch({ selection: { anchor: line.from, head: line.to }, effects: EditorView.scrollIntoView(line.from, { y: 'center' }) })
+  view.focus()
+}
+watch([() => props.path, () => !!props.text], () => setTimeout(showPlace))
+onMounted(() => {
+  window.addEventListener(NOTE_PLACE_EVENT, showPlace)
+  setTimeout(showPlace)
+})
+onBeforeUnmount(() => window.removeEventListener(NOTE_PLACE_EVENT, showPlace))
 
 defineExpose({
   focus: () => view?.focus(),

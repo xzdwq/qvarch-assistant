@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { splicesOf } from '../textSplice'
 import type { BlockOrigin, TextAnchor } from './places'
+import { isRefCard, type RefCard } from './refCards'
 
 /** Where an update comes from: the server (someone else's edit), this computer's kept state, this person's change. */
 export type UpdateOrigin = 'remote' | 'load' | 'local'
@@ -26,8 +27,8 @@ export abstract class SharedModel {
 
   /** The file's text as the document holds it now. */
   abstract get value(): string
-  /** The file's text now: the difference applied as this person's change (false — nothing differed). */
-  abstract setLocal(next: string): boolean
+  /** The file's text now: the difference applied as this person's change (false — nothing differed); `agent` — written by their AI agent (its name). */
+  abstract setLocal(next: string, agent?: string): boolean
 
   apply(update: Uint8Array, origin: Exclude<UpdateOrigin, 'local'>): void {
     Y.applyUpdate(this.y, update, origin)
@@ -73,6 +74,11 @@ export interface EditStamp {
   device: string
   at: number
 }
+/** Who changed a line last: a person (their device), or their AI agent (its name; the device — its owner's). */
+export interface LineAuthor {
+  device?: string
+  agent?: string
+}
 /** (the places' plain data — shared with the server: places.ts) */
 export type { BlockOrigin, PeerSel, TextAnchor } from './places'
 export { isPeerSel } from './places'
@@ -84,6 +90,27 @@ export { isPeerSel } from './places'
 export class SharedText extends SharedModel {
   private readonly text = this.y.getText('text')
   private readonly origins = this.y.getMap<BlockOrigin & { pos: string }>('origins')
+  /** The snapshots of the tasks and events the text links to (refCards): the link's address → its snapshot. */
+  private readonly refs = this.y.getMap<unknown>('refs')
+
+  /** The snapshots kept (the malformed ones — someone else's app wrote them — left out). */
+  refsNow(): Map<string, RefCard> {
+    const out = new Map<string, RefCard>()
+    for (const [url, c] of this.refs.entries()) if (isRefCard(c)) out.set(url, c)
+    return out
+  }
+  /** Snapshots put in and taken out — one change (nothing to do — nothing sent). */
+  putRefs(put: ReadonlyArray<[string, RefCard]>, drop: readonly string[]): void {
+    if (!put.length && !drop.length) return
+    this.local(() => {
+      for (const [url, c] of put) this.refs.set(url, c)
+      for (const url of drop) this.refs.delete(url)
+    })
+  }
+  /** The snapshots changed (anyone's change): `fn` is told. */
+  onRefs(fn: () => void): void {
+    this.refs.observe(fn)
+  }
 
   /** A component put in, its first sign at `at`: marked as someone's, at a time (one change, sent as any). */
   markOrigin(at: number, o: BlockOrigin): void {
@@ -145,34 +172,53 @@ export class SharedText extends SharedModel {
    * after it, the line's end at least): every line knows who changed it last. None — changes unmarked.
    */
   stamp?: () => EditStamp
-  setLocal(next: string): boolean {
+  setLocal(next: string, agent?: string): boolean {
     const ss = splicesOf(this.value, next)
     if (!ss.length) return false
     const st = this.stamp?.()
-    const mark = st && { a: st.device, t: st.at }
+    // (a person's change takes the agent's mark off explicitly: a format is inherited from the signs around)
+    const mark = st && { a: st.device, t: st.at, g: agent ?? null }
     // (each place apart, the last first: the text between them is never taken out and put back)
     this.local(() => {
       for (const s of ss) {
         if (s.del) this.text.delete(s.at, s.del)
         // (unmarked — as plain text: never the mark of the signs around it)
         if (s.ins) this.text.insert(s.at, s.ins, mark ?? {})
-        // a deletion alone: the sign that took its place carries the mark (its line was changed)
-        else if (mark && this.text.length) this.text.format(Math.min(s.at, this.text.length - 1), 1, mark)
+        // a deletion alone: the sign that took its place carries the mark (its line was changed; at a line's end — the
+        // sign before it, a line's end counts only for an empty line)
+        else if (mark && this.text.length) this.text.format(this.deletionMark(s.at), 1, mark)
       }
     })
     return true
   }
-  /** Who changed each line last (0-based line → device), by the marks of its signs (a line never marked — none). */
-  lineAuthors(): Map<number, string> {
-    const last = new Map<number, { a: string; t: number }>()
+  /** The sign that marks a deletion at `at`: the one after it, or before it at a line's end. */
+  private deletionMark(at: number): number {
+    const s = this.value
+    const i = Math.min(at, s.length - 1)
+    return s[i] === '\n' && i > 0 && s[i - 1] !== '\n' ? i - 1 : i
+  }
+  /**
+   * Who changed each line last (0-based line → its author), by the marks of its signs (a line never marked — none).
+   * A line's end counts only for a line of nothing else: a line put in after it carries the end it took over.
+   */
+  lineAuthors(): Map<number, LineAuthor> {
+    const last = new Map<number, { a: string; t: number; g?: string }>()
     let line = 0
-    for (const part of this.text.toDelta() as Array<{ insert: string; attributes?: { a?: string; t?: number } }>) {
+    let empty = true
+    for (const part of this.text.toDelta() as Array<{ insert: string; attributes?: { a?: string; t?: number; g?: string | null } }>) {
       const at = part.attributes
+      const mark = at?.a && typeof at.t === 'number' ? { a: at.a, t: at.t, ...(typeof at.g === 'string' && at.g ? { g: at.g } : {}) } : undefined
       for (const ch of part.insert) {
-        if (at?.a && typeof at.t === 'number' && at.t >= (last.get(line)?.t ?? -1)) last.set(line, { a: at.a, t: at.t })
-        if (ch === '\n') line++
+        if (ch !== '\n') {
+          empty = false
+          if (mark && mark.t >= (last.get(line)?.t ?? -1)) last.set(line, mark)
+          continue
+        }
+        if (empty && mark) last.set(line, mark)
+        line++
+        empty = true
       }
     }
-    return new Map([...last].map(([l, v]) => [l, v.a]))
+    return new Map([...last].map(([l, v]) => [l, { device: v.a, ...(v.g ? { agent: v.g } : {}) }]))
   }
 }

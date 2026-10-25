@@ -5,7 +5,7 @@
  * head and messages, answered right here. A comment — «В заметке» opens its note at its place.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { attachWord, feedSections, isComment, unreadOf, type ChatRoom } from '@shared/transport/chat'
+import { attachWord, authorName, feedSections, isComment, unreadOf, type ChatRoom } from '@shared/transport/chat'
 import { notifiesIn } from '@shared/transport/constants'
 import Icon from '@renderer/components/Icon.vue'
 import { branchesOf, chatMe, chatOnline, chatPrefs, chatRooms, feedRoom, showRoom, watchRoom } from '@renderer/lib/chat'
@@ -59,7 +59,7 @@ watch(
 )
 onBeforeUnmount(() => watched && watchRoom(watched, false))
 
-const snippet = (r: ChatRoom) => (r.last ? `${r.last.author.id === chatMe.value ? 'Вы' : r.last.author.name}: ${r.last.text || (r.last.attach ? attachWord(r.last.attach) : '')}` : 'Нет сообщений')
+const snippet = (r: ChatRoom) => (r.last ? `${r.last.author.id === chatMe.value && !r.last.agent ? 'Вы' : authorName(r.last)}: ${r.last.text || (r.last.attach ? attachWord(r.last.attach) : '')}` : 'Нет сообщений')
 const muted = (r: ChatRoom) => !notifiesIn(chatPrefs.value, r.id)
 /** A comment's note opened at its place. */
 async function toNote(r: ChatRoom): Promise<void> {
@@ -72,7 +72,7 @@ async function toNote(r: ChatRoom): Promise<void> {
 
 <template>
   <div class="tw:flex tw:flex-col">
-    <div class="tw:flex tw:border tw:border-border tw:rounded-[10px] tw:bg-panel tw:overflow-hidden" :style="{ height: `${rows * ROW_PX}px` }">
+    <div class="tw:flex tw:border tw:border-border tw:rounded-[18px] tw:bg-panel tw:overflow-hidden" :style="{ height: `${rows * ROW_PX}px` }">
       <aside class="tw:flex tw:flex-col tw:flex-none tw:w-270 tw:border-r tw:border-r-border">
         <div class="tw:flex tw:items-center tw:gap-6 tw:h-40 tw:px-10 tw:border-b tw:border-b-border">
           <Icon name="search" :size="13" class="tw:text-muted" />
@@ -106,7 +106,7 @@ async function toNote(r: ChatRoom): Promise<void> {
           <ChatHeader :room="picked" @switched="(id) => (feedRoom = id)" />
           <div v-if="isComment(picked)" class="tw:flex tw:items-center tw:gap-8 tw:text-[12px]">
             <span class="tw:flex-1 tw:min-w-0 tw:truncate tw:italic tw:text-text-2">«{{ picked.anchor?.quote }}»<template v-if="picked.resolved"> · решено</template></span>
-            <button class="tw:h-26 tw:py-0 tw:px-8" @click="toNote(picked)">В заметке</button>
+            <button class="tw:h-26 tw:py-0 tw:px-10 tw:rounded-full" @click="toNote(picked)">В заметке</button>
           </div>
           <ChatThread :room="picked.id" :also="also" :readonly="!mayWriteIn(picked)" />
         </template>

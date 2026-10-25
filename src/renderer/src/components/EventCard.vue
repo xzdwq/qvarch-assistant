@@ -12,7 +12,7 @@ import { notesOf, noteTitle, openEventInWork, openNote, refreshMentions } from '
  * An event mentioned in a note, opened from its chip: what it is (kind, time, task, its description), the other
  * notes it is in; changed in the usual form («Изменить»), or opened in Моя работа.
  */
-const props = defineProps<{ day: string; id: string; x: number; y: number; path?: string }>()
+const props = defineProps<{ day: string; id: string; x: number; y: number; from?: HTMLElement; path?: string }>()
 const emit = defineEmits<{ close: [] }>()
 const entry = shallowRef<Entry>()
 const missing = ref(false)
@@ -31,7 +31,7 @@ const dayText = computed(() => new Date(`${props.day}T12:00:00`).toLocaleDateStr
 const others = computed(() => notesOf(props.id).filter((p) => p !== props.path))
 // it stood by a mark in the text (the text scrolled — gone); while its event is being changed it stays
 const open = computed({ get: () => true, set: (on) => void (on || editing.value || emit('close')) })
-const { panelRef, style } = usePopover(() => ({ x: Math.max(8, Math.min(props.x, window.innerWidth - 440)), y: Math.min(props.y + 6, window.innerHeight - 360) }), {
+const { panelRef, style } = usePopover(() => ({ x: Math.max(8, Math.min(props.x, window.innerWidth - 440)), y: Math.min(props.y + 6, window.innerHeight - 360), from: props.from }), {
   place: atPoint,
   // (the form changing it has Esc then)
   esc: () => !editing.value,

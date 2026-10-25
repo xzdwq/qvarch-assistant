@@ -23,6 +23,9 @@ import { startBrowser } from '../lib/browser'
 import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
 import { startChat } from '../lib/chat'
+import { startAgents } from '../lib/agentTurns'
+import { startIslandChat } from '../lib/islandChat'
+import { startAppLinks } from '../lib/appLinks'
 import { startSharedFolders } from '@nb/workspace/sharedFolders'
 import { startSharedRunResults } from '@nb/workspace/sharedRunResults'
 import { startSharedAttachments } from '@nb/workspace/sharedAttachments'
@@ -34,6 +37,11 @@ watchPwRec()
 startMcpBridge()
 // the chats: their news from the start (a notification may open a chat's document any time)
 startChat()
+// this person's AI agents answer in the chats when called
+startAgents()
+startIslandChat()
+// the app's own links (a shared note — joined by its code when not here yet, a task, an event) open wherever clicked
+startAppLinks()
 // the shared folders kept in step from the start (not only once the notebook is opened)
 startSharedFolders()
 startSharedRunResults()

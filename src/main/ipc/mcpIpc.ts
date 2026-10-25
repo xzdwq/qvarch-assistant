@@ -1,70 +1,61 @@
 import { app as electronApp, dialog } from 'electron'
-import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpClient } from '../../shared/api'
 import { contentsOf, type AppContext } from '../app/appContext'
 import { Mcp, type McpTool } from '../mcp'
-import { qvarchTools } from '../mcpTools'
+import { qvarchTools, type ToolCtx } from '../mcpTools'
+import { CLAUDE_MISSING, commandOf, findClaude, viaShell } from '../agent/claudePath'
 import { saveEntry } from '../tracker/dayEdits'
 import { emit, handle, listen } from './router'
+import { WindowAsk } from './windowAsk'
 
+/** What the agents' runner takes from here: the server (turn tokens), what the tools are made of. */
+export interface McpHost {
+  mcp: Mcp
+  toolCtx: ToolCtx
+}
 /**
  * AI assistants (MCP): the server and its tools; the notes' part is done by the window (where the editor holds the
  * notes) — asked by a message, answered by mcpReply.
  */
-export function registerMcpIpc(app: AppContext): void {
-  const pending = new Map<string, { ok: (v: unknown) => void; fail: (e: Error) => void; timer: NodeJS.Timeout }>()
-  listen('mcpReply', (_e, id, ok, value) => {
-    const p = pending.get(String(id))
-    if (!p) return
-    pending.delete(String(id))
-    clearTimeout(p.timer)
-    if (ok) p.ok(value)
-    else p.fail(new Error(String(value)))
-  })
-  /** The window asked to do something with the notes; its answer. */
-  const askWindow = <T>(op: string, args: Record<string, unknown>): Promise<T> =>
-    new Promise<T>((ok, fail) => {
-      const w = contentsOf(app.windows.main)
-      if (!w) return fail(new Error('Окно Qvarch закрыто — откройте приложение'))
-      const id = randomUUID()
-      // a run may take long (tests); the rest — seconds
-      const timer = setTimeout(() => (pending.delete(id), fail(new Error('Окно Qvarch не ответило'))), op === 'run' ? 30 * 60_000 : 60_000)
-      pending.set(id, { ok: ok as (v: unknown) => void, fail, timer })
-      emit(w, 'onMcpCall', id, op, args)
-    })
-  const mcp: Mcp = new Mcp(
-    app.store.root,
-    (): McpTool[] =>
-      qvarchTools({
-        tree: () => app.vault.tree(),
-        mkdir: (dir, name) => app.vault.create(dir, 'folder', name),
-        issue: (key) => app.jira.issue(key),
-        findIssues: (q) => app.jira.find(q, 0, 20).items,
-        day: (d) => app.store.day(d),
-        saveEntry: (d, input, opts) => saveEntry(app, d, input, opts),
-        openInBrowser: (url) => void app.browser?.open(url),
-        ui: askWindow,
-        allow: (): string[] => mcp.cfg.allow,
-        confirmHosts: async (hosts, note) => {
-          const opts = {
-            type: 'warning' as const,
-            title: 'AI-ассистент: запуск против стенда',
-            message: `${note}: адреса не из разрешённого списка`,
-            detail: `${hosts.join('\n')}\n\nРазрешены без вопроса: ${mcp.cfg.allow.join(', ')}. Это может быть рабочий стенд — тесты могут менять данные. Разрешить на этот сеанс?`,
-            buttons: ['Запретить', 'Разрешить'],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true,
-          }
-          const main = app.windows.main
-          const r = main && !main.isDestroyed() && main.isVisible() ? await dialog.showMessageBox(main, opts) : await dialog.showMessageBox(opts)
-          return r.response === 1
-        },
-      }),
-    electronApp.getVersion(),
-  )
+export function registerMcpIpc(app: AppContext): McpHost {
+  const asker = new WindowAsk((id, op, args) => {
+    const w = contentsOf(app.windows.main)
+    if (w) emit(w, 'onMcpCall', id, op, args)
+    return !!w
+  }, 'Окно Qvarch закрыто — откройте приложение')
+  listen('mcpReply', (_e, id, ok, value) => asker.settle(String(id), ok, value))
+  /** The window asked to do something with the notes; its answer (a run may take long — tests; the rest — seconds). */
+  const askWindow = <T>(op: string, args: Record<string, unknown>): Promise<T> => asker.ask<T>(op, args, op === 'run' ? 30 * 60_000 : 60_000)
+  const toolCtx: ToolCtx = {
+    tree: () => app.vault.tree(),
+    mkdir: (dir, name) => app.vault.create(dir, 'folder', name),
+    issue: (key) => app.jira.issue(key),
+    findIssues: (q) => app.jira.find(q, 0, 20).items,
+    day: (d) => app.store.day(d),
+    saveEntry: (d, input, opts) => saveEntry(app, d, input, opts),
+    openInBrowser: (url) => void app.browser?.open(url),
+    ui: askWindow,
+    kinds: () => app.store.cfg.kinds,
+    allow: (): string[] => mcp.cfg.allow,
+    confirmHosts: async (hosts, note) => {
+      const opts = {
+        type: 'warning' as const,
+        title: 'AI-ассистент: запуск против стенда',
+        message: `${note}: адреса не из разрешённого списка`,
+        detail: `${hosts.join('\n')}\n\nРазрешены без вопроса: ${mcp.cfg.allow.join(', ')}. Это может быть рабочий стенд — тесты могут менять данные. Разрешить на этот сеанс?`,
+        buttons: ['Запретить', 'Разрешить'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      }
+      const main = app.windows.main
+      const r = main && !main.isDestroyed() && main.isVisible() ? await dialog.showMessageBox(main, opts) : await dialog.showMessageBox(opts)
+      return r.response === 1
+    },
+  }
+  const mcp: Mcp = new Mcp(app.store.root, (): McpTool[] => qvarchTools(toolCtx), electronApp.getVersion())
   void mcp.restart()
   electronApp.on('will-quit', () => mcp.stop())
   handle('mcpInfo', () => mcp.info())
@@ -74,6 +65,7 @@ export function registerMcpIpc(app: AppContext): void {
     const install = MCP_INSTALLERS[client === 'desktop' ? 'desktop' : 'code']
     return install(mcp.info())
   })
+  return { mcp, toolCtx }
 }
 
 type McpServerInfo = ReturnType<Mcp['info']>
@@ -95,13 +87,19 @@ const MCP_INSTALLERS: Record<McpClient, (i: McpServerInfo) => Promise<string>> =
   },
   // Claude Code (VS Code and the terminal share it): its own command, for the user
   code: async (i) => {
-    const args = ['mcp', 'add', '--transport', 'http', '--scope', 'user', 'qvarch', i.url, '--header', `Authorization: Bearer ${i.token}`]
+    // (the app is not started from a terminal: Claude Code is looked for where it is usually put, not only on the PATH)
+    const bin = await findClaude(true)
+    if (!bin) throw new Error(`${CLAUDE_MISSING}. Или выполните команду ниже вручную`)
+    const shell = viaShell(bin)
     const { execFile } = await import('node:child_process')
-    return new Promise<string>((ok, fail) =>
-      execFile('claude', args, { shell: true, timeout: 30_000, windowsHide: true }, (err, out, errOut) => {
-        if (err) fail(new Error(/not recognized|не является|ENOENT/i.test(String(errOut) + String(err)) ? 'Команда claude не найдена — выполните её вручную (скопируйте ниже)' : String(errOut || err.message).trim()))
-        else ok(String(out).trim() || 'Готово: qvarch добавлен в Claude Code')
-      }),
-    )
+    const run = (args: string[]) =>
+      new Promise<string>((ok, fail) =>
+        execFile(commandOf(bin), shell ? args.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)) : args, { shell, timeout: 30_000, windowsHide: true, env: bin.env, encoding: 'utf8' }, (err, out, errOut) =>
+          err ? fail(new Error(String(errOut || err.message).trim().slice(0, 400))) : ok(String(out).trim()),
+        ),
+      )
+    // set up anew: one set up before (an old token, an old port) is replaced
+    await run(['mcp', 'remove', '--scope', 'user', 'qvarch']).catch(() => undefined)
+    return (await run(['mcp', 'add', '--transport', 'http', '--scope', 'user', 'qvarch', i.url, '--header', `Authorization: Bearer ${i.token}`])) || 'Готово: qvarch добавлен в Claude Code'
   },
 }

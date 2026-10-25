@@ -1,6 +1,6 @@
 import { Notification } from 'electron'
 import { join } from 'node:path'
-import { attachWord } from '../../shared/transport/chat'
+import { attachWord, authorKey, authorName } from '../../shared/transport/chat'
 import { httpBase, notifiesIn, socketUrl, type TransportState } from '../../shared/transport/constants'
 import { TRANSPORT_PATH, type MethodName, type TransportEvent } from '../../shared/transport/protocol'
 import type { AppContext } from '../app/appContext'
@@ -131,7 +131,8 @@ export class Transport {
   /** Each event's handling here (all of them go on to the main window). */
   /** What the app itself does with an event (the window handles its own: every event goes on to it). */
   private readonly EVENTS: { [K in TransportEvent['e']]?: (p: Extract<TransportEvent, { e: K }>['p']) => void } = {
-    'chat.message': (m) => this.notify(m.room, m.author.id, m.author.name, m.text || (m.attach ? attachWord(m.attach) : ''), !!m.mentions?.includes(this.link.device?.id ?? '')),
+    // (one's own agent's answer — told too: it is not one's own message)
+    'chat.message': (m) => this.notify(m.room, authorKey(m), authorName(m), m.text || (m.attach ? attachWord(m.attach) : ''), !!m.mentions?.includes(this.link.device?.id ?? '')),
     'media.added': (p) => this.log.write(`event media.added ${p.space.slice(0, 8)} ${p.rels.join(', ')}`),
   }
   private onEvent(ev: TransportEvent): void {

@@ -5,7 +5,7 @@ import type { McpClient, McpInfoView } from '@shared/api'
 import Icon from './Icon.vue'
 
 /**
- * Settings → AI-ассистенты: Qvarch as an MCP server — on / off, its address and token, the hosts tests may run
+ * Settings → ИИ-агенты: Qvarch as an MCP server — on / off, its address and token, the hosts tests may run
  * against without asking, and the clients set up (Claude Code — VS Code and the terminal; Claude Desktop).
  */
 const info = ref<McpInfoView>()

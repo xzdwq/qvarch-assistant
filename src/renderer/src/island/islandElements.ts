@@ -21,6 +21,8 @@ export function islandElements() {
     statsEl: ref<HTMLElement>(),
     /** The quick note's text. */
     noteArea: ref<HTMLTextAreaElement>(),
+    /** The chat area's reply. */
+    chatInput: ref<HTMLTextAreaElement>(),
     /** The timeline track and its lanes (pointer → time / lane). */
     track: ref<HTMLElement>(),
     rowMain: ref<HTMLElement>(),

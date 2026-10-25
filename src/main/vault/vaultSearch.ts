@@ -1,6 +1,7 @@
 import { posix } from 'node:path'
 import type { VaultHit, VaultNode } from '../../shared/vault'
-import { filesOf } from '../../shared/vault'
+import { filesOf, resolveWiki } from '../../shared/vault'
+import { linksIn } from '../../shared/notebook/links'
 import { BOARD_EXT } from '../../shared/whiteboard'
 
 /** Reading through the vault's notes: search, event mentions. A note's text comes from `read` (it may throw). */
@@ -33,6 +34,19 @@ export function eventMentions(tree: VaultNode[], read: ReadNote): Record<string,
     }
   }
   walk(tree)
+  return out
+}
+
+/** The notes whose `[[links]]` lead to a note (it itself — not counted), by path. */
+export function backlinks(tree: VaultNode[], read: ReadNote, target: string): string[] {
+  const files = filesOf(tree)
+  const out: string[] = []
+  for (const path of files) {
+    if (path === target || path.endsWith(BOARD_EXT)) continue
+    const text = tryRead(read, path)
+    if (text === undefined || !text.includes('[[')) continue
+    if (linksIn(text).some((l) => l.kind === 'note' && resolveWiki(l.target, files) === target)) out.push(path)
+  }
   return out
 }
 

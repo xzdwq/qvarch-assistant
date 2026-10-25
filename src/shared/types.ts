@@ -4,6 +4,7 @@ import type { Contrast } from './contrast'
 import type { AudioNoteKind } from './tracker/constants'
 import type { AttrDef, EntryAttrs } from './tracker/attributes'
 import type { ChatPrefs, TransportPrefs } from './transport/constants'
+import type { OrbMode } from './islandChat'
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -191,6 +192,10 @@ export interface IslandPrefs {
   pinned?: boolean
   /** Opacity of the collapsed pill, 0.2–1 (the expanded island is always opaque). */
   opacity?: number
+  /** What the orb opens: the quick note (default) or the chats. */
+  orb?: OrbMode
+  /** The chat the island shows (none / '' — the feed: the latest with unread messages). */
+  chatRoom?: string
 }
 
 /** What the interface shows (Настройки → Интерфейс). */

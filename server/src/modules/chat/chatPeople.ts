@@ -11,7 +11,7 @@ export class ChatPeople {
 
   async peopleOf(dev: string): Promise<DeviceInfo[]> {
     return this.db.rows<DeviceInfo>(
-      `select d.id, d.name from qa_devices d where d.id <> $1 and not d.bot and (
+      `select d.id, d.name from qa_devices d where d.id <> $1 and (
          d.id in (select x.device from chat_members x where x.room in (select room from chat_members where device = $1))
          or d.id in (select y.device from space_members y where y.space in (select space from space_members where device = $1)))
        order by d.name`,

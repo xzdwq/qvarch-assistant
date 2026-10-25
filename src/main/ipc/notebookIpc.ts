@@ -26,6 +26,13 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('vaultSearch', (_e, q) => vault.search(str(q)))
   handle('vaultNotesWith', (_e, needle) => (str(needle) ? vault.notesWith(str(needle), 20) : []))
   handle('eventMentions', () => vault.eventMentions())
+  handle('vaultBacklinks', (_e, p) => vault.backlinks(str(p)))
+  handle('vaultAgentLines', (_e, p) => vault.agentLines(str(p)))
+  handle('vaultSetAgentLines', (_e, p, lines) => {
+    // (hash → name, both short strings: anything else is not kept)
+    const clean = Object.fromEntries(Object.entries(lines && typeof lines === 'object' ? (lines as Record<string, unknown>) : {}).filter((e): e is [string, string] => /^[0-9a-z]{1,8}$/.test(e[0]) && typeof e[1] === 'string' && e[1].length <= 80))
+    vault.setAgentLines(str(p), clean)
+  })
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
   handle('vaultPair', (_e, a, b) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
   // an emoji mark: one emoji (a few code points), no text

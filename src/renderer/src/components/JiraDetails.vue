@@ -8,9 +8,10 @@ import Icon from './Icon.vue'
 import Markdown from './Markdown.vue'
 
 /** A Jira task opened up: its fields (status, due, components, labels, versions, parent…) and the description. */
-const props = defineProps<{ issue: JiraIssue }>()
+const props = defineProps<{ issue: JiraIssue; /** Its address when this person's Jira is not connected (a shared note's snapshot). */ url?: string }>()
 const jira = useJira()
-const open = () => jira.value.siteUrl && openUrl(`${jira.value.siteUrl}/browse/${props.issue.key}`)
+const href = computed(() => (jira.value.siteUrl ? `${jira.value.siteUrl}/browse/${props.issue.key}` : props.url))
+const open = () => href.value && openUrl(href.value)
 const fmt = (d?: string | number) => (d ? new Date(typeof d === 'string' ? `${d}T12:00:00` : d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 const late = computed(() => !!props.issue.due && props.issue.due < todayKey.value && props.issue.category !== 'done')
 </script>
@@ -57,7 +58,7 @@ const late = computed(() => !!props.issue.due && props.issue.due < todayKey.valu
     </div>
     <div v-if="issue.description" class="jd-desc tw:max-h-320 tw:overflow-auto tw:py-8 tw:px-10 tw:border tw:border-border tw:rounded-r2 tw:bg-field"><Markdown :text="issue.description" compact /></div>
     <p v-else class="jd-none tw:m-0 tw:text-muted">Описания нет<template v-if="!('labels' in issue)"> (появится после синхронизации)</template></p>
-    <button v-if="jira.siteUrl" class="jd-open tw:self-start tw:inline-flex tw:items-center tw:gap-6 tw:py-4 tw:px-10 tw:text-[12px]" data-link @click="open"><Icon name="external" :size="12" />Открыть в Jira</button>
+    <button v-if="href" class="jd-open tw:self-start tw:inline-flex tw:items-center tw:gap-6 tw:py-4 tw:px-10 tw:text-[12px]" data-link @click="open"><Icon name="external" :size="12" />Открыть в Jira</button>
   </div>
 </template>
 

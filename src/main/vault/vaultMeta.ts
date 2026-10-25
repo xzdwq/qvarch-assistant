@@ -1,12 +1,15 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BOARD_EXT } from '../../shared/whiteboard'
+import type { AgentLines } from '../../shared/notebook/agentLines'
 import type { VaultFiles } from './vaultFiles'
 
 interface MetaData {
   colors: Record<string, string>
   pairs: Record<string, string>
   emojis: Record<string, string>
+  /** The lines AI agents wrote in each personal note (shared/notebook/agentLines). */
+  agentLines: Record<string, AgentLines>
 }
 
 /**
@@ -18,9 +21,9 @@ export class VaultMeta {
 
   constructor(private files: VaultFiles) {
     try {
-      this.data = { colors: {}, pairs: {}, emojis: {}, ...JSON.parse(readFileSync(this.file, 'utf8')) }
+      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, ...JSON.parse(readFileSync(this.file, 'utf8')) }
     } catch {
-      this.data = { colors: {}, pairs: {}, emojis: {} }
+      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {} }
     }
   }
   private get file(): string {
@@ -35,6 +38,15 @@ export class VaultMeta {
   colorOf = (rel: string): string | undefined => this.data.colors[rel]
   emojiOf = (rel: string): string | undefined => this.data.emojis[rel]
   pairOf = (rel: string): string | undefined => this.data.pairs[rel]
+  agentLinesOf = (rel: string): AgentLines => this.data.agentLines[rel] ?? {}
+
+  /** The lines agents wrote in a note (empty — none kept). */
+  setAgentLines(rel: string, lines: AgentLines): void {
+    this.files.abs(rel)
+    if (Object.keys(lines).length) this.data.agentLines[rel] = lines
+    else delete this.data.agentLines[rel]
+    this.save()
+  }
 
   /** A colour mark (undefined — none). */
   setColor(rel: string, color?: string): void {
@@ -94,7 +106,7 @@ export class VaultMeta {
       if (nk && nv) pairs[nk] = nv
     }
     this.data.pairs = pairs
-    for (const map of [this.data.colors, this.data.emojis])
+    for (const map of [this.data.colors, this.data.emojis, this.data.agentLines] as Array<Record<string, unknown>>)
       for (const k of Object.keys(map)) {
         if (k !== from && !k.startsWith(from + '/')) continue
         const v = map[k]

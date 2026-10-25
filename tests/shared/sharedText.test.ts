@@ -47,13 +47,14 @@ describe('a component\'s origin in a shared note', () => {
     a.stamp = () => ({ device: 'dev-a', at: (t += 1) })
     b.stamp = () => ({ device: 'dev-b', at: (t += 1) })
     a.setLocal('первая\nвторая\nтретья')
-    expect([...b.lineAuthors()]).toEqual([[0, 'dev-a'], [1, 'dev-a'], [2, 'dev-a']])
+    const devices = (m: ReturnType<SharedText['lineAuthors']>) => [...m].map(([l, w]) => [l, w.device])
+    expect(devices(b.lineAuthors())).toEqual([[0, 'dev-a'], [1, 'dev-a'], [2, 'dev-a']])
     // Бета continues Альфа's word on the second line — the line is hers now; her text never takes Альфа's mark
     b.setLocal('первая\nвторая-ещё\nтретья')
-    expect([...a.lineAuthors()]).toEqual([[0, 'dev-a'], [1, 'dev-b'], [2, 'dev-a']])
+    expect(devices(a.lineAuthors())).toEqual([[0, 'dev-a'], [1, 'dev-b'], [2, 'dev-a']])
     // a deletion alone on the third line — the line is the one who deleted's
     a.setLocal('первая\nвторая-ещё\nтреть')
-    expect(b.lineAuthors().get(2)).toBe('dev-a')
+    expect(b.lineAuthors().get(2)).toEqual({ device: 'dev-a' })
     a.setLocal('первая\nвторая-ещё\nтреть')
     const plain = new SharedText()
     plain.setLocal('без отметок')

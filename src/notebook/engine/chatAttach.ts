@@ -48,8 +48,8 @@ export interface ShotFrom {
   run?: BlockRun
   src: string
 }
-/** The kinds a block is sent as (files go their own way). */
-export type ShotKind = Exclude<AttachKind, FileKind>
+/** The kinds a block is sent as (files go their own way; an agent's steps are not a block). */
+export type ShotKind = Exclude<AttachKind, FileKind | 'trace'>
 /** Each kind: whether it needs a run done, and its shot (none — nothing of that kind to send). */
 const SHOTS: Record<ShotKind, { needsRun: boolean; shot: (f: { run: BlockRun; src: string }) => unknown }> = {
   sql: {

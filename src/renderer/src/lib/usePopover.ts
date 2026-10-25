@@ -6,6 +6,8 @@ import { beside, placeFloat, visibleRect } from './floating'
 export interface PopoverPoint {
   x: number
   y: number
+  /** What was clicked to open it (a chip): a press on it is not «outside» — its click may close it again. */
+  from?: HTMLElement
 }
 /** What a popover opens from: an element (it stays beside it) or a point (it stands there until anything scrolls). */
 export type PopoverAnchor = HTMLElement | PopoverPoint | null | undefined
@@ -159,7 +161,10 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
 
   const layer = new PopoverLayer<Node>((t) => !!panel.value?.contains(t), inject(LAYER, undefined))
   provide(LAYER, layer)
-  const inside = (t: EventTarget | null) => t instanceof Node && (!!(isElement(anchorNow()) && (anchorNow() as HTMLElement).contains(t)) || layer.holds(t))
+  const inside = (t: EventTarget | null) => {
+    const a = anchorNow()
+    return t instanceof Node && (!!(isElement(a) ? a.contains(t) : a?.from?.contains(t)) || layer.holds(t))
+  }
   const onDown = (e: PointerEvent) => !inside(e.target) && close()
   // (at a point: what it stood by has moved — its own list scrolling is not that)
   const onScroll = (e: Event) => !isElement(anchorNow()) && !inside(e.target) && close()

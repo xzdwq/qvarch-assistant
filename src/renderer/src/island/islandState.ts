@@ -1,4 +1,8 @@
-import { inject, provide, watch, type InjectionKey } from 'vue'
+import { computed, inject, provide, watch, type InjectionKey } from 'vue'
+import type { OrbMode } from '@shared/islandChat'
+import type { IslandDrawer } from '@shared/tracker/islandGeometry'
+import { useIslandChat } from './useIslandChat'
+import { useIslandNotices } from './useIslandNotices'
 import { islandElements } from './islandElements'
 import { useDayList } from './useDayList'
 import { useEntryEdit } from './useEntryEdit'
@@ -31,7 +35,7 @@ function createIslandState() {
     continueFrom: (e) => cut.copyFrom(e),
   })
   const expand = useIslandExpand(els, {
-    isNoteOpen: () => quick.noteOpen.value,
+    isNoteOpen: () => !!drawer.value,
     isMenuOpen: () => !!menu.menu.value,
     onCollapse: () => {
       pick.entryId.value = undefined
@@ -41,7 +45,36 @@ function createIslandState() {
   })
   const quick = useQuickNote(els, day, island, { cancelExpand: expand.cancelExpand })
   const quickEvent = useQuickEvent(day.today, quick.qMsg)
-  const layout = useIslandLayout(els, island, day, expand, quick.noteOpen)
+  // what opens next to the pill — one at a time: the quick note, a chat, the reminders
+  const chat = useIslandChat(els, island, { closeOthers: openingDrawer })
+  const notices = useIslandNotices({ busy: () => !!drawer.value || expand.expanded.value, closeOthers: openingDrawer })
+  const drawer = computed<IslandDrawer | undefined>(() => (quick.noteOpen.value ? 'note' : chat.open.value ? 'chat' : notices.open.value ? 'notice' : undefined))
+  /** Something opens next to the pill: whatever else is there closed, the panel folded back into the pill. */
+  function openingDrawer(): void {
+    closeDrawer()
+    expand.cancelExpand()
+    if (expand.expanded.value) expand.collapse()
+  }
+  /** Whatever is open next to the pill closed (the quick note saved). */
+  function closeDrawer(): void {
+    if (quick.noteOpen.value) void quick.toggleNote()
+    chat.close()
+    if (notices.open.value) notices.close()
+  }
+  /** The orb: what is open next to the pill closed; else what it opens (the note or the chats). */
+  function onOrb(): void {
+    if (drawer.value) return closeDrawer()
+    if (chat.orb.value === 'chat') chat.openChat()
+    else void quick.toggleNote()
+  }
+  /** The orb's other mode chosen (kept) and opened now. */
+  function switchOrb(m: OrbMode): void {
+    chat.setOrb(m)
+    closeDrawer()
+    if (m === 'chat') chat.openChat()
+    else void quick.toggleNote()
+  }
+  const layout = useIslandLayout(els, island, day, expand, drawer)
   const track = useIslandTrack(day)
   const pointer = useTrackPointer(els, day, track, pick)
   const cut = useIslandCut(els, day, pick, flash)
@@ -65,6 +98,7 @@ function createIslandState() {
 
   /** Escape closes the innermost thing open; with nothing open it collapses the island. */
   const escapeLadder: Array<[isOpen: () => boolean, close: () => void]> = [
+    [() => chat.open.value || notices.open.value, closeDrawer],
     [() => !!pick.panelNote.value, () => (pick.panelNote.value = undefined)], // the editor saves on its way out
     [() => !!menu.menu.value, () => (menu.menu.value = undefined)],
     [() => !!edit.edit.value, () => (edit.edit.value = undefined)],
@@ -86,7 +120,7 @@ function createIslandState() {
   /** Opens the main window (on a block). */
   const openMain = (entryId?: string) => window.qa.openMain(undefined, entryId)
 
-  return { els, island, day, typingCombo, toast, flash, pick, expand, quick, quickEvent, layout, track, pointer, cut, edit, menu, list, onKey, openMain }
+  return { els, island, day, typingCombo, toast, flash, pick, expand, quick, quickEvent, chat, notices, drawer, onOrb, switchOrb, layout, track, pointer, cut, edit, menu, list, onKey, openMain }
 }
 
 export type IslandState = ReturnType<typeof createIslandState>

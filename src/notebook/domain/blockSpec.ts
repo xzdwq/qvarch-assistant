@@ -55,6 +55,8 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   rawEditable: boolean
   /** Its «@» commands (the menu's order is set in commands/registry). */
   commands?: NoteCommand[]
+  /** How an AI agent writes it: what it is for, its settings (the sample comes from its «@» command). */
+  guide?: string
 }
 
 /** The spec of a kind that runs (its type marks it, so the runnable kinds are known to the compiler). */

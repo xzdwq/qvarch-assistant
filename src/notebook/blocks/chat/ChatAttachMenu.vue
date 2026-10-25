@@ -56,9 +56,9 @@ function pick(n: VaultNode): void {
 
 <template>
   <span ref="btn" class="tw:inline-flex tw:flex-none">
-    <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-36 tw:h-36 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:text-text tw:[&.on]:text-text" :class="{ on: open }" title="Приложить: файлы с этого компьютера или документ / папку из Блокнота (файлы можно вставить Ctrl+V или перетащить сюда)" :disabled="disabled" @click="toggle"><Icon name="paperclip" :size="16" /></button>
+    <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-36 tw:h-36 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:[&.on]:text-text" :class="{ on: open }" title="Приложить: файлы с этого компьютера или документ / папку из Блокнота (файлы можно вставить Ctrl+V или перетащить сюда)" :disabled="disabled" @click="toggle"><Icon name="paperclip" :size="16" /></button>
     <input ref="picker" type="file" multiple hidden @change="onPicked" />
-    <Popover v-model:open="open" :anchor="btn" :width="view === 'ways' ? 240 : 340" class="tw:fixed tw:z-5000 tw:flex tw:flex-col tw:gap-2 tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:text-[12.5px]">
+    <Popover v-model:open="open" :anchor="btn" :width="view === 'ways' ? 240 : 340" class="tw:fixed tw:z-5000 tw:flex tw:flex-col tw:gap-2 tw:p-6 tw:border tw:border-border-2 tw:rounded-[14px] tw:bg-pop tw:shadow-pop tw:text-[12.5px]">
       <template v-if="view === 'ways'">
         <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-left tw:hover:bg-hover" @click="fromComputer"><Icon name="upload" :size="13" />С этого компьютера</button>
         <button class="tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-left tw:hover:bg-hover" @click="fromNotebook"><Icon name="notebook" :size="13" />Из Блокнота<Icon name="chevronRight" :size="11" class="tw:ml-auto tw:text-muted" /></button>

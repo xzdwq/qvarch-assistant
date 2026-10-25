@@ -3,21 +3,15 @@ import { DEFECTS } from '@shared/excelGen'
 import { GEN_KINDS } from '@shared/gen'
 import { QA_CHECKS } from '@shared/qaChecks'
 import { NOTE_COMMANDS } from '@nb/commands/registry'
+import { list, type HelpSection } from './helpFormat'
+import { TEAM_HELP } from './helpTeamwork'
 
 /**
  * «Инструкция» of the notebook: what the notebook and its testing tools do, section by section. The lists (the «@»
  * commands, the ready checks, the generators, the faults of the Excel files, what «Проверка» catches) are taken from
  * the code itself — the help never lags behind.
  */
-export interface HelpSection {
-  id: string
-  group: 'Блокнот' | 'Тестирование'
-  title: string
-  icon: string
-  html: string
-}
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-const list = (items: Array<[string, string]>) => `<dl>${items.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl>`
+export { HELP_GROUPS, type HelpSection } from './helpFormat'
 const genCall = (id: string) => {
   const k = GEN_KINDS.find((g) => g.id === id)!
   return k.call ? `gen.${k.call}(${k.params.map((p) => (p.kind === 'num' || p.kind === 'json' ? p.def : `'${p.def}'`)).join(', ')})` : ''
@@ -242,4 +236,5 @@ ${list(DEFECTS.map((d) => [d.label, `${d.hint}${d.xlsxOnly ? ' (только xls
 <li>Пароли, токены и ключи в примерах скрыты, заголовки не сохраняются.</li>
 </ul>`,
   },
+  ...TEAM_HELP,
 ]

@@ -9,7 +9,7 @@ import type { CodeShot, HttpShot, SqlShot, ValueShot } from '@nb/engine/chatAtta
 import Icon from '@renderer/components/Icon.vue'
 
 const props = defineProps<{ a: ChatAttach }>()
-const ICONS: Record<ChatAttach['kind'], string> = { sql: 'database', http: 'api', code: 'code', value: 'braces', pw: 'globe', image: 'image', file: 'file' }
+const ICONS: Record<ChatAttach['kind'], string> = { sql: 'database', http: 'api', code: 'code', value: 'braces', pw: 'globe', image: 'image', file: 'file', trace: 'sparkles', voice: 'mic' }
 const sql = computed(() => (props.a.kind === 'sql' ? (props.a.data as SqlShot) : undefined))
 const http = computed(() => (props.a.kind === 'http' ? (props.a.data as HttpShot) : undefined))
 /** A block as written (code, a browser test): its whole block; code — its value too, when it was run. */

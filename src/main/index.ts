@@ -5,11 +5,13 @@ import { dayKey, dayStart, shiftDay } from '../shared/timeline'
 import { isWhisperModel } from '../shared/voice'
 import { AppContext } from './app/appContext'
 import { registerAppIpc } from './ipc/appIpc'
+import { registerIslandChatIpc } from './ipc/islandChatIpc'
 import { registerBrowserIpc } from './ipc/browserIpc'
 import { registerFilesIpc } from './ipc/filesIpc'
 import { registerHistoryIpc } from './ipc/historyIpc'
 import { registerIntegrationsIpc } from './ipc/integrationsIpc'
 import { registerMcpIpc } from './ipc/mcpIpc'
+import { registerAgentIpc } from './ipc/agentIpc'
 import { registerNotebookIpc } from './ipc/notebookIpc'
 import { registerReleaseIpc } from './ipc/releaseIpc'
 import { registerRunnersIpc } from './ipc/runnersIpc'
@@ -151,9 +153,10 @@ function registerIpc(activity: Activity): void {
   registerToolsIpc(ctx)
   registerBrowserIpc(ctx)
   registerAppIpc(ctx)
+  registerIslandChatIpc(ctx)
   registerNotebookIpc(ctx)
   stopRuns = registerRunnersIpc(ctx)
-  registerMcpIpc(ctx)
+  registerAgentIpc(ctx, registerMcpIpc(ctx))
 }
 
 // closing windows keeps the tracker alive in the tray

@@ -26,6 +26,13 @@
   --peer-7: #facc15;
   --peer-8: #f87171;
   --peer-label-text: #0b0d12;
+  /* the lines an AI agent wrote (its owner's colour marks the start of each run) */
+  --ai-line: #8b7cf6;
+  /* a chat: the wall under its messages, one's own bubbles — one gradient over the whole view (as messengers do) */
+  --chat-wall:
+    radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%),
+    radial-gradient(110% 70% at 100% 100%, color-mix(in srgb, var(--peer-2) 9%, transparent), transparent 65%), var(--panel-2);
+  --chat-mine: linear-gradient(170deg, color-mix(in srgb, var(--accent) 34%, var(--panel)), color-mix(in srgb, var(--peer-5) 30%, var(--panel)));
 
   /* the editor's own parts */
   --editor-placeholder: #5b6275;

@@ -9,6 +9,16 @@ import { DOCK_SIDE, DOCK_STRIP, ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW, 
 export const NOTE_H = 136
 /** The pill is at least this wide while a quick note is open. */
 export const NOTE_W = 440
+/**
+ * What may open next to the pill (below it, or above when the island grows up) and its size: the quick note, a chat
+ * (its latest messages and a reply), the reminders. The pill is at least as wide as it.
+ */
+export const ISLAND_DRAWERS = {
+  note: { w: NOTE_W, h: NOTE_H },
+  chat: { w: 460, h: 340 },
+  notice: { w: NOTE_W, h: 150 },
+} as const satisfies Record<string, { w: number; h: number }>
+export type IslandDrawer = keyof typeof ISLAND_DRAWERS
 
 /** A side edge (the slim pill stands upright there). */
 export const isSideDock = (dock: Dock | undefined): boolean => dock === 'left' || dock === 'right'
@@ -27,7 +37,8 @@ export interface IslandSizeInput {
   expanded: boolean
   panelH: number
   dock?: Dock
-  noteOpen: boolean
+  /** What is open next to the pill (none — nothing). */
+  drawer?: IslandDrawer
   dockLen: number
   pillW: number
   pillH: number
@@ -36,8 +47,9 @@ export interface IslandSizeInput {
 /** The shell's size: the panel, the docked pill (a strip or an upright bar), or the pill (with its note area). */
 export function islandSize(o: IslandSizeInput): { w: number; h: number } {
   if (o.expanded) return { w: ISLAND_PANEL_WIDTH, h: o.panelH }
-  if (o.dock && !o.noteOpen) return isSideDock(o.dock) ? { w: DOCK_SIDE.w, h: o.dockLen } : { w: o.dockLen, h: DOCK_STRIP.h }
-  return { w: Math.max(o.pillW, o.noteOpen ? NOTE_W : 0), h: o.pillH + (o.noteOpen ? NOTE_H : 0) }
+  if (o.dock && !o.drawer) return isSideDock(o.dock) ? { w: DOCK_SIDE.w, h: o.dockLen } : { w: o.dockLen, h: DOCK_STRIP.h }
+  const d = o.drawer ? ISLAND_DRAWERS[o.drawer] : { w: 0, h: 0 }
+  return { w: Math.max(o.pillW, d.w), h: o.pillH + d.h }
 }
 
 /** At a side edge the island stands on the pill's centre (`offset` from the window's top), inside the window. */

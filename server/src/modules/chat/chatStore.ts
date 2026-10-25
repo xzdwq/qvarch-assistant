@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ChatAttach, ChatMessage, ChatRoom, CommentAnchor } from '../../../../src/shared/transport/chat'
+import { REPLY_TEXT_MAX, type ChatAgent, type ChatAttach, type ChatMessage, type ChatReply, type ChatRoom, type CommentAnchor } from '../../../../src/shared/transport/chat'
 import type { DeviceInfo } from '../../../../src/shared/transport/protocol'
 import type { Db, Sql } from '../../db'
 
@@ -48,6 +48,16 @@ export const CHAT_REACTIONS_MIGRATION = `create table chat_reactions (
 export const CHAT_BRANCHES_MIGRATION = `alter table chat_rooms add column parent uuid references chat_rooms (id) on delete set null;
    alter table chat_messages add column attach jsonb;`
 
+/** A message written by a member's agent: which, and how deep in a chain of agents; `at` — when (a chat's history brought from the app). */
+export interface AgentStamp {
+  agent?: { id: string; name: string }
+  chain?: number
+  at?: number
+  /** The number of the message it answers (kept as that message is now: its author, a piece of its text). */
+  reply?: number
+}
+/** A message answering another: the answered one kept with it. */
+export const CHAT_REPLY_MIGRATION = 'alter table chat_messages add column reply jsonb;'
 /** Where a new room belongs: a shared space, a comment's place; its id — the app's own (made offline), else a new one. */
 export interface RoomPlace {
   space?: string
@@ -56,7 +66,7 @@ export interface RoomPlace {
 }
 
 /** A message's columns with its author (the name as it is now), its mentions, its reactions (emoji → who). */
-const MESSAGE_COLS = `m.room, m.seq, m.id, m.text, m.client_id, m.mentions, m.attach, (extract(epoch from m.at) * 1000)::bigint as at, d.id as author_id, d.name as author_name, d.bot as author_bot,
+const MESSAGE_COLS = `m.room, m.seq, m.id, m.text, m.client_id, m.mentions, m.attach, m.agent, m.chain, m.reply, (extract(epoch from m.at) * 1000)::bigint as at, d.id as author_id, d.name as author_name,
     (select json_object_agg(g.emoji, g.people) from (select x.emoji, json_agg(json_build_object('id', p.id, 'name', p.name) order by x.at) as people
        from chat_reactions x join qa_devices p on p.id = x.device where x.room = m.room and x.seq = m.seq group by x.emoji) g) as reactions`
 interface MessageRow {
@@ -67,24 +77,29 @@ interface MessageRow {
   client_id: string | null
   mentions: string[] | null
   attach: ChatAttach | null
+  agent: { id: string; name: string } | null
+  chain: number | null
+  reply: ChatReply | null
   at: number
   author_id: string
   author_name: string
-  author_bot: boolean
   reactions: Record<string, DeviceInfo[]> | null
 }
-const device = (id: string, name: string, bot: boolean): DeviceInfo => (bot ? { id, name, bot } : { id, name })
+const device = (id: string, name: string): DeviceInfo => ({ id, name })
 const messageOf = (r: MessageRow): ChatMessage => ({
   room: r.room,
   seq: r.seq,
   id: r.id,
-  author: device(r.author_id, r.author_name, r.author_bot),
+  author: device(r.author_id, r.author_name),
   text: r.text,
   at: Number(r.at),
   ...(r.client_id ? { clientId: r.client_id } : {}),
   ...(r.mentions?.length ? { mentions: r.mentions } : {}),
   ...(r.reactions ? { reactions: r.reactions } : {}),
   ...(r.attach ? { attach: r.attach } : {}),
+  ...(r.agent ? { agent: r.agent } : {}),
+  ...(r.chain ? { chain: r.chain } : {}),
+  ...(r.reply ? { reply: r.reply } : {}),
 })
 
 interface RoomRow {
@@ -98,20 +113,23 @@ interface RoomRow {
   parent: string | null
   last_seq: number
   read_seq: number
-  members: Array<{ id: string; name: string; bot: boolean }>
+  members: Array<{ id: string; name: string }>
+  agents: ChatAgent[] | null
   last: MessageRow | null
 }
 // (`space`, `doc`, `anchor`, `resolved` — the columns the space module adds: the modules all migrate before the server serves)
 const ROOM_SELECT = `select r.id, r.title, r.space, r.doc, r.anchor, r.resolved, r.created_by, r.parent, r.last_seq, me.read_seq,
-    (select json_agg(json_build_object('id', d.id, 'name', d.name, 'bot', d.bot) order by d.bot, d.name)
+    (select json_agg(json_build_object('id', d.id, 'name', d.name) order by d.name)
        from chat_members x join qa_devices d on d.id = x.device where x.room = r.id) as members,
+    (select json_agg(json_build_object('id', a.id, 'name', a.name, 'owner', a.owner, 'open', a.open) order by a.added_at)
+       from chat_agents a where a.room = r.id and exists (select 1 from chat_members o where o.room = r.id and o.device = a.owner)) as agents,
     (select row_to_json(l) from (select ${MESSAGE_COLS} from chat_messages m join qa_devices d on d.id = m.author
        where m.room = r.id order by m.seq desc limit 1) l) as last
   from chat_rooms r join chat_members me on me.room = r.id and me.device = $1`
 const roomOf = (r: RoomRow): ChatRoom => ({
   id: r.id,
   title: r.title,
-  members: (r.members ?? []).map((m) => device(m.id, m.name, m.bot)),
+  members: (r.members ?? []).map((m) => device(m.id, m.name)),
   lastSeq: r.last_seq,
   readSeq: r.read_seq,
   ...(r.last ? { last: messageOf(r.last) } : {}),
@@ -119,6 +137,7 @@ const roomOf = (r: RoomRow): ChatRoom => ({
   ...(r.doc && r.anchor ? { doc: r.doc, anchor: r.anchor, resolved: !!r.resolved } : {}),
   createdBy: r.created_by,
   ...(r.parent ? { parent: r.parent } : {}),
+  ...(r.agents?.length ? { agents: r.agents.map(({ open, ...a }) => (open ? { ...a, open } : a)) } : {}),
 })
 
 /** The chat in the database (who may see what is the caller's check — `isMember`). */
@@ -166,7 +185,7 @@ export class ChatStore {
    * A message added as the room's next number; read by its author up to it. The same `clientId` of the same author
    * again (a resend after a lost answer) — the message already kept, `fresh: false`.
    */
-  async post(room: string, author: string, text: string, clientId?: string, mentions: readonly string[] = [], attach?: ChatAttach): Promise<{ message: ChatMessage; fresh: boolean }> {
+  async post(room: string, author: string, text: string, clientId?: string, mentions: readonly string[] = [], attach?: ChatAttach, by: AgentStamp = {}): Promise<{ message: ChatMessage; fresh: boolean }> {
     try {
       return await this.db.tx(async (sql) => {
         const had = clientId ? await this.byClientId(sql, author, clientId) : undefined
@@ -174,7 +193,26 @@ export class ChatStore {
         // the room's row locked: messages of one room are numbered one after another
         const r = await sql.one<{ last_seq: number }>('update chat_rooms set last_seq = last_seq + 1 where id = $1 returning last_seq', [room])
         if (!r) throw new Error('комната не найдена')
-        await sql.rows('insert into chat_messages (room, seq, id, author, text, client_id, mentions, attach) values ($1, $2, $3, $4, $5, $6, $7, $8)', [room, r.last_seq, randomUUID(), author, text, clientId ?? null, mentions.length ? mentions : null, attach ? JSON.stringify(attach) : null])
+        // (an answer keeps the answered message as it is now: its author, a piece of its text)
+        await sql.rows(
+          `insert into chat_messages (room, seq, id, author, text, client_id, mentions, attach, agent, chain, at, reply) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce(to_timestamp($11::float8 / 1000), now()),
+          (select json_build_object('seq', x.seq, 'author', coalesce(x.agent->>'name', dx.name), 'text', left(coalesce(nullif(btrim(x.text), ''), x.attach->>'title', ''), ${REPLY_TEXT_MAX}))
+             from chat_messages x join qa_devices dx on dx.id = x.author where x.room = $1 and x.seq = $12))`,
+          [
+          room,
+          r.last_seq,
+          randomUUID(),
+          author,
+          text,
+          clientId ?? null,
+          mentions.length ? mentions : null,
+          attach ? JSON.stringify(attach) : null,
+          by.agent ? JSON.stringify(by.agent) : null,
+          by.chain ?? null,
+          by.at ?? null,
+          by.reply ?? null,
+          ],
+        )
         await sql.rows('update chat_members set read_seq = greatest(read_seq, $3) where room = $1 and device = $2', [room, author, r.last_seq])
         const m = await sql.one<MessageRow>(`select ${MESSAGE_COLS} from chat_messages m join qa_devices d on d.id = m.author where m.room = $1 and m.seq = $2`, [room, r.last_seq])
         return { message: messageOf(m!), fresh: true }

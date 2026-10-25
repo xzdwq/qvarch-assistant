@@ -141,8 +141,13 @@ const editorTheme = EditorView.theme(
     },
     '.cm-peer-caret:hover .cm-peer-label': { animation: 'none', opacity: '1' },
     // who changed a line last: a thin bar of their colour left of the line numbers
-    '.cm-authors .cm-gutterElement': { padding: '0 1px 0 3px' },
-    '.cm-author-bar': { width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
+    // (room on the left for an AI run's ✦)
+    '.cm-authors .cm-gutterElement': { padding: '0 1px 0 13px' },
+    '.cm-author-bar': { position: 'relative', width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
+    // an AI agent's lines: one solid bar in the AI's colour (no gaps between its lines); ✦ beside it where its run starts
+    '.cm-author-bar.ai': { opacity: '1', borderRadius: '0', backgroundColor: 'var(--ai-line)' },
+    '.cm-author-bar.ai.first': { borderTopLeftRadius: '2px', borderTopRightRadius: '2px' },
+    '.cm-author-bar.ai.first::before': { content: '"✦"', position: 'absolute', top: '1px', left: '-12px', fontSize: '11px', lineHeight: '1', color: 'var(--peer, var(--ai-line))' },
     ...Object.fromEntries(Array.from({ length: PEER_SLOTS }, (_, i) => [`.cm-peer-sel-${i + 1}`, { backgroundColor: `color-mix(in srgb, var(--peer-${i + 1}) 20%, transparent)` }])),
     '.cm-lp-shared': { display: 'inline-block', padding: '0 7px', borderRadius: '4px', backgroundColor: 'rgb(var(--accent-rgb) / 0.14)', color: 'var(--accent-fg)', fontSize: '0.78em', lineHeight: '1.7' },
     '.cm-lp-hr': { display: 'inline-block', width: '100%', height: '0', borderTop: '1px solid var(--editor-rule)', verticalAlign: 'middle' },

@@ -19,6 +19,7 @@ export const tableSpec: BlockSpec<'table'> = {
   },
   estimateHeight: heightPerLine(24, 34),
   rawEditable: true,
+  guide: 'Обычная таблица Markdown (GFM): | Колонка | Колонка |, под ней | --- | --- |, дальше строки. В ячейках можно ссылки и **выделение**.',
   commands: [
     {
       id: 'table',

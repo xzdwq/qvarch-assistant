@@ -37,9 +37,11 @@ const notice = computed(() => {
 })
 /** The chat shown with no server: what becomes of what one writes. */
 const offline = computed(() => {
-  if (!room.value || chatOnline.value) return ''
+  if (!room.value) return ''
+  if (isHeld(room.value.id)) return 'Чат на этом компьютере · добавите человека — перейдёт на сервер со всей историей'
+  if (chatOnline.value) return ''
   const later = transport.value.status === 'off' ? 'когда сервер будет подключён (Настройки → Сервер и чат)' : 'когда появится связь'
-  return isHeld(room.value.id) ? `Чат пока только здесь — он появится на сервере, а сообщения уйдут, ${later}` : `Нет связи — сообщения отправятся, ${later}`
+  return `Нет связи — сообщения отправятся, ${later}`
 })
 
 // a chat made with no server: held here by its block (its title in it) until the server makes it — then the title goes
@@ -81,7 +83,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="el" class="tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:px-10 tw:pb-2 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
+  <div ref="el" class="tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:px-10 tw:pb-8 tw:border tw:border-border tw:rounded-[18px] tw:bg-panel">
     <ChatHeader v-if="room" :room="room" @switched="(id) => onChange?.(withChatRoom(src, id))" />
     <span v-else class="tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12.5px]"><Icon name="chat" :size="14" />Чат</span>
     <span v-if="offline" class="tw:text-muted tw:text-[11.5px]">{{ offline }}</span>

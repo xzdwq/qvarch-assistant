@@ -1,5 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
-import type { DeviceInfo } from '@shared/transport/protocol'
+
+/** One who may be mentioned: a person, an agent. */
+type DeviceInfo = { id: string; name: string }
 
 /** «@» and the start of a name right before the cursor (a word's start). */
 const AT = /(?:^|[\s(«"'])@([^\s@]{0,30})$/

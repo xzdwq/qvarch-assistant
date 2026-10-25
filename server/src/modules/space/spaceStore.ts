@@ -49,11 +49,11 @@ interface SpaceRow {
   title: string
   kind: SpaceKind
   role: SpaceRole
-  members: Array<{ id: string; name: string; bot: boolean; role: SpaceRole }>
+  members: Array<{ id: string; name: string; role: SpaceRole }>
   docs: Array<{ id: string; title: string; path: string; deleted: boolean }> | null
 }
 const SPACE_SELECT = `select s.id, s.title, s.kind, me.role,
-    (select json_agg(json_build_object('id', d.id, 'name', d.name, 'bot', d.bot, 'role', m.role) order by m.joined_at)
+    (select json_agg(json_build_object('id', d.id, 'name', d.name, 'role', m.role) order by m.joined_at)
        from space_members m join qa_devices d on d.id = m.device where m.space = s.id) as members,
     (select json_agg(json_build_object('id', x.id, 'title', x.title, 'path', x.path, 'deleted', x.deleted_at is not null) order by x.path)
        from space_docs x where x.space = s.id) as docs
@@ -63,7 +63,7 @@ const spaceOf = (r: SpaceRow): Space => ({
   title: r.title,
   kind: r.kind,
   role: r.role,
-  members: r.members.map((m) => ({ id: m.id, name: m.name, role: m.role, ...(m.bot ? { bot: true } : {}) })),
+  members: r.members.map((m) => ({ id: m.id, name: m.name, role: m.role })),
   docs: (r.docs ?? []).map((d) => ({ id: d.id, title: d.title, path: d.path, ...(d.deleted ? { deleted: true } : {}) })),
 })
 const titleOf = docTitleOf

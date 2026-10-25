@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { ISLAND_WINDOW, type Dock } from '@shared/island'
-import { dockLength, islandSize, isSideDock, pillHeight, shellTopAt } from '@shared/tracker/islandGeometry'
+import { dockLength, islandSize, isSideDock, pillHeight, shellTopAt, type IslandDrawer } from '@shared/tracker/islandGeometry'
 import { PILL_MIN, pillWidthFor } from '@shared/tracker/islandPill'
 import type { IslandDay } from './useIslandDay'
 import type { IslandElements } from './islandElements'
@@ -16,7 +16,7 @@ const WAVE_ROOM = 70
  * Where and how big the island is: grows up or down, stuck to a screen edge (a slim pill flush with it), the pill's
  * width measured from its content, the shell's size and position; main is told the real rectangle (it docks by it).
  */
-export function useIslandLayout(els: IslandElements, island: IslandSettings, day: IslandDay, expand: IslandExpand, noteOpen: Ref<boolean>) {
+export function useIslandLayout(els: IslandElements, island: IslandSettings, day: IslandDay, expand: IslandExpand, drawer: Ref<IslandDrawer | undefined>) {
   const { ui, settings } = island
   const up = ref(false)
   /** Stuck to a screen edge: a slim pill flush with it (upright at a side edge); the panel opens from it. */
@@ -36,7 +36,7 @@ export function useIslandLayout(els: IslandElements, island: IslandSettings, day
   const dockLen = computed(() => dockLength(ui.value.dock, !!day.nextMeeting.value))
   const pillH = computed(() => pillHeight(ui.value.pill))
   /** Opacity of the collapsed pill's background (settings) — chips and text stay solid; opaque while hovered or expanded. */
-  const bgAlpha = computed(() => (expand.expanded.value || expand.hovering.value || noteOpen.value ? 1 : (settings.value?.island.opacity ?? 1)))
+  const bgAlpha = computed(() => (expand.expanded.value || expand.hovering.value || drawer.value ? 1 : (settings.value?.island.opacity ?? 1)))
 
   /** The collapsed pill is as wide as its content (measured after each render), within PILL_MIN..PILL_MAX. */
   const pillW = ref(PILL_MIN)
@@ -52,7 +52,7 @@ export function useIslandLayout(els: IslandElements, island: IslandSettings, day
   onMounted(measurePill)
 
   const size = computed(() =>
-    islandSize({ expanded: expand.expanded.value, panelH: expand.panelH.value, dock: dock.value, noteOpen: noteOpen.value, dockLen: dockLen.value, pillW: pillW.value, pillH: pillH.value }),
+    islandSize({ expanded: expand.expanded.value, panelH: expand.panelH.value, dock: dock.value, drawer: drawer.value, dockLen: dockLen.value, pillW: pillW.value, pillH: pillH.value }),
   )
   const shellTop = computed(() => shellTopAt(sideDock.value, dockOffset.value, size.value.h))
 

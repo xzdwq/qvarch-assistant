@@ -30,6 +30,8 @@ export const jiraLink = (key: string, summary: string) => `[${linkText(`${key} $
 const linkText = (s: string) => s.replace(/[[\]\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || 'событие'
 
 export type NoteLink = { kind: 'event'; day: string; id: string } | { kind: 'jira'; key: string }
+/** A link's address (as parseNoteLink reads it). */
+export const noteLinkUrl = (l: NoteLink): string => (l.kind === 'event' ? `${EVENT_SCHEME}event/${l.day}/${l.id}` : `${EVENT_SCHEME}jira/${l.key}`)
 export function parseNoteLink(url: string): NoteLink | undefined {
   let m = /^qvarch:\/\/event\/(\d{4}-\d{2}-\d{2})\/([\w-]+)$/.exec(url)
   if (m) return { kind: 'event', day: m[1], id: m[2] }

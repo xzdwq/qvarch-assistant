@@ -1,6 +1,7 @@
 import { BUNDLE_EXT } from '@shared/docBundle'
-import { CHAT_FILE_MAX, fileKindOf, type ChatFile } from '@shared/transport/chat'
+import { CHAT_FILE_MAX, clockSec, fileKindOf, VOICE_MAX_SEC, type ChatFile, type ChatReply } from '@shared/transport/chat'
 import { sendAttach } from './chatActions'
+import { isHeld } from './chat'
 
 /**
  * The chats' files in the window: a picture's address to show it (fetched once per run — the app keeps the file
@@ -26,9 +27,16 @@ export const fileRefusal = (f: File): string | undefined => (f.size > CHAT_FILE_
 const nameOf = (f: File) => f.name || `изображение.${f.type.split('/')[1] ?? 'png'}`
 
 /** A file sent into a room as a message of its own (a picture — shown right in the chat, any other — a file to save). */
-export async function sendFile(room: string, f: File, text: string): Promise<void> {
+export async function sendFile(room: string, f: File, text: string, reply?: ChatReply): Promise<void> {
   const file = await window.qa.chatFilePut(room, nameOf(f), f.type, new Uint8Array(await f.arrayBuffer()))
-  await sendAttach(room, { kind: fileKindOf(file.mime), title: file.name, data: file }, text)
+  await sendAttach(room, { kind: fileKindOf(file.mime), title: file.name, data: file }, text, reply)
+}
+/** A voice message recorded here sent into a room (a file of the room, played right in the chat). */
+export async function sendVoice(room: string, blob: Blob, sec: number, reply?: ChatReply, text = ''): Promise<void> {
+  if (isHeld(room)) throw new Error('Голосовые отправляются через сервер — этот чат пока только на этом компьютере')
+  const length = Math.min(Math.round(sec), VOICE_MAX_SEC)
+  const file = await window.qa.chatFilePut(room, `Голосовое ${new Date().toLocaleString('ru-RU').replace(/[/:]/g, '-')}.webm`, 'audio/webm', new Uint8Array(await blob.arrayBuffer()))
+  await sendAttach(room, { kind: 'voice', title: `Голосовое ${clockSec(length)}`, data: { ...file, sec: length } }, text, reply)
 }
 /** A note / a folder of the notebook sent into a room as one file (its export: the one who gets it puts it into their notebook). */
 export async function sendNotes(room: string, rel: string, withRuns: boolean, text: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { QUOTE_MAX, type CommentAnchor } from '@shared/transport/chat'
-import type { BlockOrigin, PeerSel } from '@shared/transport/sharedText'
+import type { BlockOrigin, LineAuthor, PeerSel } from '@shared/transport/sharedText'
 import { sharedTextOf } from './sharedDocs'
 
 /**
@@ -37,8 +37,8 @@ export function originsIn(path: string): Map<number, BlockOrigin> {
   for (const [at, o] of st.originsNow()) out.set(lineOfIndex(text, at) + 1, o)
   return out
 }
-/** Who changed each line of a shared note last (0-based line → device; not a shared note — none). */
-export const lineAuthorsIn = (path: string): Map<number, string> => sharedTextOf(path)?.lineAuthors() ?? new Map()
+/** Who changed each line of a shared note last (0-based line → a person or their agent); not a shared note — undefined. */
+export const sharedLineAuthors = (path: string): Map<number, LineAuthor> | undefined => sharedTextOf(path)?.lineAuthors()
 /** The 0-based line an index of a text is on. */
 const lineOfIndex = (text: string, at: number): number => {
   let n = 0

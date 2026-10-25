@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import TabletView from '../TabletView.vue'
+import AgentsSection from './AgentsSection.vue'
 import AiSection from './AiSection.vue'
 import AttributesSection from './AttributesSection.vue'
 import BrowserSection from './BrowserSection.vue'
@@ -35,6 +36,7 @@ export const SETTINGS_PANELS: SettingsPanel[] = [
   { id: 'tablet', category: 'tablet', component: TabletView, props: { embedded: true }, mount: 'whenOpen' },
   { id: 'outlook', category: 'outlook', component: OutlookSection, mount: 'always' },
   { id: 'browser', category: 'browser', component: BrowserSection, mount: 'always' },
+  { id: 'agents', category: 'ai', component: AgentsSection, mount: 'always' },
   { id: 'ai', category: 'ai', component: AiSection, mount: 'always' },
   { id: 'jira', category: 'jira', component: JiraSection, mount: 'always' },
   { id: 'server', category: 'server', component: ServerSection, mount: 'always' },

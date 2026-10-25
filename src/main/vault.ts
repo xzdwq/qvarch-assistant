@@ -5,6 +5,7 @@ import { audiosOf, imagesOf, type VaultEntryKind, type VaultHit, type VaultNode 
 import { findNode } from '../shared/vaultTree'
 import { BOARD_EXT } from '../shared/whiteboard'
 import type { DocBundle } from '../shared/docBundle'
+import type { AgentLines } from '../shared/notebook/agentLines'
 import { cleanName, VaultFiles } from './vault/vaultFiles'
 import { VaultMeta } from './vault/vaultMeta'
 import { VaultRuns } from './vault/vaultRuns'
@@ -12,7 +13,7 @@ import { VaultMedia } from './vault/vaultMedia'
 import { VaultBundles } from './vault/vaultBundle'
 import { VaultWatcher } from './vault/vaultWatcher'
 import { readVaultTree } from './vault/vaultTree'
-import { eventMentions, searchNotes } from './vault/vaultSearch'
+import { backlinks, eventMentions, searchNotes } from './vault/vaultSearch'
 
 /** A new thing's default name and extension, by its kind. */
 const NEW_KIND: Record<VaultEntryKind, { name: string; ext: string }> = {
@@ -66,6 +67,14 @@ export class Vault {
   /** A note and a board linked (b undefined — unlinked). */
   setPair(a: string, b?: string): void {
     this.meta.setPair(a, b)
+  }
+
+  /** The lines AI agents wrote in a personal note. */
+  agentLines(rel: string): AgentLines {
+    return this.meta.agentLinesOf(rel)
+  }
+  setAgentLines(rel: string, lines: AgentLines): void {
+    this.meta.setAgentLines(rel, lines)
   }
 
   // ---------- the runs of a runnable note ----------
@@ -172,6 +181,10 @@ export class Vault {
   /** Every event mentioned in the notes (qvarch://event/<day>/<id>): its id → the notes (paths). */
   eventMentions(): Record<string, string[]> {
     return eventMentions(this.tree(), (p) => this.read(p))
+  }
+  /** The notes that link to this one (`[[…]]`). */
+  backlinks(rel: string): string[] {
+    return backlinks(this.tree(), (p) => this.read(p), rel)
   }
   /** All notes whose name or text has the query (any case); a few matching lines of each. */
   search(q: string, limit = 60): VaultHit[] {

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import type { ToolAccess } from '../shared/agent/turn'
 
 /**
  * Qvarch as an MCP server for AI assistants (Claude Code in VS Code / the terminal, Claude Desktop): the
@@ -12,6 +13,8 @@ import { randomBytes } from 'node:crypto'
  */
 export interface McpTool {
   name: string
+  /** What it may do (an agent called by someone else than its owner gets the reading ones only). */
+  access: ToolAccess
   description: string
   inputSchema: Record<string, unknown>
   run: (args: Record<string, unknown>) => Promise<string>
@@ -42,6 +45,9 @@ export class Mcp {
   private error?: string
   private port = 0
 
+  /** The tools of an agent's turn by its token (Claude Code run by the app: its own tools, for that turn only). */
+  private readonly turns = new Map<string, () => McpTool[]>()
+
   constructor(
     root: string,
     private tools: () => McpTool[],
@@ -65,6 +71,12 @@ export class Mcp {
   }
   private save(): void {
     writeFileSync(this.file, JSON.stringify(this.cfg, null, 1))
+  }
+  /** A turn's token: its tools served to whoever brings it, until let go. */
+  openTurn(tools: () => McpTool[]): { token: string; url: string; close: () => void } {
+    const token = randomBytes(24).toString('hex')
+    this.turns.set(token, tools)
+    return { token, url: this.info().url, close: () => this.turns.delete(token) }
   }
   info(): McpInfo {
     return { ...this.cfg, port: this.port || this.cfg.port, url: `http://127.0.0.1:${this.port || this.cfg.port}/mcp`, listening: this.listening, error: this.error, bridge: this.bridgeFile, exe: process.execPath }
@@ -122,7 +134,9 @@ export class Mcp {
     const origin = req.headers.origin
     if (origin && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin)) return json(403, { error: 'origin' })
     if (!(req.url ?? '').startsWith('/mcp')) return json(404)
-    if (req.headers.authorization !== `Bearer ${this.cfg.token}`) return json(401, { error: 'Нужен токен Qvarch (Настройки → AI-ассистенты)' })
+    const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '')
+    const tools = bearer === this.cfg.token ? this.tools : this.turns.get(bearer)
+    if (!bearer || !tools) return json(401, { error: 'Нужен токен Qvarch (Настройки → ИИ-агенты)' })
     // (no server-sent stream, no session to end: only POST)
     if (req.method !== 'POST') return json(405)
     let raw = ''
@@ -137,12 +151,12 @@ export class Mcp {
       return json(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
     }
     const list = Array.isArray(msg) ? msg : [msg]
-    const out = (await Promise.all(list.map((m) => this.rpc(m as Rpc)))).filter((x) => x !== undefined)
+    const out = (await Promise.all(list.map((m) => this.rpc(m as Rpc, tools)))).filter((x) => x !== undefined)
     if (!out.length) return json(202)
     json(200, Array.isArray(msg) ? out : out[0])
   }
 
-  private async rpc(m: Rpc): Promise<unknown> {
+  private async rpc(m: Rpc, tools: () => McpTool[]): Promise<unknown> {
     const ok = (result: unknown) => ({ jsonrpc: '2.0', id: m.id, result })
     const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id: m.id, error: { code, message } })
     // a notification / a response: nothing back
@@ -161,10 +175,10 @@ export class Mcp {
       case 'ping':
         return ok({})
       case 'tools/list':
-        return ok({ tools: this.tools().map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) })
+        return ok({ tools: tools().map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) })
       case 'tools/call': {
         const name = String(m.params?.name ?? '')
-        const t = this.tools().find((x) => x.name === name)
+        const t = tools().find((x) => x.name === name)
         if (!t) return fail(-32602, `Нет инструмента ${name}`)
         try {
           const text = await t.run((m.params?.arguments ?? {}) as Record<string, unknown>)

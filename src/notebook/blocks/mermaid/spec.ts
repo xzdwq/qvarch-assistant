@@ -9,6 +9,7 @@ export const mermaidSpec: BlockSpec<'mermaid'> = {
   detect: fenceOfLang('mermaid'),
   estimateHeight: fixedHeight(300),
   rawEditable: true,
+  guide: 'Схема на языке Mermaid (flowchart, sequenceDiagram, gantt, classDiagram…): процессы, связи, сроки.',
   commands: [
     {
       id: 'mermaid',

@@ -22,7 +22,7 @@ const CATEGORY: Record<SettingsCategoryId, Omit<SettingsCategory, 'id'>> = {
   jira: { icon: 'jira', label: 'Jira' },
   server: { icon: 'chat', label: 'Сервер и чат', appliesAtOnce: true },
   browser: { icon: 'browser', label: 'Браузер' },
-  ai: { icon: 'sparkles', label: 'AI-ассистенты' },
+  ai: { icon: 'sparkles', label: 'ИИ-агенты', appliesAtOnce: true },
 }
 export const SETTINGS_CATEGORIES: SettingsCategory[] = Object.entries(CATEGORY).map(([id, c]) => ({ id: id as SettingsCategoryId, ...c }))
 

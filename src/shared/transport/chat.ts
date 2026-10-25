@@ -16,7 +16,53 @@ export interface ChatMessage {
   mentions?: string[]
   /** A block's result sent with it (a query's rows, a request's answer…). */
   attach?: ChatAttach
+  /** Written by an agent of the author's (its name shown instead of the author's). */
+  agent?: { id: string; name: string }
+  /** How deep in a chain of agents calling agents it is (a person's message — none). */
+  chain?: number
+  /** The message it answers, as that one was when answered. */
+  reply?: ChatReply
 }
+/** A message answered, as the answer keeps it: its number, who wrote it, a piece of its text (or its attachment's word). */
+export interface ChatReply {
+  seq: number
+  author: string
+  text: string
+}
+/** The piece of an answered message kept with the answer, characters. */
+export const REPLY_TEXT_MAX = 160
+/** A message as an answer to it keeps it. */
+export const replyOf = (m: ChatMessage): ChatReply => ({ seq: m.seq, author: authorName(m), text: (m.text.trim() || (m.attach ? attachWord(m.attach) : '')).slice(0, REPLY_TEXT_MAX) })
+/** An AI agent of a member, in a chat: called by its name (`@ИИ · Имя`), it answers there. */
+export interface ChatAgent {
+  /** `<owner's device>:<its profile>` */
+  id: string
+  name: string
+  owner: string
+  /** The room's others may call it (its owner decides; off — it answers its owner only). */
+  open?: boolean
+}
+/** Who wrote a message, as shown: the agent, else the person. */
+export const authorName = (m: Pick<ChatMessage, 'author' | 'agent'>): string => m.agent?.name ?? m.author.name
+/** Who wrote it, as told apart (an agent and its owner are two). */
+export const authorKey = (m: Pick<ChatMessage, 'author' | 'agent'>): string => m.agent?.id ?? m.author.id
+/** An agent's chain step at most (kept as given). */
+export const CHAIN_LIMIT = 10
+/** A message of a chat kept on one's computer, brought to the server (its own id — kept once however often it is sent). */
+export interface ChatHistoryItem {
+  clientId: string
+  text: string
+  at: number
+  /** Written by one of the author's agents (its id among the chat's agents). */
+  agent?: string
+  chain?: number
+  mentions?: string[]
+  attach?: ChatAttach
+  /** The number of the message it answers (among these, as numbered here). */
+  reply?: number
+}
+/** A chat's history brought at once — this many messages at most. */
+export const HISTORY_MAX = 2000
 
 /** The reactions offered first (any emoji may be put — the full list is a click away). */
 export const REACTIONS = ['👍', '❤️', '😄', '😮', '🎉', '✅'] as const
@@ -24,10 +70,10 @@ export const REACTIONS = ['👍', '❤️', '😄', '😮', '🎉', '✅'] as co
 export const isReaction = (x: unknown): x is string => typeof x === 'string' && x.length > 0 && x.length <= 16 && /\p{Extended_Pictographic}/u.test(x) && !/[\p{L}\p{N}<>]/u.test(x)
 
 /** What a message may carry (each drawn its own way): a block's result, a picture shown right there, a file. */
-export const ATTACH_KINDS = ['sql', 'http', 'code', 'pw', 'value', 'image', 'file'] as const
+export const ATTACH_KINDS = ['sql', 'http', 'code', 'pw', 'value', 'image', 'file', 'trace', 'voice'] as const
 export type AttachKind = (typeof ATTACH_KINDS)[number]
 /** The kinds that are files of the room (kept on the server, fetched over HTTP), not data in the message. */
-export const FILE_KINDS = ['image', 'file'] as const satisfies readonly AttachKind[]
+export const FILE_KINDS = ['image', 'file', 'voice'] as const satisfies readonly AttachKind[]
 export type FileKind = (typeof FILE_KINDS)[number]
 /** An attachment as a message carries it: what it is, a title (the block, the file's name…), its data (secrets taken off). */
 export interface ChatAttach {
@@ -41,7 +87,11 @@ export interface ChatFile {
   name: string
   size: number
   mime: string
+  /** A voice message's length, seconds. */
+  sec?: number
 }
+/** A voice message's length at most, seconds. */
+export const VOICE_MAX_SEC = 15 * 60
 /** A file's size at most. */
 export const CHAT_FILE_MAX = 50 * 1024 * 1024
 const NAME_MAX = 255
@@ -52,7 +102,7 @@ export const fileKindOf = (mime: string): FileKind => (SHOWN_IMAGES.test(mime) ?
 export const isFileKind = (k: AttachKind): k is FileKind => (FILE_KINDS as readonly string[]).includes(k)
 export const isChatFile = (x: unknown): x is ChatFile => {
   const f = x as ChatFile
-  return !!f && typeof f === 'object' && /^[0-9a-f-]{36}$/i.test(f.id) && typeof f.name === 'string' && !!f.name && f.name.length <= NAME_MAX && Number.isInteger(f.size) && f.size >= 0 && f.size <= CHAT_FILE_MAX && typeof f.mime === 'string' && f.mime.length <= 120
+  return !!f && typeof f === 'object' && /^[0-9a-f-]{36}$/i.test(f.id) && typeof f.name === 'string' && !!f.name && f.name.length <= NAME_MAX && Number.isInteger(f.size) && f.size >= 0 && f.size <= CHAT_FILE_MAX && typeof f.mime === 'string' && f.mime.length <= 120 && (f.sec === undefined || (Number.isFinite(f.sec) && f.sec >= 0 && f.sec <= VOICE_MAX_SEC))
 }
 /** A file's name as kept: no folders, no control characters, not too long (none — «файл»). */
 export const cleanFileName = (name: string): string =>
@@ -74,7 +124,22 @@ export const isAttach = (x: unknown): x is ChatAttach =>
   (!isFileKind((x as ChatAttach).kind) || isChatFile((x as ChatAttach).data)) &&
   attachBytes(x) <= ATTACH_MAX
 /** A message's attachment in a word (a room's last message in a list). */
-export const attachWord = (a: ChatAttach): string => (a.kind === 'image' ? `🖼 ${a.title}` : a.kind === 'file' ? `📎 ${a.title}` : a.title)
+export const attachWord = (a: ChatAttach): string => {
+  switch (a.kind) {
+    case 'image':
+      return `🖼 ${a.title}`
+    case 'file':
+      return `📎 ${a.title}`
+    case 'voice':
+      return `🎤 ${a.title}`
+    case 'trace':
+      return ''
+    default:
+      return a.title
+  }
+}
+/** A length in seconds as «m:ss». */
+export const clockSec = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
 /** The members a text mentions (`@Имя` — a member's name, the longest one that fits), each once. */
 export function mentionsIn(text: string, members: readonly DeviceInfo[]): string[] {
@@ -122,7 +187,13 @@ export interface ChatRoom {
   createdBy?: string
   /** A branch: the main conversation of the same people it belongs to (the main one shows its branches' messages too). */
   parent?: string
+  /** The members' agents in it. */
+  agents?: ChatAgent[]
 }
+/** Whom one is offered to mention: the people, one's own agents, the others' agents their owners let one call. */
+export const callable = (r: Pick<ChatRoom, 'members' | 'agents'>, me: string): Array<{ id: string; name: string }> => [...r.members, ...(r.agents ?? []).filter((a) => a.owner === me || a.open)]
+/** Who may be mentioned in a room: its people and their agents. */
+export const mentionable = (r: Pick<ChatRoom, 'members' | 'agents'>): Array<{ id: string; name: string }> => [...r.members, ...(r.agents ?? [])]
 /** The main conversation's title when none was given. */
 export const CHAT_TITLE = 'Чат'
 export const TITLE_MAX = 120
@@ -174,7 +245,7 @@ export function roomWithMessage(room: ChatRoom, m: ChatMessage, me: string): Cha
 export const GROUP_MS = 60_000
 /** Each message's place in its group: the first (the name over it), the last (the tail under it). */
 export function groupMessages(list: readonly ChatMessage[]): Array<{ first: boolean; last: boolean }> {
-  const together = (a?: ChatMessage, b?: ChatMessage) => !!a && !!b && a.author.id === b.author.id && a.room === b.room && Math.abs(b.at - a.at) < GROUP_MS
+  const together = (a?: ChatMessage, b?: ChatMessage) => !!a && !!b && authorKey(a) === authorKey(b) && a.room === b.room && Math.abs(b.at - a.at) < GROUP_MS
   return list.map((m, i) => ({ first: !together(list[i - 1], m), last: !together(m, list[i + 1]) }))
 }
 /** Messages of several rooms (a conversation and its branches) as one feed, by time. */

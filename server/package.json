@@ -1,6 +1,6 @@
 {
   "name": "qvarch-transport",
-  "version": "0.12.0",
+  "version": "0.15.0",
   "description": "Transport server of Qvarch Assistant: devices, chats, shared notes and boards; modules over one WebSocket and PostgreSQL",
   "private": true,
   "scripts": {

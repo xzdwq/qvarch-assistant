@@ -3,7 +3,7 @@ import { DOCK_SIDE, DOCK_STRIP, ISLAND_PANEL_WIDTH, ISLAND_PILL, ISLAND_WINDOW }
 import type { Quick } from '../../src/shared/quickadd'
 import { islandAxis } from '../../src/shared/tracker/islandAxis'
 import { cutPlace, dayListRows, quickEventPlace } from '../../src/shared/tracker/islandCut'
-import { dockLength, islandSize, NOTE_H, NOTE_W, pillHeight, shellTopAt } from '../../src/shared/tracker/islandGeometry'
+import { dockLength, ISLAND_DRAWERS, islandSize, NOTE_H, NOTE_W, pillHeight, shellTopAt } from '../../src/shared/tracker/islandGeometry'
 import { chipText, countdownText, islandDateText, kindTotals, orbMood, PILL_MAX, PILL_MIN, pillItemKey, pillItems, pillWidthFor, taskTotals } from '../../src/shared/tracker/islandPill'
 import type { Entry, Note, PlanBlock } from '../../src/shared/types'
 
@@ -85,11 +85,12 @@ describe('island geometry', () => {
     expect(dockLength({ ...none, next: true, wave: true, orb: true }, false)).toBe(174)
   })
   it('sizes the shell for the panel, the docked pill and the pill with its note', () => {
-    const base = { expanded: false, panelH: 400, noteOpen: false, dockLen: 200, pillW: 384, pillH: 70 }
+    const base = { expanded: false, panelH: 400, dockLen: 200, pillW: 384, pillH: 70 }
     expect(islandSize({ ...base, expanded: true, dock: 'top' })).toEqual({ w: ISLAND_PANEL_WIDTH, h: 400 })
     expect(islandSize({ ...base, dock: 'left' })).toEqual({ w: DOCK_SIDE.w, h: 200 })
     expect(islandSize({ ...base, dock: 'bottom' })).toEqual({ w: 200, h: DOCK_STRIP.h })
-    expect(islandSize({ ...base, dock: 'top', noteOpen: true })).toEqual({ w: NOTE_W, h: 70 + NOTE_H })
+    expect(islandSize({ ...base, dock: 'top', drawer: 'note' })).toEqual({ w: NOTE_W, h: 70 + NOTE_H })
+    expect(islandSize({ ...base, drawer: 'chat' })).toEqual({ w: ISLAND_DRAWERS.chat.w, h: 70 + ISLAND_DRAWERS.chat.h })
     expect(islandSize(base)).toEqual({ w: 384, h: 70 })
   })
   it('stands on the pill centre at a side edge, inside the window', () => {

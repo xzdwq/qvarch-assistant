@@ -1,7 +1,8 @@
 import { Notification } from 'electron'
 import { remindAt, type Remind } from '../../shared/repeat'
 import { dayKey } from '../../shared/timeline'
-import type { AppContext } from '../app/appContext'
+import { contentsOf, type AppContext } from '../app/appContext'
+import { emit } from '../ipc/router'
 
 /**
  * Reminders: a notification when a block's or a note's time comes (once — marked fired; one older than half a day,
@@ -21,8 +22,11 @@ export function checkReminders(app: AppContext): void {
       x.remind = { ...x.remind, fired: true }
       changed = true
       if (now - at > 12 * 3_600_000) return
+      const head = `Напоминание · ${new Date(start).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+      // the island shows it too (until seen), whatever the system's notifications
+      emit(contentsOf(app.windows.island?.win), 'onIslandNotice', { id: `${dk}:${open.entryId ?? title}:${at}`, title: head, text: title || 'Событие', at: now, day: dk, ...open })
       if (!Notification.isSupported()) return
-      const n = new Notification({ title: `Напоминание · ${new Date(start).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, body: title || 'Событие' })
+      const n = new Notification({ title: head, body: title || 'Событие' })
       n.on('click', () => app.windows.showMain({ day: dk, ...open }))
       n.show()
     }

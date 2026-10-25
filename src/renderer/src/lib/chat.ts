@@ -1,10 +1,12 @@
 import { computed, ref, shallowRef, watch } from 'vue'
-import { CHAT_PAGE, cleanChatText, mentionsIn, mergeMessages, roomWithMessage, sortRooms, type ChatMessage, type ChatRoom } from '@shared/transport/chat'
+import { CHAT_PAGE, REACTIONS, cleanChatText, mentionable, mentionsIn, mergeMessages, roomWithMessage, sortRooms, type ChatAgent, type ChatMessage, type ChatReply, type ChatRoom } from '@shared/transport/chat'
 import { DEFAULT_CHAT, type ChatPrefs } from '@shared/transport/constants'
 import { remoteError } from '@shared/remoteError'
 import { CHAT_FEED_MARK } from '@nb/blocks/chat/model'
 import { openNote } from './mentions'
 import { onServerEvents, type ServerEventHandlers } from './serverEvents'
+import { historyOf, roomOfLocal, type LocalChat, type LocalPost } from '@shared/transport/localChat'
+import { changeLocal, dropLocal, isLocal, loadLocals, localChat, localChats, makeLocal, postToLocal } from './localChatRooms'
 import { serverCall, serverOnline, useTransport } from './transport'
 
 /** A message on its way: shown greyed until the server keeps it; a failed one waits for «Повторить». */
@@ -12,6 +14,8 @@ export interface Outgoing {
   room: string
   clientId: string
   text: string
+  /** The message it answers. */
+  reply?: ChatReply
   failed?: string
 }
 /** «Печатает…» stays this long after the last sign. */
@@ -22,20 +26,20 @@ const OUTBOX_KEY = 'qa.chat.outbox'
 
 /**
  * The chats of the main window, one state for every chat block (two blocks of one room show the same): the rooms,
- * each room's loaded messages (pages, newest last), messages on their way, «печатает…». No server — a new chat is
- * held here by its own id and messages wait (kept over a restart); online again — the held chats are made, the rooms
- * and the loaded messages fetched anew and the messages on their way sent (the same ids: each kept once).
+ * each room's loaded messages (pages, newest last), messages on their way, «печатает…». No server — a new chat is kept
+ * here (localChatRooms: one's own, with one's agents, its history on this computer) until a person is added — then it
+ * is brought to the server whole. Online again — the rooms and the loaded messages fetched anew and the messages on
+ * their way sent (the same ids: each kept once).
  */
 const transport = useTransport()
 export const chatOnline = serverOnline
 export const chatMe = computed(() => transport.value.deviceId)
+const meInfo = () => ({ id: chatMe.value, name: transport.value.name || 'Вы' })
 export const chatRooms = shallowRef<ChatRoom[]>([])
 const messages = shallowRef(new Map<string, ChatMessage[]>())
 /** Rooms whose oldest message is loaded. */
 const complete = ref(new Set<string>())
 const outbox = shallowRef<Outgoing[]>(readOutbox())
-/** The chats made with no server yet (their id → title): shown at once, made on the server as soon as it is there. */
-const held = shallowRef(new Map<string, string>())
 const typing = shallowRef(new Map<string, { name: string; until: number }>())
 /** The rooms shown now (a block on screen, the window in front): their messages are read as they come. */
 const watched = new Map<string, number>()
@@ -45,6 +49,7 @@ export const roomOf = (id: string) => chatRooms.value.find((r) => r.id === id)
 export const messagesOf = (id: string) => messages.value.get(id) ?? []
 export const pendingOf = (id: string) => outbox.value.filter((o) => o.room === id)
 export const isComplete = (id: string) => complete.value.has(id)
+/** «Анна печатает…», «ИИ · Анна работает…» (none — '' ). */
 export function typingIn(id: string): string {
   const t = typing.value.get(id)
   return t && t.until > Date.now() ? t.name : ''
@@ -54,31 +59,72 @@ const setMessages = (id: string, list: ChatMessage[]) => (messages.value = new M
 const setRoom = (r: ChatRoom) => (chatRooms.value = sortRooms([...chatRooms.value.filter((x) => x.id !== r.id), r]))
 /** A room as the server answered it (made, renamed, someone added). */
 export const upsertRoom = (r: ChatRoom) => setRoom(r)
-/** A chat of one's own made with no server: here at once (no messages yet), made on the server once it is there. */
+/** A local chat shown: its room and all its messages. */
+function showLocal(c: LocalChat): void {
+  setRoom(roomOfLocal(c, meInfo()))
+  setMessages(c.id, c.messages)
+  complete.value = new Set(complete.value).add(c.id)
+}
+/** A chat of one's own kept here (made with no server; its block keeps its title): shown, made here when new. */
 export function holdRoom(id: string, title: string): void {
   if (roomOf(id)) return
-  held.value = new Map(held.value).set(id, title)
-  const me = chatMe.value
-  setRoom({ id, title, members: me ? [{ id: me, name: transport.value.name ?? 'Вы' }] : [], lastSeq: 0, readSeq: 0, createdBy: me })
-  setMessages(id, [])
-  complete.value = new Set(complete.value).add(id)
-  if (chatOnline.value) void makeHeld(id)
+  void makeLocal(id, title).then((c) => {
+    showLocal(c)
+    // (messages written to it before it was kept here — they wait no more)
+    for (const o of outbox.value) if (o.room === id) void deliver(o)
+  })
 }
-/** The chat is still only here (not made on the server yet). */
-export const isHeld = (id: string) => held.value.has(id)
-/** A held chat made on the server (by its id — made before: the same); not now — it stays held. */
-async function makeHeld(id: string): Promise<boolean> {
-  const title = held.value.get(id)
-  if (title === undefined) return true
-  try {
-    setRoom(await serverCall('chat.create', { id, title }))
-    const h = new Map(held.value)
-    h.delete(id)
-    held.value = h
-    return true
-  } catch {
-    return false
-  }
+/** The chat is kept on this computer only (not on the server: one's own, a person never added). */
+export const isHeld = (id: string) => isLocal(id)
+/**
+ * A local chat brought to the server (a person is being added): its agents and its whole history (each message by
+ * its own id — sent again, kept once), then it is the server's; the copy here taken away.
+ */
+export async function publishLocal(id: string): Promise<ChatRoom> {
+  const c = localChat(id)
+  if (!c) return roomOf(id)!
+  const r = await serverCall('chat.create', { id, title: c.title, agents: c.agents.map((a) => ({ id: a.id, name: a.name })), history: historyOf(c) })
+  await dropLocal(id)
+  setRoom(r)
+  await loadLatest(id)
+  return r
+}
+/** A local chat renamed. */
+export async function renameLocal(id: string, title: string): Promise<void> {
+  showLocal(await changeLocal(id, (c) => ({ ...c, title })))
+}
+/** One's agent put in a local chat / taken out of it. */
+export async function setLocalAgents(id: string, fn: (agents: ChatAgent[]) => ChatAgent[]): Promise<void> {
+  showLocal(await changeLocal(id, (c) => ({ ...c, agents: fn(c.agents) })))
+}
+
+/** Told of every message come into a room (here or from the server): the agents listen. */
+const listeners = new Set<(m: ChatMessage) => void>()
+export const onRoomMessage = (fn: (m: ChatMessage) => void) => void listeners.add(fn)
+/**
+ * A message posted into a room as one's agent's (or with an attachment): kept here for a local chat, sent to the
+ * server for the others.
+ */
+export async function postMessage(room: string, p: LocalPost): Promise<ChatMessage> {
+  const m = isLocal(room)
+    ? await postToLocal(room, meInfo(), p)
+    : await serverCall('chat.send', {
+        room,
+        text: p.text,
+        clientId: crypto.randomUUID(),
+        ...(p.agent ? { agent: p.agent.id } : {}),
+        ...(p.chain ? { chain: p.chain } : {}),
+        ...(p.mentions?.length ? { mentions: p.mentions } : {}),
+        ...(p.attach ? { attach: p.attach } : {}),
+        ...(p.reply ? { reply: p.reply.seq } : {}),
+      })
+  received(m)
+  return m
+}
+/** One's agent working in a room: told to the room (a local one — shown here). */
+export function tellAgentWorking(room: string, agent: { id: string; name: string }): void {
+  if (!isLocal(room)) return void serverCall('chat.typing', { room, agent: agent.id }).catch(() => undefined)
+  typing.value = new Map(typing.value).set(room, { name: `${agent.name} работает…`, until: Date.now() + TYPING_MS })
 }
 /** The branches of a main conversation (its people's other chats). */
 export const branchesOf = (main: string) => chatRooms.value.filter((r) => r.parent === main)
@@ -98,6 +144,11 @@ async function loadRooms(): Promise<void> {
   const rooms = await serverCall('chat.rooms', {})
   chatRooms.value = sortRooms([...rooms, ...chatRooms.value.filter((r) => isHeld(r.id) && !rooms.some((x) => x.id === r.id))])
 }
+/** The local chats shown (from the start, with or without a server). */
+async function showLocals(): Promise<void> {
+  await loadLocals()
+  for (const c of localChats()) showLocal(c)
+}
 /**
  * The latest page of a room: what was loaded before it is dropped (what came while offline may leave a gap), what
  * came after it while it was on its way is kept.
@@ -113,7 +164,7 @@ async function loadLatest(id: string): Promise<void> {
 }
 /** A room's messages loaded once (a block shows it). */
 export async function showRoom(id: string): Promise<void> {
-  if (!messages.value.has(id) && chatOnline.value) await loadLatest(id)
+  if (!messages.value.has(id) && chatOnline.value && !isHeld(id)) await loadLatest(id)
 }
 export async function loadOlder(id: string): Promise<void> {
   const have = messages.value.get(id) ?? []
@@ -127,7 +178,8 @@ export async function markRead(id: string): Promise<void> {
   const r = roomOf(id)
   if (!r || r.readSeq >= r.lastSeq || document.hidden || !watched.has(id)) return
   setRoom({ ...r, readSeq: r.lastSeq })
-  await serverCall('chat.read', { room: id, seq: r.lastSeq }).catch(() => undefined)
+  if (isHeld(id)) await changeLocal(id, (c) => ({ ...c, readSeq: r.lastSeq })).catch(() => undefined)
+  else await serverCall('chat.read', { room: id, seq: r.lastSeq }).catch(() => undefined)
 }
 /** A block shows the room (on screen) / stops showing it. */
 export function watchRoom(id: string, on: boolean): void {
@@ -137,23 +189,26 @@ export function watchRoom(id: string, on: boolean): void {
   if (on) void markRead(id)
 }
 
-/** A message sent — when there is a server (else it waits: sent when it is there), its chat made there first. */
+/** A message sent — kept here for a local chat; to the server when there is one (else it waits: sent when it is there). */
 async function deliver(o: Outgoing): Promise<void> {
-  if (!chatOnline.value || !(await makeHeld(o.room))) return
+  if (!isHeld(o.room) && !chatOnline.value) return
   try {
-    const mentions = mentionsIn(o.text, roomOf(o.room)?.members ?? [])
-    const m = await serverCall('chat.send', { room: o.room, text: o.text, clientId: o.clientId, ...(mentions.length ? { mentions } : {}) })
+    const r = roomOf(o.room)
+    const mentions = r ? mentionsIn(o.text, mentionable(r)) : []
+    const m = isHeld(o.room)
+      ? await postToLocal(o.room, meInfo(), { text: o.text, ...(mentions.length ? { mentions } : {}), ...(o.reply ? { reply: o.reply } : {}) })
+      : await serverCall('chat.send', { room: o.room, text: o.text, clientId: o.clientId, ...(mentions.length ? { mentions } : {}), ...(o.reply ? { reply: o.reply.seq } : {}) })
     outbox.value = outbox.value.filter((x) => x.clientId !== o.clientId)
     received(m)
   } catch (e) {
     outbox.value = outbox.value.map((x) => (x.clientId === o.clientId ? { ...x, failed: remoteError(e) } : x))
   }
 }
-/** A message typed sent (empty or too long — not). */
-export function sendMessage(room: string, text: string): boolean {
+/** A message typed sent (empty or too long — not); `reply` — the message it answers. */
+export function sendMessage(room: string, text: string, reply?: ChatReply): boolean {
   const body = cleanChatText(text)
   if (body === null) return false
-  const o: Outgoing = { room, clientId: crypto.randomUUID(), text: body }
+  const o: Outgoing = { room, clientId: crypto.randomUUID(), text: body, ...(reply ? { reply } : {}) }
   outbox.value = [...outbox.value, o]
   void deliver(o)
   return true
@@ -174,10 +229,24 @@ export function tellTyping(room: string): void {
   typedAt.set(room, now)
   void serverCall('chat.typing', { room }).catch(() => undefined)
 }
-/** A reaction of this device's on a message put / taken back (already its — taken back). */
+/** The reactions offered first (the ones this person puts most; kept on this computer). */
+export const quickReactions = ref<string[]>([...REACTIONS])
+let quickAsked = false
+export function loadQuickReactions(): void {
+  if (quickAsked) return
+  quickAsked = true
+  void window.qa.chatQuickReactions().then((q) => (quickReactions.value = q), () => (quickAsked = false))
+}
+/** A reaction of this device's on a message put / taken back (already its — taken back); one put — counted. */
 export async function toggleReaction(m: ChatMessage, emoji: string): Promise<void> {
   const mine = !!m.reactions?.[emoji]?.some((d) => d.id === chatMe.value)
-  edited(await serverCall('chat.react', { room: m.room, seq: m.seq, emoji, on: !mine }))
+  if (!mine) void window.qa.chatReactionPut(emoji).then((q) => (quickReactions.value = q), () => undefined)
+  if (!isHeld(m.room)) return edited(await serverCall('chat.react', { room: m.room, seq: m.seq, emoji, on: !mine }))
+  // a local chat: one's own reactions kept here
+  const reactions = { ...m.reactions, [emoji]: mine ? [] : [meInfo()] }
+  const next = { ...m, reactions }
+  await changeLocal(m.room, (c) => ({ ...c, messages: mergeMessages(c.messages, [next]) }))
+  edited(next)
 }
 /** A message changed (its reactions): shown anew in its room — no unread, no notice. */
 function edited(m: ChatMessage): void {
@@ -192,12 +261,13 @@ export function received(m: ChatMessage): void {
   const r = roomOf(m.room)
   if (!r) return void loadRooms().catch(() => undefined)
   setRoom(roomWithMessage(r, m, chatMe.value))
-  if (m.author.id !== chatMe.value && typing.value.has(m.room)) {
+  if ((m.author.id !== chatMe.value || m.agent) && typing.value.has(m.room)) {
     const t = new Map(typing.value)
     t.delete(m.room)
     typing.value = t
   }
   void markRead(m.room)
+  for (const fn of listeners) fn(m)
 }
 /** The chat's events of the server. */
 const EVENTS: ServerEventHandlers = {
@@ -205,7 +275,8 @@ const EVENTS: ServerEventHandlers = {
   'chat.edited': edited,
   'chat.room': setRoom,
   'chat.typing': (p) => {
-    typing.value = new Map(typing.value).set(p.room, { name: p.device.name, until: Date.now() + TYPING_MS })
+    const said = p.agent ? `${p.agent.name} работает…` : `${p.device.name} печатает…`
+    typing.value = new Map(typing.value).set(p.room, { name: said, until: Date.now() + TYPING_MS })
     setTimeout(() => (typing.value = new Map(typing.value)), TYPING_MS + 50)
   },
   // a shared space gone for this device: its chats go with it
@@ -215,10 +286,9 @@ const EVENTS: ServerEventHandlers = {
 /** Online (again): the rooms and the loaded messages fetched anew, the messages on their way sent again. */
 async function resync(): Promise<void> {
   try {
-    for (const id of held.value.keys()) await makeHeld(id)
     await loadRooms()
     const loaded = [...messages.value.keys()].filter((id) => roomOf(id) && !isHeld(id))
-    messages.value = new Map()
+    messages.value = new Map([...messages.value].filter(([id]) => isHeld(id)))
     for (const id of loaded) await loadLatest(id)
     for (const id of watched.keys()) void markRead(id)
     for (const o of outbox.value) void deliver(o)
@@ -236,6 +306,7 @@ export function startChat(): void {
   window.qa.onSettings((s) => (chatPrefs.value = s.chat))
   onServerEvents(EVENTS)
   window.qa.onChatOpen((room) => void openChat(room).catch(() => undefined))
+  void showLocals().then(() => outbox.value.filter((o) => isHeld(o.room)).forEach((o) => void deliver(o)))
   watch(chatOnline, (on) => on && void resync(), { immediate: true })
   watch(outbox, keepOutbox)
   document.addEventListener('visibilitychange', () => watched.forEach((_n, id) => void markRead(id)))

@@ -4,6 +4,7 @@ import { isBoard } from '@shared/whiteboard'
 import NotebookHelp from '../components/NotebookHelp.vue'
 import EventModal from '../components/EventModal.vue'
 import EventCard from '../components/EventCard.vue'
+import RefCardPop from '../components/RefCardPop.vue'
 import EmojiPick from '../components/EmojiPick.vue'
 import Popover from '../components/Popover.vue'
 import { atPoint, openWhile } from '../lib/usePopover'
@@ -22,7 +23,7 @@ import TreeMenu from '@nb/screen/TreeMenu.vue'
  */
 const { toast, actions, events, vars, menu, images, helpOpen } = provideNotebookScreen()
 const { msg } = toast
-const { eventText, onEventMade, evCard } = events
+const { eventText, onEventMade, evCard, refCard } = events
 const { varsOpen } = vars
 const { treeMenu, emojiFor } = menu
 /** The whole emoji list for a node: a popover where the tree's menu was. */
@@ -97,7 +98,8 @@ function onSplitResize(e: PointerEvent): void {
     <Popover v-model:open="emojiOpen" :anchor="emojiFor" :place="atPoint" class="nemo tw:fixed tw:z-5000" @pointerdown.stop>
       <EmojiPick @pick="(u) => (actions.setEmoji(emojiFor!.node, u), (emojiFor = undefined))" />
     </Popover>
-    <EventCard v-if="evCard" :key="evCard.id" :day="evCard.day" :id="evCard.id" :x="evCard.x" :y="evCard.y" :path="evCard.path" @close="evCard = undefined" />
+    <EventCard v-if="evCard" :key="evCard.id" :day="evCard.day" :id="evCard.id" :x="evCard.x" :y="evCard.y" :from="evCard.from" :path="evCard.path" @close="evCard = undefined" />
+    <RefCardPop v-if="refCard" :key="refCard.url" :path="refCard.path" :url="refCard.url" :x="refCard.x" :y="refCard.y" :from="refCard.from" @close="refCard = undefined" />
     <EventModal v-if="eventText !== undefined" :text="eventText" @created="onEventMade" @close="eventText = undefined" />
     <Teleport to="body">
       <TreeMenu v-if="treeMenu" :menu="treeMenu" />

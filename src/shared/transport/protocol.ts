@@ -1,4 +1,4 @@
-import type { ChatAttach, ChatMessage, ChatRoom, CommentAnchor } from './chat'
+import type { ChatAttach, ChatHistoryItem, ChatMessage, ChatRoom, CommentAnchor } from './chat'
 import type { Space, SpaceKind, SpaceRole } from './space'
 import type { PeerSel } from './places'
 
@@ -63,11 +63,10 @@ export const FRAME_MAX = 16 * 1024 * 1024
 /** The socket's path (a new incompatible protocol gets a new one). */
 export const TRANSPORT_PATH = '/v1'
 
-/** Who is on the other end: an installation of the app (its key's fingerprint) or a server's own participant (a bot). */
+/** Who is on the other end: an installation of the app (its key's fingerprint). */
 export interface DeviceInfo {
   id: string
   name: string
-  bot?: boolean
 }
 
 /** Why the server refused a connection. */
@@ -86,9 +85,15 @@ export interface TransportMethods {
   'chat.rooms': { p: Record<string, never>; r: ChatRoom[] }
   'chat.history': { p: { room: string; before?: number; limit?: number }; r: ChatMessage[] }
   /** `mentions` — the members the text mentions (`@Имя`; others are dropped); `attach` — a block's result (the text may be empty then). */
-  'chat.send': { p: { room: string; text: string; clientId: string; mentions?: string[]; attach?: ChatAttach }; r: ChatMessage }
+  'chat.send': { p: { room: string; text: string; clientId: string; mentions?: string[]; attach?: ChatAttach; /** Written by this device's agent (its id in the room). */ agent?: string; chain?: number; /** The number of the message it answers. */ reply?: number }; r: ChatMessage }
+  /** This device's agent put in a chat (its name made unique there); the room as it is now. */
+  'chat.addAgent': { p: { room: string; id: string; name: string }; r: ChatRoom }
+  /** This device's agent taken out of a chat. */
+  'chat.removeAgent': { p: { room: string; id: string }; r: ChatRoom }
+  /** Whether anyone may call anyone's agent in a chat (its maker decides). */
+  'chat.agentOpen': { p: { room: string; id: string; on: boolean }; r: ChatRoom }
   /** A chat of one's own (no one else yet — add people to it). */
-  'chat.create': { p: { title?: string; id?: string }; r: ChatRoom }
+  'chat.create': { p: { title?: string; id?: string; /** A chat kept on this computer brought here: its agents, its messages in order. */ agents?: Array<{ id: string; name: string }>; history?: ChatHistoryItem[] }; r: ChatRoom }
   /** A chat renamed (by the one who made it). */
   'chat.rename': { p: { room: string; title: string }; r: ChatRoom }
   /** The people one may add to a chat: those one shares a chat or a shared note with. */
@@ -105,7 +110,7 @@ export interface TransportMethods {
   'chat.react': { p: { room: string; seq: number; emoji: string; on: boolean }; r: ChatMessage }
   'chat.read': { p: { room: string; seq: number }; r: null }
   /** «Печатает…» told to the room's others. */
-  'chat.typing': { p: { room: string }; r: null }
+  'chat.typing': { p: { room: string; /** An agent of this device's is working (not the person typing). */ agent?: string }; r: null }
   /** A pass for the room's files over HTTP (a member's). */
   'chat.fileTicket': { p: { room: string }; r: { ticket: string } }
   /**
@@ -151,7 +156,7 @@ export type MethodName = keyof TransportMethods
 export interface TransportEvents {
   'chat.message': ChatMessage
   'chat.room': ChatRoom
-  'chat.typing': { room: string; device: DeviceInfo }
+  'chat.typing': { room: string; device: DeviceInfo; agent?: { id: string; name: string } }
   /** A message changed (its reactions): shown anew, never told as a new one. */
   'chat.edited': ChatMessage
   /** A space as this member sees it now (members, roles, documents). */

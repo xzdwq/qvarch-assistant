@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../../shared/docBundle'
 import { cleanFileName } from '../../shared/transport/chat'
 import type { AppContext } from '../app/appContext'
+import { LocalChats } from '../transport/localChats'
+import { ReactionStats } from '../transport/reactionStats'
 import { handle, listen } from './router'
 
 /** Outlook / Teams (meetings → blocks, the Teams status → a call), the transport server and its chat, Jira (tasks, releases, sign-in, sync). */
@@ -28,6 +30,13 @@ export function registerIntegrationsIpc(app: AppContext): void {
   handle('sharedSave', (_e, doc, kept) => shared.save(String(doc), { state: String(kept?.state ?? ''), ...(typeof kept?.text === 'string' ? { text: kept.text } : {}) }))
   handle('sharedMedia', (_e, space, rels, ways) => transport.syncMedia(String(space), Array.isArray(rels) ? rels.map(String) : [], { send: ways?.send !== false, fetch: ways?.fetch !== false }))
   handle('sharedResultsPut', (_e, space, doc, changes) => transport.results.put(String(space), String(doc), changes && typeof changes === 'object' ? changes : {}))
+  const local = new LocalChats(app.store.root)
+  handle('localChats', () => local.list())
+  handle('localChatSave', (_e, chat) => local.save(chat))
+  handle('localChatDrop', (_e, id) => local.drop(String(id)))
+  const reactions = new ReactionStats(app.store.root)
+  handle('chatQuickReactions', () => reactions.quick())
+  handle('chatReactionPut', (_e, emoji) => reactions.put(String(emoji)))
   handle('chatFilePut', (_e, room, name, mime, bytes) => transport.files.put(String(room), String(name), String(mime ?? ''), bytes instanceof Uint8Array ? bytes : new Uint8Array()))
   handle('chatFileGet', (_e, room, id) => transport.files.get(String(room), String(id)))
   handle('chatFileSave', async (e, room, id, name) => {

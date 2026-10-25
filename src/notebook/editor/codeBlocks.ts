@@ -3,6 +3,7 @@ import { EditorView, WidgetType } from '@codemirror/view'
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { FENCE_PICK, FORMATTABLE, formatCode } from '@renderer/lib/codeblocks'
 import { ICON_CHECK, ICON_COPY, ICON_FORMAT, widgetButton } from './icons'
+import { wikiNotes } from './wikiComplete'
 
 /**
  * Code blocks of a note (``` … ```, any indent — inside a list item too): where they are, the bar on them (the
@@ -165,4 +166,5 @@ function fenceLanguages(ctx: CompletionContext): CompletionResult | null {
     })),
   }
 }
-export const fenceLanguagePicker = autocompletion({ override: [fenceLanguages], activateOnTyping: true, selectOnOpen: false, icons: false, closeOnBlur: true })
+// (one completion for the note: a fence's languages, the notes after «[[»)
+export const fenceLanguagePicker = autocompletion({ override: [fenceLanguages, wikiNotes], activateOnTyping: true, selectOnOpen: false, icons: false, closeOnBlur: true })

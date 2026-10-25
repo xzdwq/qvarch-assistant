@@ -4,7 +4,12 @@
  * handler is run with that wish set, so every place that opens a link with openUrl() follows it.
  */
 let inApp = false
+/** The app's own links (`qvarch://<kind>/…`): each kind opened by its context (a shared note — the notebook). */
+const appLinks = new Map<string, (url: string) => void>()
+export const onAppLink = (kind: string, open: (url: string) => void) => void appLinks.set(kind, open)
 export function openUrl(url: string, here = inApp): void {
+  const app = /^qvarch:\/\/(\w+)\//i.exec(url)
+  if (app) return void appLinks.get(app[1].toLowerCase())?.(url)
   if (!/^https?:\/\//i.test(url)) return
   if (here) window.qa.browserOpen(url)
   else window.qa.openExternal(url)

@@ -9,19 +9,22 @@ import { cssHex } from '../../lib/cssColor'
 import { entryIcon, kindColor, kindIcon, kindLabel } from '../../lib/palette'
 import { useIsland } from '../islandState'
 import QuickNotePanel from './QuickNotePanel.vue'
+import IslandChatPanel from './IslandChatPanel.vue'
+import IslandNoticePanel from './IslandNoticePanel.vue'
+import IslandBadges from './IslandBadges.vue'
 
 /**
  * The collapsed pill (or the slim pill stuck to a screen edge): status, call app, typing combo, activity, the
  * marker, date and productive time; the day's chips and totals; the orb — a click opens the quick note.
  */
-const { els, island, day, typingCombo, pick, expand, quick, layout } = useIsland()
+const { els, island, day, typingCombo, pick, expand, quick, layout, drawer, onOrb } = useIsland()
 const { ui, voiceBusy } = island
 const { live, now, schedule, status, pillInfo, chips: pillItems, chipLabel: chipText, kindTotals, taskTotals } = day
 const { workMs, dayOff, productive, productivePct, split, pctTitle, dateText, nextMeeting, nextIn, noteTitle, noteIcon } = day
 const { combo, typing, heat, comboOn } = typingCombo
 const { marker } = pick
 const { setExpanded } = expand
-const { noteOpen, recording, toggleNote } = quick
+const { recording } = quick
 const { dock, pillH } = layout
 
 /** The orb mirrors what is going on (each state is a distinct animation, tinted). */
@@ -30,7 +33,7 @@ const mascot = computed(() => {
   return orbMood({
     recording: !!recording.value,
     transcribing: voiceBusy.value,
-    noteOpen: noteOpen.value,
+    noteOpen: !!drawer.value,
     inCall: live.value.inCall,
     dayFilled: !!workMs.value && split.value.within >= workMs.value,
     offHours: dayOff.value || (!!w && now.value >= w[1]),
@@ -39,7 +42,7 @@ const mascot = computed(() => {
 </script>
 
 <template>
-  <div class="pill tw:group/pill tw:[&.docked]:not-group-[.up]/stage:inset-0 tw:[&.docked]:gap-6 tw:[&.docked]:pt-0 tw:[&.docked]:pr-12 tw:[&.docked]:pb-0 tw:[&.docked]:pl-4 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:[writing-mode:sideways-lr] tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pt-4 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pr-0 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pb-12 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pl-0 tw:group-[.dock-right]/stage:[&.docked]:[writing-mode:vertical-rl] tw:group-[.dock-right]/stage:[&.docked]:pt-4 tw:group-[.dock-right]/stage:[&.docked]:pr-0 tw:group-[.dock-right]/stage:[&.docked]:pb-12 tw:group-[.dock-right]/stage:[&.docked]:pl-0 tw:absolute tw:left-0 tw:right-0 tw:top-0 tw:h-70 tw:flex tw:items-center tw:gap-8 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-7 tw:cursor-pointer tw:group-[.up]/stage:top-auto tw:group-[.up]/stage:bottom-0" :class="{ docked: !!dock && !noteOpen }" :style="{ height: dock && !noteOpen ? '100%' : `${pillH}px` }" @click="!noteOpen && setExpanded(true)">
+  <div class="pill tw:group/pill tw:[&.docked]:not-group-[.up]/stage:inset-0 tw:[&.docked]:gap-6 tw:[&.docked]:pt-0 tw:[&.docked]:pr-12 tw:[&.docked]:pb-0 tw:[&.docked]:pl-4 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:[writing-mode:sideways-lr] tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pt-4 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pr-0 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pb-12 tw:group-[.dock-left]/stage:[&.docked]:not-group-[.dock-right]/stage:pl-0 tw:group-[.dock-right]/stage:[&.docked]:[writing-mode:vertical-rl] tw:group-[.dock-right]/stage:[&.docked]:pt-4 tw:group-[.dock-right]/stage:[&.docked]:pr-0 tw:group-[.dock-right]/stage:[&.docked]:pb-12 tw:group-[.dock-right]/stage:[&.docked]:pl-0 tw:absolute tw:left-0 tw:right-0 tw:top-0 tw:h-70 tw:flex tw:items-center tw:gap-8 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-7 tw:cursor-pointer tw:group-[.up]/stage:top-auto tw:group-[.up]/stage:bottom-0" :class="{ docked: !!dock && !drawer }" :style="{ height: dock && !drawer ? '100%' : `${pillH}px` }" @click="!drawer && setExpanded(true)">
     <span :ref="els.pillHandle" class="handle drag tw:group-[.docked]/pill:w-26 tw:group-[.docked]/pill:h-26 tw:[-webkit-app-region:drag] tw:cursor-move tw:flex-none tw:flex tw:items-center tw:justify-center tw:w-32 tw:h-32 tw:rounded-[4px] tw:text-dim tw:bg-white/4 tw:[.abar_&]:block tw:[.abar_&]:not-group-[.docked]/pill:h-full tw:[.abar_&]:rounded-r2" title="Переместить">
       <Icon name="grip" :size="16" />
     </span>
@@ -65,16 +68,17 @@ const mascot = computed(() => {
           </span>
           <span v-else class="cbest tw:font-bold tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">{{ combo.best }}</span>
         </span>
-        <ActivityWave v-if="dock && !noteOpen ? ui.dock.wave : ui.pill.wave" class="pwave tw:[&&]:group-[.docked]/pill:w-64 tw:[&&]:group-[.docked]/pill:h-18 tw:group-[.docked]/pill:flex-none tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:[writing-mode:horizontal-tb] tw:group-[.dock-right]/stage:group-[.docked]/pill:[writing-mode:horizontal-tb] tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:w-64 tw:[&&]:group-[.dock-right]/stage:group-[.docked]/pill:w-64 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:h-18 tw:[&&]:group-[.dock-right]/stage:group-[.docked]/pill:h-18 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:my-23 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:-mx-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:my-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:-mx-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:not-group-[.dock-left]/stage:[transform:rotate(90deg)] tw:group-[.dock-left]/stage:group-[.docked]/pill:[transform:rotate(-90deg)] tw:flex-[1_1_0] tw:[&&]:w-0 tw:min-w-20 tw:[&&]:h-14" title="Активность" />
+        <ActivityWave v-if="dock && !drawer ? ui.dock.wave : ui.pill.wave" class="pwave tw:[&&]:group-[.docked]/pill:w-64 tw:[&&]:group-[.docked]/pill:h-18 tw:group-[.docked]/pill:flex-none tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:[writing-mode:horizontal-tb] tw:group-[.dock-right]/stage:group-[.docked]/pill:[writing-mode:horizontal-tb] tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:w-64 tw:[&&]:group-[.dock-right]/stage:group-[.docked]/pill:w-64 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:h-18 tw:[&&]:group-[.dock-right]/stage:group-[.docked]/pill:h-18 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:my-23 tw:group-[.dock-left]/stage:group-[.docked]/pill:not-group-[.dock-right]/stage:-mx-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:my-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:-mx-23 tw:group-[.dock-right]/stage:group-[.docked]/pill:not-group-[.dock-left]/stage:[transform:rotate(90deg)] tw:group-[.dock-left]/stage:group-[.docked]/pill:[transform:rotate(-90deg)] tw:flex-[1_1_0] tw:[&&]:w-0 tw:min-w-20 tw:[&&]:h-14" title="Активность" />
         <span v-else class="pfill tw:flex-1 tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2"></span>
         <span class="pend tw:ml-0 tw:flex-none tw:inline-flex tw:items-center tw:gap-6 tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">
+          <IslandBadges v-if="dock && !drawer && !ui.dock.orb" />
           <span v-if="marker" class="pmarker tw:group-[.docked]/pill:hidden tw:inline-flex tw:items-center tw:gap-3 tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-accent/18 tw:text-accent-fg tw:text-[11px] tw:[.abar_&]:not-group-[.docked]/pill:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">
             <Icon name="scissors" :size="11" />{{ formatHM(marker.start) }}–{{ marker.end ? formatHM(marker.end) : 'сейчас' }}
           </span>
           <span v-if="ui.pill.date" class="pday tw:group-[.docked]/pill:hidden tw:ml-6 tw:text-muted tw:text-[11px] tw:[.abar_&]:not-group-[.docked]/pill:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">{{ dateText }}</span>
-          <span v-if="dock && !noteOpen && ui.dock.next && nextMeeting" class="pnext tw:inline-flex tw:items-center tw:gap-4 tw:text-info-fg tw:text-[11.5px] tw:font-semibold tw:whitespace-nowrap tw:tabular-nums tw:font-data tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2" :title="`До встречи «${nextMeeting.label}» в ${formatHM(nextMeeting.start)}`"><Icon name="calendar" :size="11" />{{ nextIn }}</span>
+          <span v-if="dock && !drawer && ui.dock.next && nextMeeting" class="pnext tw:inline-flex tw:items-center tw:gap-4 tw:text-info-fg tw:text-[11.5px] tw:font-semibold tw:whitespace-nowrap tw:tabular-nums tw:font-data tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2" :title="`До встречи «${nextMeeting.label}» в ${formatHM(nextMeeting.start)}`"><Icon name="calendar" :size="11" />{{ nextIn }}</span>
           <b
-            v-if="!dock || noteOpen || ui.dock.time"
+            v-if="!dock || drawer || ui.dock.time"
             class="ptime tw:text-[11px] tw:text-up-fg tw:tabular-nums tw:font-data"
             :title="`Продуктивно ${formatDuration(productive)}${workMs ? ` (${productivePct}% рабочего дня)` : ''}: в рабочие часы ${formatDuration(split.within)}, сверх ${formatDuration(split.over)}.`"
             >{{ formatDuration(productive) }}</b
@@ -114,9 +118,12 @@ const mascot = computed(() => {
         <span v-if="workMs" class="st pct tw:flex-none tw:inline-flex tw:items-center tw:gap-3 tw:text-up-fg tw:font-bold tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2" :title="pctTitle">{{ productivePct }}% полезного</span>
       </div>
     </div>
-    <button v-if="!dock || noteOpen || ui.dock.orb" :ref="els.orbEl" class="orb-btn tw:group-[.docked]/pill:flex-none tw:group-[.docked]/pill:w-26 tw:group-[.docked]/pill:h-26 tw:group-[.docked]/pill:m-0 tw:group-[.docked]/pill:p-0 tw:relative tw:flex-none tw:flex tw:items-center tw:justify-center tw:w-44 tw:h-44 tw:p-0 tw:border-0 tw:rounded-[50%] tw:bg-transparent tw:cursor-pointer tw:[transition:background_0.2s] tw:hover:not-[&.on]:bg-white/6 tw:[&.on]:bg-white/6 tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:not-group-[.docked]/pill:py-3 tw:[.seg2_&]:not-group-[.docked]/pill:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:not-hover:not-[&.on]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent tw:hover:enabled:not-[.seg2_&]:border-border-3 tw:[&.rec]:after:content-[''] tw:[&.rec]:after:absolute tw:[&.rec]:after:top-6 tw:[&.rec]:after:right-6 tw:[&.rec]:after:w-9 tw:[&.rec]:after:h-9 tw:[&.rec]:after:rounded-[50%] tw:[&.rec]:after:bg-down tw:[&.rec]:after:[box-shadow:0_0_0_2px_var(--bg)] tw:[&.rec]:after:animate-[Island-recpulse_1.2s_ease-in-out_infinite]" :class="{ on: noteOpen, rec: !!recording }" :title="recording ? 'Идёт запись — клик: открыть' : mascot.title" @click.stop="toggleNote">
-      <ThinkingOrb :state="mascot.state" :size="dock && !noteOpen ? 20 : 32" :px="dock && !noteOpen ? 24 : 40" :speed="mascot.speed" :tint="cssHex(mascot.tint)" />
+    <button v-if="!dock || drawer || ui.dock.orb" :ref="els.orbEl" class="orb-btn tw:group-[.docked]/pill:flex-none tw:group-[.docked]/pill:w-26 tw:group-[.docked]/pill:h-26 tw:group-[.docked]/pill:m-0 tw:group-[.docked]/pill:p-0 tw:relative tw:flex-none tw:flex tw:items-center tw:justify-center tw:w-44 tw:h-44 tw:p-0 tw:border-0 tw:rounded-[50%] tw:bg-transparent tw:cursor-pointer tw:[transition:background_0.2s] tw:hover:not-[&.on]:bg-white/6 tw:[&.on]:bg-white/6 tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:not-group-[.docked]/pill:py-3 tw:[.seg2_&]:not-group-[.docked]/pill:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:not-hover:not-[&.on]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent tw:hover:enabled:not-[.seg2_&]:border-border-3 tw:[&.rec]:after:content-[''] tw:[&.rec]:after:absolute tw:[&.rec]:after:top-6 tw:[&.rec]:after:right-6 tw:[&.rec]:after:w-9 tw:[&.rec]:after:h-9 tw:[&.rec]:after:rounded-[50%] tw:[&.rec]:after:bg-down tw:[&.rec]:after:[box-shadow:0_0_0_2px_var(--bg)] tw:[&.rec]:after:animate-[Island-recpulse_1.2s_ease-in-out_infinite]" :class="{ on: !!drawer, rec: !!recording }" :title="recording ? 'Идёт запись — клик: открыть' : mascot.title" @click.stop="onOrb">
+      <IslandBadges class="tw:absolute tw:-top-2 tw:-right-4 tw:z-1" />
+      <ThinkingOrb :state="mascot.state" :size="dock && !drawer ? 20 : 32" :px="dock && !drawer ? 24 : 40" :speed="mascot.speed" :tint="cssHex(mascot.tint)" />
     </button>
     <QuickNotePanel />
+    <IslandChatPanel />
+    <IslandNoticePanel />
   </div>
 </template>

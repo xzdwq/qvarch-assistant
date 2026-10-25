@@ -317,3 +317,14 @@
     opacity: 0.45;
   }
 }
+
+/* a chat's message shown from an answer's quote: lit, then fading */
+@keyframes ChatThread-lit {
+  0%,
+  40% {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}

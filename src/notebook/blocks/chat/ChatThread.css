@@ -1,0 +1,8 @@
+/* A room's wall: the messages over a soft gradient (scoped). */
+.wall {
+  background: var(--chat-wall);
+}
+/* a message shown from an answer's quote: lit a moment */
+.wall :deep(.lit .bubble) {
+  animation: ChatThread-lit 1.4s ease;
+}

@@ -1,6 +1,6 @@
-import { mentionsIn, type ChatAttach, type ChatRoom } from '@shared/transport/chat'
+import { isFileKind, mentionable, mentionsIn, type ChatAttach, type ChatReply, type ChatRoom } from '@shared/transport/chat'
 import type { DeviceInfo } from '@shared/transport/protocol'
-import { chatOnline, chatPrefs, holdRoom, received, roomOf, upsertRoom } from './chat'
+import { chatOnline, chatPrefs, holdRoom, isHeld, postMessage, publishLocal, renameLocal, roomOf, upsertRoom } from './chat'
 import { serverCall } from './transport'
 
 /**
@@ -22,6 +22,7 @@ export async function newChat(title: string): Promise<{ id: string; held: boolea
   return { id, held: false }
 }
 export async function renameChat(room: string, title: string): Promise<void> {
+  if (isHeld(room)) return renameLocal(room, title)
   upsertRoom(await serverCall('chat.rename', { room, title }))
 }
 /** The people one may add: those one shares a chat or a shared note with. */
@@ -30,6 +31,8 @@ export const chatPeople = (): Promise<DeviceInfo[]> => serverCall('chat.people',
 export const mainWith = (device: string): Promise<ChatRoom | null> => serverCall('chat.main', { device })
 /** A person added: this chat a branch of the main conversation with them — or the main one goes on (returned then). */
 export async function addPerson(room: string, device: string, as: 'branch' | 'main'): Promise<ChatRoom> {
+  // a chat kept here: brought to the server whole first (its history, its agents)
+  if (isHeld(room)) await publishLocal(room)
   const r = await serverCall('chat.add', { room, device, as })
   upsertRoom(r)
   return r
@@ -45,7 +48,9 @@ export async function setChatNotify(room: string, on: boolean | undefined): Prom
 }
 
 /** An attachment sent into a chat — a block's result, a file (with words, or none; the members they mention told). */
-export async function sendAttach(room: string, attach: ChatAttach, text = ''): Promise<void> {
-  const mentions = mentionsIn(text, roomOf(room)?.members ?? [])
-  received(await serverCall('chat.send', { room, text, clientId: crypto.randomUUID(), attach: JSON.parse(JSON.stringify(attach)) as ChatAttach, ...(mentions.length ? { mentions } : {}) }))
+export async function sendAttach(room: string, attach: ChatAttach, text = '', reply?: ChatReply): Promise<void> {
+  const r = roomOf(room)
+  const mentions = r ? mentionsIn(text, mentionable(r)) : []
+  if (isHeld(room) && isFileKind(attach.kind)) throw new Error('Файлы отправляются через сервер — этот чат пока только на этом компьютере')
+  await postMessage(room, { text, attach: JSON.parse(JSON.stringify(attach)) as ChatAttach, ...(mentions.length ? { mentions } : {}), ...(reply ? { reply } : {}) })
 }

@@ -44,6 +44,18 @@ export interface SharedInfo {
   /** In step with the server now. */
   live: boolean
 }
+/**
+ * A text an AI agent wrote in a shared note before the note was in step: its change goes in as the agent's when it
+ * does (path → the text, the agent's name).
+ */
+const agentTexts = new Map<string, { text: string; agent: string }>()
+/** The agent that wrote this text of a path (once: taken). */
+function agentOf(path: string | undefined, text: string): string | undefined {
+  const w = path ? agentTexts.get(path) : undefined
+  if (!w || w.text !== text) return undefined
+  agentTexts.delete(path!)
+  return w.agent
+}
 const SEND_MS = 40
 /** (sooner than the file's own save: the state is never older than the file it goes with) */
 const SAVE_MS = 250
@@ -208,7 +220,7 @@ async function sync(doc: string, l: Live): Promise<void> {
     // never had it here: the file's text (made from the server's, or changed before) goes on top of the server's
     const p = pathsOf(doc)[0]
     const text = p ? docs.get(p)!.text : l.fileText
-    if (text !== undefined) l.st.setLocal(text)
+    if (text !== undefined) l.st.setLocal(text, agentOf(p ?? files.get(doc), text))
     l.ready = true
     show(doc, l)
   }
@@ -247,7 +259,7 @@ watchEffect(() => {
     }
     if (!l.ready || d.text === l.st.value) continue
     if (readonlyPath(path)) setText(path, l.st.value)
-    else l.st.setLocal(d.text)
+    else l.st.setLocal(d.text, agentOf(path, d.text))
   }
 })
 // online again: every document in step; offline — none is
@@ -358,8 +370,17 @@ export function track(doc: string, path: string, text: string): void {
   // its file changed outside (not open — no editor sees it): a change
   if (l.ready && !pathsOf(doc).length && text !== l.fileText && text !== l.st.value) {
     l.fileText = text
-    l.st.setLocal(text)
+    l.st.setLocal(text, agentOf(path, text))
   }
+}
+/**
+ * An AI agent wrote a shared note (its text now): its lines marked as the agent's — now when the note is in step,
+ * else when its change goes in.
+ */
+export function agentWrote(path: string, text: string, agent: string): void {
+  const l = lives.get(sharedDocOfPath(path) || [...files].find(([, p]) => p === path)?.[0] || '')
+  if (l?.ready && !readonlyPath(path)) return void (l.st.value !== text && l.st.setLocal(text, agent))
+  agentTexts.set(path, { text, agent })
 }
 /** A document no longer of a shared folder here (deleted, or the folder left). */
 export function untrack(doc: string): void {
@@ -380,6 +401,15 @@ export function sharedTextOf(path: string, fresh = false): SharedText | undefine
   if (fresh) absorb(doc, l)
   return l.st
 }
+/** The shared notes held here, in step, that this person may change (open or of a shared folder). */
+export function editableTexts(): SharedText[] {
+  return [...lives].flatMap(([doc, l]) => {
+    const role = sharedInfo.get(doc)?.role
+    return l.ready && l.st instanceof SharedText && role && ROLE_RIGHTS[role].edit ? [l.st] : []
+  })
+}
+/** Every shared note held here (its snapshots of tasks and events are read by the chips). */
+export const heldTexts = (): SharedText[] => [...lives.values()].flatMap((l) => (l.ready && l.st instanceof SharedText ? [l.st] : []))
 /** A document's text fetched from the server as a new file of this kind: its text, and its state kept here. */
 export async function fetchText(doc: string, fmt: SharedFormat): Promise<string> {
   const st = fmt.model()

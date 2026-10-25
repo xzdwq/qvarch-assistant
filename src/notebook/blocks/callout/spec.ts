@@ -1,6 +1,6 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 import { heightPerLine } from '../detectors'
-import { CALLOUT_START, calloutMd } from './model'
+import { CALLOUT_START, CALLOUTS, calloutMd } from './model'
 
 /** A coloured callout: `> [!info] …` and the `>` lines after it. */
 export const calloutSpec: BlockSpec<'callout'> = {
@@ -18,6 +18,7 @@ export const calloutSpec: BlockSpec<'callout'> = {
   },
   estimateHeight: heightPerLine(40, 24),
   rawEditable: true,
+  guide: `Выделенный блок: первая строка > [!вид] Заголовок, дальше строки > текст. Вид: ${CALLOUTS.map((c) => `${c.id} (${c.title.toLowerCase()})`).join(', ')}.`,
   commands: [
     {
       id: 'callout',

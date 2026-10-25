@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { curPane, type Pane } from '@nb/workspace/paneLayout'
 import { NoteEditors } from './noteEditors'
+import type { EventCardAsk, RefCardAsk } from '@nb/editor/eventChips'
 
 /**
  * Calendar events and the notes: «В событие» from the editor's menu (the selected text becomes a new event and,
@@ -23,13 +24,25 @@ export function useNoteEvents(editors: NoteEditors) {
     editors.get(at.key)?.linkEvent(at, text, { day, id: e.id, label: e.label || text })
   }
 
-  /** An event chip clicked in a note: its card. */
-  const evCard = ref<{ day: string; id: string; x: number; y: number; path?: string }>()
+  /** An event chip clicked in a note: its card (its card open — closed). */
+  const evCard = ref<EventCardAsk & { path?: string }>()
   const onEvCard = (e: Event) => {
-    const d = (e as CustomEvent<{ day: string; id: string; x: number; y: number }>).detail
-    evCard.value = { ...d, path: curPane()?.active }
+    const d = (e as CustomEvent<EventCardAsk>).detail
+    evCard.value = evCard.value?.id === d.id ? undefined : { ...d, path: curPane()?.active }
   }
-  onMounted(() => window.addEventListener('qa:event-card', onEvCard))
-  onBeforeUnmount(() => window.removeEventListener('qa:event-card', onEvCard))
-  return { eventText, toEvent, onEventMade, evCard }
+  /** A task's chip (or someone else's event's) clicked: its card (its card open — closed). */
+  const refCard = ref<RefCardAsk>()
+  const onRefCard = (e: Event) => {
+    const d = (e as CustomEvent<RefCardAsk>).detail
+    refCard.value = refCard.value?.url === d.url ? undefined : d
+  }
+  onMounted(() => {
+    window.addEventListener('qa:event-card', onEvCard)
+    window.addEventListener('qa:ref-card', onRefCard)
+  })
+  onBeforeUnmount(() => {
+    window.removeEventListener('qa:event-card', onEvCard)
+    window.removeEventListener('qa:ref-card', onRefCard)
+  })
+  return { eventText, toEvent, onEventMade, evCard, refCard }
 }

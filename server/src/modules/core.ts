@@ -3,7 +3,7 @@ import type { DeviceInfo } from '../../../src/shared/transport/protocol'
 import type { Db } from '../db'
 import { text, type Flags, type ModuleFactory } from '../module'
 
-/** The core: the devices (installations of the app and the server's own participants) and the switches. */
+/** The core: the devices (installations of the app) and the switches. */
 const MIGRATIONS = [
   `create table qa_devices (
      id text primary key,
@@ -14,6 +14,8 @@ const MIGRATIONS = [
      seen_at timestamptz not null default now()
    );
    create table qa_flags (key text primary key, value boolean not null, at timestamptz not null default now());`,
+  // the server's own participants (a test bot) are gone
+  'alter table qa_devices drop column bot;',
 ]
 
 /** A name as kept: trimmed, not too long; none — the fingerprint's start. */
@@ -22,9 +24,8 @@ export const deviceName = (name: string, id: string): string => name.trim().slic
 interface DeviceRow {
   id: string
   name: string
-  bot: boolean
 }
-const info = (r: DeviceRow): DeviceInfo => (r.bot ? { id: r.id, name: r.name, bot: true } : { id: r.id, name: r.name })
+const info = (r: DeviceRow): DeviceInfo => ({ id: r.id, name: r.name })
 
 /** The devices the server has met. */
 export class Devices {
@@ -35,13 +36,13 @@ export class Devices {
     const row = await this.db.one<DeviceRow>(
       `insert into qa_devices (id, key, name) values ($1, $2, $3)
        on conflict (id) do update set seen_at = now(), name = case when $4 then excluded.name else qa_devices.name end
-       returning id, name, bot`,
+       returning id, name`,
       [id, key, deviceName(name, id), !!name.trim()],
     )
     return info(row!)
   }
   async rename(id: string, name: string): Promise<DeviceInfo> {
-    const row = await this.db.one<DeviceRow>('update qa_devices set name = $2 where id = $1 returning id, name, bot', [id, deviceName(name, id)])
+    const row = await this.db.one<DeviceRow>('update qa_devices set name = $2 where id = $1 returning id, name', [id, deviceName(name, id)])
     return info(row!)
   }
 }

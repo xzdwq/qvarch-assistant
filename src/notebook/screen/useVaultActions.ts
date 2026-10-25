@@ -8,6 +8,8 @@ import { forgetRuns, moveRuns } from '@nb/engine'
 import { docs } from '@nb/workspace/noteDocs'
 import { closeEverywhere, curPane, layout, openFile, swapTab } from '@nb/workspace/paneLayout'
 import { remap } from '@nb/workspace/noteSync'
+import { relinkAfterMove } from '@nb/workspace/wikiRelink'
+import { askPlace } from '@nb/workspace/noteGoto'
 import { files, loadTree, tree } from '@nb/workspace/vaultTreeStore'
 import { dirOf, noteName } from '@nb/domain/notePaths'
 import type { NoteEditors } from './noteEditors'
@@ -60,11 +62,14 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
     const old = findNode(tree.value, path)?.name ?? noteName(path)
     if (!clean || clean === old) return
     await attempt(async () => {
+      const before = files.value
       const to = await window.qa.vaultMove(path, dirOf(path), clean)
       remap(path, to)
       moveRuns(path, to)
       if (folder.value) folder.value = folder.value === path ? to : folder.value
       await loadTree()
+      // the links to it follow its new name
+      await relinkAfterMove(path, to, before)
     })
   }
   /** The tree's rename field closed: renamed (`apply`) or left as it was. */
@@ -76,11 +81,13 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
   async function moveTo(path: string, dir: string): Promise<void> {
     if (dirOf(path) === dir || path === dir) return
     await attempt(async () => {
+      const before = files.value
       const to = await window.qa.vaultMove(path, dir)
       remap(path, to)
       moveRuns(path, to)
       ensureOpen(dir)
       await loadTree()
+      await relinkAfterMove(path, to, before)
     })
   }
   async function remove(n: VaultNode): Promise<void> {
@@ -123,7 +130,11 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
   /** A wiki link followed; no such note — made (as Obsidian does). */
   function openWiki(target: string, newPane = false): void {
     const path = resolveWiki(target, files.value)
-    if (path) return openFile(path, { newPane })
+    // (`[[Заметка#место]]` — the note shown at that place)
+    if (path) {
+      askPlace(path, target.split('|')[0].split('#')[1])
+      return openFile(path, { newPane })
+    }
     void (async () => {
       const created = await window.qa.vaultCreate(targetDir.value, 'note', target.split('|')[0].split('/').pop())
       await loadTree()

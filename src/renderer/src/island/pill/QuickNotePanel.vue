@@ -10,7 +10,7 @@ import { useIsland } from '../islandState'
  * The area under (or above) the pill the orb opens: tabs Текст (a note saved while typing, or made a task),
  * Аудио (a voice note), Событие (a block in a couple of clicks), Звонок (record the call).
  */
-const { els, day, quick, quickEvent } = useIsland()
+const { els, day, quick, quickEvent, chat, switchOrb } = useIsland()
 const { today, live, shownKinds } = day
 const { noteOpen, note, qtab, qMsg, noteTarget, onNoteInput, onNoteKey, quickToTask } = quick
 const { recording, recLevel, recSec, startRec, stopRec, fmtRec } = quick
@@ -26,6 +26,8 @@ const { qKind, qOff, qLabel, qTask, qParsed, addQuickEvent } = quickEvent
         <button class="tw:inline-flex tw:items-center tw:gap-4 tw:py-2 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11px] tw:[&.on]:bg-warn/16 tw:[&.on]:text-warn-fg tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:py-3 tw:[.seg2_&]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:not-[&.on]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent" :class="{ on: qtab === 'event' }" @click="qtab = 'event'"><Icon name="plus" :size="12" />Событие</button>
         <button class="tw:inline-flex tw:items-center tw:gap-4 tw:py-2 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11px] tw:[&.on]:bg-warn/16 tw:[&.on]:text-warn-fg tw:[&&&]:[&.hot]:[&:not(.on)]:text-(--call-mark-fg) tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:py-3 tw:[.seg2_&]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:not-[&.on]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent" :class="{ on: qtab === 'call', hot: live.inCall }" @click="qtab = 'call'"><Icon name="phone" :size="12" />Звонок</button>
       </span>
+      <!-- the orb opens the chats from now on (kept) -->
+      <button class="tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:py-2 tw:px-8 tw:border tw:border-white/12 tw:rounded-full tw:bg-transparent tw:text-muted tw:text-[11px] tw:hover:text-text" title="Сфера открывает чаты: последние сообщения и ответ" @click="switchOrb('chat')"><Icon name="chat" :size="12" />Чат<b v-if="chat.unread.value" class="tw:min-w-15 tw:h-15 tw:px-3 tw:rounded-full tw:bg-accent tw:text-on-accent tw:text-[9.5px] tw:leading-15 tw:text-center">{{ chat.unread.value }}</b></button>
       <span v-if="noteTarget && qtab !== 'event'" class="ntarget tw:text-text tw:overflow-hidden tw:text-ellipsis tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">→ {{ noteTarget }}</span>
       <span class="spacer tw:flex-1 tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2"></span>
       <span v-if="qMsg" class="qmsg tw:min-w-0 tw:text-up-fg tw:text-[11px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2">{{ qMsg }}</span>

@@ -2,8 +2,9 @@
 .bubble {
   background: var(--panel-3);
 }
+/* one's own: one gradient fixed to the view — each bubble shows its part of it, as it stands */
 .bubble.mine {
-  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  background: var(--chat-mine) fixed;
 }
 /* the tail: a small corner below, on the author's side */
 .bubble.tail::after {

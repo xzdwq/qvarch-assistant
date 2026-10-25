@@ -1,6 +1,6 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 import { fenceOfLang, fixedHeight } from '../detectors'
-import { chartMd, NEW_CHART } from './model'
+import { CHART_TYPES, chartMd, NEW_CHART } from './model'
 
 /** A chart drawn from its own table of data (```chart). */
 export const chartSpec: BlockSpec<'chart'> = {
@@ -9,6 +9,7 @@ export const chartSpec: BlockSpec<'chart'> = {
   detect: fenceOfLang('chart'),
   estimateHeight: fixedHeight(400),
   rawEditable: true,
+  guide: `График по таблице: первая строка — заголовки (первый столбец — подписи, остальные — ряды), дальше строки данных через |. type: ${CHART_TYPES.map((t) => `${t.id} (${t.title.toLowerCase()})`).join(', ')}; title: …; stacked: true — ряды друг на друге.`,
   commands: [
     {
       id: 'chart',

@@ -1,6 +1,9 @@
 import { summary } from '@nb/domain/values'
 import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData, type RunItem } from '@nb/engine'
-import { doc, docs, loadTree, openFile, save, setText } from './notebook'
+import { docLinkPath, shareLinkOf } from '@nb/workspace/docLinks'
+import { doc, docs, files, loadTree, openFile, save, setText } from './notebook'
+import { agentByOf, agentWrote } from './agentWrites'
+import { isHeld, postMessage, roomOf } from './chat'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
@@ -43,19 +46,26 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
   async write(a) {
     const path = String(a.path)
     const text = String(a.text)
-    if (docs.has(path)) {
-      await textOf(path)
+    const by = agentByOf(a)
+    // (an agent's write goes through the note as typed: a shared one gets its lines marked as the agent's)
+    if (docs.has(path) || (by && files.value.includes(path))) {
+      const before = await textOf(path)
       setText(path, text)
+      if (by) await agentWrote(by, path, before, text)
       await save(path)
     } else await window.qa.vaultWrite(path, text)
     await loadTree()
-    openFile(path)
+    // (an agent writing in the background never switches the note one is in)
+    if (a.quiet !== true) openFile(path)
     return path
   },
   async create(a) {
-    const path = await window.qa.vaultCreate(String(a.dir ?? ''), 'note', String(a.name), String(a.text ?? ''))
+    const text = String(a.text ?? '')
+    const path = await window.qa.vaultCreate(String(a.dir ?? ''), 'note', String(a.name), text)
+    const by = agentByOf(a)
+    if (by) await agentWrote(by, path, '', text)
     await loadTree()
-    openFile(path)
+    if (a.quiet !== true) openFile(path)
     return path
   },
   async run(a) {
@@ -76,6 +86,24 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
     await runItemWhereItStands(path, text, item)
     return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
+  },
+  /** An agent opens a shared note's link (joined by its code when not here). */
+  async docLink(a) {
+    return docLinkPath(String(a.url), true)
+  },
+  /** An agent gives a note to a chat: its link (the note shared when it is not). */
+  async shareLink(a) {
+    return shareLinkOf(String(a.path))
+  },
+  /** An agent sends a note into a chat as a file (a copy), as its own message. */
+  async forward(a) {
+    const room = String(a.room)
+    if (isHeld(room)) throw new Error('Файлы отправляются через сервер, а этот чат пока только на этом компьютере — дай ссылку [[…]]')
+    const file = await window.qa.chatFileFromNotes(room, String(a.path), false)
+    const agent = roomOf(room)?.agents?.find((x) => x.id === String(a.agent))
+    if (!agent) throw new Error('Этого ИИ нет в чате')
+    await postMessage(room, { text: String(a.text ?? ''), agent: { id: agent.id, name: agent.name }, attach: { kind: 'file', title: file.name, data: file } })
+    return file.name
   },
   async report(a) {
     const path = String(a.path)

@@ -1,3 +1,7 @@
+import type { AgentProfile, AgentProfileView } from './agent/profiles'
+import type { TurnAnswer, TurnRequest } from './agent/turn'
+import type { TraceLine } from './agent/agentLoop'
+import type { LocalChat } from './transport/localChat'
 import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
 import type { Dock } from './island'
@@ -16,6 +20,8 @@ import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
 import type { ChatFile } from './transport/chat'
+import type { IslandChatOp, IslandChatState } from './islandChat'
+import type { IslandNotice } from './islandNotice'
 import type { TransportState } from './transport/constants'
 import type { ResultsPage, ResultsPut, ResultsPutReply, TransportEvent } from './transport/protocol'
 import type { SharedFolderLink } from './transport/sharedFolder'
@@ -188,6 +194,15 @@ export interface QaApi {
   sharedLog(line: string): void
   /** A file sent into a chat (kept on the server and here): what a message carries of it. */
   chatFilePut(room: string, name: string, mime: string, bytes: Uint8Array): Promise<ChatFile>
+  /** The chats kept on this computer only (one's own, with one's agents). */
+  localChats(): Promise<LocalChat[]>
+  localChatSave(chat: LocalChat): Promise<void>
+  /** A local chat taken away (brought to the server). */
+  localChatDrop(id: string): Promise<void>
+  /** The reactions offered first (the ones this person puts most). */
+  chatQuickReactions(): Promise<string[]>
+  /** A reaction put (counted): the reactions offered first now. */
+  chatReactionPut(emoji: string): Promise<string[]>
   /** A chat's file: kept here, else fetched. */
   chatFileGet(room: string, id: string): Promise<Uint8Array>
   /** A chat's file saved where one picks (false — not saved). */
@@ -310,6 +325,11 @@ export interface QaApi {
   vaultSearch(q: string): Promise<VaultHit[]>
   /** The notes that have this text as it is (a block's mark: a chat's room, a feed). */
   vaultNotesWith(needle: string): Promise<string[]>
+  /** The notes that link to this one (`[[…]]`). */
+  vaultBacklinks(path: string): Promise<string[]>
+  /** The lines AI agents wrote in a personal note (line hash → the agent's name). */
+  vaultAgentLines(path: string): Promise<Record<string, string>>
+  vaultSetAgentLines(path: string, lines: Record<string, string>): Promise<void>
   /** The events mentioned in the notes: event id → the notes' paths. */
   eventMentions(): Promise<Record<string, string[]>>
   /** A recording for a note; its vault path (.audio/…). */
@@ -367,6 +387,30 @@ export interface QaApi {
   /** The main process asks the window to do something with the notes (for an AI tool). */
   onMcpCall(cb: (id: string, op: string, args: Record<string, unknown>) => void): () => void
   mcpReply(id: string, ok: boolean, value: unknown): void
+  /** The main window tells the chats' short state (for the island). */
+  islandChatPublish(state: IslandChatState): void
+  /** The island: the chats' short state now, and as it changes. */
+  islandChatGet(): Promise<IslandChatState>
+  onIslandChat(cb: (state: IslandChatState) => void): () => void
+  /** The island asks the main window to do something with the chats (islandChat.ts IslandChatOps): its answer. */
+  islandChatCall(op: IslandChatOp, args: Record<string, unknown>): Promise<unknown>
+  /** The main window: the island's ask (answered by islandChatReply). */
+  onIslandChatCall(cb: (id: string, op: IslandChatOp, args: Record<string, unknown>) => void): () => void
+  islandChatReply(id: string, ok: boolean, value: unknown): void
+  /** The island: a reminder fired. */
+  onIslandNotice(cb: (n: IslandNotice) => void): () => void
+  /** This person's AI agents (their keys never come back — only whether one is kept). */
+  agentProfiles(): Promise<AgentProfileView[]>
+  /** A profile saved; `key` — kept encrypted ('' — taken away; none — the old one stays). */
+  agentSave(profile: AgentProfile, key?: string): Promise<AgentProfileView[]>
+  agentRemove(id: string): Promise<AgentProfileView[]>
+  /** The models a profile may run (checks the connection and the key). */
+  agentModels(id: string): Promise<string[]>
+  /** An agent's turn (a chat called it): its answer when done. */
+  agentRun(req: TurnRequest): Promise<TurnAnswer>
+  agentStop(turn: string): void
+  /** A tool an agent called during a turn. */
+  onAgentTrace(cb: (turn: string, line: TraceLine) => void): () => void
   /** The document (with its pictures, boards, results if chosen) into one .qvdoc file; undefined — cancelled. */
   docExport(path: string): Promise<{ file: string; docs: number; files: number; missing: string[] } | undefined>
   /** A .qvdoc file unpacked into a folder of the vault; undefined — cancelled. */
