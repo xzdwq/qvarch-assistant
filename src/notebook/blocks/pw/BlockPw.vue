@@ -15,7 +15,8 @@ import MatrixEditor from './MatrixEditor.vue'
 import FuzzEditor from './FuzzEditor.vue'
 import { readFuzz } from '@shared/fuzz'
 import { pwRec, startPwRec, stopPwRec } from '@renderer/lib/pwrec'
-import { QA_CHECKS, checksFor, checksIn, fileSetOf, layoutModeOf, setFileSet, setLayoutMode, unwrapCheck, wrapCheck, type QaCheckKind } from '@shared/qaChecks'
+import { QA_CHECKS, checksFor, checksIn, fileSetOf, layoutModeOf, setFileSet, setLayoutMode, unwrapCheck, type QaCheckKind } from '@shared/qaChecks'
+import { withCheck } from './model'
 import type { TestFileSet } from '@shared/testFiles'
 import Popover from '@renderer/components/Popover.vue'
 
@@ -110,24 +111,12 @@ function dropCheck(k: QaCheckKind): void {
 function addCheck(k: QaCheckKind): void {
   // the menu — a switch: one already in the scenario is taken out
   if (present.value.includes(k)) return void (dropCheck(k), (ckOpen.value = false))
-  const r = wrapCheck(code.value, k)
+  const r = withCheck(info.value, code.value, k)
   if ('error' in r) return void (ckErr.value = r.error)
   code.value = r.code
   ckErr.value = ''
   ckOpen.value = false
-  const least = CHECK_TIMEOUT[k]
-  if (least && (info.value.timeout ?? 0) < least) patch({ timeout: least })
-}
-/** The time (s) a long check needs the block to have at least: a smaller limit set is raised to it. */
-const CHECK_TIMEOUT: Partial<Record<QaCheckKind, number>> = {
-  // hundreds of actions — the block may take its time (15 min at most, unless more is set)
-  load: 900,
-  // the layout check — a dozen screens: a few minutes
-  layout: 300,
-  // the matrix — the scenario a few dozen times
-  matrix: 1200,
-  // a file per run — an import each: time for every one
-  files: 1200,
+  if (r.info.timeout !== info.value.timeout) patch({ timeout: r.info.timeout })
 }
 const menuChecks = computed(() => checksFor(code.value))
 

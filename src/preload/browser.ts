@@ -2,6 +2,10 @@
 import { ipcRenderer } from 'electron'
 // recording a Playwright scenario (off until the app starts it for this tab)
 import './pwRecorder'
+import { lookAtPage } from './recorder/pageLook'
+
+// the app asks what this page offers to act on (an AI agent looking at it — asked to by the person)
+ipcRenderer.on('qa:page-look', (_e, id: string) => ipcRenderer.send('qa:page-look-reply', id, lookAtPage()))
 
 /**
  * The browser's pages: sign-in forms only. A login sent (a form submitted, Enter in it, its button clicked) goes

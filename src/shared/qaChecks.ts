@@ -40,6 +40,17 @@ const QA_CHECK_LIST = [
   { id: 'compare', label: 'Сравнить с «до смены»', hint: 'Шаг 3: поля после смены контекста сравниваются с запомненными. Значение, которое осталось прежним, показывается — проверьте, должно ли оно было остаться или «протекло» из прошлого контекста' },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; hint: string }>
 export type QaCheckKind = (typeof QA_CHECK_LIST)[number]['id']
+/** The time (s) a long check needs its block to have at least: a smaller limit set is raised to it. */
+export const QA_CHECK_TIMEOUT: Partial<Record<QaCheckKind, number>> = {
+  // hundreds of actions — the block may take its time (15 min at most, unless more is set)
+  load: 900,
+  // the layout check — a dozen screens: a few minutes
+  layout: 300,
+  // the matrix — the scenario a few dozen times
+  matrix: 1200,
+  // a file per run — an import each: time for every one
+  files: 1200,
+}
 export const QA_CHECKS: ReadonlyArray<{ id: QaCheckKind; label: string; hint: string }> = QA_CHECK_LIST
 /** The checks that fit the code now («Сравнить с «до смены»» — when something was remembered). */
 export const checksFor = (code: string) => QA_CHECKS.filter((c) => (c.id !== 'compare' || /\bqa\.snapshot\(/.test(code)) && (c.id !== 'files' || /\bqa\.(file|eachFile)\(/.test(code)))

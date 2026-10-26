@@ -36,6 +36,10 @@ export function registerMcpIpc(app: AppContext): McpHost {
     day: (d) => app.store.day(d),
     saveEntry: (d, input, opts) => saveEntry(app, d, input, opts),
     openInBrowser: (url) => void app.browser?.open(url),
+    lookAtPage: async (url) => {
+      if (!app.browser) throw new Error('Встроенный браузер ещё не открыт — откройте раздел «Браузер»')
+      return app.browser.look(url)
+    },
     ui: askWindow,
     kinds: () => app.store.cfg.kinds,
     allow: (): string[] => mcp.cfg.allow,

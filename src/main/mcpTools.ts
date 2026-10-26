@@ -19,6 +19,8 @@ export interface ToolCtx {
   day: (day: string) => DayData
   saveEntry: (day: string, input: Omit<Entry, 'id'> & { id?: string }, opts?: { overlap?: boolean }) => Entry
   openInBrowser: (url: string) => void
+  /** A page of the built-in browser looked at (what may be acted on, with locators): the address given, else the one shown. */
+  lookAtPage: (url?: string) => Promise<string>
   /** The app's window does it (the notes live there): read, write, create, run, report, refresh. */
   ui: <T>(op: string, args: Record<string, unknown>) => Promise<T>
   /** The kinds of work (which are work, their names). */

@@ -8,6 +8,8 @@ import { BrowserCore } from './browser/browserCore'
 import { chooseMenu, folderMenu } from './browser/nativeMenus'
 import { clearSiteData, readLocalStorage } from './browser/pageTools'
 import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
+import { lookAtTab } from './browser/pageLook'
+import { pageLookText } from '../shared/browser/pageLook'
 
 /**
  * The Браузер section's pages: each tab a WebContentsView of its own over the main window (the renderer reports
@@ -16,6 +18,18 @@ import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
  * mode, passwords, certificates; this class answers the window's calls by name (BrowserApi), each from its part.
  */
 export class Browser extends BrowserCore implements BrowserApi {
+  // ---------- a page for an AI agent ----------
+  /** What a page offers to act on: the address given — opened in a new tab; none — the tab shown (or looked at) last. */
+  async look(url?: string): Promise<string> {
+    if (url) {
+      const t = this.tabs.get(this.open(url).id)!
+      return pageLookText(await lookAtTab(t, true))
+    }
+    const t = [...this.tabs.values()].filter((x) => !x.asleep && !/^about:blank$/.test(x.t.url)).sort((a, b) => Number(this.pages.isShown(b.t.id)) - Number(this.pages.isShown(a.t.id)) || b.seen - a.seen)[0]
+    if (!t) throw new Error('Во встроенном браузере нет открытой страницы — дай адрес (url)')
+    return pageLookText(await lookAtTab(t, t.t.loading))
+  }
+
   // ---------- a tab's page ----------
   /** A bad certificate accepted: this host opens (until the app quits). */
   trust(id: string, host: string): void {
