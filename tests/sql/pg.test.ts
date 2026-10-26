@@ -1,12 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import EmbeddedPostgres from 'embedded-postgres'
 import pg from 'pg'
 import { readSchema, runSql } from '../../src/main/sql/engine'
 import { bindSql, type DbConn } from '../../src/shared/sql'
+import { testDir } from '../testTemp'
 
 /**
  * The PostgreSQL side against a real server (embedded, its own folder and port): read only by the server too, a lock
@@ -36,7 +35,7 @@ const noneLeft = async () => {
 
 beforeAll(async () => {
   PORT = await freePort()
-  dir = mkdtempSync(join(tmpdir(), 'qa-pg-'))
+  dir = testDir('pg-')
   server = new EmbeddedPostgres({ databaseDir: dir, user: 'postgres', password: 'pw', port: PORT, persistent: false, onLog: () => undefined, onError: () => undefined, // (no I/O worker processes: on Windows they outlive the server's stop)
     postgresFlags: ['-c', 'io_method=sync'] })
   await server.initialise()

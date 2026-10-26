@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import ExcelJS from 'exceljs'
 import { makeFiles, type XSpec } from '../src/shared/excelGen'
 import { fileBytes, makeValue, readTemplate } from '../src/main/excelGen'
+import { testDir } from './testTemp'
 
 const spec: XSpec = {
   name: 'товары',
@@ -17,7 +17,7 @@ const spec: XSpec = {
     { title: 'Дата', expr: "gen.date(0, 'dd.MM.yyyy')", type: 'auto', required: false, unique: false },
   ],
 }
-const dir = mkdtempSync(join(tmpdir(), 'qa-xlsx-'))
+const dir = testDir('xlsx-')
 // (nothing left in the temp folder)
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const save = async (i: number, format: 'xlsx' | 'csv' = 'xlsx') => {

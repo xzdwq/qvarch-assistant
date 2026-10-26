@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { commandOf, findClaude, viaShell } from '../../src/main/agent/claudePath'
+import { testDir } from '../testTemp'
 
 const saved = { ...process.env }
 afterEach(() => {
@@ -12,7 +12,7 @@ afterEach(() => {
 
 describe.runIf(process.platform === 'win32')('Claude Code found where the app can see it', () => {
   it('not on the PATH (started from the desktop): the newest Node of fnm that has it; run through the shell, its folder first on the PATH', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'qa-claude-'))
+    const root = testDir('claude-')
     for (const v of ['v20.3.0', 'v22.20.0', 'v22.3.0']) mkdirSync(join(root, 'node-versions', v, 'installation'), { recursive: true })
     writeFileSync(join(root, 'node-versions', 'v20.3.0', 'installation', 'claude.cmd'), '')
     writeFileSync(join(root, 'node-versions', 'v22.20.0', 'installation', 'claude.cmd'), '')

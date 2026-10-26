@@ -1,12 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rmSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import ExcelJS from 'exceljs'
 import { chromium, type Browser, type Page } from 'playwright-core'
 import { makeQa } from '../../src/main/runner/qaRuntime'
 import type { QaCheck } from '../../src/shared/qaChecks'
 import type { FuzzSpec } from '../../src/shared/fuzz'
+import { testDir } from '../testTemp'
 
 /**
  * «Перебор параметров запроса» run as a scenario runs it, against a server of its own (routed) that has the bugs it is
@@ -20,7 +19,7 @@ beforeAll(async () => {
 /** The run's folders (its pictures, traces) — taken away after: nothing left in the temp folder. */
 const made: string[] = []
 const tmpDir = () => {
-  const d = mkdtempSync(join(tmpdir(), 'qa-'))
+  const d = testDir('run-')
   made.push(d)
   return d
 }

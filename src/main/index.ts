@@ -33,6 +33,7 @@ import { Series } from './tracker/series'
 import { Vault } from './vault'
 import { Voice } from './voice'
 import { APP_ID, fixShortcut, Island } from './windows'
+import { sweepRunTemp } from './process/runTemp'
 
 /**
  * The main process's composition root: the services made and wired, the window calls registered (src/main/ipc —
@@ -57,6 +58,8 @@ app.on('second-instance', () => ctx.windows.showMain())
 
 app.whenReady().then(() => {
   fixShortcut()
+  // the run processes' temp folders an earlier run of the app could not take away (it was killed)
+  sweepRunTemp()
   // no application menu: Electron's default one (hidden behind our title bar) still owns Ctrl+Z / Ctrl+Y (its
   // "Edit → Undo" — the page never sees the key, a board can't undo) and Ctrl+= / Ctrl+- (Chromium's page zoom,
   // shared with the island). Text fields keep their own undo, copy and paste.

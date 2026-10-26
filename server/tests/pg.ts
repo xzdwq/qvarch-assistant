@@ -1,8 +1,6 @@
-import { mkdtempSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import EmbeddedPostgres from 'embedded-postgres'
+import { testDir } from '../../tests/testTemp'
 
 /** A free port of its own (the test files start their servers at once — one may take the port meanwhile). */
 const freePort = () =>
@@ -19,7 +17,7 @@ export async function startPg(): Promise<{ url: string; stop: () => Promise<void
   for (let attempt = 0; attempt < 3; attempt++) {
     const port = await freePort()
     // UTF-8 as on the server (on Windows the default is the system's code page — no emoji there)
-    const pg = new EmbeddedPostgres({ databaseDir: mkdtempSync(join(tmpdir(), 'qa-transport-')), user: 'postgres', password: 'pw', port, persistent: false, onLog: () => undefined, onError: () => undefined, initdbFlags: ['--encoding=UTF8', '--locale=C'], postgresFlags: ['-c', 'io_method=sync'] })
+    const pg = new EmbeddedPostgres({ databaseDir: testDir('transport-'), user: 'postgres', password: 'pw', port, persistent: false, onLog: () => undefined, onError: () => undefined, initdbFlags: ['--encoding=UTF8', '--locale=C'], postgresFlags: ['-c', 'io_method=sync'] })
     try {
       await pg.initialise()
       await pg.start()

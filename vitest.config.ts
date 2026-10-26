@@ -14,5 +14,7 @@ export default defineConfig({
     // the suites that drive a real (headless) browser start and close it in hooks: with the whole run loading the
     // machine that may take longer than the default 10 s
     hookTimeout: 60_000,
+    // the tests' temporary folders taken away (tests/testTemp.ts)
+    globalSetup: ['tests/globalSetup.ts'],
   },
 })

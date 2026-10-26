@@ -12,9 +12,7 @@ import { SharedMedia } from '../../src/main/transport/sharedMedia'
 import { SpacePasses } from '../../src/main/transport/spacePasses'
 import { ChatFiles } from '../../src/main/transport/chatFiles'
 import { SharedText } from '../../src/shared/transport/sharedText'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { testDir } from '../../tests/testTemp'
 
 /**
  * Shared documents between two devices on a real PostgreSQL: a note shared, an invitation by code with a role, edits
@@ -305,7 +303,7 @@ describe('a shared document', () => {
     await a.client.request('chat.add', { room, device: b.id(), as: 'branch' })
     const base = () => `http://127.0.0.1:${server.port}`
     const filesOf = (x: Awaited<ReturnType<typeof app>>) =>
-      new ChatFiles(new SpacePasses(async (r) => (await x.client.request('chat.fileTicket', { room: r })).ticket), base, mkdtempSync(join(tmpdir(), 'qa-chat-files-')))
+      new ChatFiles(new SpacePasses(async (r) => (await x.client.request('chat.fileTicket', { room: r })).ticket), base, testDir('chat-files-'))
     const fa = filesOf(a)
     const fb = filesOf(b)
     const bytes = new TextEncoder().encode('строки отчёта')

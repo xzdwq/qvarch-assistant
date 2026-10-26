@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { testDir } from './testTemp'
 
 vi.mock('electron', () => ({ clipboard: {}, net: {}, shell: {} }))
 const { Vault } = await import('../src/main/vault')
@@ -10,7 +10,7 @@ const { parseBundle } = await import('../src/shared/docBundle')
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
 const dirs: string[] = []
 function vault(): InstanceType<typeof Vault> {
-  const d = mkdtempSync(join(tmpdir(), 'qa-vault-'))
+  const d = testDir('vault-')
   dirs.push(d)
   return new Vault(d, { onChange: () => undefined, onMedia: () => undefined })
 }

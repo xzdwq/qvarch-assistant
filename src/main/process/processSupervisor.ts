@@ -1,4 +1,5 @@
 import { utilityProcess, type UtilityProcess, type WebContents } from 'electron'
+import { dropRunTemp, envWithTemp, runTempDir } from './runTemp'
 
 /**
  * Runs in processes of their own (a note's code, a loop's head, a Playwright scenario, a database query) watched the
@@ -57,7 +58,10 @@ export class ProcessSupervisor<R extends { ok: boolean; error?: string }> {
   start(id: string, o: RunOptions<R>): Promise<R> {
     this.retire(id)
     return new Promise<R>((done) => {
-      const proc = utilityProcess.fork(this.opts.script(), [], { serviceName: this.opts.serviceName, execArgv: [`--max-old-space-size=${this.opts.memoryMb}`, '--disable-warning=ExperimentalWarning'] })
+      // (its own temp folder: what it leaves there goes with it)
+      const temp = runTempDir(this.opts.serviceName)
+      const proc = utilityProcess.fork(this.opts.script(), [], { serviceName: this.opts.serviceName, env: envWithTemp(temp), execArgv: [`--max-old-space-size=${this.opts.memoryMb}`, '--disable-warning=ExperimentalWarning'] })
+      proc.once('exit', () => dropRunTemp(temp))
       const timer = setTimeout(() => this.stop(id, o.timeoutError, o.timeoutSec * 1000), o.timeoutSec * 1000)
       // (the window that asked is gone: nothing waits for the run)
       const gone = () => this.finish(id, this.opts.failure('Окно закрыто', 0), proc)

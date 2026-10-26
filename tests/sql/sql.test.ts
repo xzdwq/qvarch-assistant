@@ -1,5 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -9,6 +8,7 @@ import { rowsXlsx } from '../../src/main/tableFiles/xlsx'
 import { rowsCsv } from '../../src/shared/tableData'
 import { formatCode } from '../../src/shared/codeformat'
 import { bindSql, guardSql, rowsAsObjects, sqlTemplates, sqlTitle, withTitle } from '../../src/shared/sql'
+import { testDir } from '../testTemp'
 
 describe('what may be sent: one reading statement', () => {
   const ok = (s: string, kind: 'pg' | 'mysql' | 'sqlite' = 'pg') => guardSql(s, kind).ok
@@ -135,7 +135,7 @@ describe('SQLite: a file read only', () => {
   let dir: string
   let file: string
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), 'qa-sqlite-'))
+    dir = testDir('sqlite-')
     file = join(dir, 'db.sqlite')
     const db = new DatabaseSync(file)
     db.exec('create table items (id integer primary key, name text, cat int); create table log (t text)')
