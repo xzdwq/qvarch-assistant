@@ -11,6 +11,7 @@ export const httpSpec: RunnableBlockSpec<'http'> = {
   detect: { by: 'fence', matches: ({ info }) => info.lang === 'http' || info.lang === 'rest' },
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
+  chip: 'http',
   rawEditable: true,
   commands: [
     {

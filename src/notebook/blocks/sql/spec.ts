@@ -11,6 +11,7 @@ export const sqlSpec: RunnableBlockSpec<'sql'> = {
   detect: { by: 'fence', matches: ({ info }) => info.lang === 'sql' && info.db !== undefined },
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
+  chip: 'db',
   rawEditable: true,
   commands: [
     {

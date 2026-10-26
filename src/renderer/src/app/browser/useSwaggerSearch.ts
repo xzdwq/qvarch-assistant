@@ -1,8 +1,8 @@
 import { computed, ref, shallowRef, watch, type ComputedRef } from 'vue'
 import type { BrowserTab } from '@shared/browser'
-import type { HttpNode } from '@shared/http'
 import { readSpec, serverOf, specToHttp, type ApiSpec } from '@shared/openapi'
 import { load as yamlLoad } from 'js-yaml'
+import { firstRequestOf, importToHttp } from '../../lib/httpImport'
 
 const API_OPTS = 'qa.browser.apiOpts'
 const originOf = (url?: string) => {
@@ -107,9 +107,8 @@ export function useSwaggerSearch(deps: { curId: ComputedRef<string | undefined>;
     if (!a) return
     try {
       const { folder, vars } = specToHttp(a.spec, a.url, a.info.ops.filter((o) => apiPicked.value.has(o.id)).map((o) => o.id), apiOpts.value)
-      await window.qa.httpImport(JSON.parse(JSON.stringify(folder)), JSON.parse(JSON.stringify(vars)))
-      const first = (n: HttpNode): string | undefined => (n.type === 'request' ? n.id : n.children.map(first).find(Boolean))
-      deps.openHttp(first(folder) ?? folder.id)
+      await importToHttp(folder, vars)
+      deps.openHttp(firstRequestOf(folder))
     } catch (e) {
       apiError.value = e instanceof Error ? e.message : String(e)
     }

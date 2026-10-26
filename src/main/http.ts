@@ -2,6 +2,7 @@ import { safeStorage } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import vm from 'node:vm'
+import { importInto } from '../shared/httpCollection'
 import { BODILESS_METHODS, BODY_MODES, buildHeaders, buildUrl, DEFAULT_HTTP_SETTINGS, findNode, emptyHttpDoc, stopReason, type HttpDoc, type HttpFolder, type HttpKV, type HttpSettings, type HttpRequest, type HttpResponse, type HttpRunResult, type HttpRunStep } from '../shared/http'
 
 /**
@@ -52,12 +53,7 @@ export class HttpClient {
    */
   import(folder: HttpFolder, vars: HttpKV[]): void {
     const doc = this.load()
-    doc.items.unshift(folder)
-    for (const v of vars) {
-      const row = doc.vars.find((x) => x.key === v.key)
-      if (row) Object.assign(row, { value: v.value, on: true, ...(v.secret ? { secret: true } : {}) })
-      else doc.vars.push({ on: true, key: v.key, value: v.value, ...(v.secret ? { secret: true } : {}) })
-    }
+    importInto(doc, folder, vars)
     this.save(doc)
   }
 

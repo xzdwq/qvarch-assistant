@@ -154,7 +154,7 @@ watch(
       <button class="ib danger tw:inline-flex tw:p-4 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:text-down-fg tw:hover:bg-down/12 tw:hover:enabled:border-border-3" title="Удалить заметку" @click="remove"><Icon name="trash" :size="14" /></button>
       <button class="ib ok tw:inline-flex tw:p-4 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:cursor-pointer tw:text-up tw:hover:bg-up/12 tw:hover:enabled:border-border-3" title="Готово (Esc)" @click="done"><Icon name="check" :size="15" :stroke="2.4" /></button>
     </div>
-    <div v-if="dated" class="ndate tw:flex tw:items-center tw:gap-8 tw:flex-nowrap">
+    <div v-if="dated" class="ndate tw:flex tw:items-center tw:gap-8 tw:flex-nowrap tw:overflow-hidden tw:whitespace-nowrap tw:text-dim tw:text-[10.5px]">
       <slot class="tw:flex-none" name="date" />
       <TimeField class="tw:flex-none" compact :model-value="at" :min="dayStart(day)" :max="dayEnd(day) - 60000" @update:model-value="(t) => (at = t)" />
     </div>

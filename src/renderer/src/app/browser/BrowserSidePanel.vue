@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiMapRecs } from '@shared/browser'
 import ApiMapPanel from '../../components/ApiMapPanel.vue'
 import CheckPanel from '../../components/CheckPanel.vue'
 import HooksPanel from '../../components/HooksPanel.vue'
@@ -27,7 +28,7 @@ const { api, apiBusy, apiError, apiTried, mapSpec, findSwagger, clearApi, askToH
     </div>
     <HooksPanel v-if="panelMode === 'hooks'" class="hpanel tw:flex-1 tw:[&&]:min-h-0" :url="byId(curId)?.url" :tab-id="curId" />
     <CheckPanel v-else-if="panelMode === 'check'" class="hpanel tw:flex-1 tw:[&&]:min-h-0" :tab-id="curId" />
-    <ApiMapPanel v-else-if="panelMode === 'map'" class="hpanel tw:flex-1 tw:[&&]:min-h-0" :url="byId(curId)?.url" :swagger="mapSpec" :api="api" :api-busy="apiBusy" :api-error="apiError" :api-tried="apiTried" :can-find="pageShown(curId)" @find-swagger="findSwagger" @clear-swagger="clearApi" @swagger-to-http="askToHttp" />
+    <ApiMapPanel v-else-if="panelMode === 'map'" class="hpanel tw:flex-1 tw:[&&]:min-h-0" :url="byId(curId)?.url" :swagger="mapSpec" :api="api" :api-busy="apiBusy" :api-error="apiError" :api-tried="apiTried" :can-find="pageShown(curId)" @find-swagger="findSwagger" @clear-swagger="clearApi" @swagger-to-http="askToHttp" @to-http="(eps) => view.recording.transferOf(apiMapRecs(eps))" />
     <RecordingPanel v-else />
   </aside>
 </template>

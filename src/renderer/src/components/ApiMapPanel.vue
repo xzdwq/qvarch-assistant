@@ -28,7 +28,7 @@ const props = defineProps<{
   /** A page is open (the search has something to look at). */
   canFind?: boolean
 }>()
-const emit = defineEmits<{ findSwagger: []; clearSwagger: []; swaggerToHttp: [ids: string[]] }>()
+const emit = defineEmits<{ findSwagger: []; clearSwagger: []; swaggerToHttp: [ids: string[]]; toHttp: [endpoints: ApiEndpoint[]] }>()
 /** What the panel shows: the traffic's map, or the site's Swagger. */
 const view = ref<'traffic' | 'swagger'>('traffic')
 const onlyNotCalled = ref(false)
@@ -236,6 +236,7 @@ const setOn = () => window.qa.browser('checkSet', { on: true })
       <template v-if="picked.size">
         <span class="grow tw:flex-1"></span>
         <button class="ib tw:[.am-seg_button+&]:border-l tw:[.am-seg_button+&]:border-l-border-2 tw:inline-grid tw:place-items-center tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:h-28 tw:w-28 tw:hover:enabled:not-[.am-seg_button+&]:border-border-3" :title="copied === 'picked' ? 'Скопировано' : 'Копировать выбранные как HTTP-блоки (с входом сайта) — вставьте в любую заметку'" @click="copyPicked"><Icon :name="copied === 'picked' ? 'check' : 'copy'" :size="14" /></button>
+        <button class="ib tw:inline-grid tw:place-items-center tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:h-28 tw:w-28" title="Выбранные запросы — в HTTP: адрес с параметрами, заголовки, тело; токены и куки — в секретные переменные" @click="emit('toHttp', list.filter((e) => picked.has(e.key)))"><Icon name="api" :size="14" /></button>
         <NotePicker class="primary sm tw:[.am-seg_button+&]:border-l tw:[.am-seg_button+&]:border-l-border-2 tw:[&&]:inline-flex tw:[&&]:items-center tw:[&&]:gap-5 tw:[&&]:h-28 tw:[&&]:py-0 tw:[&&]:px-10 tw:hover:enabled:border-accent-hi" title="Выбранные запросы — новой заметкой (папка «Карты API») или в конец заметки, что есть" new-label="Новая заметка (папка «Карты API»)" @pick="onPickNote" />
       </template>
     </div>
@@ -247,7 +248,7 @@ const setOn = () => window.qa.browser('checkSet', { on: true })
       </div>
       <div v-for="e in shown" :key="e.key" class="am-it tw:border-b tw:border-b-border" :class="{ open: open === e.key }">
         <div class="am-row tw:flex tw:items-center tw:gap-6 tw:min-h-30 tw:py-0 tw:px-4 tw:cursor-pointer tw:whitespace-nowrap tw:hover:bg-hover" @click="open = open === e.key ? undefined : e.key">
-          <input type="checkbox" class="am-ck tw:flex-none tw:m-0" :checked="picked.has(e.key)" title="Выбрать — для переноса в блокнот" @click.stop @change="pick(e.key)" />
+          <input type="checkbox" class="am-ck tw:flex-none tw:m-0" :checked="picked.has(e.key)" title="Выбрать — для переноса в HTTP или в блокнот" @click.stop @change="pick(e.key)" />
           <i class="m tw:flex-none tw:w-52 tw:font-data tw:text-[10.5px] tw:not-italic tw:font-bold tw:text-up-fg" :class="e.method.toLowerCase()">{{ e.method }}</i>
           <code class="p tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:font-data tw:text-[12px]" :title="e.path">{{ e.path }}<em class="tw:text-muted tw:not-italic" v-if="e.op"> · {{ e.op }}</em></code>
           <span class="n tw:flex-none tw:font-data tw:text-[11px] tw:text-text-2" title="Вызовов">{{ e.count }}</span>

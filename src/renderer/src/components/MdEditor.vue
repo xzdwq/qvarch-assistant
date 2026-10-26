@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { commentMarks, setCommentMarks } from '@nb/editor/comments'
-import { peerCursors, setPeerCursors } from '@nb/editor/peerCursors'
+import { peerCursors, setPeerCursors, setPeerSlots } from '@nb/editor/peerCursors'
 import { componentOrigins } from '@nb/editor/components/componentOrigins'
 import { lineAuthors, setLineAuthors } from '@nb/editor/lineAuthors'
 import { lineAuthorsOf } from '@nb/workspace/noteAuthors'
 import { NOTE_PLACE_EVENT, placeShown, placeWanted } from '@nb/workspace/noteGoto'
 import { placeLine } from '@shared/notebook/links'
 import { blockIdentity } from '@nb/editor/components/blockIdentity'
-import { peerCursorsIn, tellCursor } from '@nb/workspace/sharedCursors'
+import { peerCursorsIn, peerSlotsOf, tellCursor } from '@nb/workspace/sharedCursors'
 import { commentsOf } from '@nb/workspace/noteComments'
 import { Compartment, EditorState, Transaction } from '@codemirror/state'
 import { splicesOf } from '@shared/textSplice'
@@ -225,6 +225,13 @@ watch(
   () => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }),
 )
 onMounted(() => view?.dispatch({ effects: setPeerCursors.of(peerPlaces.value) }))
+// the members' colours (each their own, by the order they joined)
+const peerSlots = computed(() => (props.path ? peerSlotsOf(props.path) : new Map<string, number>()))
+watch(
+  () => JSON.stringify([...peerSlots.value]),
+  () => view?.dispatch({ effects: setPeerSlots.of(peerSlots.value) }),
+)
+onMounted(() => view?.dispatch({ effects: setPeerSlots.of(peerSlots.value) }))
 // who changed each line last (a person's colour, an AI agent's mark — by the line numbers)
 const authors = computed(() => (props.path ? lineAuthorsOf(props.path) : new Map()))
 watch(

@@ -1,6 +1,19 @@
-import { BODY_MODES, buildUrl, findNode, httpId, METHOD_COLOR, toCurl, type HttpKV, type HttpMethod, type HttpNode, type HttpRequest, type HttpSettings } from './http'
+import { BODY_MODES, buildUrl, findNode, httpId, METHOD_COLOR, toCurl, type HttpDoc, type HttpFolder, type HttpKV, type HttpMethod, type HttpNode, type HttpRequest, type HttpSettings } from './http'
 
 // ---------- the tree ----------
+
+/**
+ * Requests brought in (a recorded chain, the API map's calls, a Postman file): their folder on top, their variables
+ * set — one there already takes the new value (and stays secret, or becomes so), a new one is added.
+ */
+export function importInto(doc: Pick<HttpDoc, 'items' | 'vars'>, folder: HttpFolder | undefined, vars: ReadonlyArray<HttpKV & { secret?: boolean }>): void {
+  if (folder) doc.items.unshift(folder)
+  for (const v of vars) {
+    const row = doc.vars.find((x) => x.key === v.key)
+    if (row) Object.assign(row, { value: v.value, on: v.on, ...(v.secret ? { secret: true } : {}) })
+    else doc.vars.push({ on: v.on, key: v.key, value: v.value, ...(v.secret ? { secret: true } : {}) })
+  }
+}
 
 /** A row of the requests tree as shown: the node, its depth, the list it lives in. */
 export type HttpTreeRow = { node: HttpNode; depth: number; parent: HttpNode[] }

@@ -1,6 +1,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { allRequests, DEFAULT_HTTP_SETTINGS, findNode, newFolder, newRequest, type HttpDoc, type HttpNode } from '@shared/http'
-import { cloneWithNewIds, moveNode, parentListOf, parseCopiedRequest, targetListFor, treeRows, varMapOf } from '@shared/httpCollection'
+import { cloneWithNewIds, importInto, moveNode, parentListOf, parseCopiedRequest, targetListFor, treeRows, varMapOf } from '@shared/httpCollection'
+import { postmanImport } from '@shared/httpPostman'
+import { firstRequestOf, takeHttpImports } from '../../lib/httpImport'
 import { backTo } from '../../lib/httpRuns'
 
 const SEL_KEY = 'qa.http.sel'
@@ -27,13 +29,18 @@ export function useHttpCollection() {
   }
   window.addEventListener('qa:http-select', onSelect)
   onBeforeUnmount(() => window.removeEventListener('qa:http-select', onSelect))
-  void window.qa.httpLoad().then((d) => {
+  const loading = window.qa.httpLoad().then((d) => {
     doc.items = d.items
     doc.vars = d.vars
     doc.settings = { ...DEFAULT_HTTP_SETTINGS, ...d.settings }
     loaded.value = true
     if (!sel.value || !findNode(doc.items, sel.value)) sel.value = allRequests(doc.items)[0]?.req.id
   })
+  // requests brought in from elsewhere while the section is open: into this copy (it is the one saved)
+  onBeforeUnmount(takeHttpImports(async (folder, vars) => {
+    await loading
+    importInto(doc, folder, vars)
+  }))
   // kept by itself (a moment after the last change)
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const saveNow = () => void window.qa.httpSave(JSON.parse(JSON.stringify(doc)) as HttpDoc)
@@ -99,6 +106,22 @@ export function useHttpCollection() {
     targetListFor(doc.items, sel.value).push(r)
     sel.value = r.id
   }
+  /** Postman files (collections, environments) brought in: what did not come over as it was, for the person. */
+  async function importPostman(files: readonly File[]): Promise<string[]> {
+    const said: string[] = []
+    for (const f of files) {
+      try {
+        const got = postmanImport(JSON.parse(await f.text()))
+        importInto(doc, got.folder, got.vars)
+        if (got.folder) sel.value = firstRequestOf(got.folder)
+        const what = got.folder ? `коллекция «${got.folder.name}»: запросов ${allRequests(got.folder.children).length}` : `окружение: переменных ${got.vars.length}`
+        said.push(`${f.name} — ${what}${got.notes.length ? `\n  · ${got.notes.join('\n  · ')}` : ''}`)
+      } catch (e) {
+        said.push(`${f.name} — не загружен: ${e instanceof SyntaxError ? 'это не JSON' : e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    return said
+  }
   /** A row clicked: selected (a folder also opens / closes); the way back to a chain forgotten. */
   function onRowClick(n: HttpNode): void {
     backTo.value = undefined
@@ -108,6 +131,6 @@ export function useHttpCollection() {
   /** A node dropped onto another one (or onto the empty space — undefined). */
   const dropNode = (id: string, target?: HttpNode) => void moveNode(doc.items, id, target)
 
-  return { doc, loaded, sel, req, folder, rows, varMap, renaming, addRequest, addFolder, remove, duplicate, paste, onRowClick, dropNode }
+  return { doc, loaded, sel, req, folder, rows, varMap, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode }
 }
 export type HttpCollection = ReturnType<typeof useHttpCollection>

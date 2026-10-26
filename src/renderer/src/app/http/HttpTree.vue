@@ -9,7 +9,15 @@ import { vFocusSelect as vFocus } from '../../lib/focusSelect'
 import { useHttpView } from './httpViewContext'
 
 const { collection, side, helpOpen } = useHttpView()
-const { doc, loaded, sel, rows, renaming, addRequest, addFolder, remove, duplicate, paste, onRowClick, dropNode } = collection
+const { doc, loaded, sel, rows, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode } = collection
+/** Postman files picked: brought in, what came over told. */
+const pickFiles = ref<HTMLInputElement>()
+async function onFiles(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement
+  const files = [...(input.files ?? [])]
+  input.value = ''
+  if (files.length) alert(`Импорт из Postman\n\n${(await importPostman(files)).join('\n')}`)
+}
 const { sideHidden, varsOpen, setOpen, dragSide } = side
 /** «{{имя}}» as text (a mustache inside a mustache would close it). */
 const VAR = '{{имя}}'
@@ -42,6 +50,8 @@ function onDrop(target?: HttpNode): void {
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-accent-fg tw:hover:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" title="Новый запрос" @click="addRequest"><Icon name="plus" :size="14" /></button>
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-accent-fg tw:hover:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" title="Новая папка" @click="addFolder"><Icon name="folderPlus" :size="14" /></button>
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-accent-fg tw:hover:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" title="Вставить скопированный запрос" @click="paste"><Icon name="clipboard" :size="14" /></button>
+        <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-accent-fg tw:hover:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" title="Импорт из Postman: коллекция (Collection v2.1 / v2.0) и окружение, .json — можно несколько файлов сразу" @click="pickFiles?.click()"><Icon name="download" :size="14" /></button>
+        <input ref="pickFiles" type="file" accept=".json,application/json" multiple hidden @change="onFiles" />
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:not-[&.on]:text-accent-fg tw:[&.on]:text-accent-fg tw:hover:not-[&.on]:bg-hover tw:[&.on]:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" :class="{ on: varsOpen }" title="Переменные {{…}}" @click="(varsOpen = !varsOpen), (setOpen = false)"><b class="vb tw:font-data tw:text-[11px]">{x}</b></button>
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-26 tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:not-[&.on]:text-accent-fg tw:[&.on]:text-accent-fg tw:hover:not-[&.on]:bg-hover tw:[&.on]:bg-hover tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" :class="{ on: setOpen }" title="Для всех запросов: User-Agent, заголовки, время ожидания" @click="(setOpen = !setOpen), (varsOpen = false)"><Icon name="settings" :size="14" /></button>
       </div>

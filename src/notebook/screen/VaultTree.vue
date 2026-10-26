@@ -10,6 +10,7 @@ import { tree } from '@nb/workspace/vaultTreeStore'
 import { noteName } from '@nb/domain/notePaths'
 import { useNotebookScreen } from './notebookScreen'
 import { shortDate } from '@nb/domain/noteFacts'
+import { runsOf, treeBadges } from '@nb/workspace/treeFacts'
 import { useTreeDrop } from './useTreeDrop'
 
 /**
@@ -23,6 +24,14 @@ const { openTreeMenu } = menu
 const { dragPath, dropDir, pairTarget, onDragStart, onDragOver, onDrop } = useTreeDrop({ moveTo: actions.moveTo, pair: actions.pair, importDropped: transfer.importDropped })
 
 const rows = computed(() => treeRows(tree.value, layout.open, layout.sort))
+/** The badge's words: with how many it is shared, a folder — whole or some of its documents. */
+function shareTitle(n: VaultNode): string {
+  const b = treeBadges.value.get(n.path)
+  if (!b) return ''
+  const who = b.people ? `людей: ${b.people}` : 'пока ни с кем, кроме вас (или сервер не на связи)'
+  if (!n.dir) return `Общий документ — ${who}`
+  return `${b.whole ? 'Общая папка' : 'Общие документы в папке'} — ${who}`
+}
 /** A folder: chosen and folded / unfolded; a note: opened. */
 function clickRow(n: VaultNode, e: MouseEvent): void {
   if (n.dir) {
@@ -51,7 +60,7 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
     <div
       v-for="r in rows"
       :key="r.node.path"
-      class="nrow tw:group/nrow tw:flex tw:items-center tw:gap-5 tw:h-27 tw:pr-6 tw:rounded-r2 tw:text-text-2 tw:text-[13px] tw:cursor-pointer tw:select-none tw:[&:not(.dir)]:h-38 tw:hover:not-[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/5 tw:[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/20 tw:[&.cur]:text-text-hi tw:[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/6 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/25 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.7)] tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-top]:mt-2 tw:[&.grp-top]:not-[&.grp-bot]:rounded-[4px_4px_0_0] tw:[&.grp-bot]:mb-2 tw:[&.grp-bot]:rounded-[0_0_4px_4px] tw:[&.grp-top]:hover:not-[&.grp-bot]:not-[&.cur]:bg-accent/13 tw:[&.grp-bot]:hover:not-[&.cur]:bg-accent/13 tw:[&&]:[&.grp-top]:[&.cur]:not-[&.grp-bot]:bg-accent/22 tw:[&&]:[&.grp-bot]:[&.cur]:bg-accent/22 tw:[&.pairdrop]:bg-accent/22 tw:[&.pairdrop]:[box-shadow:var(--shadow-ring-accent)]"
+      class="nrow tw:group/nrow tw:flex tw:items-center tw:gap-5 tw:h-27 tw:pr-6 tw:rounded-r2 tw:text-text-2 tw:text-[13px] tw:cursor-pointer tw:select-none tw:[&:not(.dir)]:h-auto tw:[&:not(.dir)]:min-h-38 tw:[&:not(.dir)]:py-3 tw:hover:not-[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/5 tw:[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/20 tw:[&.cur]:text-text-hi tw:[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/6 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/25 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.7)] tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-top]:mt-2 tw:[&.grp-top]:not-[&.grp-bot]:rounded-[4px_4px_0_0] tw:[&.grp-bot]:mb-2 tw:[&.grp-bot]:rounded-[0_0_4px_4px] tw:[&.grp-top]:hover:not-[&.grp-bot]:not-[&.cur]:bg-accent/13 tw:[&.grp-bot]:hover:not-[&.cur]:bg-accent/13 tw:[&&]:[&.grp-top]:[&.cur]:not-[&.grp-bot]:bg-accent/22 tw:[&&]:[&.grp-bot]:[&.cur]:bg-accent/22 tw:[&.pairdrop]:bg-accent/22 tw:[&.pairdrop]:[box-shadow:var(--shadow-ring-accent)]"
       :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: r.node.dir && folder === r.node.path, drop: r.node.dir && dropDir === r.node.path, pairdrop: pairTarget === r.node.path, [`grp-${r.grp}`]: !!r.grp }"
       :style="{ paddingLeft: `${6 + r.depth * 14}px` }"
       :title="r.node.path"
@@ -82,7 +91,12 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
         @blur="finishRename(true)"
       />
       <span v-else-if="r.node.dir" class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span>
-      <span v-else class="ncol tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:leading-[1.2]"><span class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span><small class="ndate">{{ shortDate(r.node.ctime) }}</small></span>
+      <span v-else class="ncol tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:leading-[1.2]">
+        <span class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span><small class="vtree-date">{{ shortDate(r.node.ctime) }}</small>
+        <!-- the runnable components: one line, the rest hidden behind «…» -->
+        <span v-if="runsOf(r.node).length" class="tw:block tw:min-w-0 tw:mt-2 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:leading-14 tw:text-dim tw:text-[10px]" :title="`Компоненты: ${runsOf(r.node).join(', ')}`"><b v-for="c in runsOf(r.node)" :key="c" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-white/7 tw:font-data tw:font-normal tw:text-text-2">{{ c }}</b></span>
+      </span>
+      <span v-if="treeBadges.get(r.node.path)" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-2 tw:h-16 tw:px-4 tw:rounded-[8px] tw:font-data tw:text-[10.5px] tw:[&.whole]:bg-accent/16 tw:[&.whole]:text-accent-fg tw:[&.part]:bg-warn/16 tw:[&.part]:text-warn-fg" :class="treeBadges.get(r.node.path)!.whole ? 'whole' : 'part'" :title="shareTitle(r.node)"><Icon name="users" :size="10" /><template v-if="treeBadges.get(r.node.path)!.people">{{ treeBadges.get(r.node.path)!.people }}</template></span>
       <span v-if="r.node.pair" class="npair tw:inline-flex tw:flex-none tw:text-accent-fg tw:group-[.grp-top]/nrow:not-group-[.grp-bot]/nrow:hidden tw:group-[.grp-bot]/nrow:hidden" :title="'Связано с: ' + noteName(r.node.pair)"><Icon name="link" :size="11" /></span>
       <span v-if="!r.node.dir && isDirty(r.node.path)" class="ndot tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-warn" title="Сохраняется…"></span>
     </div>

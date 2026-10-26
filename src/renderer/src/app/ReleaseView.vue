@@ -49,5 +49,3 @@ onMounted(async () => {
     <ProjectsManager v-model:open="managerOpen" />
   </div>
 </template>
-
-<style src="./ReleaseView.global.css"></style>

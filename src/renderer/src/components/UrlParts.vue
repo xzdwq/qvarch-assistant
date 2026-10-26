@@ -49,7 +49,7 @@ const rows = (v: string) => Math.min(6, Math.max(1, Math.ceil(v.length / 60), v.
 
 <template>
   <Teleport to="body">
-    <div :ref="panelRef" class="uptw:flex tw:flex-col tw:gap-8 tw:p-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:overflow-y-auto tw:text-[12.5px]" :style="style" @keydown.enter.exact.prevent="open()" @keydown.ctrl.enter.prevent="open(true)">
+    <div :ref="panelRef" class="up tw:flex tw:flex-col tw:gap-8 tw:p-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:overflow-y-auto tw:text-[12.5px]" :style="style" @keydown.enter.exact.prevent="open()" @keydown.ctrl.enter.prevent="open(true)">
       <label class="up-all tw:flex tw:flex-col tw:gap-3 tw:min-w-0">
         <span class="tw:text-muted tw:text-[11.5px]">Адрес</span>
         <textarea class="tw:min-w-0 tw:py-4 tw:px-7 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:[&&]:font-data tw:[&&]:text-[12px] tw:resize-y tw:break-all" :value="text" :rows="rows(text)" spellcheck="false" @input="onText(($event.target as HTMLTextAreaElement).value)" @keydown.enter.exact.prevent.stop="open()"></textarea>

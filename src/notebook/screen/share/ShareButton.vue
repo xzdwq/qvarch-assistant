@@ -16,6 +16,7 @@ import { loadTree } from '@nb/workspace/vaultTreeStore'
 import { shareNote, sharedDocOfPath, sharedInfo, spaceOfPath } from '@nb/workspace/sharedDocs'
 import { joinByCode } from '@nb/workspace/sharedFolders'
 import { peerColor } from '@nb/editor/peerCursors'
+import { peerSlotsOf } from '@nb/workspace/sharedCursors'
 
 const props = defineProps<{ path: string }>()
 const btn = ref<HTMLElement>()
@@ -27,6 +28,8 @@ const inf = computed(() => sharedInfo.get(doc.value))
 const space = computed(() => spaceOfPath(props.path))
 const me = computed(() => transport.value.deviceId)
 const manage = computed(() => !!space.value && ROLE_RIGHTS[space.value.role].manage)
+/** Each member's colour (the same as their cursor and lines). */
+const slots = computed(() => peerSlotsOf(props.path))
 const here = (id: string) => !!inf.value?.presence.some((d) => d.id === id)
 /** Others in the note now (the button shows them). */
 const othersHere = computed(() => (inf.value?.presence ?? []).filter((d) => d.id !== me.value).length)
@@ -103,7 +106,7 @@ const join = () =>
           <template v-for="m in space.members" :key="m.id">
             <span class="tw:w-7 tw:h-7 tw:rounded-[50%]" :class="here(m.id) ? 'tw:bg-up' : 'tw:bg-white/14'" :title="here(m.id) ? 'Сейчас в документе' : 'Не в документе'"></span>
             <span class="tw:flex tw:items-center tw:gap-6 tw:min-w-0">
-              <i class="tw:flex-none tw:w-3 tw:h-12 tw:rounded-[2px]" :style="{ background: peerColor(m.id) }" title="Цвет участника: его курсор и строки, которые он менял последним"></i>
+              <i class="tw:flex-none tw:w-3 tw:h-12 tw:rounded-[2px]" :style="{ background: peerColor(slots.get(m.id) ?? 0) }" title="Цвет участника: его курсор и строки, которые он менял последним"></i>
               <span class="tw:truncate tw:text-text">{{ m.name }}<template v-if="m.id === me"> (вы)</template></span>
             </span>
             <select v-if="manage && m.role !== 'owner'" class="tw:w-full tw:h-30 tw:text-[12px]" :value="m.role" :disabled="busy" @change="setRole(m.id, ($event.target as HTMLSelectElement).value as SpaceRole)">

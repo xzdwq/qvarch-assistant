@@ -11,6 +11,7 @@ export const pwSpec: RunnableBlockSpec<'pw'> = {
   detect: { by: 'fence', matches: ({ info }) => isCodeLang(info.lang) && !!info.pw && !info.lib },
   estimateHeight: heightPerLine(180, 20),
   runnable: true,
+  chip: 'pw',
   rawEditable: true,
   commands: [
     {

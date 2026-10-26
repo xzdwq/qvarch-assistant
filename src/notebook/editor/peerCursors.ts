@@ -1,5 +1,6 @@
-import { EditorSelection, StateEffect, StateField } from '@codemirror/state'
+import { EditorSelection, StateEffect, StateField, type EditorState } from '@codemirror/state'
 import { layer, RectangleMarker, type EditorView, type LayerMarker, type ViewUpdate } from '@codemirror/view'
+import { PEER_SLOTS, slotOf } from '@shared/transport/peerColors'
 import type { PeerCursor } from '@nb/workspace/sharedCursors'
 
 /**
@@ -7,18 +8,24 @@ import type { PeerCursor } from '@nb/workspace/sharedCursors'
  * per person), their name over it for a moment after it moves (and on hover), their selection lightly tinted.
  */
 
-/** The colours the cursors take (`--peer-1…`): by the person's device — always the same one for the same person. */
-export const PEER_SLOTS = 8
-/** A person's colour slot (0…PEER_SLOTS-1) by their device. */
-export const peerSlot = (id: string): number => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PEER_SLOTS
-/** A person's colour as CSS. */
-export const peerColor = (id: string): string => `var(--peer-${peerSlot(id) + 1})`
+export { PEER_SLOTS }
+/** A colour slot as CSS. */
+export const peerColor = (slot: number): string => `var(--peer-${slot + 1})`
 export const setPeerCursors = StateEffect.define<PeerCursor[]>()
 const peersField = StateField.define<PeerCursor[]>({
   create: () => [],
   update: (v, tr) => tr.effects.reduce((acc, e) => (e.is(setPeerCursors) ? e.value : acc), v),
 })
-const peersChanged = (u: ViewUpdate) => u.docChanged || u.viewportChanged || u.geometryChanged || u.startState.field(peersField) !== u.state.field(peersField)
+/** The note's members' colour slots (`peerSlots`): the cursors and the line marks take theirs from here. */
+export const setPeerSlots = StateEffect.define<ReadonlyMap<string, number>>()
+export const peerSlotsField = StateField.define<ReadonlyMap<string, number>>({
+  create: () => new Map(),
+  update: (v, tr) => tr.effects.reduce((acc, e) => (e.is(setPeerSlots) ? e.value : acc), v),
+})
+/** A person's colour slot in this editor's note. */
+export const peerSlotIn = (state: EditorState, id: string): number => slotOf(state.field(peerSlotsField, false) ?? new Map(), id)
+const peersChanged = (u: ViewUpdate) =>
+  u.docChanged || u.viewportChanged || u.geometryChanged || u.startState.field(peersField) !== u.state.field(peersField) || u.startState.field(peerSlotsField) !== u.state.field(peerSlotsField)
 const clamp = (view: EditorView, pos: number) => Math.max(0, Math.min(pos, view.state.doc.length))
 
 /** One person's caret: where, how tall, whose (the colour slot), when it last moved (its name shows again then). */
@@ -70,7 +77,7 @@ const carets = layer({
   markers: (view) =>
     view.state.field(peersField).flatMap((p) => {
       const at = RectangleMarker.forRange(view, '', EditorSelection.cursor(clamp(view, p.head)))[0]
-      return at ? [new PeerCaret(at.left, at.top, at.height, p.name, peerSlot(p.id), p.moved)] : []
+      return at ? [new PeerCaret(at.left, at.top, at.height, p.name, peerSlotIn(view.state, p.id), p.moved)] : []
     }),
 })
 const selections = layer({
@@ -78,8 +85,8 @@ const selections = layer({
   class: 'cm-peer-sels',
   update: peersChanged,
   markers: (view) =>
-    view.state.field(peersField).flatMap((p) => (p.from < p.to ? RectangleMarker.forRange(view, `cm-peer-sel cm-peer-sel-${peerSlot(p.id) + 1}`, EditorSelection.range(clamp(view, p.from), clamp(view, p.to))) : [])),
+    view.state.field(peersField).flatMap((p) => (p.from < p.to ? RectangleMarker.forRange(view, `cm-peer-sel cm-peer-sel-${peerSlotIn(view.state, p.id) + 1}`, EditorSelection.range(clamp(view, p.from), clamp(view, p.to))) : [])),
 })
 
 /** The others' cursors as an extension (fed by `setPeerCursors`). */
-export const peerCursors = [peersField, selections, carets]
+export const peerCursors = [peersField, peerSlotsField, selections, carets]

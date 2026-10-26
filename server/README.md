@@ -76,37 +76,104 @@ docker compose -f server/compose.dev.yml up --build
 
 ## Развёртывание на сервере
 
-**Первый раз:**
+Ниже `<сервер>` — адрес машины, `<реестр>` — ваш реестр образов, `~/qvarch` — папка сервера в домашнем каталоге того, кто его развёртывает.
 
-```bash
-mkdir -p ~/qvarch && cd ~/qvarch
-# скопировать сюда server/deploy/compose.yml и server/deploy/.env.example → .env, заполнить .env
-docker login <реестр>
-docker compose pull && docker compose up -d
-docker compose logs -f transport      # «qvarch-transport …: порт 3000»
+**Настройки (`.env`) на сервере не хранятся.** Файл лежит у вас (и в хранилище секретов). Скрипт `deploy.ps1` привозит его на время команды и удаляет сразу после — при любом исходе, даже при ошибке или Ctrl+C. Контейнеры свои настройки помнят сами: перезагрузка сервера и их автоперезапуск `.env` не требуют. Он нужен только для команд `docker compose` — без него любая из них, даже `ps` и `logs`, падает с `QA_IMAGE is not set`. Это защита: `up` не запустит контейнеры с пустым паролем. Для просмотра есть `docker ps` и `docker logs`. Пароль базы записывается в неё один раз, при первом запуске, поэтому `.env` с другим паролем к существующей базе не подключится. Храните его копию в надёжном месте.
+
+> **sudo.** Если `docker` работает только через `sudo`, пишите его перед **каждой** командой: `sudo` действует до `&&`, не дальше. `sudo docker compose pull && docker compose up -d` скачает образы, но запуск упадёт с `permission denied … docker.sock`. Правильно — `sudo docker compose pull && sudo docker compose up -d`. Без `sudo` — пользователь в группе `docker` (`sudo usermod -aG docker $USER` и заново войти), это решает администратор сервера. Скрипт `deploy.ps1` пишет `sudo` сам (без него — ключ `-NoSudo`).
+
+### Скрипт развёртывания
+
+`./server/scripts/deploy.ps1` — и первый раз, и при каждом обновлении. Он:
+1. копирует `server/deploy/compose.yml` и `server/deploy/.env` (или `-EnvFile <файл>`) в `~/qvarch` на сервере;
+2. если база запущена — делает её копию в `~/qvarch/backups/qa-<дата>.sql`;
+3. выполняет `docker compose pull && docker compose up -d` и показывает состояние;
+4. удаляет `.env` с сервера.
+
+Куда развёртывать — `-Server <адрес> -User <пользователь>` или строки в `server/.env` (не коммитится):
 ```
+QA_DEPLOY_HOST=<сервер>
+QA_DEPLOY_USER=<пользователь>
+```
+Нужны `ssh` и `scp` (в Windows 10 и новее есть). SSH спросит пароль (и `sudo` — свой), если не настроен ключ. Доменный пользователь с `@` в имени подходит: имя передаётся отдельно.
 
-Что заполнить в `.env`:
+### Первый раз
+
+1. **Сервер:** Docker и Compose установлены (`docker --version && docker compose version`).
+2. **Вход в реестр на самом сервере** (вход на рабочем компьютере сюда не переносится), один раз:
+   ```bash
+   sudo docker login <реестр>
+   ```
+3. **Подсеть.** `QA_SUBNET` не должна пересекаться ни с одной сетью компании. Посмотрите занятые на сервере: `ip -4 route; sudo docker network ls`. Пересеклась — поменяйте в `.env` (например, `172.30.250.0/24`).
+4. **Образ и запуск** — на рабочем компьютере:
+   ```powershell
+   ./server/scripts/publish.ps1     # образ в реестр
+   ./server/scripts/deploy.ps1      # на сервер
+   ```
+   В выводе — `db` и `transport` в состоянии `Up`, `db` — `(healthy)`. Журнал на сервере: `sudo docker logs -f qvarch-transport-1` («migrations: …», «qvarch-transport <версия>: порт 3000»; выход — Ctrl+C).
+5. **Порт** в брандмауэре сервера, если он включён: `sudo ufw allow 3000/tcp` (Ubuntu / Debian) или `sudo firewall-cmd --add-port=3000/tcp --permanent && sudo firewall-cmd --reload` (RHEL / CentOS).
+6. **Проверка с рабочего компьютера:**
+   - `Test-NetConnection <сервер> -Port 3000` — `TcpTestSucceeded : True`;
+   - в браузере `http://<сервер>:3000/health` — `{"ok":true,"version":"<версия>",…}`.
+7. **Приложение:** «Настройки → Сервер и чат» → адрес `<сервер>:3000`, код доступа (если задан) → «Подключаться к серверу». База на сервере новая: общие заметки и чаты другого сервера (например, локального из `compose.dev.yml`) сюда не переносятся; чаты без сервера переходят на него, когда в них добавляют человека.
+
+Что в `.env` (образец — `server/deploy/.env.example`):
 
 | Переменная | Что это |
 |---|---|
-| `QA_IMAGE` | `<реестр>/qvarch/transport:latest` |
+| `QA_IMAGE` | `<реестр>/qvarch/transport:latest` (или точная версия — см. «Откат») |
 | `QA_DB_PASSWORD` | пароль базы, только буквы и цифры (он входит в адрес подключения) |
 | `QA_ACCESS_CODE` | код доступа; пусто — подключится любое приложение из сети |
 | `QA_PUBLISH_PORT` | порт для приложений (3000) |
-| `QA_SUBNET` | подсеть контейнеров. Она не должна пересекаться ни с одной сетью компании, иначе сервер перестанет видеть этих клиентов. Возьмите диапазон рядом с уже выбранным для `docker0`. |
+| `QA_SUBNET` | подсеть контейнеров. Она не должна пересекаться ни с одной сетью компании, иначе сервер перестанет видеть этих клиентов |
 
-**Обновление:** `docker compose pull && docker compose up -d` — миграции применятся при старте.
+### Обновление
 
-**Проверка с рабочего компьютера:**
-- `Test-NetConnection <сервер> -Port 3000` — должно быть `TcpTestSucceeded : True`;
-- в браузере `http://<сервер>:3000/health`.
+1. Поднять `version` в `server/package.json`.
+2. На рабочем компьютере:
+   ```powershell
+   ./server/scripts/publish.ps1     # образ :<версия> и :latest — в реестр
+   ./server/scripts/deploy.ps1      # копия базы, новый образ, запуск; .env убран
+   ```
+   Миграции применяются сами при старте, по порядку. Приложения переподключаются сами: открытые документы и неотправленные сообщения догоняют сервер.
+3. **Проверка:** `http://<сервер>:3000/health` показывает новую версию.
+4. **Изменился `compose.yml`** (новая переменная, порт): скрипт привезёт новый сам, допишите только свой `.env` по `.env.example`.
 
-**Резервная копия базы:** `docker compose exec db pg_dump -U qa qa > qa-$(date +%F).sql`.
+**Без скрипта** (тот же порядок вручную): скопировать `compose.yml` и `.env` в `~/qvarch`, затем
+```bash
+cd ~/qvarch && chmod 600 .env && mkdir -p backups
+sudo docker compose exec -T db pg_dump -U qa qa > backups/qa-$(date +%F-%H%M).sql
+sudo docker compose pull && sudo docker compose up -d
+rm -f .env
+```
+
+### Откат
+
+Команды `docker compose` ниже — с `.env` на месте: привезите его (`scp`) и уберите после.
+
+1. В `.env` закрепите прежнюю версию: `QA_IMAGE=<реестр>/qvarch/transport:<прежняя версия>` и запустите `deploy.ps1` (или `docker compose up -d`).
+2. Если новая версия уже применила миграции, старая с изменённой базой может не работать — восстановите копию, сделанную перед обновлением:
+   ```bash
+   cd ~/qvarch
+   sudo docker compose stop transport
+   sudo docker compose exec -T db psql -U qa -d postgres -c "drop database qa" -c "create database qa owner qa"
+   sudo docker compose exec -T db psql -U qa -d qa < backups/qa-<дата>.sql
+   sudo docker compose up -d
+   rm -f .env
+   ```
+3. Вернуться к последней — снова `QA_IMAGE=…:latest` и `deploy.ps1`.
+
+### Обслуживание
+
+Без `.env` — обычными командами docker (имена контейнеров — `qvarch-transport-1`, `qvarch-db-1`):
+- **Состояние и журнал:** `sudo docker ps`, `sudo docker logs --tail 200 qvarch-transport-1`.
+- **Перезапуск:** `sudo docker restart qvarch-transport-1`.
+- **Резервная копия базы:** `sudo docker exec qvarch-db-1 pg_dump -U qa qa > ~/qvarch/backups/qa-$(date +%F).sql`. Копии из `backups/` переносите вне сервера, старые удаляйте.
+- **Место:** старые образы — `sudo docker image prune` (удаляет только неиспользуемые).
+- **Остановить всё** — `docker compose down` (с `.env`); база сохраняется в томе `db`. `down -v` удалит её вместе с данными — не делайте этого без копии.
 
 **Один экземпляр.** Сервер держит открытые документы и подключения в памяти: запускайте ровно один контейнер `transport` на базу (несколько — потеряют правки друг друга и не доставят события).
 
 **Код доступа.** Без `QA_ACCESS_CODE` подключиться может любое приложение из сети — для общего сервера задайте его.
 
 **Шифрование.** Внутри сети соединение идёт по `ws://`. Для выхода за её пределы нужен TLS: nginx перед сервером с проксированием WebSocket на `127.0.0.1:3000`. В приложении тогда адрес `wss://…`.
-

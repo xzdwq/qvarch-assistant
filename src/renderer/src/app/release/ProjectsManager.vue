@@ -54,16 +54,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <Teleport to="body">
     <div v-if="open" class="rm-back tw:fixed tw:inset-0 tw:z-1500 tw:flex tw:items-start tw:justify-center tw:pt-60 tw:bg-bg/50" @pointerdown.self="open = false">
-      <div class="rm">
+      <div class="tw:w-620 tw:max-w-[calc(100vw-32px)] tw:max-h-[calc(100vh-90px)] tw:overflow-auto tw:pt-10 tw:px-14 tw:pb-14 tw:border tw:border-white/10 tw:rounded-r3 tw:bg-panel tw:shadow-pop tw:text-text">
         <div class="rmh tw:flex tw:items-center tw:gap-4 tw:mb-6">
           <b>Проекты</b>
           <span class="sp tw:flex-1"></span>
           <button class="rib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:bg-white/7 tw:hover:text-text tw:hover:enabled:border-border-3" title="Новый" @click="editProject()"><Icon name="plus" :size="14" /></button>
           <button class="rib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:bg-white/7 tw:hover:text-text tw:hover:enabled:border-border-3" title="Закрыть" @click="open = false"><Icon name="x" :size="14" /></button>
         </div>
-        <div v-for="p in rs.projects" :key="p.id" class="prow" :class="{ on: p.id === rs.projectId }">
-          <div class="pinfo" @click="(open = false), openProject(p.id, true)">
-            <b>{{ p.name }}</b><small>{{ p.repositoryPath }}</small>
+        <div v-for="p in rs.projects" :key="p.id" class="tw:flex tw:items-center tw:gap-6 tw:py-6 tw:px-8 tw:rounded-[4px] tw:hover:bg-white/4">
+          <div class="tw:flex tw:flex-col tw:flex-1 tw:min-w-0 tw:text-[12.5px] tw:cursor-pointer" @click="(open = false), openProject(p.id, true)">
+            <b :class="{ 'tw:text-accent-fg': p.id === rs.projectId }">{{ p.name }}</b><small class="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted tw:text-[11px]">{{ p.repositoryPath }}</small>
           </div>
           <template v-if="delAsk === p.id">
             <button class="rbtn red tw:inline-flex tw:items-center tw:h-28 tw:py-0 tw:px-11 tw:border tw:border-border tw:rounded-r2 tw:text-[12px] tw:cursor-pointer tw:[&&]:border-transparent tw:bg-down tw:text-text-hi" @click="removeProject(p.id)">Удалить</button>
@@ -92,7 +92,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <label class="tw:flex tw:flex-col tw:gap-3 tw:text-muted tw:text-[11.5px]">Bitbucket workspace <input class="tw:[&:not([type='checkbox'])]:h-30 tw:[&:not([type='checkbox'])]:py-0 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-bg tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:text-[12.5px]" v-model="form.bitbucketWorkspace" /></label>
           <label class="tw:flex tw:flex-col tw:gap-3 tw:text-muted tw:text-[11.5px]">Bitbucket repo <input class="tw:[&:not([type='checkbox'])]:h-30 tw:[&:not([type='checkbox'])]:py-0 tw:[&:not([type='checkbox'])]:px-8 tw:[&:not([type='checkbox'])]:border tw:[&:not([type='checkbox'])]:border-border tw:[&:not([type='checkbox'])]:rounded-[4px] tw:[&:not([type='checkbox'])]:bg-bg tw:[&:not([type='checkbox'])]:text-text tw:[&:not([type='checkbox'])]:text-[12.5px]" v-model="form.bitbucketRepoSlug" placeholder="по имени папки" /></label>
           <p v-if="formError" class="ferr w2 tw:col-span-full tw:my-4 tw:mx-0 tw:text-down-fg tw:text-[12px]">{{ formError }}</p>
-          <div class="w2 fact tw:col-span-full">
+          <div class="w2 tw:flex tw:justify-end tw:gap-6 tw:col-span-full">
             <button type="button" class="rbtn tw:inline-flex tw:items-center tw:h-28 tw:py-0 tw:px-11 tw:border tw:border-border tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:cursor-pointer tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="form = null">Отмена</button>
             <button type="submit" class="rbtn pri tw:inline-flex tw:items-center tw:h-28 tw:py-0 tw:px-11 tw:border tw:border-border tw:rounded-r2 tw:text-[12px] tw:cursor-pointer tw:[&&]:border-transparent tw:bg-accent tw:text-on-accent">Сохранить проект</button>
           </div>

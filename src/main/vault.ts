@@ -13,6 +13,7 @@ import { VaultMedia } from './vault/vaultMedia'
 import { VaultBundles } from './vault/vaultBundle'
 import { VaultWatcher } from './vault/vaultWatcher'
 import { readVaultTree } from './vault/vaultTree'
+import { VaultFacts } from './vault/vaultFacts'
 import { backlinks, eventMentions, searchNotes } from './vault/vaultSearch'
 
 /** A new thing's default name and extension, by its kind. */
@@ -43,6 +44,8 @@ export class Vault {
   private media: VaultMedia
   private bundles: VaultBundles
   private watcher: VaultWatcher
+  /** The tree's facts of the files (shared, runnable components), read only when a file changed. */
+  private facts = new VaultFacts()
 
   constructor(dataRoot: string, listen: VaultListeners) {
     this.root = join(dataRoot, 'vault')
@@ -100,7 +103,7 @@ export class Vault {
 
   // ---------- tree and files ----------
   tree(): VaultNode[] {
-    return readVaultTree(this.files, this.meta)
+    return readVaultTree(this.files, this.meta, this.facts)
   }
   read(rel: string): string {
     return this.files.read(rel)

@@ -1,7 +1,7 @@
 import { StateEffect, StateField } from '@codemirror/state'
 import { gutter, GutterMarker } from '@codemirror/view'
 import type { LineAuthor } from '@shared/transport/sharedText'
-import { peerSlot } from './peerCursors'
+import { peerSlotIn, peerSlotsField } from './peerCursors'
 
 /**
  * Who changed each line last: a thin bar on the left of the line numbers — a person's in their colour (the same as
@@ -48,11 +48,11 @@ export const lineAuthors = [
       const n = view.state.doc.lineAt(line.from).number - 1
       const who = all.get(n)
       if (!who) return null
-      const slot = who.device ? peerSlot(who.device) : -1
+      const slot = who.device ? peerSlotIn(view.state, who.device) : -1
       if (!who.agent) return slot >= 0 ? markOf(slot) : null
       const prev = all.get(n - 1)
       return markOf(slot, who.agent, prev?.agent !== who.agent || prev?.device !== who.device)
     },
-    lineMarkerChange: (u) => u.startState.field(authorsField) !== u.state.field(authorsField),
+    lineMarkerChange: (u) => u.startState.field(authorsField) !== u.state.field(authorsField) || u.startState.field(peerSlotsField, false) !== u.state.field(peerSlotsField, false),
   }),
 ]

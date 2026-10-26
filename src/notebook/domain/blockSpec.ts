@@ -51,6 +51,8 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   estimateHeight(src: string): number
   /** It runs: a step of «Выполнить всё» and of a loop's pass (its runner is in the run engine). */
   runnable?: boolean
+  /** A runnable kind's short name on the tree's chips (see RunnableBlockSpec). */
+  chip?: string
   /** The menu offers «Изменить как Markdown» (false: a line of its own with nothing to edit). */
   rawEditable: boolean
   /** Its «@» commands (the menu's order is set in commands/registry). */
@@ -59,8 +61,11 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   guide?: string
 }
 
-/** The spec of a kind that runs (its type marks it, so the runnable kinds are known to the compiler). */
-export type RunnableBlockSpec<K extends BlockKind> = BlockSpec<K> & { runnable: true }
+/**
+ * The spec of a kind that runs (its type marks it, so the runnable kinds are known to the compiler); `chip` — its
+ * short name on a note's chips in the notebook's tree (db, js/ts, http…).
+ */
+export type RunnableBlockSpec<K extends BlockKind> = BlockSpec<K> & { runnable: true; chip: string }
 
 /** The number of lines of a block's text (height estimates go by it). */
 export const lineCount = (src: string) => src.split('\n').length

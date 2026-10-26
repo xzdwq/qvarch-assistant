@@ -7,7 +7,7 @@
   gap: 6px;
 }
 /* (an emoji is a bit wider than an icon: the name stays where the others are) */
-.ndate {
+.vtree-date {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

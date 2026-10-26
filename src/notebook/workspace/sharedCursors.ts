@@ -1,9 +1,10 @@
 import { reactive } from 'vue'
+import { peerSlots } from '@shared/transport/peerColors'
 import type { DeviceInfo } from '@shared/transport/protocol'
 import type { PeerSel } from '@shared/transport/sharedText'
 import { onServerEvents } from '@renderer/lib/serverEvents'
 import { serverCall, serverOnline } from '@renderer/lib/transport'
-import { sharedDocOfPath, sharedOfPath, sharedTick } from './sharedDocs'
+import { sharedDocOfPath, sharedOfPath, sharedTick, spaceOfPath } from './sharedDocs'
 import { rangeFor, selFor } from './sharedPlaces'
 
 /**
@@ -60,6 +61,9 @@ export function peerCursorsIn(path: string): PeerCursor[] {
       return [{ id: p.device.id, name: p.device.name, from: r.from, to: r.to, head: p.sel.caretAtStart ? r.from : r.to, moved: p.moved }]
     })
 }
+
+/** The colour slots of a note's members (no shared note — none: everyone by their device). */
+export const peerSlotsOf = (path: string): Map<string, number> => peerSlots(spaceOfPath(path)?.members.map((m) => m.id) ?? [])
 
 // ---------- this device's cursor ----------
 const outgoing = new Map<string, { anchor: number; head: number; timer?: ReturnType<typeof setTimeout>; last: number; sent?: string }>()

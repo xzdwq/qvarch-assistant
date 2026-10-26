@@ -9,6 +9,7 @@ export const tplSpec: RunnableBlockSpec<'tpl'> = {
   detect: { by: 'fence', matches: ({ info }) => (info.lang === 'md' || info.lang === 'markdown') && !!info.template },
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
+  chip: 'tpl',
   rawEditable: true,
   commands: [
     {

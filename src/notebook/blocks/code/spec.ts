@@ -9,6 +9,7 @@ export const codeSpec: RunnableBlockSpec<'code'> = {
   detect: { by: 'fence', matches: ({ info }) => isCodeLang(info.lang) && (info.run || info.lib) && !(info.pw && !info.lib) },
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
+  chip: 'js/ts',
   rawEditable: true,
   commands: [
     {

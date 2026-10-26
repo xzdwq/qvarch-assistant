@@ -21,4 +21,7 @@ describe('the app\'s rules', () => {
   it('the server\'s events reach the window through one registry (each context its own handlers)', () => {
     expect(usersOf(/qa\.onServer\(/)).toEqual(['renderer/src/lib/serverEvents.ts'])
   })
+  it('a utility class is never glued to the one before it (both would silently do nothing)', () => {
+    expect(usersOf(/[A-Za-z0-9\])%/]tw:[a-z[]/)).toEqual([])
+  })
 })

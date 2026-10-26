@@ -23,6 +23,12 @@ export interface VaultNode {
   board?: boolean
   /** Linked with (a note ↔ a board): the other one's path. */
   pair?: string
+  /** A shared document (a note's or a board's mark): its id. */
+  doc?: string
+  /** A shared folder (its `.qa-space`): its space's id. */
+  space?: string
+  /** A note's runnable components as chips (db, js/ts, http…), each once. */
+  runs?: string[]
   children?: VaultNode[]
 }
 

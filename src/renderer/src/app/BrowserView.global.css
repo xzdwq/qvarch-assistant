@@ -1,8 +1,8 @@
 /* BrowserView: what its template cannot carry as utilities (global). */
 
 /* the browser's dialogs (teleported) */
-/* the history */
-.hrow {
+/* the history (its own names: these rules are global, a short one would catch others' elements) */
+.hist-row {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) minmax(0, max-content) 24px;
   align-items: center;
@@ -12,16 +12,16 @@
   border-radius: var(--r2);
   cursor: pointer;
 }
-.hrow:hover {
+.hist-row:hover {
   background: rgba(255, 255, 255, 0.06);
 }
-.htm {
+.hist-time {
   color: var(--muted);
   font-family: var(--font-data);
   font-size: 11.5px;
 }
-.hrow:hover .hdel,
-.hday:hover .hdel {
+.hist-row:hover .hist-del,
+.hist-day:hover .hist-del {
   opacity: 1;
 }
 .bq.help {

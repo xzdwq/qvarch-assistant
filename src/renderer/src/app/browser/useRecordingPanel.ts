@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { findLinks, recordingToHttp, type RecFull, type RecItem, type RecLink } from '@shared/browser'
 import { recItems, recState } from '../../lib/browser'
+import { firstRequestOf, importToHttp } from '../../lib/httpImport'
 
 /**
  * The recording of the requests the pages send: on / off, the list (filtered, picked), one request's details under
@@ -57,17 +58,19 @@ export function useRecordingPanel(deps: { recOpen: Ref<boolean>; openHttp: (requ
   const transfer = ref<{ items: RecFull[]; links: RecLink[]; base: boolean; secrets: boolean }>()
   async function startTransfer(): Promise<void> {
     const ids = recItems.value.filter((x) => picked.value.has(x.id)).map((x) => x.id)
-    if (!ids.length) return
-    const items = await window.qa.browser('recFull', ids)
-    transfer.value = { items, links: findLinks(items), base: true, secrets: true }
+    if (ids.length) transferOf(await window.qa.browser('recFull', ids))
+  }
+  /** Requests from elsewhere (the API map's calls) → the same dialog: what they make, the variables, the links. */
+  function transferOf(items: RecFull[]): void {
+    if (items.length) transfer.value = { items, links: findLinks(items), base: true, secrets: true }
   }
   const transferPreview = computed(() => (transfer.value ? recordingToHttp(transfer.value.items, transfer.value.links, transfer.value) : undefined))
   async function doTransfer(): Promise<void> {
     const p = transferPreview.value
     if (!p) return
     transfer.value = undefined
-    await window.qa.httpImport(JSON.parse(JSON.stringify(p.folder)), JSON.parse(JSON.stringify(p.vars)))
-    deps.openHttp(p.folder.children[0]?.id ?? p.folder.id)
+    await importToHttp(p.folder, p.vars)
+    deps.openHttp(firstRequestOf(p.folder))
   }
-  return { recError, toggleRec, setDocs, recQ, picked, shownItems, togglePick, allPicked, pickAll, clearRec, focus, focusTab, openItem, transfer, startTransfer, transferPreview, doTransfer }
+  return { recError, toggleRec, setDocs, recQ, picked, shownItems, togglePick, allPicked, pickAll, clearRec, focus, focusTab, openItem, transfer, startTransfer, transferOf, transferPreview, doTransfer }
 }

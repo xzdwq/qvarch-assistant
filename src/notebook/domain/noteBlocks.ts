@@ -1,6 +1,7 @@
 import type { BlockInfo } from './blockInfo'
 import type { BlockKind, NoteBlock } from './blockSpec'
 import { splitFence } from './fence'
+import { blockSpec } from '../blocks/specs'
 import { findBlocks } from './findBlocks'
 
 /**
@@ -21,6 +22,16 @@ export interface FencedNoteBlock extends NoteBlock {
   body: string
   /** Its run's key (blockRunKey). */
   key: string
+}
+
+/** The chips of a note's runnable components (db, js/ts, http, pw…): each kind once, in the order first met. */
+export function runChipsOf(text: string): string[] {
+  const out = new Set<string>()
+  for (const b of findBlocks(text.split('\n'))) {
+    const chip = blockSpec(b.kind).chip
+    if (chip) out.add(chip)
+  }
+  return [...out]
 }
 
 /** The note's fenced blocks (a loop's start, a table, a picture… are not fenced: left out). */
