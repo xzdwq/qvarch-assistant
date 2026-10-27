@@ -1,6 +1,7 @@
 import type { AgentProfile, AgentProfileView } from './agent/profiles'
 import type { TurnAnswer, TurnRequest } from './agent/turn'
 import type { TraceLine } from './agent/agentLoop'
+import type { DocAi } from './agent/docAi'
 import type { LocalChat } from './transport/localChat'
 import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
@@ -330,6 +331,9 @@ export interface QaApi {
   /** The lines AI agents wrote in a personal note (line hash → the agent's name). */
   vaultAgentLines(path: string): Promise<Record<string, string>>
   vaultSetAgentLines(path: string, lines: Record<string, string>): Promise<void>
+  /** The AI's memory and journal of a personal note (a shared one keeps its own in its document). */
+  vaultDocAi(path: string): Promise<DocAi>
+  vaultSetDocAi(path: string, ai: DocAi): Promise<void>
   /** The events mentioned in the notes: event id → the notes' paths. */
   eventMentions(): Promise<Record<string, string[]>>
   /** A recording for a note; its vault path (.audio/…). */

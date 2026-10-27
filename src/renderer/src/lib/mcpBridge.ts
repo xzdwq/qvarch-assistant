@@ -2,7 +2,8 @@ import { summary } from '@nb/domain/values'
 import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData, type RunItem } from '@nb/engine'
 import { docLinkPath, shareLinkOf } from '@nb/workspace/docLinks'
 import { doc, docs, files, loadTree, openFile, save, setText } from './notebook'
-import { agentByOf, agentWrote } from './agentWrites'
+import { MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
+import { agentByOf, agentWrote, agentWroteMemory } from './agentWrites'
 import { isHeld, postMessage, roomOf } from './chat'
 
 /**
@@ -86,6 +87,20 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
     await runItemWhereItStands(path, text, item)
     return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
+  },
+  /** An agent rewrites a document's memory (docAi). */
+  async memory(a) {
+    const by = agentByOf(a)
+    if (!by) throw new Error('Память документа меняет только ИИ в своём ходе')
+    try {
+      const m = await setDocMemory(String(a.path), String(a.text), by.name, true, Number(a.base) || 0)
+      agentWroteMemory(by)
+      return { at: m.at }
+    } catch (e) {
+      // (changed meanwhile: the memory now and its version — the agent writes anew over it)
+      if (e instanceof MemoryChanged) return { changed: e.message, at: e.now?.at ?? 0 }
+      throw e
+    }
   },
   /** An agent opens a shared note's link (joined by its code when not here). */
   async docLink(a) {

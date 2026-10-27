@@ -9,6 +9,8 @@ import { voiceTextOf } from './voiceText'
 import type { RefCard } from '@shared/transport/refCards'
 import { resolveWiki } from '@shared/vault'
 import { docPaths } from '@nb/workspace/sharedDocs'
+import { docAiFor } from '@nb/workspace/docAiStore'
+import { sharedDocOf } from '@shared/transport/space'
 import { refCardOf } from '@nb/workspace/sharedRefs'
 import { dirOf, docs, files, loadTree, noteName } from './notebook'
 import { messagesOf, showRoom } from './chat'
@@ -96,6 +98,8 @@ export async function turnRequestFor(o: { turn: string; room: ChatRoom; message:
   const linked = linksIn(`${text ?? ''}\n${o.message.text}`)
   if (linked.some((l) => l.kind === 'event')) await eventsNow()
   const links = linked.map((l) => ({ raw: l.raw, ...SAYS[l.kind](l, path) }))
+  // the document's memory: changed by one's own call, or in a shared note (where anyone's agent works for all)
+  const memory = path && text !== undefined ? await docAiFor(path).then((ai) => ai.memory, () => undefined) : undefined
   const folder = path ? files.value.filter((p) => p !== path && dirOf(p) === dirOf(path)).slice(0, FOLDER_MAX).map(noteName) : []
   return {
     turn: o.turn,
@@ -105,7 +109,7 @@ export async function turnRequestFor(o: { turn: string; room: ChatRoom; message:
     caller: o.caller,
     room: o.room.id,
     owner: useTransport().value.name || 'владелец',
-    ...(path && text !== undefined ? { doc: { title: noteName(path), path, text } } : {}),
+    ...(path && text !== undefined ? { doc: { title: noteName(path), path, text }, memory: { ...(memory ? { memory } : {}), writable: o.caller === 'owner' || !!sharedDocOf(text) } } : {}),
     links,
     folder,
     messages: await Promise.all(

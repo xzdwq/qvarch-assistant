@@ -35,7 +35,9 @@ onMounted(async () => {
   // tabs remembered from last time: gone files close, the rest load
   const all = new Set(files.value)
   for (let i = layout.panes.length - 1; i >= 0; i--) for (const t of [...layout.panes[i].tabs]) (all.has(t.path) ? doc(t.path) : closeTab(i, t.path))
-  if (!layout.panes.some((p) => p.tabs.length) && files.value.length) openFile(files.value[0])
+  // the very first time — a note to start with; later all tabs closed stay closed (the screen is as it was left)
+  if (!layout.shown && !layout.panes.some((p) => p.tabs.length) && files.value.length) openFile(files.value[0])
+  layout.shown = true
 })
 const offVault = window.qa.onVault((paths) => void onOutside(paths))
 onBeforeUnmount(() => {

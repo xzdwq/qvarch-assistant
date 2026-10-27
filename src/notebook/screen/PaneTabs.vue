@@ -14,15 +14,14 @@ import CommentsButton from './share/CommentsButton.vue'
 import BacklinksButton from './BacklinksButton.vue'
 
 /**
- * A pane's tab row: its tabs (dragged to reorder or to the other pane), «+»; for the active note — voice,
- * a picture, sharing, its report, its variables, «Выполнить всё»; for the last pane — the text's width, the help, the split.
+ * A pane's tab row: its tabs (dragged to reorder or to the other pane), «+»; for the active note — sharing, its
+ * comments and links, its report, its variables, «Выполнить всё»; for the last pane — the text's width, the help, the split.
+ * (Voice and pictures go in by «@» and by paste / drop in the text.)
  */
 defineProps<{ p: Pane; pi: number }>()
-const { tabs, actions, voice, images, vars, toast, helpOpen } = useNotebookScreen()
+const { tabs, actions, vars, toast, helpOpen } = useNotebookScreen()
 const { tabDrag, onTabDragStart, onTabDragOver, onTabRowEnd, onTabDrop } = tabs
 const { newNote } = actions
-const { recInto, startRec } = voice
-const { pickImages } = images
 const { varsOpen, toggleVars } = vars
 
 const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
@@ -71,16 +70,6 @@ async function copyNoteReport(path: string): Promise<void> {
       ><Icon name="plus" :size="13" /></button>
     </div>
     <template v-if="tabOf(p) && !isBoard(p.active ?? '')">
-      <button
-        class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:[&&]:hover:enabled:bg-white/7 tw:[&&]:hover:enabled:text-text tw:[&.rec]:bg-down/20 tw:[&.rec]:text-down-fg tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-[&.rec]:bg-transparent tw:[.zoom_&]:not-[&.rec]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3"
-        :class="{ rec: recInto?.pane === p.id }"
-        :title="recInto?.pane === p.id ? 'Остановить запись' : 'Записать голос в эту заметку'"
-        :disabled="!!recInto && recInto.pane !== p.id"
-        @click="startRec(p)"
-      >
-        <Icon :name="recInto?.pane === p.id ? 'stop' : 'mic'" :size="14" />
-      </button>
-      <button class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:bg-transparent tw:[.zoom_&]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" title="Вставить изображение — или вставьте из буфера (Ctrl+V), или перетащите файл в заметку" @click="pickImages(p)"><Icon name="image" :size="14" /></button>
       <ShareButton :path="p.active!" />
       <CommentsButton :path="p.active!" />
       <BacklinksButton :path="p.active!" />
@@ -91,7 +80,7 @@ async function copyNoteReport(path: string): Promise<void> {
         <button v-else class="tb nrun tw:justify-center tw:h-28 tw:border-0 tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-35 tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:border-0 tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:inline-flex tw:items-center tw:gap-5 tw:w-auto tw:py-0 tw:px-9 tw:rounded-r2 tw:bg-accent tw:text-on-accent tw:text-[12px] tw:hover:enabled:not-[.zoom_&]:border-border-3" title="Выполнить всё: блоки HTTP и кода сверху вниз (данные — сразу); первая ошибка останавливает" @click="runAll(p.active!, docs.get(p.active!)!.text)"><Icon name="play" :size="11" />Выполнить всё</button>
       </template>
     </template>
-    <button v-if="pi === layout.panes.length - 1" class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:[&&]:hover:enabled:bg-white/7 tw:[&&]:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-[&.on]:bg-transparent tw:[.zoom_&]:not-[&.on]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" :class="{ on: layout.wide }" :title="layout.wide ? 'Обычная ширина текста (820 px)' : 'Текст на всю ширину (с отступами по краям)'" @click="layout.wide = !layout.wide"><Icon name="expand" :size="14" /></button>
+    <button v-if="pi === layout.panes.length - 1" class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:[&&]:hover:enabled:bg-white/7 tw:[&&]:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-[&.on]:bg-transparent tw:[.zoom_&]:not-[&.on]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" :class="{ on: layout.wide }" :title="layout.wide ? 'Обычная ширина текста (820 px)' : 'Текст на всю ширину (с отступами по краям)'" @click="layout.wide = !layout.wide"><Icon name="expand" :size="14" class="tw:rotate-90" /></button>
     <button v-if="pi === layout.panes.length - 1" class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:[&&]:hover:enabled:bg-white/7 tw:[&&]:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-[&.on]:bg-transparent tw:[.zoom_&]:not-[&.on]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" :class="{ on: helpOpen }" title="Инструкция: блокнот и тестирование" @click="helpOpen = true"><Icon name="book" :size="14" /></button>
     <button class="tb tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:[&&]:hover:enabled:bg-white/7 tw:[&&]:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-[&.on]:bg-transparent tw:[.zoom_&]:not-[&.on]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:not-enabled:bg-white/8 tw:[.zoom_&]:hover:not-enabled:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" :class="{ on: layout.panes.length > 1 }" :title="layout.panes.length > 1 ? 'Одна колонка (Ctrl+\\)' : 'Разделить'" @click="toggleSplit">
       <Icon name="columns" :size="14" />

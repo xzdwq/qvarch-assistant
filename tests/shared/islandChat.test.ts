@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ChatRoom } from '../../src/shared/transport/chat'
-import { islandChatOf, islandMessageOf, roomToShow, stepRoom } from '../../src/shared/islandChat'
+import { islandChatOf, roomToShow, stepRoom } from '../../src/shared/islandChat'
 
 const me = { id: 'me', name: 'Я' }
 const other = { id: 'o', name: 'Коллега' }
@@ -25,9 +25,8 @@ describe('the chats in the island', () => {
     expect(stepRoom(state, 'c', -1)).toBe('b')
     expect(stepRoom(state, undefined, 1)).toBe('c')
   })
-  it('one’s own message — mine; one’s agent’s — not; a file — its word', () => {
-    expect(islandMessageOf(msg('a', 1, 1, me), 'me').mine).toBe(true)
-    expect(islandMessageOf({ ...msg('a', 1, 1, me), agent: { id: 'me:p', name: 'ИИ' } }, 'me')).toMatchObject({ mine: false, author: 'ИИ' })
-    expect(islandMessageOf({ ...msg('a', 2, 1, me, ''), attach: { kind: 'voice', title: 'Голосовое 0:05', data: {} } }, 'me').text).toBe('🎤 Голосовое 0:05')
+  it('a room’s last line: a file — its word', () => {
+    const r = { ...room('v', 2, 2, 10), last: { ...msg('v', 2, 10, me, ''), attach: { kind: 'voice' as const, title: 'Голосовое 0:05', data: {} } } }
+    expect(islandChatOf([r]).rooms[0].last?.text).toBe('🎤 Голосовое 0:05')
   })
 })

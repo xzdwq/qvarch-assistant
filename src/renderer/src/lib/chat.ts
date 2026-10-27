@@ -1,5 +1,5 @@
 import { computed, ref, shallowRef, watch } from 'vue'
-import { CHAT_PAGE, REACTIONS, cleanChatText, mentionable, mentionsIn, mergeMessages, roomWithMessage, sortRooms, type ChatAgent, type ChatMessage, type ChatReply, type ChatRoom } from '@shared/transport/chat'
+import { CHAT_PAGE, cleanChatText, mentionable, mentionsIn, mergeMessages, roomWithMessage, sortRooms, type ChatAgent, type ChatMessage, type ChatReply, type ChatRoom, type Outgoing } from '@shared/transport/chat'
 import { DEFAULT_CHAT, type ChatPrefs } from '@shared/transport/constants'
 import { remoteError } from '@shared/remoteError'
 import { CHAT_FEED_MARK } from '@nb/blocks/chat/model'
@@ -7,17 +7,10 @@ import { openNote } from './mentions'
 import { onServerEvents, type ServerEventHandlers } from './serverEvents'
 import { historyOf, roomOfLocal, type LocalChat, type LocalPost } from '@shared/transport/localChat'
 import { changeLocal, dropLocal, isLocal, loadLocals, localChat, localChats, makeLocal, postToLocal } from './localChatRooms'
+import { countReaction } from './quickReactions'
 import { serverCall, serverOnline, useTransport } from './transport'
 
-/** A message on its way: shown greyed until the server keeps it; a failed one waits for «Повторить». */
-export interface Outgoing {
-  room: string
-  clientId: string
-  text: string
-  /** The message it answers. */
-  reply?: ChatReply
-  failed?: string
-}
+export type { Outgoing }
 /** «Печатает…» stays this long after the last sign. */
 const TYPING_MS = 3000
 
@@ -126,17 +119,34 @@ export function tellAgentWorking(room: string, agent: { id: string; name: string
   if (!isLocal(room)) return void serverCall('chat.typing', { room, agent: agent.id }).catch(() => undefined)
   typing.value = new Map(typing.value).set(room, { name: `${agent.name} работает…`, until: Date.now() + TYPING_MS })
 }
+/**
+ * A chat taken away from this person: one kept here — gone; the server's — left (the others keep it; nobody left —
+ * gone whole). Its messages, its messages on their way forgotten here.
+ */
+export async function deleteChat(id: string): Promise<void> {
+  if (isLocal(id)) await dropLocal(id)
+  else await serverCall('chat.leave', { room: id })
+  chatRooms.value = chatRooms.value.filter((r) => r.id !== id)
+  const m = new Map(messages.value)
+  m.delete(id)
+  messages.value = m
+  outbox.value = outbox.value.filter((o) => o.room !== id)
+}
 /** The branches of a main conversation (its people's other chats). */
 export const branchesOf = (main: string) => chatRooms.value.filter((r) => r.parent === main)
 
 /** The room the feeds show (a notification's click picks it). */
 export const feedRoom = ref('')
-/** A chat opened (a notification's click): the note with its block, else a note with a feed of the chats (it picked there). */
+/**
+ * A chat opened (a notification's click): the note with its block, else a note with a feed of the chats (it picked
+ * there); neither — said why (its note deleted: it may be put in a note again by «@чат», or deleted).
+ */
 export async function openChat(room: string): Promise<void> {
   feedRoom.value = room
   const own = await window.qa.vaultNotesWith(`room: ${room}`)
   const path = own[0] ?? (await window.qa.vaultNotesWith(CHAT_FEED_MARK))[0]
-  if (path) await openNote(path)
+  if (!path) throw new Error('Этого чата нет ни в одной заметке (документ удалён) — вставьте его в заметку через «@чат» или удалите')
+  await openNote(path)
 }
 
 /** The rooms as the server has them, and the chats still held here. */
@@ -173,10 +183,19 @@ export async function loadOlder(id: string): Promise<void> {
   setMessages(id, mergeMessages(page, messages.value.get(id) ?? []))
   if (page.length < CHAT_PAGE) complete.value = new Set(complete.value).add(id)
 }
-/** A room read up to its last message — while it is shown and the window is in front. */
+/** The room the island shows now (its own window: read there, whatever this window does). */
+let islandShows = ''
+/** The island shows a room now ('' — none). */
+export function showInIsland(id: string): void {
+  islandShows = id
+  if (id) void markRead(id)
+}
+/** A room is in front of the person: shown in the island, or by a block with this window in front. */
+const inSight = (id: string) => islandShows === id || (!document.hidden && watched.has(id))
+/** A room read up to its last message — while it is in sight. */
 export async function markRead(id: string): Promise<void> {
   const r = roomOf(id)
-  if (!r || r.readSeq >= r.lastSeq || document.hidden || !watched.has(id)) return
+  if (!r || r.readSeq >= r.lastSeq || !inSight(id)) return
   setRoom({ ...r, readSeq: r.lastSeq })
   if (isHeld(id)) await changeLocal(id, (c) => ({ ...c, readSeq: r.lastSeq })).catch(() => undefined)
   else await serverCall('chat.read', { room: id, seq: r.lastSeq }).catch(() => undefined)
@@ -229,18 +248,10 @@ export function tellTyping(room: string): void {
   typedAt.set(room, now)
   void serverCall('chat.typing', { room }).catch(() => undefined)
 }
-/** The reactions offered first (the ones this person puts most; kept on this computer). */
-export const quickReactions = ref<string[]>([...REACTIONS])
-let quickAsked = false
-export function loadQuickReactions(): void {
-  if (quickAsked) return
-  quickAsked = true
-  void window.qa.chatQuickReactions().then((q) => (quickReactions.value = q), () => (quickAsked = false))
-}
 /** A reaction of this device's on a message put / taken back (already its — taken back); one put — counted. */
 export async function toggleReaction(m: ChatMessage, emoji: string): Promise<void> {
   const mine = !!m.reactions?.[emoji]?.some((d) => d.id === chatMe.value)
-  if (!mine) void window.qa.chatReactionPut(emoji).then((q) => (quickReactions.value = q), () => undefined)
+  if (!mine) countReaction(emoji)
   if (!isHeld(m.room)) return edited(await serverCall('chat.react', { room: m.room, seq: m.seq, emoji, on: !mine }))
   // a local chat: one's own reactions kept here
   const reactions = { ...m.reactions, [emoji]: mine ? [] : [meInfo()] }

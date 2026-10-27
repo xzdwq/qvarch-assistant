@@ -26,7 +26,7 @@ export class DeviceEmulation {
             await dbg.sendCommand('Emulation.clearDeviceMetricsOverride')
             await dbg.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false })
             await dbg.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: false })
-            await dbg.sendCommand('Emulation.setUserAgentOverride', { userAgent: this.host.userAgent() })
+            await dbg.sendCommand('Emulation.setUserAgentOverride', this.host.uaOverride())
           }
         } catch {
           // the page is going
@@ -67,7 +67,7 @@ export class DeviceEmulation {
       if (sizeOnly) return
       await d.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: dv.mobile, maxTouchPoints: dv.mobile ? 5 : 1 })
       await d.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: dv.mobile, configuration: dv.mobile ? 'mobile' : 'desktop' })
-      await d.sendCommand('Emulation.setUserAgentOverride', { userAgent: dv.ua || this.host.userAgent() })
+      await d.sendCommand('Emulation.setUserAgentOverride', this.host.uaOverride(dv.ua || undefined, dv.mobile))
     } catch (e) {
       this.host.emit('recError', `Режим устройства не включился: ${e instanceof Error ? e.message : String(e)}`)
       t.t.device = undefined

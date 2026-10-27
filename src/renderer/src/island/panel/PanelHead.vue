@@ -9,7 +9,8 @@ import IslandBadges from '../pill/IslandBadges.vue'
  * The panel's header: the move handle with the logo (a native drag region), date, activity, productive time,
  * status; new note, pin expanded, open the app. A click on the header itself resets the selection.
  */
-const { island, day, pick, expand, openMain } = useIsland()
+const { island, day, pick, expand, chat, openMain } = useIsland()
+const { panelView } = chat
 const { ui } = island
 const { dateText, productive, status } = day
 const { panelNote, openPanelNote, resetSelection } = pick
@@ -33,7 +34,8 @@ function onHeadClick(e: MouseEvent): void {
     <IslandBadges />
     <span class="total tw:tabular-nums tw:font-data tw:text-text-2 tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2" title="Продуктивное время"><small class="tw:text-muted tw:text-[10px]">в работе</small> {{ formatDuration(productive) }}</span>
     <span class="status tw:[&.handle]:cursor-move tw:[&.handle]:not-[&.pfill]:not-[&.pwave]:flex-none tw:[&.handle]:not-[.abar_&]:flex tw:[&.handle]:items-center tw:[&.handle]:justify-center tw:[&.handle]:not-[&.pwave]:w-32 tw:[&.handle]:not-[&.pwave]:not-[.abar_&]:h-32 tw:[&.handle]:not-[&.work]:not-[&.call]:text-dim tw:[&.handle]:not-[&.work]:not-[&.call]:bg-white/4 tw:[&.pfill]:not-[&.pwave]:flex-1 tw:[&.pwave]:flex-[1_1_0] tw:[&.pwave]:w-0 tw:[&.pwave]:min-w-20 tw:[&.pwave]:not-[.abar_&]:h-14 tw:py-2 tw:px-10 tw:rounded-r2 tw:text-[12px] tw:font-semibold tw:[transition:background_0.3s,color_0.3s] tw:[&.work]:not-[&.call]:bg-up/15 tw:[&.work]:not-[&.call]:text-up tw:[&.call]:bg-[color-mix(in_srgb,var(--call-mark)_18%,transparent)] tw:[&.call]:text-(--call-mark-fg) tw:[&.uncut]:not-[.abar_&]:rounded-r2 tw:[.abar_&]:block tw:[.abar_&]:h-full tw:[.abar_&]:rounded-r2 tw:[&.empty]:m-6 tw:[&.empty]:text-[12px]" :class="status.cls">{{ status.text }}</span>
-    <button class="icon tw:inline-flex tw:items-center tw:bg-transparent tw:border-0 tw:py-4 tw:px-5 tw:text-muted tw:hover:not-[&.on]:text-text-hi tw:[&.on]:text-accent-fg tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:py-3 tw:[.seg2_&]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent" :class="{ on: !!panelNote }" title="Новая заметка" @click="openPanelNote()"><Icon name="note" :size="15" /></button>
+    <button class="icon tw:inline-flex tw:items-center tw:bg-transparent tw:border-0 tw:py-4 tw:px-5 tw:text-muted tw:hover:not-[&.on]:text-text-hi tw:[&.on]:text-accent-fg" :class="{ on: panelView === 'chat' }" :title="panelView === 'chat' ? 'Показать день: таймлайн и задачи' : 'Показать чаты вместо дня'" @click="chat.setPanelView(panelView === 'chat' ? 'day' : 'chat')"><Icon name="chat" :size="15" /></button>
+    <button v-if="panelView === 'day'" class="icon tw:inline-flex tw:items-center tw:bg-transparent tw:border-0 tw:py-4 tw:px-5 tw:text-muted tw:hover:not-[&.on]:text-text-hi tw:[&.on]:text-accent-fg tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:py-3 tw:[.seg2_&]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent" :class="{ on: !!panelNote }" title="Новая заметка" @click="openPanelNote()"><Icon name="note" :size="15" /></button>
     <button class="icon tw:inline-flex tw:items-center tw:bg-transparent tw:border-0 tw:py-4 tw:px-5 tw:text-muted tw:hover:not-[&.on]:text-text-hi tw:[&.on]:text-accent-fg tw:[.seg2_&]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:py-3 tw:[.seg2_&]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[.seg2_&]:[&.on]:text-on-accent" :class="{ on: pinned }" :title="pinned ? 'Открепить' : 'Закрепить развёрнутым'" @click="togglePin">
       <Icon name="pin" :size="15" />
     </button>

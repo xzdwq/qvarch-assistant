@@ -3,6 +3,7 @@ import { buildPack, type Pack } from '../../shared/agent/contextPack'
 import { baseUrlOf, modelOf, type AgentProfile } from '../../shared/agent/profiles'
 import { AGENT_PROVIDERS, type AgentProtocol } from '../../shared/agent/providers'
 import type { TurnAnswer, TurnRequest } from '../../shared/agent/turn'
+import { TOUCHES_MAX, touchesOf, type Touch } from '../../shared/agent/touches'
 import type { AppContext } from '../app/appContext'
 import type { McpHost } from '../ipc/mcpIpc'
 import type { McpTool } from '../mcp'
@@ -36,6 +37,24 @@ const callerOf = (tools: McpTool[]) => async (c: { name: string; input: Record<s
   const t = tools.find((x) => x.name === c.name)
   if (!t) throw new Error(`Нет инструмента ${c.name}`)
   return t.run(c.input)
+}
+/** The turn's tools, each call's touches kept (whatever runs them: the loop, Claude Code through MCP). */
+function touchedBy(into: Touch[], doc: string, tools: McpTool[]): McpTool[] {
+  let step = 0
+  return tools.map((t) => ({
+    ...t,
+    run: async (a: Record<string, unknown>) => {
+      const at = step++
+      try {
+        const out = await t.run(a)
+        into.push(...touchesOf(t.name, a, doc, true, at))
+        return out
+      } catch (e) {
+        into.push(...touchesOf(t.name, a, doc, false, at))
+        throw e
+      }
+    },
+  }))
 }
 const needKey = (p: AgentProfile, key?: string): string => {
   if (!key && AGENT_PROVIDERS[p.provider].key === 'required') throw new Error(`Нет ключа для «${p.name}» — укажите его в Настройках → ИИ-агенты`)
@@ -120,11 +139,14 @@ export class AgentRunner {
     this.turns.get(req.turn)?.abort()
     this.turns.set(req.turn, ac)
     const trace: TraceLine[] = []
+    /** What the turn's calls touched (their arguments whole — the journal's graph is drawn from them). */
+    const touches: Touch[] = []
+    const answer = (a: Omit<TurnAnswer, 'trace' | 'touches'>): TurnAnswer => ({ ...a, trace, ...(touches.length ? { touches: touches.slice(0, TOUCHES_MAX) } : {}) })
     try {
       // an agent writes in the background (the note one is in never switches), its lines marked as its
       const ui = <T>(op: string, args: Record<string, unknown>) => this.host.toolCtx.ui<T>(op, { ...args, quiet: true, by: { turn: req.turn, name: req.agentName } })
       const vault = this.app.vault
-      const tools = turnTools({
+      const tools = touchedBy(touches, req.doc?.path ?? '', turnTools({
         req,
         profile,
         base: qvarchTools({ ...this.host.toolCtx, ui }),
@@ -133,13 +155,13 @@ export class AgentRunner {
         backlinks: (p) => vault.backlinks(p),
         mkdir: (dir, name) => vault.create(dir, 'folder', name),
         ui,
-      })
-      const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: true, components: componentsBrief() })
+      }))
+      const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: true, components: componentsBrief(), ...(req.memory ? { memory: req.memory } : {}) })
       const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => (trace.push(t), onTrace(t)) }, this.host)
-      return { text: out.text, trace, ...(out.note ? { note: out.note } : {}) }
+      return answer({ text: out.text, ...(out.note ? { note: out.note } : {}) })
     } catch (e) {
-      if (ac.signal.aborted) return { text: '', trace, error: 'Остановлено' }
-      return { text: '', trace, error: runner.error(e) ?? (e instanceof Error ? e.message : String(e)) }
+      if (ac.signal.aborted) return answer({ text: '', error: 'Остановлено', stopped: true })
+      return answer({ text: '', error: runner.error(e) ?? (e instanceof Error ? e.message : String(e)) })
     } finally {
       if (this.turns.get(req.turn) === ac) this.turns.delete(req.turn)
     }

@@ -98,6 +98,7 @@ export class Browser extends BrowserCore implements BrowserApi {
         if (t.asleep) continue
         t.view.webContents.setUserAgent(ua)
         if (t.t.device) void this.devices.apply(t)
+        else void this.chromeLike(t)
       }
     }
     this.store.save()

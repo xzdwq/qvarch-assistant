@@ -1,6 +1,8 @@
 import { computed } from 'vue'
 import type { VaultNode } from '@shared/vault'
 import { sharedDocOfFile } from '@shared/transport/sharedFormats'
+import { isHomeless, type ChatRoom } from '@shared/transport/chat'
+import { chatRoomsIn } from '@nb/blocks/chat/model'
 import { shareBadges, type ShareBadge } from '@shared/transport/treeSharing'
 import { useTransport } from '@renderer/lib/transport'
 import { runChipsOf } from '@nb/domain/noteBlocks'
@@ -15,16 +17,28 @@ import { tree } from './vaultTreeStore'
  */
 
 /** The last open text read, and what it gave — read again only when the text changed. */
-const live = new Map<string, { text: string; runs: string[]; doc: string }>()
-function liveOf(path: string): { runs: string[]; doc: string } | undefined {
+const live = new Map<string, { text: string; runs: string[]; chats: string[]; doc: string }>()
+function liveOf(path: string): { runs: string[]; chats: string[]; doc: string } | undefined {
   const d = docs.get(path)
   if (!d?.loaded) return undefined
   const hit = live.get(path)
   if (hit?.text === d.text) return hit
-  const got = { text: d.text, runs: path.endsWith('.md') ? runChipsOf(d.text) : [], doc: sharedDocOfFile(path, d.text) }
+  const note = path.endsWith('.md')
+  const got = { text: d.text, runs: note ? runChipsOf(d.text) : [], chats: note ? chatRoomsIn(d.text) : [], doc: sharedDocOfFile(path, d.text) }
   live.set(path, got)
   return got
 }
+
+/** The rooms one's notes show (none — the tree not read yet: nothing is known). */
+export const chatHomes = computed((): ReadonlySet<string> | undefined => {
+  if (!tree.value.length) return undefined
+  const out = new Set<string>()
+  const walk = (ns: readonly VaultNode[]) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : (liveOf(n.path)?.chats ?? n.chats ?? []).forEach((r) => out.add(r))))
+  walk(tree.value)
+  return out
+})
+/** A chat in none of one's notes (its note deleted; not known yet — no). */
+export const homeless = (r: ChatRoom): boolean => !!chatHomes.value && isHomeless(r, chatHomes.value)
 
 /** A note's runnable components as chips (db, js/ts, http…). */
 export const runsOf = (n: VaultNode): string[] => liveOf(n.path)?.runs ?? n.runs ?? []

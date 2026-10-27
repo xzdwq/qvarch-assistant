@@ -11,6 +11,8 @@ import { useNotebookScreen } from './notebookScreen'
 import { textStats } from '@nb/domain/noteFacts'
 import { pairOf, setZoom } from './nodeInfo'
 import NoteText from './NoteText.vue'
+import DocAiButton from './docai/DocAiButton.vue'
+import { ref } from 'vue'
 
 /**
  * A pane's open file: a note's text or a board; a linked pair — the switch at the right; the recording bar (a board's
@@ -26,6 +28,8 @@ const { actions, voice, toast, boardInfo } = useNotebookScreen()
 const { showPair } = actions
 const { recorder, recInto, stopRec } = voice
 const { say } = toast
+/** The status line (the AI's panel is held to it). */
+const statusBar = ref<HTMLElement>()
 </script>
 
 <template>
@@ -55,9 +59,10 @@ const { say } = toast
       />
     </div>
     <NoteText v-else :p="p" :path="path" />
-    <div class="pstatus tw:group-[.paired]/pbody:[&:not(.pairsw)]:mr-26 tw:flex-none tw:flex tw:items-center tw:gap-8 tw:py-4 tw:px-12 tw:border-t tw:border-t-border tw:text-muted tw:text-[11.5px]">
+    <div ref="statusBar" class="pstatus tw:group-[.paired]/pbody:[&:not(.pairsw)]:mr-26 tw:flex-none tw:flex tw:items-center tw:gap-8 tw:py-4 tw:px-12 tw:border-t tw:border-t-border tw:text-muted tw:text-[11.5px]">
       <span v-if="docs.get(path)?.error" class="err tw:text-down-fg">{{ docs.get(path)!.error }}</span>
       <span v-else>{{ isDirty(path) ? 'Сохраняется…' : 'Сохранено' }}</span>
+      <DocAiButton v-if="!isBoard(path)" :path="path" :bar="statusBar" />
       <span class="grow tw:flex-1"></span>
       <span>{{ isBoard(path) ? (boardInfo[path] ?? '') : textStats(docs.get(path)?.text ?? '') }}</span>
       <ZoomChip class="tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:not-hover:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" v-if="!isBoard(path)" :model-value="layout.zoom || 100" title="Масштаб текста · колесо — изменить, клик — 100%" @update:model-value="setZoom" />

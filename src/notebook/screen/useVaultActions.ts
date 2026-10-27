@@ -21,7 +21,7 @@ import type { TreeEditing } from './useTreeEditing'
  * the tree again.
  */
 export function useVaultActions(say: (t: string) => void, editing: TreeEditing, editors: NoteEditors) {
-  const { folder, targetDir } = editing
+  const { focus, targetDir, focusFollows, focusGone } = editing
   const ensureOpen = (dir: string) => dir && !layout.open.includes(dir) && layout.open.push(dir)
   /** Runs the action; its error said. */
   async function attempt(fn: () => Promise<unknown>): Promise<void> {
@@ -53,7 +53,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       const path = await window.qa.vaultCreate(dir, 'folder')
       await loadTree()
       ensureOpen(dir)
-      folder.value = path
+      focus.value = path
       void editing.startRename(path)
     })
   /** Renamed in place (the same folder); the open tabs, the runs and the chosen folder follow. */
@@ -66,7 +66,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       const to = await window.qa.vaultMove(path, dirOf(path), clean)
       remap(path, to)
       moveRuns(path, to)
-      if (folder.value) folder.value = folder.value === path ? to : folder.value
+      focusFollows(path, to)
       await loadTree()
       // the links to it follow its new name
       await relinkAfterMove(path, to, before)
@@ -85,6 +85,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       const to = await window.qa.vaultMove(path, dir)
       remap(path, to)
       moveRuns(path, to)
+      focusFollows(path, to)
       ensureOpen(dir)
       await loadTree()
       await relinkAfterMove(path, to, before)
@@ -98,7 +99,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       for (const k of [...docs.keys()]) if (k === n.path || k.startsWith(n.path + '/')) docs.delete(k)
       // its runs too (a new note of that name must not show them)
       forgetRuns(n.path)
-      if (folder.value && (folder.value === n.path || folder.value.startsWith(n.path + '/'))) folder.value = undefined
+      focusGone(n.path)
       await loadTree()
     })
   }

@@ -16,8 +16,9 @@ import { addPerson, chatPeople, mainWith, renameChat } from '@renderer/lib/chatA
 import ChatAgentsMenu from './ChatAgentsMenu.vue'
 import ChatSettingsMenu from './ChatSettingsMenu.vue'
 
-const props = defineProps<{ room: ChatRoom }>()
-const emit = defineEmits<{ switched: [room: string] }>()
+/** `folded` — only this head is shown (its `unread` count beside the title); not given — it does not fold (the feed). */
+const props = withDefaults(defineProps<{ room: ChatRoom; folded?: boolean; unread?: number }>(), { folded: undefined, unread: 0 })
+const emit = defineEmits<{ switched: [room: string]; fold: [on: boolean] }>()
 const mineToName = computed(() => props.room.createdBy === chatMe.value)
 /** A chat of people (not a shared note's, not a comment): people may be added to it. */
 const addable = computed(() => !props.room.space && !props.room.doc)
@@ -81,7 +82,11 @@ const parentTitle = computed(() => (props.room.parent ? roomOf(props.room.parent
 
 <template>
   <div class="tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:text-[12.5px] tw:whitespace-nowrap">
-    <span class="tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:text-muted"><Icon name="chat" :size="14" /></span>
+    <span v-if="folded === undefined" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:text-muted"><Icon name="chat" :size="14" /></span>
+    <button v-else class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-2 tw:w-auto tw:h-24 tw:py-0 tw:px-4 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" :title="folded ? 'Развернуть чат' : 'Свернуть чат (останется заголовок)'" @click="emit('fold', !folded)">
+      <Icon :name="folded ? 'chevronRight' : 'chevronDown'" :size="13" /><Icon name="chat" :size="14" />
+    </button>
+    <span v-if="folded && unread" class="tw:flex-none tw:min-w-18 tw:h-18 tw:px-5 tw:rounded-full tw:bg-accent tw:text-on-accent tw:text-[10.5px] tw:font-bold tw:leading-18 tw:text-center" :title="`Непрочитанных: ${unread}`">{{ unread }}</span>
     <input v-if="naming" ref="nameInput" v-model="title" class="tw:h-26 tw:min-w-0 tw:flex-1 tw:px-10 tw:rounded-full tw:text-[13px]" :maxlength="TITLE_MAX" @keydown.enter.prevent="rename" @blur="rename" />
     <template v-else>
       <b class="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-text-hi">{{ room.title }}</b>

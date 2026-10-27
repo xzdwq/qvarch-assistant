@@ -1,4 +1,5 @@
 import { LINK_GUIDE } from '../notebook/links'
+import { memoryForAgent, type DocMemory } from './docAi'
 
 /**
  * What an agent is given for a turn: the note the chat is in, what the note links to, what lies beside it, and the
@@ -38,6 +39,8 @@ export interface PackInput {
   tools: boolean
   /** The app's components, a line each (what it may put in a note). */
   components?: string
+  /** The document's AI memory (with a document only), and whether the agent may change it. */
+  memory?: { memory?: DocMemory; writable: boolean }
 }
 export interface Pack {
   system: string
@@ -79,7 +82,7 @@ export function buildPack(p: PackInput): Pack {
           'Ты работаешь внутри приложения Qvarch и свободно пользуешься его инструментами: дочитывай документ и ссылки (doc_read, link_read), ищи по заметкам (notes_search), смотри задачи Jira (jira_issue) и работу (work_today, work_period).',
           'Длинный результат пиши в документ (doc_section — свой раздел, doc_edit — точечно, «прилинкуй / добавь в документ» — тоже сюда) или в отдельную заметку, а в ответе дай итог и ссылку на место: [[Документ#Раздел]].',
           'Документ — заметка Markdown с компонентами приложения. Где компонент подходит, вставляй его, а не самодельную замену: например, итоги и аналитика работы за период — компонент work. Как писать каждый — note_components.',
-          'Автотесты Playwright: как писать и готовые проверки (сохранение, перезагрузка, дубли, вёрстка, нагрузка, матрица полей, перебор запроса, смена контекста) — qvarch_guide, навешивать — pw_check. Основа теста — сценарий, который пользователь записал сам; страницу смотри (page_look) только по его прямой просьбе.',
+          'Автотесты Playwright: как писать и готовые проверки (сохранение, перезагрузка, дубли, вёрстка, нагрузка, матрица полей, перебор запроса, смена контекста) — qvarch_guide, навешивать — pw_check. Основа теста — сценарий, который пользователь записал сам: его локаторы не меняй без нужды. Не знаешь селекторов (пишешь шаги с нуля, локатор не находится) — сам посмотри страницу (page_look: адрес из компонента «Браузер» в документе или из теста) и бери локаторы оттуда, не выдумывай.',
           p.components ? `Компоненты:\n${p.components}` : '',
           `Ссылки пиши так, чтобы приложение их открывало:\n${Object.values(LINK_GUIDE)
             .map((s) => `- ${s}`)
@@ -89,6 +92,7 @@ export function buildPack(p: PackInput): Pack {
           .join('\n')
       : 'Инструментов нет: отвечай по тому, что дано.',
     'Ответ — текст сообщения в чат, без вступлений. Не выдавай секреты (токены, пароли, cookie).',
+    p.doc && p.memory ? `\n${memoryForAgent(p.memory.memory, p.tools && p.memory.writable)}` : '',
     p.instructions ? `\nУказания владельца:\n${p.instructions}` : '',
   ]
     .filter(Boolean)

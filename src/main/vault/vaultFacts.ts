@@ -1,5 +1,6 @@
 import { closeSync, openSync, readFileSync, readSync } from 'node:fs'
 import { join } from 'node:path'
+import { chatRoomsIn } from '../../notebook/blocks/chat/model'
 import { runChipsOf } from '../../notebook/domain/noteBlocks'
 import { formatOf } from '../../shared/transport/sharedFormats'
 import { SPACE_LINK_FILE } from '../../shared/transport/space'
@@ -9,6 +10,8 @@ import { BOARD_EXT } from '../../shared/whiteboard'
 export interface FileFacts {
   doc?: string
   runs?: string[]
+  /** The chats it shows (their rooms). */
+  chats?: string[]
 }
 /** A board's mark is at its very start: only its head is read (a board may be big). */
 const HEAD_BYTES = 200
@@ -27,7 +30,8 @@ const READERS: Record<string, (file: string, rel: string) => FileFacts> = {
   '.md': (file, rel) => {
     const text = readFileSync(file, 'utf8')
     const runs = runChipsOf(text)
-    return { doc: formatOf(rel)?.docOf(text) || undefined, ...(runs.length ? { runs } : {}) }
+    const chats = chatRoomsIn(text)
+    return { doc: formatOf(rel)?.docOf(text) || undefined, ...(runs.length ? { runs } : {}), ...(chats.length ? { chats } : {}) }
   },
   [BOARD_EXT]: (file, rel) => ({ doc: formatOf(rel)?.docOf(readHead(file)) || undefined }),
 }

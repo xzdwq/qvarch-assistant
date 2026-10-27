@@ -1,4 +1,4 @@
-import { ISLAND_CHAT_OPS, NO_ISLAND_CHAT, type IslandChatOp, type IslandChatState } from '../../shared/islandChat'
+import { ISLAND_CHAT_OPS, ISLAND_OPS_SHOWING_APP, NO_ISLAND_CHAT, type IslandChatOp, type IslandChatState } from '../../shared/islandChat'
 import { contentsOf, type AppContext } from '../app/appContext'
 import { emit, handle, listen } from './router'
 import { WindowAsk } from './windowAsk'
@@ -21,10 +21,12 @@ export function registerIslandChatIpc(app: AppContext): void {
     return !!w
   }, 'Окно Qvarch закрыто — чаты недоступны')
   listen('islandChatReply', (_e, id, ok, value) => asker.settle(String(id), ok, value))
-  handle('islandChatCall', (_e, op, args) => {
+  handle('islandChatCall', async (_e, op, args) => {
     if (!(ISLAND_CHAT_OPS as readonly string[]).includes(op)) throw new Error(`Неизвестная операция ${op}`)
-    // (opening a room shows the app)
-    if (op === 'open') app.windows.showMain()
-    return asker.ask(op, args ?? {}, 30_000)
+    // (a file goes to the server meanwhile: its time is longer)
+    const r = await asker.ask(op, args ?? {}, 120_000)
+    // (a room opened, a link, a note taken — shown in the app once done; failed — the island says why)
+    if (ISLAND_OPS_SHOWING_APP.has(op)) app.windows.showMain()
+    return r
   })
 }

@@ -106,6 +106,11 @@ export interface TransportMethods {
    * The chat the block shows now.
    */
   'chat.add': { p: { room: string; device: string; as: 'branch' | 'main' }; r: ChatRoom }
+  /**
+   * One leaves a chat (and takes one's agents): nobody left — it is gone whole (messages, files). A shared note's chat
+   * and a comment are not left one by one (they go with the note). `gone` — the chat is no more.
+   */
+  'chat.leave': { p: { room: string }; r: { gone: boolean } }
   /** A reaction put / taken back (one of REACTIONS); the message as it is now. */
   'chat.react': { p: { room: string; seq: number; emoji: string; on: boolean }; r: ChatMessage }
   'chat.read': { p: { room: string; seq: number }; r: null }

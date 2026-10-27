@@ -51,7 +51,7 @@ export function readVaultTree(files: VaultFiles, meta: VaultMeta, facts: VaultFa
       if (!kind) continue
       seen.add(rel)
       const f = facts.of(file, rel, ext, st)
-      out.push({ ...base, name: name.slice(0, -ext.length), dir: false, ...kind, pair: meta.pairOf(rel), ...(f.doc ? { doc: f.doc } : {}), ...(f.runs ? { runs: f.runs } : {}) })
+      out.push({ ...base, name: name.slice(0, -ext.length), dir: false, ...kind, pair: meta.pairOf(rel), ...(f.doc ? { doc: f.doc } : {}), ...(f.runs ? { runs: f.runs } : {}), ...(f.chats ? { chats: f.chats } : {}) })
     }
     return out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name, 'ru', { numeric: true })))
   }

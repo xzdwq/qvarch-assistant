@@ -8,7 +8,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { clockSec, type ChatFile } from '@shared/transport/chat'
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
-import { chatFileUrl } from '@renderer/lib/chatFiles'
+import { chatFileUrl } from '@renderer/lib/chatFileView'
 import { canTranscribe } from '@renderer/lib/voiceReady'
 import { voiceTextOf } from '@renderer/lib/voiceText'
 

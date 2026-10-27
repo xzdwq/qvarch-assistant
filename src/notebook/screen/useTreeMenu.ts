@@ -5,11 +5,12 @@ import type { VaultNode } from '@shared/vault'
  * The tree's right-click menu (on a node, or on the empty space — the top level) and the whole emoji list opened
  * from it: their state (each is a popover at the click — TreeMenu, the emoji list in NotebookView).
  */
-export function useTreeMenu(folder: Ref<string | undefined>) {
+export function useTreeMenu(focus: Ref<string | undefined>) {
   const treeMenu = ref<{ x: number; y: number; node?: VaultNode }>()
   function openTreeMenu(e: MouseEvent, node?: VaultNode): void {
     treeMenu.value = { x: Math.min(e.clientX, window.innerWidth - 310), y: Math.min(e.clientY, window.innerHeight - 300), node }
-    if (node?.dir) folder.value = node.path
+    // (the node right-clicked is the tree's focus; the empty space — none)
+    focus.value = node?.path
   }
   /** The menu closes first — the action gets the node it was opened on. */
   function runOnNode(fn: (n?: VaultNode) => unknown): void {

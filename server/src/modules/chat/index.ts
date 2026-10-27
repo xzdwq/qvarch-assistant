@@ -203,6 +203,16 @@ export const chatModule: ModuleFactory = (ctx) => {
         await chat.told(room)
         return (await chat.store.room(room, s.device.id))!
       },
+      'chat.leave': async (p, s) => {
+        const room = await memberRoom(p, s)
+        // (a shared note's chat and a comment go with their note — never one by one)
+        const place = await chat.store.placeOf(room)
+        if (place.space || place.doc) throw new RpcFail('denied', 'Это чат общей заметки: он уходит вместе с ней')
+        const gone = await people.leave(room, s.device.id)
+        // the others see who is left
+        if (!gone) await chat.told(room)
+        return { gone }
+      },
       'chat.react': async (p, s) => {
         const room = await writableRoom(p, s)
         if (!isReaction(p.emoji)) throw new RpcFail('bad', 'Такой реакции нет')

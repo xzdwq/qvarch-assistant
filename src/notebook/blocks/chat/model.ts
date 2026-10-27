@@ -1,4 +1,5 @@
 import { fenceBodyLines } from '../../domain/fence'
+import { fencedBlocksOf } from '../../domain/noteBlocks'
 
 /**
  * A chat in a note: ```chat / room: <the room's id on the server> ```. The link is the room's id — the note may be
@@ -34,6 +35,8 @@ export function chatRoomOf(src: string): string {
   const id = fieldOf(src, 'room')
   return /^[0-9a-f-]{36}$/i.test(id) ? id.toLowerCase() : ''
 }
+/** The rooms of a note's chat blocks, each once. */
+export const chatRoomsIn = (text: string): string[] => [...new Set(fencedBlocksOf(text).flatMap((b) => (b.kind === 'chat' && chatRoomOf(b.src) ? [chatRoomOf(b.src)] : [])))]
 /** A block's text with another room (the chat it shows went on as another conversation). */
 export const withChatRoom = (src: string, room: string) => withField(src, 'room', room)
 /**

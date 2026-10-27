@@ -6,6 +6,7 @@ import { findNode } from '../shared/vaultTree'
 import { BOARD_EXT } from '../shared/whiteboard'
 import type { DocBundle } from '../shared/docBundle'
 import type { AgentLines } from '../shared/notebook/agentLines'
+import type { DocAi } from '../shared/agent/docAi'
 import { cleanName, VaultFiles } from './vault/vaultFiles'
 import { VaultMeta } from './vault/vaultMeta'
 import { VaultRuns } from './vault/vaultRuns'
@@ -78,6 +79,14 @@ export class Vault {
   }
   setAgentLines(rel: string, lines: AgentLines): void {
     this.meta.setAgentLines(rel, lines)
+  }
+
+  /** The AI's memory and journal of a personal note. */
+  docAi(rel: string): DocAi {
+    return this.meta.docAiOf(rel)
+  }
+  setDocAi(rel: string, ai: DocAi): void {
+    this.meta.setDocAi(rel, ai)
   }
 
   // ---------- the runs of a runnable note ----------

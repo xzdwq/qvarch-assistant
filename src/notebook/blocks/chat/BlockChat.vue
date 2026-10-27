@@ -1,14 +1,17 @@
 <script setup lang="ts">
 /**
  * A chat of the transport server in the note: the room's messages live, the input under them. The same room in two
- * notes is the same chat. Read as it is shown: on screen and with the window in front.
+ * notes is the same chat. Read as it is shown: on screen, unfolded and with the window in front; folded — its head
+ * only, with the count of what is unread.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CHAT_ROWS, chatRoomOf, heldTitleOf, ROW_PX, rowsOf, withChatRoom, withoutHeldTitle, withRows } from './model'
 import RowsGrip from './RowsGrip.vue'
 import { mayWriteIn } from './roomRights'
 import Icon from '@renderer/components/Icon.vue'
-import { branchesOf, chatOnline, chatRooms, holdRoom, isHeld, showRoom, watchRoom } from '@renderer/lib/chat'
+import { unreadOf } from '@shared/transport/chat'
+import { branchesOf, chatOnline, chatRooms, holdRoom, isHeld, roomOf, showRoom, watchRoom } from '@renderer/lib/chat'
+import { isFolded, setFolded } from './foldedChats'
 import { useTransport } from '@renderer/lib/transport'
 import ChatHeader from './ChatHeader.vue'
 import ChatThread from './ChatThread.vue'
@@ -65,17 +68,23 @@ watch(
   { immediate: true },
 )
 
-/** On screen — the room is watched (its messages read as they come). */
+// ---------- folded: the head only, its unread count (read anywhere — in the island too — it follows) ----------
+const folded = computed(() => !!roomId.value && isFolded(roomId.value))
+const unread = computed(() => [room.value, ...branches.value.map(roomOf)].reduce((n, r) => n + (r ? unreadOf(r) : 0), 0))
+
+/** On screen and unfolded — the room is watched (its messages read as they come). */
 const el = ref<HTMLElement>()
 let seen = ''
+let onScreen = false
 const see = (on: boolean) => {
+  onScreen = on
   if (seen) watchRoom(seen, false)
-  seen = on ? roomId.value : ''
+  seen = on && !folded.value ? roomId.value : ''
   if (seen) watchRoom(seen, true)
 }
 const io = new IntersectionObserver((es) => see(es.some((e) => e.isIntersecting)))
 onMounted(() => el.value && io.observe(el.value))
-watch(roomId, () => seen && see(true))
+watch([roomId, folded], () => see(onScreen))
 onBeforeUnmount(() => {
   io.disconnect()
   see(false)
@@ -84,12 +93,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="el" class="tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:px-10 tw:pb-8 tw:border tw:border-border tw:rounded-[18px] tw:bg-panel">
-    <ChatHeader v-if="room" :room="room" @switched="(id) => onChange?.(withChatRoom(src, id))" />
+    <ChatHeader v-if="room" :room="room" :folded="folded" :unread="unread" @fold="(on) => setFolded(room!.id, on)" @switched="(id) => onChange?.(withChatRoom(src, id))" />
     <span v-else class="tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12.5px]"><Icon name="chat" :size="14" />Чат</span>
-    <span v-if="offline" class="tw:text-muted tw:text-[11.5px]">{{ offline }}</span>
-    <p v-if="notice" class="tw:my-6 tw:text-muted tw:text-[13px]">{{ notice }}</p>
-    <ChatThread v-if="room" :room="room.id" :also="branches" :height="rows * ROW_PX" :readonly="!mayWriteIn(room)" />
-    <span v-if="error" class="tw:text-down-fg tw:text-[12px]">{{ error }}</span>
-    <RowsGrip v-if="room" :rows="rows" @drag="(n) => (rows = n)" @done="(n) => onChange?.(withRows(src, n))" />
+    <template v-if="!folded">
+      <span v-if="offline" class="tw:text-muted tw:text-[11.5px]">{{ offline }}</span>
+      <p v-if="notice" class="tw:my-6 tw:text-muted tw:text-[13px]">{{ notice }}</p>
+      <ChatThread v-if="room" :room="room.id" :also="branches" :height="rows * ROW_PX" :readonly="!mayWriteIn(room)" />
+      <span v-if="error" class="tw:text-down-fg tw:text-[12px]">{{ error }}</span>
+      <RowsGrip v-if="room" :rows="rows" @drag="(n) => (rows = n)" @done="(n) => onChange?.(withRows(src, n))" />
+    </template>
   </div>
 </template>

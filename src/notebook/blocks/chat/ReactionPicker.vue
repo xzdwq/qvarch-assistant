@@ -4,7 +4,7 @@
  * (one already one's own — takes it back) and closes. Opened by the button in a message's corner only.
  */
 import { ref, watch } from 'vue'
-import { loadQuickReactions, quickReactions } from '@renderer/lib/chat'
+import { loadQuickReactions, quickReactions } from '@renderer/lib/quickReactions'
 import EmojiPick from '@renderer/components/EmojiPick.vue'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'

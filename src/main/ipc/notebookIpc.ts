@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../../shared/docBundle'
 import { toVaultEntryKind } from '../../shared/vault'
+import { docAiOf } from '../../shared/agent/docAi'
 import type { AppContext } from '../app/appContext'
 import { TraceServer } from '../traceServer'
 import { handle, listen } from './router'
@@ -33,6 +34,9 @@ export function registerNotebookIpc(app: AppContext): void {
     const clean = Object.fromEntries(Object.entries(lines && typeof lines === 'object' ? (lines as Record<string, unknown>) : {}).filter((e): e is [string, string] => /^[0-9a-z]{1,8}$/.test(e[0]) && typeof e[1] === 'string' && e[1].length <= 80))
     vault.setAgentLines(str(p), clean)
   })
+  handle('vaultDocAi', (_e, p) => vault.docAi(str(p)))
+  // (read as kept: the malformed parts left out, the memory within its size)
+  handle('vaultSetDocAi', (_e, p, ai) => vault.setDocAi(str(p), docAiOf(ai)))
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
   handle('vaultPair', (_e, a, b) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
   // an emoji mark: one emoji (a few code points), no text

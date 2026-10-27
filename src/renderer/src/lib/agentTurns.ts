@@ -2,7 +2,10 @@ import { shallowRef, watch } from 'vue'
 import { agentsCalled, chainAfter, type Caller } from '@shared/agent/trigger'
 import type { TraceLine } from '@shared/agent/agentLoop'
 import type { TurnAnswer } from '@shared/agent/turn'
-import { ATTACH_MAX, attachBytes, CHAT_TEXT_MAX, mentionable, mentionsIn, replyOf, type ChatAttach, type ChatMessage, type ChatRoom } from '@shared/transport/chat'
+import { ATTACH_MAX, attachBytes, authorName, CHAT_TEXT_MAX, mentionable, mentionsIn, replyOf, type ChatAttach, type ChatMessage, type ChatRoom } from '@shared/transport/chat'
+import { docTurnOf } from '@shared/agent/docAi'
+import { addDocTurn } from '@nb/workspace/docAiStore'
+import { useTransport } from './transport'
 import { agentIdOfProfile, loadAgents, profileOfAgentId, tidyAgentsIn } from './agents'
 import { turnRequestFor } from './agentContext'
 import { takeTurnWrites } from './agentWrites'
@@ -108,9 +111,13 @@ async function runTurn(agent: string, job: Job): Promise<void> {
   const tell = () => tellAgentWorking(room.id, { id: agent, name: profile.name })
   tell()
   const ticker = setInterval(tell, TYPING_EVERY)
+  const t0 = Date.now()
   let answer: TurnAnswer
+  let docPath: string | undefined
   try {
-    answer = await window.qa.agentRun(await turnRequestFor({ turn, room, message: job.message, profile, caller: job.caller }))
+    const req = await turnRequestFor({ turn, room, message: job.message, profile, caller: job.caller })
+    docPath = req.doc?.path
+    answer = await window.qa.agentRun(req)
   } catch (e) {
     answer = { text: '', trace: [], error: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -119,8 +126,18 @@ async function runTurn(agent: string, job: Job): Promise<void> {
     if (w.get(room.id)?.turn === turn) w.delete(room.id)
     agentWork.value = w
   }
-  await post({ id: agent, name: nameIn(room.id, agent, profile.name) }, room, job.message, { ...answer, text: withPlaces(answer.text, placesOf(takeTurnWrites(turn))) })
+  const wrote = takeTurnWrites(turn)
+  const name = nameIn(room.id, agent, profile.name)
+  // the turn into its document's journal (what the people see of the AI's work there)
+  if (docPath)
+    void addDocTurn(
+      docPath,
+      docTurnOf({ id: turn, at: t0, ms: Date.now() - t0, agent: name, owner: chatMeName(), asker: authorName(job.message), question: job.message.text, trace: answer.trace, wrote: wrote.lines, error: answer.stopped ? undefined : answer.error, stopped: answer.stopped, memory: wrote.memory, touches: answer.touches }),
+    ).catch(() => undefined)
+  await post({ id: agent, name }, room, job.message, { ...answer, text: withPlaces(answer.text, placesOf(wrote.places)) })
 }
+/** This person's name (whose agents these are). */
+const chatMeName = () => useTransport().value.name || 'владелец'
 /** A link of the answer to a note the turn wrote: the place it wrote there. */
 const placesOf =
   (wrote: Map<string, string>) =>

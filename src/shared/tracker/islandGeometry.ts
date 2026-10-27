@@ -11,11 +11,11 @@ export const NOTE_H = 136
 export const NOTE_W = 440
 /**
  * What may open next to the pill (below it, or above when the island grows up) and its size: the quick note, a chat
- * (its latest messages and a reply), the reminders. The pill is at least as wide as it.
+ * (the whole chat of a room, as in a note), the reminders. The pill is at least as wide as it.
  */
 export const ISLAND_DRAWERS = {
   note: { w: NOTE_W, h: NOTE_H },
-  chat: { w: 460, h: 340 },
+  chat: { w: 480, h: 440 },
   notice: { w: NOTE_W, h: 150 },
 } as const satisfies Record<string, { w: number; h: number }>
 export type IslandDrawer = keyof typeof ISLAND_DRAWERS

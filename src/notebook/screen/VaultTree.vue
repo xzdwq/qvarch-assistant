@@ -18,7 +18,7 @@ import { useTreeDrop } from './useTreeDrop'
  * pane alongside), a double click / F2 renames in place, drag & drop moves or links, right click — the menu.
  */
 const { editing, actions, transfer, menu } = useNotebookScreen()
-const { folder, renaming, renameText, setRenameInput, startRename } = editing
+const { focus, renaming, renameText, setRenameInput, startRename } = editing
 const { newNote, finishRename } = actions
 const { openTreeMenu } = menu
 const { dragPath, dropDir, pairTarget, onDragStart, onDragOver, onDrop } = useTreeDrop({ moveTo: actions.moveTo, pair: actions.pair, importDropped: transfer.importDropped })
@@ -32,16 +32,15 @@ function shareTitle(n: VaultNode): string {
   if (!n.dir) return `Общий документ — ${who}`
   return `${b.whole ? 'Общая папка' : 'Общие документы в папке'} — ${who}`
 }
-/** A folder: chosen and folded / unfolded; a note: opened. */
+/** The node clicked is the tree's focus (new things go there); a folder: folded / unfolded; a note: opened. */
 function clickRow(n: VaultNode, e: MouseEvent): void {
+  focus.value = n.path
   if (n.dir) {
-    folder.value = n.path
     const i = layout.open.indexOf(n.path)
     if (i >= 0) layout.open.splice(i, 1)
     else layout.open.push(n.path)
     return
   }
-  folder.value = undefined
   openFile(n.path, { newPane: e.ctrlKey || e.metaKey })
 }
 </script>
@@ -55,13 +54,13 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
     @drop.prevent="onDrop($event)"
     @dragend="(dragPath = undefined), (dropDir = undefined)"
     @contextmenu.prevent="openTreeMenu($event)"
-    @click.self="folder = undefined"
+    @click.self="focus = undefined"
   >
     <div
       v-for="r in rows"
       :key="r.node.path"
       class="nrow tw:group/nrow tw:flex tw:items-center tw:gap-5 tw:h-27 tw:pr-6 tw:rounded-r2 tw:text-text-2 tw:text-[13px] tw:cursor-pointer tw:select-none tw:[&:not(.dir)]:h-auto tw:[&:not(.dir)]:min-h-38 tw:[&:not(.dir)]:py-3 tw:hover:not-[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/5 tw:[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/20 tw:[&.cur]:text-text-hi tw:[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/6 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/25 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.7)] tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-top]:mt-2 tw:[&.grp-top]:not-[&.grp-bot]:rounded-[4px_4px_0_0] tw:[&.grp-bot]:mb-2 tw:[&.grp-bot]:rounded-[0_0_4px_4px] tw:[&.grp-top]:hover:not-[&.grp-bot]:not-[&.cur]:bg-accent/13 tw:[&.grp-bot]:hover:not-[&.cur]:bg-accent/13 tw:[&&]:[&.grp-top]:[&.cur]:not-[&.grp-bot]:bg-accent/22 tw:[&&]:[&.grp-bot]:[&.cur]:bg-accent/22 tw:[&.pairdrop]:bg-accent/22 tw:[&.pairdrop]:[box-shadow:var(--shadow-ring-accent)]"
-      :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: r.node.dir && folder === r.node.path, drop: r.node.dir && dropDir === r.node.path, pairdrop: pairTarget === r.node.path, [`grp-${r.grp}`]: !!r.grp }"
+      :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: focus === r.node.path && (r.node.dir || curPane()?.active !== r.node.path), drop: r.node.dir && dropDir === r.node.path, pairdrop: pairTarget === r.node.path, [`grp-${r.grp}`]: !!r.grp }"
       :style="{ paddingLeft: `${6 + r.depth * 14}px` }"
       :title="r.node.path"
       draggable="true"

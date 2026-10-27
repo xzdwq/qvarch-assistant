@@ -6,10 +6,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import Icon from '@renderer/components/Icon.vue'
 import { groupMessages, mentionable, mergeRooms, replyOf, type ChatMessage, type ChatReply } from '@shared/transport/chat'
-import { chatMe, chatOnline, discardMessage, isComplete, loadOlder, messagesOf, pendingOf, retryMessage, roomOf, showRoom, typingIn } from '@renderer/lib/chat'
+import { useChatPort } from './chatPort'
 import ChatMessageItem from './ChatMessageItem.vue'
 import ChatComposer from './ChatComposer.vue'
-import { agentWork, stopAgentIn } from '@renderer/lib/agentTurns'
 
 /**
  * `readonly` — the messages only (one who may read, not write: a reader of a shared note); `also` — the branches
@@ -17,30 +16,33 @@ import { agentWork, stopAgentIn } from '@renderer/lib/agentTurns'
  * `height` — the messages' height, px (none — as tall as the place it is in).
  */
 const props = defineProps<{ room: string; readonly?: boolean; also?: string[]; height?: number }>()
+const chat = useChatPort()
 const rooms = computed(() => [props.room, ...(props.also ?? [])])
 watch(
   () => (props.also ?? []).join(),
-  () => (props.also ?? []).forEach((r) => void showRoom(r).catch(() => undefined)),
+  () => (props.also ?? []).forEach((r) => void chat.show(r).catch(() => undefined)),
   { immediate: true },
 )
-const messages = computed(() => (props.also?.length ? mergeRooms(rooms.value.map(messagesOf)) : messagesOf(props.room)))
+const messages = computed(() => (props.also?.length ? mergeRooms(rooms.value.map(chat.messagesOf)) : chat.messagesOf(props.room)))
 const groups = computed(() => groupMessages(messages.value))
 /** A branch's title for its messages in the main feed. */
-const branchOf = (m: { room: string }) => (m.room === props.room ? undefined : (roomOf(m.room)?.title ?? 'ветка'))
-const pending = computed(() => pendingOf(props.room))
-const typing = computed(() => typingIn(props.room))
+const branchOf = (m: { room: string }) => (m.room === props.room ? undefined : (chat.roomOf(m.room)?.title ?? 'ветка'))
+const pending = computed(() => chat.pendingOf(props.room))
+const typing = computed(() => chat.typingIn(props.room))
 /** One's own agent working here (it may be stopped). */
-const working = computed(() => agentWork.value.get(props.room))
-const complete = computed(() => isComplete(props.room))
-const me = chatMe
+const working = computed(() => chat.workingIn(props.room))
+const complete = computed(() => chat.isComplete(props.room))
+const me = chat.me
+const online = chat.online
 // (people and their agents: both mentioned by «@»)
 const members = computed(() => {
-  const r = roomOf(props.room)
+  const r = chat.roomOf(props.room)
   return r ? mentionable(r) : []
 })
 
 const list = ref<HTMLElement>()
 const composer = ref<InstanceType<typeof ChatComposer>>()
+defineExpose({ focus: () => composer.value?.focus() })
 const day = (t: number) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
 /** A day's line above the first message of each day. */
 const newDay = (i: number) => i === 0 || day(messages.value[i - 1].at) !== day(messages.value[i].at)
@@ -74,7 +76,7 @@ watch(
 function onScroll(): void {
   if (!list.value || list.value.scrollTop >= 40) return
   // (the main feed: each of its rooms one page further back)
-  for (const r of rooms.value) if (!isComplete(r)) void loadOlder(r).catch(() => undefined)
+  for (const r of rooms.value) if (!chat.isComplete(r)) void chat.loadOlder(r).catch(() => undefined)
 }
 
 // ---------- answers ----------
@@ -88,7 +90,7 @@ const answer = (m: ChatMessage) => (reply.value = replyOf(m))
 const BACK_PAGES = 20
 /** The message an answer answers shown in the middle, lit a moment (not loaded yet — older pages fetched first). */
 async function showMessage(room: string, seq: number): Promise<void> {
-  for (let i = 0; i < BACK_PAGES && !messagesOf(room).some((m) => m.seq === seq) && !isComplete(room); i++) await loadOlder(room).catch(() => undefined)
+  for (let i = 0; i < BACK_PAGES && !chat.messagesOf(room).some((m) => m.seq === seq) && !chat.isComplete(room); i++) await chat.loadOlder(room).catch(() => undefined)
   await nextTick()
   const el = list.value?.querySelector<HTMLElement>(`[data-msg="${room}:${seq}"]`)
   if (!el) return
@@ -125,17 +127,17 @@ async function showMessage(room: string, seq: number): Promise<void> {
         <span class="tw:flex tw:flex-none tw:items-center tw:gap-2 tw:pb-1 tw:text-[10.5px]">
           <template v-if="o.failed">
             <span class="tw:max-w-160 tw:truncate tw:text-down-fg" :title="o.failed">{{ o.failed }}</span>
-            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:text-text" title="Повторить" @click="retryMessage(o)"><Icon name="refresh" :size="12" /></button>
-            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:text-text" title="Убрать" @click="discardMessage(o)"><Icon name="x" :size="12" /></button>
+            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:text-text" title="Повторить" @click="chat.retry(o)"><Icon name="refresh" :size="12" /></button>
+            <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:text-text" title="Убрать" @click="chat.discard(o)"><Icon name="x" :size="12" /></button>
           </template>
-          <span v-else-if="!chatOnline" class="tw:inline-flex tw:items-center tw:gap-3 tw:text-dim" title="Отправится, когда будет связь с сервером"><Icon name="clock" :size="11" />ждёт связи</span>
+          <span v-else-if="!online" class="tw:inline-flex tw:items-center tw:gap-3 tw:text-dim" title="Отправится, когда будет связь с сервером"><Icon name="clock" :size="11" />ждёт связи</span>
           <span v-else class="tw:text-dim">отправляется…</span>
         </span>
       </div>
     </div>
     <div class="tw:flex tw:items-center tw:gap-6 tw:h-20 tw:my-4 tw:px-6 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
       <span class="tw:min-w-0 tw:truncate">{{ working ? `${working.name} работает…` : typing }}</span>
-      <button v-if="working" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-3 tw:h-20 tw:py-0 tw:px-8 tw:rounded-full tw:text-[11px]" title="Остановить ИИ" @click="stopAgentIn(room)"><Icon name="stop" :size="9" />Стоп</button>
+      <button v-if="working" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-3 tw:h-20 tw:py-0 tw:px-8 tw:rounded-full tw:text-[11px]" title="Остановить ИИ" @click="chat.stopAgent(room)"><Icon name="stop" :size="9" />Стоп</button>
     </div>
     <ChatComposer v-if="!readonly" ref="composer" v-model:reply="reply" :room="room" @sent="nextTick(toBottom)" />
   </div>

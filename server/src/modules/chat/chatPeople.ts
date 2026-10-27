@@ -43,6 +43,17 @@ export class ChatPeople {
   async branchOf(room: string, parent: string): Promise<void> {
     await this.db.rows('update chat_rooms set parent = $2 where id = $1', [room, parent])
   }
+  /**
+   * One leaves a chat: they and their agents go; nobody left — the chat goes whole (its messages, files, agents).
+   * Whether it is gone.
+   */
+  async leave(room: string, dev: string): Promise<boolean> {
+    return this.db.tx(async (sql) => {
+      await sql.rows('delete from chat_agents where room = $1 and owner = $2', [room, dev])
+      await sql.rows('delete from chat_members where room = $1 and device = $2', [room, dev])
+      return (await sql.rows('delete from chat_rooms r where r.id = $1 and not exists (select 1 from chat_members m where m.room = r.id) returning id', [room])).length > 0
+    })
+  }
   /** A chat of one alone taken away (one that never got anyone else, being replaced by a conversation). */
   async dropLonely(room: string, dev: string): Promise<void> {
     await this.db.rows(`delete from chat_rooms r where r.id = $1 and r.created_by = $2 and (select count(*) from chat_members m where m.room = r.id) = 1`, [room, dev])

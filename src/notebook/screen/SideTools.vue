@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import type { VaultNode } from '@shared/vault'
+import { tree } from '@nb/workspace/vaultTreeStore'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { placeFloat } from '@renderer/lib/floating'
@@ -8,11 +10,16 @@ import { SORTS } from '@shared/vaultTree'
 import { layout } from '@nb/workspace/paneLayout'
 import { useNotebookScreen } from './notebookScreen'
 
-/** The notes side's tool bar: hide the side, new note / board / folder / voice note, search, the order, fold all. */
-const { actions, voice, search } = useNotebookScreen()
+/** The notes side's tool bar: hide the side, new note / board / folder, search, the order, fold / unfold all. */
+const { actions, search } = useNotebookScreen()
 const { newNote, newBoard, newFolder } = actions
-const { newVoiceNote } = voice
 const { toggleSearch } = search
+
+/** Every folder of the tree. */
+const allDirs = (ns: readonly VaultNode[]): string[] => ns.flatMap((n) => (n.dir ? [n.path, ...allDirs(n.children ?? [])] : []))
+/** Some folder is unfolded: the button folds all; none — it unfolds all. */
+const anyOpen = computed(() => layout.open.length > 0)
+const foldAll = () => (layout.open = anyOpen.value ? [] : allDirs(tree.value))
 
 // sort menu: a popover of its button, but as wide as the tool bar and under it
 const sortOpen = ref(false)
@@ -32,7 +39,6 @@ const underBar: Placement = ({ el }) => {
     <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" title="Новая заметка (Ctrl+N)" @click="newNote()"><Icon name="filePlus" :size="15" /></button>
     <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" title="Новая доска — полотно для схем и записей" @click="newBoard()"><Icon name="presentation" :size="15" /></button>
     <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" title="Новый раздел (папка)" @click="newFolder()"><Icon name="folderPlus" :size="15" /></button>
-    <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" title="Голосовая заметка" @click="newVoiceNote"><Icon name="mic" :size="15" /></button>
     <span class="grow tw:flex-1"></span>
     <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:not-[&.on]:bg-white/7 tw:hover:not-[&.on]:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:not-[&.on]:bg-transparent tw:[.zoom_&]:not-hover:not-[&.on]:text-muted tw:[.zoom_&]:text-[11px] tw:[&&]:[.zoom_&]:hover:bg-white/8 tw:[&&]:[.zoom_&]:hover:text-text" :class="{ on: layout.sideTab === 'search' }" title="Поиск по всем заметкам" @click="toggleSearch()"><Icon name="search" :size="15" /></button>
     <span class="sortwrap tw:inline-flex">
@@ -43,6 +49,6 @@ const underBar: Placement = ({ el }) => {
           </button>
       </Popover>
     </span>
-    <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" title="Свернуть все разделы" @click="layout.open = []"><Icon name="collapse" :size="15" /></button>
+    <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-white/7 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text" :title="anyOpen ? 'Свернуть все разделы' : 'Развернуть все разделы'" @click="foldAll"><Icon :name="anyOpen ? 'collapse' : 'expand'" :size="15" /></button>
   </div>
 </template>

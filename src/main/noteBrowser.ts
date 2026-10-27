@@ -1,5 +1,6 @@
 import { app, clipboard, Menu, shell, webContents, type MenuItemConstructorOptions, type WebContents } from 'electron'
 import type { NetItem, NetPage } from '../shared/noteBrowser'
+import { tellIdentity, type ChromeOverride } from './browser/pageIdentity'
 
 /**
  * The browser component of the notes: a <webview> in the note (it scrolls with the text), on the Браузер
@@ -19,10 +20,25 @@ interface Listen {
   timer?: NodeJS.Timeout
   dirty: boolean
   touch: () => void
+  /** Its own listeners of the page's protocol (taken off when it stops: the protocol stays — the page is told it is Chrome). */
+  off?: () => void
 }
 const listening = new Map<number, Listen>()
 
-export function setupNoteBrowser(emit: (host: WebContents, type: string, payload: unknown) => void): void {
+/**
+ * A note's page told what browser it is, as the Браузер section's pages are (Chrome; a sign-in host — Firefox): the
+ * protocol kept on it all its life (the requests' list shares it).
+ */
+async function chromeLikeGuest(g: WebContents, chrome: () => ChromeOverride, url = g.getURL()): Promise<void> {
+  try {
+    if (!g.debugger.isAttached()) g.debugger.attach('1.3')
+    await tellIdentity(g, g.debugger, url, chrome)
+  } catch {
+    // (its DevTools hold it, the page going — the session's headers still say Chrome)
+  }
+}
+
+export function setupNoteBrowser(emit: (host: WebContents, type: string, payload: unknown) => void, chrome: () => ChromeOverride): void {
   const guard = (wc: WebContents) => {
     wc.on('will-attach-webview', (ev, prefs, params) => {
       delete prefs.preload
@@ -33,7 +49,12 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
       prefs.webSecurity = true
       if (params.partition !== NOTE_PARTITION || !/^(https?:|about:blank)/i.test(params.src || 'about:blank')) ev.preventDefault()
     })
-    wc.on('did-attach-webview', (_ev, guest) => wireGuest(wc, guest, emit))
+    wc.on('did-attach-webview', (_ev, guest) => {
+      wireGuest(wc, guest, emit)
+      // told at every main-frame navigation's start (before a page has a document Chromium drops it) — and now
+      guest.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void chromeLikeGuest(guest, chrome, d.url))
+      void chromeLikeGuest(guest, chrome)
+    })
   }
   // the windows there already and every one made later
   for (const wc of webContents.getAllWebContents()) if (wc.getType() === 'window') guard(wc)
@@ -98,7 +119,8 @@ export function netListen(host: WebContents, id: number, on: boolean, preserve: 
   }
   L.touch = touch
   try {
-    g.debugger.attach('1.3')
+    // (kept on the page already — it is told it is Chrome: shared)
+    if (!g.debugger.isAttached()) g.debugger.attach('1.3')
   } catch (e) {
     listening.delete(g.id)
     throw new Error(`Не удалось подключиться к странице: ${e instanceof Error ? e.message : String(e)}`)
@@ -165,13 +187,19 @@ export function netListen(host: WebContents, id: number, on: boolean, preserve: 
       touch()
     },
   }
-  g.debugger.on('message', (_e, method: string, p: Record<string, any>) => {
+  const onMessage = (_e: Electron.Event, method: string, p: Record<string, any>) => {
     if (Object.hasOwn(onEvent, method)) onEvent[method](p)
-  })
-  g.debugger.on('detach', () => {
+  }
+  const onDetach = () => {
     clearTimeout(L.timer)
     listening.delete(g.id)
-  })
+  }
+  g.debugger.on('message', onMessage)
+  g.debugger.on('detach', onDetach)
+  L.off = () => {
+    g.debugger.removeListener('message', onMessage)
+    g.debugger.removeListener('detach', onDetach)
+  }
   void g.debugger.sendCommand('Network.enable').catch(() => undefined)
   void g.debugger
     .sendCommand('Page.enable')
@@ -186,12 +214,10 @@ function stopNet(id: number): void {
   if (!L) return
   clearTimeout(L.timer)
   listening.delete(id)
+  L.off?.()
+  // (the protocol stays on the page — it is told it is Chrome; only the network's events stop)
   const g = webContents.fromId(id)
-  try {
-    if (g && !g.isDestroyed() && g.debugger.isAttached()) g.debugger.detach()
-  } catch {
-    // gone
-  }
+  if (g && !g.isDestroyed() && g.debugger.isAttached()) void g.debugger.sendCommand('Network.disable').catch(() => undefined)
 }
 /** The list of a tab cleared (the next requests start it again). */
 export function netClear(host: WebContents, id: number): void {

@@ -31,7 +31,7 @@ const STATUS_TEXT = { off: 'Не подключено', connecting: 'Подкл�
 const statusLine = computed(() => {
   const s = t.value
   if (s.status !== 'online') return STATUS_TEXT[s.status]
-  return [STATUS_TEXT.online, s.server && `сервер ${s.server}`, s.name && `вы — ${s.name}`].filter(Boolean).join(' · ')
+  return [STATUS_TEXT.online, s.name && `вы — ${s.name}`].filter(Boolean).join(' · ')
 })
 </script>
 
@@ -66,6 +66,7 @@ const statusLine = computed(() => {
     </div>
     <div class="tw:flex tw:items-center tw:gap-12 tw:flex-wrap tw:mt-12 tw:text-[13px]">
       <span :class="t.status === 'online' ? 'tw:text-up-fg' : t.status === 'error' ? 'tw:text-down-fg' : 'tw:text-muted'">{{ statusLine }}</span>
+      <span v-if="t.server" class="tw:py-1 tw:px-8 tw:rounded-full tw:bg-white/6 tw:font-data tw:text-[12px] tw:text-text-2" title="Версия сервера (последняя известная)">сервер v{{ t.server }}</span>
       <span v-if="t.message" class="tw:text-muted tw:text-[12px]">{{ t.message }}</span>
       <button v-if="form.enabled && form.url" @click="reconnect">Переподключить</button>
       <span v-if="error" class="tw:text-down-fg">{{ error }}</span>

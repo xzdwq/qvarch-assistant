@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 import { fileKindOf } from '@shared/transport/chat'
-import { fileRefusal } from '@renderer/lib/chatFiles'
+import { fileRefusal } from '@renderer/lib/chatFileView'
 
 /** A file waiting to go with the next message; a picture — its preview. */
 export interface ChatDraft {

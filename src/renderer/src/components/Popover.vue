@@ -17,10 +17,12 @@ const props = withDefaults(
     maxHeight?: 'none' | ((room: number) => number)
     place?: Placement
     esc?: boolean
+    /** a panel one works in: closed only by its own button (no press outside, no Esc) */
+    stay?: boolean
     /** the name of a <Transition> it comes and goes with (none — at once) */
     transition?: string
   }>(),
-  { width: 220, alignLeft: false, chrome: 48, maxHeight: undefined, place: undefined, esc: true, transition: undefined },
+  { width: 220, alignLeft: false, chrome: 48, maxHeight: undefined, place: undefined, esc: true, stay: false, transition: undefined },
 )
 const open = defineModel<boolean>('open', { required: true })
 const { panelRef, style, up, room, close } = usePopover(toRef(props, 'anchor'), props, open)

@@ -9,12 +9,15 @@ import { useJira } from '../lib/jira'
 import { useOutlook } from '../lib/outlook'
 import { termLight, useTermSessions } from '../lib/terminal'
 import { recItems, recState, startBrowser } from '../lib/browser'
+import { useTransport } from '../lib/transport'
 
 /** The window's bottom line (a terminal's status bar): the call, the connections, today's time, the clock. */
 defineProps<{ section: string }>()
 const emit = defineEmits<{ terminal: []; browser: [] }>()
 startBrowser()
 const terms = useTermSessions()
+/** The server's version, by the app's (the last known; none — never connected). */
+const transport = useTransport()
 const { data, live, now } = useDay(todayKey)
 const jira = useJira()
 const outlook = useOutlook()
@@ -51,6 +54,7 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
     <span class="it n opt tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden">{{ date }}</span>
     <span class="it n clk tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:text-text">{{ clock }}</span>
     <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
+    <span v-if="transport.server" class="it n opt tw:text-muted tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden" :title="`Сервер ${transport.server}${transport.status === 'online' ? '' : ' (последняя известная версия — сейчас не подключено)'}`">SRV v{{ transport.server }}</span>
     <span class="it n ver tw:text-muted tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums" :title="`Qvarch Assistant ${version}`">v{{ version }}</span>
   </footer>
 </template>

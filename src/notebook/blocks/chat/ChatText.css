@@ -1,0 +1,86 @@
+/* ChatText: a message's Markdown (made HTML — what the template cannot carry as utilities; scoped). */
+
+.ctext :deep(p) {
+  margin: 0 0 6px;
+}
+.ctext :deep(:last-child) {
+  margin-bottom: 0;
+}
+.ctext :deep(h1),
+.ctext :deep(h2),
+.ctext :deep(h3),
+.ctext :deep(h4) {
+  margin: 8px 0 4px;
+  font-size: 13.5px;
+  color: var(--text-hi);
+}
+.ctext :deep(:first-child) {
+  margin-top: 0;
+}
+.ctext :deep(ul),
+.ctext :deep(ol) {
+  margin: 2px 0 6px;
+  padding-left: 20px;
+}
+.ctext :deep(li) {
+  margin: 1px 0;
+}
+.ctext :deep(blockquote) {
+  margin: 4px 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-2);
+  color: var(--text-2);
+}
+.ctext :deep(code) {
+  padding: 0 4px;
+  border-radius: var(--r2);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+.ctext :deep(pre) {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  overflow: auto;
+}
+.ctext :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+.ctext :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.ctext :deep(th),
+.ctext :deep(td) {
+  padding: 3px 8px;
+  border: 1px solid var(--border-2);
+  text-align: left;
+  vertical-align: top;
+}
+.ctext :deep(a) {
+  color: var(--accent-fg);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ctext :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--border-2);
+  margin: 6px 0;
+}
+.ctext :deep(.mention) {
+  padding: 0 2px;
+  border-radius: 3px;
+  font-weight: 500;
+  color: var(--accent-fg);
+}
+.ctext :deep(.mention.me) {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-hi);
+}

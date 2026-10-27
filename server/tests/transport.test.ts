@@ -109,6 +109,18 @@ describe('the transport server', () => {
     await until(() => b.events.some((e) => e.e === 'chat.room' && e.p.title === 'Главный'))
     // a stranger may not read it
     await expect(stranger.client.request('chat.history', { room: first.id })).rejects.toMatchObject({ code: 'denied' })
+
+    // left: one of two goes — the chat stays the other's; the last goes — it is gone whole
+    expect(await a.client.request('chat.leave', { room: second.id })).toEqual({ gone: false })
+    expect((await a.client.request('chat.rooms', {})).some((r) => r.id === second.id)).toBe(false)
+    await until(async () => (await b.client.request('chat.rooms', {})).find((r) => r.id === second.id)?.members.length === 1)
+    expect(await b.client.request('chat.leave', { room: second.id })).toEqual({ gone: true })
+    const alone = await a.client.request('chat.create', { title: 'Один' })
+    expect(await a.client.request('chat.leave', { room: alone.id })).toEqual({ gone: true })
+    await expect(a.client.request('chat.history', { room: alone.id })).rejects.toMatchObject({ code: 'denied' })
+    // a shared note's chat goes with the note, not by itself
+    const noteChat = await a.client.request('space.chat', { space: space.id, title: 'Обсуждение' })
+    await expect(a.client.request('chat.leave', { room: noteChat.id })).rejects.toMatchObject({ code: 'denied' })
     for (const x of [a, b, stranger]) x.client.stop()
   }, 30_000)
 

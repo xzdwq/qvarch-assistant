@@ -190,6 +190,8 @@ export const QA_ROUTES = {
   vaultBacklinks: invoke('qa:vaultBacklinks'),
   vaultAgentLines: invoke('qa:vaultAgentLines'),
   vaultSetAgentLines: invoke('qa:vaultSetAgentLines'),
+  vaultDocAi: invoke('qa:vaultDocAi'),
+  vaultSetDocAi: invoke('qa:vaultSetDocAi'),
   eventMentions: invoke('qa:eventMentions'),
   vaultSaveAudio: invoke('qa:vaultSaveAudio'),
   vaultReadAudio: invoke('qa:vaultReadAudio'),

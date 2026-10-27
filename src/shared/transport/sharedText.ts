@@ -2,6 +2,7 @@ import * as Y from 'yjs'
 import { splicesOf } from '../textSplice'
 import type { BlockOrigin, TextAnchor } from './places'
 import { isRefCard, type RefCard } from './refCards'
+import { docAiOf, DOC_TURNS_MAX, type DocAi, type DocMemory, type DocTurn } from '../agent/docAi'
 
 /** Where an update comes from: the server (someone else's edit), this computer's kept state, this person's change. */
 export type UpdateOrigin = 'remote' | 'load' | 'local'
@@ -92,6 +93,27 @@ export class SharedText extends SharedModel {
   private readonly origins = this.y.getMap<BlockOrigin & { pos: string }>('origins')
   /** The snapshots of the tasks and events the text links to (refCards): the link's address → its snapshot. */
   private readonly refs = this.y.getMap<unknown>('refs')
+
+  /** The AI's part of the document (docAi): its memory, and its journal of turns (an array: two turns at once both kept). */
+  private readonly ai = this.y.getMap<unknown>('ai')
+  private readonly aiTurns = this.y.getArray<unknown>('aiTurns')
+
+  /** The AI's memory and journal as kept (the malformed parts — someone else's app wrote them — left out). */
+  aiNow(): DocAi {
+    return docAiOf({ memory: this.ai.get('memory'), turns: this.aiTurns.toArray() })
+  }
+  /** The memory changed (one change, sent as any). */
+  setAiMemory(m: DocMemory): void {
+    this.local(() => this.ai.set('memory', { ...m }))
+  }
+  /** A turn into the journal (the oldest go past the limit). */
+  pushAiTurn(t: DocTurn): void {
+    this.local(() => {
+      this.aiTurns.push([{ ...t }])
+      const extra = this.aiTurns.length - DOC_TURNS_MAX
+      if (extra > 0) this.aiTurns.delete(0, extra)
+    })
+  }
 
   /** The snapshots kept (the malformed ones — someone else's app wrote them — left out). */
   refsNow(): Map<string, RefCard> {

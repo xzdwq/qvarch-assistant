@@ -1,4 +1,6 @@
 import type { TraceLine } from './agentLoop'
+import type { DocMemory } from './docAi'
+import type { Touch } from './touches'
 import type { PackLink, PackMessage } from './contextPack'
 import type { Caller } from './trigger'
 
@@ -26,6 +28,8 @@ export interface TurnRequest {
   /** The discussion as loaded (the question among them). */
   messages: PackMessage[]
   question: number
+  /** The document's AI memory (docAi), and whether this turn may change it (one's own call, or a shared note). */
+  memory?: { memory?: DocMemory; writable: boolean }
 }
 export interface TurnAnswer {
   text: string
@@ -34,6 +38,10 @@ export interface TurnAnswer {
   note?: string
   /** The turn failed (no answer). */
   error?: string
+  /** It was stopped (by the person, the app closing). */
+  stopped?: boolean
+  /** What its calls touched (the journal's graph). */
+  touches?: Touch[]
 }
 
 /**

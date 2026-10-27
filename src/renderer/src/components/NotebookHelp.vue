@@ -39,7 +39,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <header class="tw:sticky tw:top-0 tw:flex tw:items-center tw:pt-14 tw:pr-20 tw:pb-8 tw:pl-20 tw:bg-panel">
             <h2 class="tw:m-0 tw:text-[18px]" v-if="sec">{{ sec.title }}</h2>
             <span class="grow tw:flex-1"></span>
-            <button class="hl-x tw:grid tw:place-items-center tw:w-28 tw:h-28 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="14" /></button>
+            <button class="hl-x tw:grid tw:place-items-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:bg-hover tw:hover:enabled:border-border-3" title="Закрыть (Esc)" @click="emit('close')"><Icon name="x" :size="14" /></button>
           </header>
           <!-- (the help's own static text — no one else's) -->
           <div v-if="sec" class="hl-body tw:pt-0 tw:pr-20 tw:pb-24 tw:pl-20 tw:text-text tw:text-[13.5px] tw:leading-[1.55]" v-html="sec.html"></div>

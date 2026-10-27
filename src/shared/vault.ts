@@ -29,6 +29,8 @@ export interface VaultNode {
   space?: string
   /** A note's runnable components as chips (db, js/ts, http…), each once. */
   runs?: string[]
+  /** The chats a note shows (their rooms), each once. */
+  chats?: string[]
   children?: VaultNode[]
 }
 

@@ -9,10 +9,9 @@ import type { ChatSendKey } from '@shared/transport/constants'
 import { cleanChatText, callable, clockSec, type ChatReply } from '@shared/transport/chat'
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
-import { sendFile, sendNotes, sendVoice } from '@renderer/lib/chatFiles'
-import { chatMe, chatOnline, chatPrefs, isHeld, roomOf, sendMessage, tellTyping } from '@renderer/lib/chat'
 import { useEscLayer } from '@renderer/lib/usePopover'
 import ChatAttachMenu from './ChatAttachMenu.vue'
+import { useChatPort } from './chatPort'
 import { useChatDrafts } from './useChatDrafts'
 import { useMentionInput } from './useMentionInput'
 import { useVoiceRecord } from './useVoiceRecord'
@@ -20,15 +19,17 @@ import { useVoiceRecord } from './useVoiceRecord'
 const props = defineProps<{ room: string }>()
 const reply = defineModel<ChatReply | undefined>('reply')
 const emit = defineEmits<{ sent: [] }>()
+const chat = useChatPort()
+const { me, online: chatOnline, prefs: chatPrefs } = chat
 
 const input = ref<HTMLTextAreaElement>()
 const text = ref('')
 // (the people, one's own agents and the others' ones open to all: mentioned by «@»)
 const members = computed(() => {
-  const r = roomOf(props.room)
-  return r ? callable(r, chatMe.value) : []
+  const r = chat.roomOf(props.room)
+  return r ? callable(r, me.value) : []
 })
-const mention = useMentionInput(text, input, () => members.value, () => chatMe.value)
+const mention = useMentionInput(text, input, () => members.value, () => me.value)
 
 /** Each send key's: the key combination that sends. */
 const SENDS: Record<ChatSendKey, (e: KeyboardEvent) => boolean> = {
@@ -71,7 +72,7 @@ function sendDrafts(): Promise<void> {
   if (text.value.trim() && !words) return Promise.resolve(void (sendError.value = 'Сообщение слишком длинное'))
   return withSending(async () => {
     for (const d of [...drafts.value]) {
-      await sendFile(props.room, d.file, text.value.trim() ? words : '', reply.value)
+      await chat.sendFile(props.room, d.file, text.value.trim() ? words : '', reply.value)
       text.value = ''
       reply.value = undefined
       removeDraft(d)
@@ -82,14 +83,14 @@ function sendDrafts(): Promise<void> {
 function sendNotesNow(rel: string, withRuns: boolean): Promise<void> {
   const words = cleanChatText(text.value) ?? ''
   return withSending(async () => {
-    await sendNotes(props.room, rel, withRuns, words)
+    await chat.sendNotes(props.room, rel, withRuns, words)
     text.value = ''
   })
 }
 function submit(): void {
   if (sending.value) return
   if (drafts.value.length) return void sendDrafts()
-  if (sendMessage(props.room, text.value, reply.value)) {
+  if (chat.send(props.room, text.value, reply.value)) {
     text.value = ''
     done()
   }
@@ -98,12 +99,12 @@ function submit(): void {
 // (the mentions typed go with it as its words: those mentioned are told)
 const voice = useVoiceRecord((blob, sec) =>
   withSending(async () => {
-    await sendVoice(props.room, blob, sec, reply.value, text.value.trim())
+    await chat.sendVoice(props.room, blob, sec, reply.value, text.value.trim())
     text.value = ''
   }),
 )
 useEscLayer(voice.recording, voice.cancel)
-const canVoice = computed(() => !isHeld(props.room) && chatOnline.value)
+const canVoice = computed(() => !chat.isHeld(props.room) && chatOnline.value)
 const empty = computed(() => !text.value.trim() && !drafts.value.length)
 /** Nothing typed but mentions (`@Имя`): a voice message may go — with them. */
 const onlyMentions = computed(() => !drafts.value.length && !members.value.reduce((t, m) => t.split(`@${m.name}`).join(''), text.value).trim())
@@ -164,7 +165,7 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
         :placeholder="placeholder"
         @keydown.stop="onKey"
         @paste="onPaste"
-        @input="(mention.track(), text.trim() && tellTyping(room))"
+        @input="(mention.track(), text.trim() && chat.tellTyping(room))"
         @click="mention.track"
         @keyup="mention.track"
       ></textarea>

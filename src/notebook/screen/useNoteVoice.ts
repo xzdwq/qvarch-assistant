@@ -1,17 +1,16 @@
-import { nextTick, ref, type ComputedRef } from 'vue'
+import { ref } from 'vue'
 import { audioEmbed } from '@shared/vault'
 import { isBoard } from '@shared/whiteboard'
 import { useRecorder } from '@renderer/lib/recorder'
 import { remoteError } from '../../shared/remoteError'
 import { doc, setText } from '@nb/workspace/noteDocs'
-import { curPane, layout, openFile, type Pane } from '@nb/workspace/paneLayout'
+import { layout, type Pane } from '@nb/workspace/paneLayout'
 import { putTranscript } from '@nb/workspace/noteSync'
 import { transcribe, transcribeError, TranscribeCancelled } from '@nb/workspace/transcription'
-import { loadTree } from '@nb/workspace/vaultTreeStore'
 import type { NoteEditors } from './noteEditors'
 
-/** Voice into the open note (its place shown in the text while recording), or a note of its own; transcribed after. */
-export function useNoteVoice(say: (t: string) => void, editors: NoteEditors, targetDir: ComputedRef<string>) {
+/** Voice into the open note (its place shown in the text while recording — started by «@»); transcribed after. */
+export function useNoteVoice(say: (t: string) => void, editors: NoteEditors) {
   const recorder = useRecorder()
   /** Recording into a note; `inline` — its place is shown in the text (no bar above). */
   const recInto = ref<{ path: string; pane: string; inline?: boolean }>()
@@ -59,19 +58,5 @@ export function useNoteVoice(say: (t: string) => void, editors: NoteEditors, tar
       say(transcribeError.value || 'Не удалось расшифровать')
     }
   }
-  /** A note of its own («Голосовая <date>»), recording into it at once. */
-  async function newVoiceNote(): Promise<void> {
-    const now = new Date()
-    const stamp = `${now.toLocaleDateString('ru-RU')} ${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`
-    try {
-      const path = await window.qa.vaultCreate(targetDir.value, 'note', `Голосовая ${stamp}`, `# Голосовая заметка\n\n`)
-      await loadTree()
-      openFile(path)
-      await nextTick()
-      await startRec(curPane())
-    } catch (e) {
-      say(remoteError(e))
-    }
-  }
-  return { recorder, recInto, startRec, stopRec, transcribeInto, newVoiceNote }
+  return { recorder, recInto, startRec, stopRec, transcribeInto }
 }

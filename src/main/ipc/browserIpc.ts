@@ -33,7 +33,7 @@ export function registerBrowserIpc(app: AppContext): void {
 
   // the notes' browser component
   const nbEmit = (host: Electron.WebContents, type: string, payload: unknown) => emit(host, 'onNoteBrowser', type, payload)
-  setupNoteBrowser(nbEmit)
+  setupNoteBrowser(nbEmit, () => browser.uaOverride())
   handle('nbNet', (e, id, on, preserve) => netListen(e.sender, Number(id), !!on, !!preserve, nbEmit))
   handle('nbNetClear', (e, id) => netClear(e.sender, Number(id)))
 }

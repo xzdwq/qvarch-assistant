@@ -1,5 +1,8 @@
 import { app, session, WebContentsView, type BrowserWindow, type Session, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
+import { release } from 'node:os'
+import { chromeMetadata, identityHeaders, windowsPlatformVersion, type UaMetadata, type UaSystem } from '../../shared/browser/chromeIdentity'
+import { tellIdentity } from './pageIdentity'
 import { basename, extname, join } from 'node:path'
 import { browserId, type BrowserTab } from '../../shared/browser'
 import { Hooks } from '../hooks'
@@ -85,6 +88,12 @@ export class BrowserCore implements TabEventsHost {
     // a browser's User-Agent (not "Electron" / the app — some sites refuse those)
     this.uaDefault = this.ses.getUserAgent().replace(/\s+Electron\/\S+/i, '').replace(/\s+qvarch[-\w]*\/\S+/i, '')
     this.ses.setUserAgent(this.userAgent())
+    // every request as Chrome's: its Client Hints say Chrome too (each page is also told so — chromeLike; this covers
+    // what the protocol does not reach: workers, a page's very first request, the notes' browsers)
+    this.ses.webRequest.onBeforeSendHeaders((d, cb) => {
+      const o = this.uaOverride()
+      cb({ requestHeaders: identityHeaders(d.requestHeaders, d.url, o.userAgent, o.userAgentMetadata) })
+    })
     // each site's certificate as Chromium checked it — kept to show it (the check itself stays Chromium's: -3)
     this.ses.setCertificateVerifyProc((req, cb) => {
       this.certs.remember(req)
@@ -139,6 +148,31 @@ export class BrowserCore implements TabEventsHost {
   }
   userAgent(): string {
     return this.store.settings.ua || this.uaDefault
+  }
+  /** This computer as Chrome reports it (its Windows' version, its processor). */
+  private readonly uaSystem: UaSystem = { platformVersion: windowsPlatformVersion(release()), architecture: process.arch.startsWith('arm') ? 'arm' : 'x86', bitness: process.arch.endsWith('64') ? '64' : '32' }
+  uaOverride(ua = this.userAgent(), mobile = false): { userAgent: string; userAgentMetadata?: UaMetadata } {
+    const meta = chromeMetadata(ua, this.uaSystem, mobile)
+    return { userAgent: ua, ...(meta ? { userAgentMetadata: meta } : {}) }
+  }
+  /**
+   * A tab's page told it is Chrome — its Client Hints and navigator.userAgentData, as Chrome's (a device mode — its
+   * own). Its DevTools holding the page — the User-Agent alone (the session's headers still say Chrome).
+   */
+  async chromeLike(t: Tab, url = t.view.webContents.getURL()): Promise<void> {
+    if (t.t.device || t.asleep) return
+    try {
+      await tellIdentity(t.view.webContents, this.cdp.use(t, 'chrome'), url, () => this.uaOverride())
+    } catch {
+      // (the page's DevTools hold it, the page going, no document yet — told at its navigation's start)
+    }
+  }
+  /**
+   * A tab kept telling its pages what browser they are in (Chrome; a sign-in host — Firefox): at every main-frame
+   * navigation's start (told before a page has a document, Chromium drops it — the first blank page gives way).
+   */
+  private keepChromeLike(t: Tab): void {
+    t.view.webContents.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void this.chromeLike(t, d.url))
   }
   askLogin(tab: Tab, info: { host: string; realm: string }, cb: (user?: string, pass?: string) => void): void {
     const reqId = browserId()
@@ -206,6 +240,7 @@ export class BrowserCore implements TabEventsHost {
     t.rec = false
     this.win?.contentView.addChildView(t.view)
     wireTab(this, t)
+    this.keepChromeLike(t)
     if (this.recorder.recording) void this.recorder.attach(t)
     t.checkScript = undefined
     void this.checkTabs.sync(t)
@@ -228,6 +263,7 @@ export class BrowserCore implements TabEventsHost {
     this.tabs.set(id, tab)
     this.win?.contentView.addChildView(view)
     wireTab(this, tab)
+    this.keepChromeLike(tab)
     if (this.recorder.recording) void this.recorder.attach(tab)
     this.hookSearch.sync(tab, url)
     void this.checkTabs.sync(tab)

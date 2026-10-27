@@ -2,6 +2,10 @@
 import { durText, periodText, statusOf, statusText } from '@shared/noteEvents'
 import { events, kindOf } from '@renderer/lib/noteEvents'
 import Icon from '@renderer/components/Icon.vue'
+import type { ChatRoom } from '@shared/transport/chat'
+import { remoteError } from '@shared/remoteError'
+import { deleteChat } from '@renderer/lib/chat'
+import { homeless } from '@nb/workspace/treeFacts'
 import { chipClock, issueStatusClass, shortDate } from '../eventChips'
 import type { CommandMenuState, MenuRow } from './useCommandMenu'
 
@@ -17,6 +21,13 @@ const kindLabel = (k: string) => kindOf(k)?.label ?? k
 const boardName = (p: string) => (p.split('/').pop() ?? p).replace(/\.qboard$/i, '')
 const boardDir = (p: string) => p.split('/').slice(0, -1).join(' / ')
 const setList = (el: unknown) => (props.menu.listEl = (el as HTMLElement | null) ?? undefined)
+/** A chat in none of one's notes taken away (asked first). */
+async function removeChat(r: ChatRoom): Promise<void> {
+  const alone = r.members.length <= 1
+  const what = alone ? 'Вы в нём один — он удалится полностью, со всеми сообщениями и файлами.' : 'В нём есть другие люди — у них он останется, у вас исчезнет.'
+  if (!confirm(`Удалить чат «${r.title}»? Он не стоит ни в одной заметке. ${what}`)) return
+  await deleteChat(r.id).catch((e: unknown) => alert(remoteError(e)))
+}
 </script>
 
 <template>
@@ -80,9 +91,11 @@ const setList = (el: unknown) => (props.menu.listEl = (el as HTMLElement | null)
           <span class="pk-ic cmd"><Icon name="chat" :size="14" /></span>
           <span class="pk-b">
             <span class="pk-t">{{ r.chatRoom.title }}</span>
-            <span class="pk-m">Чат · {{ r.chatRoom.members.map((m) => m.name).join(', ') }} — встанет в заметку, писать можно прямо здесь</span>
+            <span v-if="homeless(r.chatRoom)" class="pk-m">Ни в одной заметке — документ удалён · {{ r.chatRoom.members.map((m) => m.name).join(', ') }} — вставить сюда или удалить</span>
+            <span v-else class="pk-m">Чат · {{ r.chatRoom.members.map((m) => m.name).join(', ') }} — встанет в заметку, писать можно прямо здесь</span>
           </span>
-          <span></span>
+          <span v-if="homeless(r.chatRoom)" class="tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:rounded-r2 tw:text-muted tw:hover:bg-white/10 tw:hover:text-down-fg" title="Удалить чат" @click.stop="removeChat(r.chatRoom)"><Icon name="trash" :size="13" /></span>
+          <span v-else></span>
         </button>
         <button v-else-if="'newChat' in r" class="pk" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">
           <span class="pk-ic cmd"><Icon name="plus" :size="14" /></span>

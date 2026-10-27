@@ -1,9 +1,13 @@
 import type { BrowserWindow, Session, WebContents, WebContentsView } from 'electron'
 import type { BrowserTab, Visit } from '../../shared/browser'
+import type { UaMetadata } from '../../shared/browser/chromeIdentity'
 import type { TabCdp } from './tabCdp'
 
-/** Who keeps a tab's DevTools protocol attached (the recording, the device mode, a hook's search, «Проверка», a scenario). */
-export type CdpOwner = 'rec' | 'device' | 'hook' | 'check' | 'pw'
+/**
+ * Who keeps a tab's DevTools protocol attached (the recording, the device mode, a hook's search, «Проверка», a
+ * scenario; `chrome` — the page told it is Chrome, all its life).
+ */
+export type CdpOwner = 'rec' | 'device' | 'hook' | 'check' | 'pw' | 'chrome'
 
 /** A tab of the Браузер section as the main process keeps it: its page (a view of its own) and what is on it. */
 export interface Tab {
@@ -57,6 +61,11 @@ export interface BrowserHost {
   create(url?: string, opener?: string): BrowserTab
   /** The User-Agent the pages get ('' in the settings — the built-in one). */
   userAgent(): string
+  /**
+   * The page told it is Chrome (Emulation.setUserAgentOverride's parameters): the User-Agent (`ua` — a device's own)
+   * with Chrome's metadata — the Client Hints and navigator.userAgentData say the same (not Chrome's — the User-Agent alone).
+   */
+  uaOverride(ua?: string, mobile?: boolean): { userAgent: string; userAgentMetadata?: UaMetadata }
 }
 
 /** An http(s) page's origin, or '' (any other address). */

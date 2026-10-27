@@ -4,7 +4,7 @@ import type { Contrast } from './contrast'
 import type { AudioNoteKind } from './tracker/constants'
 import type { AttrDef, EntryAttrs } from './tracker/attributes'
 import type { ChatPrefs, TransportPrefs } from './transport/constants'
-import type { OrbMode } from './islandChat'
+import type { IslandPanelView, OrbMode } from './islandChat'
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -196,6 +196,8 @@ export interface IslandPrefs {
   orb?: OrbMode
   /** The chat the island shows (none / '' — the feed: the latest with unread messages). */
   chatRoom?: string
+  /** What the unfolded island shows: the day (default) or the chats. */
+  panelView?: IslandPanelView
 }
 
 /** What the interface shows (Настройки → Интерфейс). */

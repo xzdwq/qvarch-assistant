@@ -21,6 +21,12 @@ describe('the app\'s rules', () => {
   it('the server\'s events reach the window through one registry (each context its own handlers)', () => {
     expect(usersOf(/qa\.onServer\(/)).toEqual(['renderer/src/lib/serverEvents.ts'])
   })
+  it('the chat parts the island shows too reach the chats only through their port (never the main window’s state)', () => {
+    const parts = ['ChatThread.vue', 'ChatComposer.vue', 'ChatMessageItem.vue', 'AttachView.vue', 'AttachFileView.vue', 'AttachVoiceView.vue', 'AttachShotView.vue', 'AttachTraceView.vue', 'ReactionPicker.vue', 'ChatAttachMenu.vue', 'useChatDrafts.ts', 'useVoiceRecord.ts', 'useMentionInput.ts']
+    const mainOnly = /from '@renderer\/lib\/(chat|chatFiles|chatActions|agentTurns|agents|mentions|notebook)'|from '@nb\/workspace\/(?!vaultTreeStore')/
+    const offenders = parts.filter((p) => mainOnly.test(readFileSync(join(ROOT, 'notebook/blocks/chat', p), 'utf8')))
+    expect(offenders).toEqual([])
+  })
   it('a utility class is never glued to the one before it (both would silently do nothing)', () => {
     expect(usersOf(/[A-Za-z0-9\])%/]tw:[a-z[]/)).toEqual([])
   })

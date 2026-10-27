@@ -28,6 +28,13 @@
   --peer-label-text: #0b0d12;
   /* the lines an AI agent wrote (its owner's colour marks the start of each run) */
   --ai-line: #8b7cf6;
+  /* the graph of the AI's work in a document: what was done to a thing (read, written, run, searched), its lines */
+  --ai-op-read: #60a5fa;
+  --ai-op-write: #f97316;
+  --ai-op-run: #a3e635;
+  --ai-op-search: #c084fc;
+  --ai-graph-edge: rgba(255, 255, 255, 0.16);
+  --ai-graph-edge-lit: #fb923c;
   /* a chat: the wall under its messages, one's own bubbles — one gradient over the whole view (as messengers do) */
   --chat-wall:
     radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%),

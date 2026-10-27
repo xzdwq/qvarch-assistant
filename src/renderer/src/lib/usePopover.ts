@@ -38,6 +38,8 @@ export interface PopoverOptions {
   place?: Placement
   /** Esc closes it (default); off — a field under it handles Esc itself (a field's suggestions), or — for now — a form opened from it */
   esc?: boolean | (() => boolean)
+  /** A panel one works in: closed only by its own button — never by a press outside or Esc; its element out of sight — hidden till it is back. */
+  stay?: boolean
 }
 
 /** Beside its element (placeFloat): above or under it, wherever there is more room. */
@@ -148,7 +150,14 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
     // (a point: nothing to follow; no anchor yet — waited for)
     if (el && !isElement(el)) return
     if (el) {
-      if (!el.isConnected || !visibleRect(el)) return close()
+      if (!el.isConnected || !visibleRect(el)) {
+        if (!options.stay) return close()
+        // (a panel that stays: hidden while its element is out of sight — back with it, as it was left)
+        if (last !== 'hidden') style.value = { ...style.value, display: 'none' }
+        last = 'hidden'
+        raf = requestAnimationFrame(follow)
+        return
+      }
       const r = el.getBoundingClientRect()
       const key = `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)},${window.innerWidth},${window.innerHeight}`
       if (key !== last) {
@@ -165,7 +174,7 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
     const a = anchorNow()
     return t instanceof Node && (!!(isElement(a) ? a.contains(t) : a?.from?.contains(t)) || layer.holds(t))
   }
-  const onDown = (e: PointerEvent) => !inside(e.target) && close()
+  const onDown = (e: PointerEvent) => !options.stay && !inside(e.target) && close()
   // (at a point: what it stood by has moved — its own list scrolling is not that)
   const onScroll = (e: Event) => !isElement(anchorNow()) && !inside(e.target) && close()
   const onResize = () => !isElement(anchorNow()) && close()
@@ -174,7 +183,8 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
   function setOpen(on: boolean): void {
     cancelAnimationFrame(raf)
     last = ''
-    setOpened(self, on)
+    // (a panel that stays is no step of Esc's: Esc goes past it to what is under)
+    if (!options.stay) setOpened(self, on)
     if (on) {
       window.addEventListener('pointerdown', onDown, true)
       window.addEventListener('scroll', onScroll, true)

@@ -7,13 +7,13 @@ import { ref, watch } from 'vue'
 import type { ChatFile } from '@shared/transport/chat'
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
-import { chatOnline } from '@renderer/lib/chat'
-import { chatFileUrl, isNotesFile, notesToNotebook, saveChatFile, sizeText } from '@renderer/lib/chatFiles'
-import { openNote } from '@renderer/lib/mentions'
+import { chatFileUrl, isNotesFile, saveChatFile, sizeText } from '@renderer/lib/chatFileView'
 import { useEscLayer } from '@renderer/lib/usePopover'
-import { loadTree } from '@nb/workspace/vaultTreeStore'
+import { useChatPort } from './chatPort'
 
 const props = defineProps<{ file: ChatFile; picture: boolean; room: string }>()
+const chat = useChatPort()
+const chatOnline = chat.online
 const url = ref('')
 const said = ref('')
 // a picture: fetched once (no connection — the moment it is back)
@@ -39,10 +39,7 @@ async function toNotebook(): Promise<void> {
   adding.value = true
   said.value = ''
   try {
-    const r = await notesToNotebook(props.room, props.file)
-    await loadTree()
-    await openNote(r.main)
-    said.value = r.folder ? `Добавлено в Блокнот: папка «${r.folder}»` : 'Добавлено в Блокнот'
+    said.value = await chat.takeNotes(props.room, props.file)
   } catch (e) {
     said.value = remoteError(e)
   } finally {

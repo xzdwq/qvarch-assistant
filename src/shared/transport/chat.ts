@@ -29,6 +29,15 @@ export interface ChatReply {
   author: string
   text: string
 }
+/** A message on its way: shown greyed until the server keeps it; a failed one waits for «Повторить». */
+export interface Outgoing {
+  room: string
+  clientId: string
+  text: string
+  /** The message it answers. */
+  reply?: ChatReply
+  failed?: string
+}
 /** The piece of an answered message kept with the answer, characters. */
 export const REPLY_TEXT_MAX = 160
 /** A message as an answer to it keeps it. */
@@ -212,6 +221,12 @@ export interface CommentAnchor {
 }
 /** A room is a comment (about a place of a document), not a chat. */
 export const isComment = (r: ChatRoom): r is ChatRoom & { doc: string; anchor: CommentAnchor } => !!r.doc && !!r.anchor
+/**
+ * A chat in none of one's notes (`homes` — the rooms one's notes show): its note deleted, or one was added to it and
+ * never put it in a note. A shared note's chat and a comment live with their note — never so; a branch lives where its
+ * main conversation does.
+ */
+export const isHomeless = (r: ChatRoom, homes: ReadonlySet<string>): boolean => !r.space && !r.doc && !homes.has(r.id) && !(r.parent && homes.has(r.parent))
 export const QUOTE_MAX = 300
 
 export const CHAT_TEXT_MAX = 8000

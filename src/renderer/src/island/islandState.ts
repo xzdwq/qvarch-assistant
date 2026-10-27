@@ -46,7 +46,7 @@ function createIslandState() {
   const quick = useQuickNote(els, day, island, { cancelExpand: expand.cancelExpand })
   const quickEvent = useQuickEvent(day.today, quick.qMsg)
   // what opens next to the pill — one at a time: the quick note, a chat, the reminders
-  const chat = useIslandChat(els, island, { closeOthers: openingDrawer })
+  const chat = useIslandChat(island, expand.expanded, { closeOthers: openingDrawer })
   const notices = useIslandNotices({ busy: () => !!drawer.value || expand.expanded.value, closeOthers: openingDrawer })
   const drawer = computed<IslandDrawer | undefined>(() => (quick.noteOpen.value ? 'note' : chat.open.value ? 'chat' : notices.open.value ? 'notice' : undefined))
   /** Something opens next to the pill: whatever else is there closed, the panel folded back into the pill. */

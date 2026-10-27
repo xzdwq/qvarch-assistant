@@ -30,6 +30,8 @@ interface Layout {
   sideHidden?: boolean
   /** The note's text over the whole width (margins at its sides), else a column of 820 px. */
   wide?: boolean
+  /** The notebook was shown before: a note is opened by itself only the first time (all tabs closed — kept so). */
+  shown?: boolean
 }
 const KEY = 'qa.nb'
 function readLayout(): Layout {
@@ -37,7 +39,8 @@ function readLayout(): Layout {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Layout> | null
     if (!v?.panes?.length) return def
-    return { ...def, ...v, cur: Math.min(v.cur ?? 0, v.panes.length - 1) }
+    // (a layout kept from before: the notebook was shown — whatever version kept it)
+    return { ...def, ...v, cur: Math.min(v.cur ?? 0, v.panes.length - 1), shown: true }
   } catch {
     return def
   }

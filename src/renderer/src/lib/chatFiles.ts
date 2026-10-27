@@ -1,28 +1,12 @@
-import { BUNDLE_EXT } from '@shared/docBundle'
-import { CHAT_FILE_MAX, clockSec, fileKindOf, VOICE_MAX_SEC, type ChatFile, type ChatReply } from '@shared/transport/chat'
+import { clockSec, fileKindOf, VOICE_MAX_SEC, type ChatFile, type ChatReply } from '@shared/transport/chat'
 import { sendAttach } from './chatActions'
 import { isHeld } from './chat'
 
 /**
- * The chats' files in the window: a picture's address to show it (fetched once per run — the app keeps the file
- * too), files sent (each its own message, the words with the first), a file saved where one picks.
+ * The chats' files sent from the main window (each its own message, the words with the first): a file, a voice
+ * message, a note / a folder of the notebook; one received put into the notebook. Showing them — chatFileView.
  */
 
-/** Each file's address (by its id: a file of a chat never changes). */
-const urls = new Map<string, Promise<string>>()
-export function chatFileUrl(room: string, f: ChatFile): Promise<string> {
-  let u = urls.get(f.id)
-  if (!u) {
-    u = window.qa.chatFileGet(room, f.id).then((b) => URL.createObjectURL(new Blob([b as BlobPart], { type: f.mime })))
-    u.catch(() => urls.delete(f.id))
-    urls.set(f.id, u)
-  }
-  return u
-}
-export const saveChatFile = (room: string, f: ChatFile) => window.qa.chatFileSave(room, f.id, f.name)
-
-/** Why a file cannot go (none — it can). */
-export const fileRefusal = (f: File): string | undefined => (f.size > CHAT_FILE_MAX ? `«${f.name}» больше ${CHAT_FILE_MAX / 1024 / 1024} МБ` : undefined)
 /** A pasted picture has no name of its own: one by its type. */
 const nameOf = (f: File) => f.name || `изображение.${f.type.split('/')[1] ?? 'png'}`
 
@@ -43,13 +27,5 @@ export async function sendNotes(room: string, rel: string, withRuns: boolean, te
   const file = await window.qa.chatFileFromNotes(room, rel, withRuns)
   await sendAttach(room, { kind: 'file', title: file.name, data: file }, text)
 }
-/** A file that is a note / a folder of a notebook (it goes into this one in a click). */
-export const isNotesFile = (f: ChatFile) => f.name.toLowerCase().endsWith(`.${BUNDLE_EXT}`)
 /** A received note / folder put into the notebook (its top): what was made. */
 export const notesToNotebook = (room: string, f: ChatFile) => window.qa.chatFileToNotes(room, f.id, '')
-/** A file's size in words. */
-export function sizeText(n: number): string {
-  if (n < 1024) return `${n} Б`
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} КБ`
-  return `${(n / 1024 / 1024).toFixed(1)} МБ`
-}

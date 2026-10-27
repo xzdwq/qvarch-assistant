@@ -2,6 +2,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BOARD_EXT } from '../../shared/whiteboard'
 import type { AgentLines } from '../../shared/notebook/agentLines'
+import { docAiOf, type DocAi } from '../../shared/agent/docAi'
 import type { VaultFiles } from './vaultFiles'
 
 interface MetaData {
@@ -10,6 +11,8 @@ interface MetaData {
   emojis: Record<string, string>
   /** The lines AI agents wrote in each personal note (shared/notebook/agentLines). */
   agentLines: Record<string, AgentLines>
+  /** The AI's memory and journal of each personal note (shared/agent/docAi; a shared note keeps its own in its document). */
+  docAi: Record<string, DocAi>
 }
 
 /**
@@ -21,9 +24,9 @@ export class VaultMeta {
 
   constructor(private files: VaultFiles) {
     try {
-      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, ...JSON.parse(readFileSync(this.file, 'utf8')) }
+      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, docAi: {}, ...JSON.parse(readFileSync(this.file, 'utf8')) }
     } catch {
-      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {} }
+      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, docAi: {} }
     }
   }
   private get file(): string {
@@ -39,6 +42,16 @@ export class VaultMeta {
   emojiOf = (rel: string): string | undefined => this.data.emojis[rel]
   pairOf = (rel: string): string | undefined => this.data.pairs[rel]
   agentLinesOf = (rel: string): AgentLines => this.data.agentLines[rel] ?? {}
+
+  docAiOf = (rel: string): DocAi => docAiOf(this.data.docAi[rel])
+  /** A note's AI memory and journal (empty — none kept). */
+  setDocAi(rel: string, ai: DocAi): void {
+    this.files.abs(rel)
+    const clean = docAiOf(ai)
+    if (clean.memory || clean.turns.length) this.data.docAi[rel] = clean
+    else delete this.data.docAi[rel]
+    this.save()
+  }
 
   /** The lines agents wrote in a note (empty — none kept). */
   setAgentLines(rel: string, lines: AgentLines): void {
@@ -106,7 +119,7 @@ export class VaultMeta {
       if (nk && nv) pairs[nk] = nv
     }
     this.data.pairs = pairs
-    for (const map of [this.data.colors, this.data.emojis, this.data.agentLines] as Array<Record<string, unknown>>)
+    for (const map of [this.data.colors, this.data.emojis, this.data.agentLines, this.data.docAi] as Array<Record<string, unknown>>)
       for (const k of Object.keys(map)) {
         if (k !== from && !k.startsWith(from + '/')) continue
         const v = map[k]

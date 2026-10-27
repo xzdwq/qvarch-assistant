@@ -1,4 +1,5 @@
 import { noteForAgent } from '../../shared/agent/contextPack'
+import { DOC_MEMORY_MAX } from '../../shared/agent/docAi'
 import { inFolders, type AgentProfile } from '../../shared/agent/profiles'
 import { mayUse, type TurnRequest } from '../../shared/agent/turn'
 import { linksIn, sectionOf, type NoteLinkRef } from '../../shared/notebook/links'
@@ -55,6 +56,8 @@ const cut = (s: string) => (s.length > READ_MAX ? `${s.slice(0, READ_MAX)}\n…(
 
 export function turnTools(c: TurnToolsCtx): McpTool[] {
   const doc = c.req.doc
+  /** The memory's version this turn saw (its own rewrite — the next one's). */
+  let memoryBase = c.req.memory?.memory?.at ?? 0
   const read = (path: string) => c.ui<string>('read', { path })
   /** A link as the model gave it (written as in the note, or just a note's name). */
   const parse = (s: string): NoteLinkRef => linksIn(s)[0] ?? { kind: 'note', raw: s, target: s.replace(/^\[\[|\]\]$/g, '') }
@@ -175,6 +178,22 @@ export function turnTools(c: TurnToolsCtx): McpTool[] {
         if (next === text) throw new Error('Нечего менять: укажи find + replace, after + text или append')
         await c.ui('write', { path, text: next })
         return `Изменено: ${path}`
+      },
+    },
+    {
+      name: 'doc_memory',
+      access: 'doc',
+      description: `Переписать память текущего документа целиком (её видят все участники и ИИ; она входит в каждый ход). Только важное надолго: цель, договорённости, решения, кто что делает, как работать в документе — очень кратко, пунктами, до ${DOC_MEMORY_MAX} знаков. Сохраняй то, что дописали люди.`,
+      inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+      run: async (a) => {
+        const { path } = await docToWrite()
+        const text = str(a.text, 'text', DOC_MEMORY_MAX * 2)
+        if (text.length > DOC_MEMORY_MAX) throw new Error(`Слишком длинно (${text.length} знаков, можно до ${DOC_MEMORY_MAX}) — сократи`)
+        // (written over the version this turn saw: changed meanwhile — refused with the text now, to write anew over it)
+        const r = await c.ui<{ at: number; changed?: string }>('memory', { path, text, base: memoryBase })
+        memoryBase = r.at
+        if (r.changed) throw new Error(r.changed)
+        return 'Память документа обновлена'
       },
     },
     {
