@@ -62,3 +62,22 @@ export function treeRows(tree: VaultNode[], open: string[], sort: SortMode): Tre
   walk(sortNodes(tree, sort), 0)
   return out
 }
+
+/**
+ * The tree with only these notes (a tag's): a note's linked board stays with it, a folder stays when something under
+ * it does; and its folders (shown unfolded — the found notes are seen at once).
+ */
+export function keepNotes(tree: VaultNode[], keep: ReadonlySet<string>): { tree: VaultNode[]; dirs: string[] } {
+  const dirs: string[] = []
+  const walk = (ns: VaultNode[]): VaultNode[] => {
+    const out: VaultNode[] = []
+    for (const n of ns) {
+      if (n.dir) {
+        const children = walk(n.children ?? [])
+        if (children.length) (dirs.push(n.path), out.push({ ...n, children }))
+      } else if (keep.has(n.path) || (n.pair && keep.has(n.pair))) out.push(n)
+    }
+    return out
+  }
+  return { tree: walk(tree), dirs }
+}

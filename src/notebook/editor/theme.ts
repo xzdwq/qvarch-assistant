@@ -2,6 +2,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
+import { iconSvg } from '@renderer/components/Icon.vue'
 import { PEER_SLOTS } from './peerCursors'
 
 /** The note editor's look: Markdown and code colours, the editor's own theme, the search panel in Russian. */
@@ -114,6 +115,18 @@ const editorTheme = EditorView.theme(
     '.cm-search button[name=close]:hover': { background: 'var(--editor-hover-wash)', color: 'var(--text-hi)' },
     // live preview
     '.cm-wiki': { color: 'var(--accent-fg)', textDecoration: 'underline', textDecorationColor: 'var(--editor-link-underline)', cursor: 'pointer' },
+    // a #tag: a yellow chip with the tag's icon before its text
+    '.cm-tag': { padding: '0 5px 0 3px', borderRadius: '5px', background: 'var(--tag-chip)', color: 'var(--tag-chip-fg)' },
+    '.cm-tag::before': {
+      content: '""',
+      display: 'inline-block',
+      width: '0.8em',
+      height: '0.8em',
+      margin: '0 3px 0 1px',
+      verticalAlign: '-0.08em',
+      background: 'currentColor',
+      mask: `url("data:image/svg+xml,${encodeURIComponent(iconSvg('tag', 24, 2.2))}") center / contain no-repeat`,
+    },
     '.cm-lp-link': { color: 'var(--accent-fg)', textDecoration: 'underline', textDecorationColor: 'var(--editor-link-underline)', cursor: 'pointer' },
     '.cm-lp-bullet': { display: 'inline-block', width: '1.1em', color: 'var(--accent-hi)', fontWeight: '700' },
     '.cm-lp-check': { verticalAlign: '-0.12em', margin: '0 0.35em 0 0', width: '1em', height: '1em', accentColor: 'var(--accent)', cursor: 'pointer' },

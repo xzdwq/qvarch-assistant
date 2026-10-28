@@ -6,6 +6,7 @@ import { chatRoomsIn } from '@nb/blocks/chat/model'
 import { shareBadges, type ShareBadge } from '@shared/transport/treeSharing'
 import { useTransport } from '@renderer/lib/transport'
 import { runChipsOf } from '@nb/domain/noteBlocks'
+import { headTags } from '@nb/domain/graph/tags'
 import { docs } from './noteDocs'
 import { sharedInfo, spaces } from './sharedDocs'
 import { tree } from './vaultTreeStore'
@@ -17,14 +18,14 @@ import { tree } from './vaultTreeStore'
  */
 
 /** The last open text read, and what it gave — read again only when the text changed. */
-const live = new Map<string, { text: string; runs: string[]; chats: string[]; doc: string }>()
-function liveOf(path: string): { runs: string[]; chats: string[]; doc: string } | undefined {
+const live = new Map<string, { text: string; runs: string[]; chats: string[]; tags: string[]; doc: string }>()
+function liveOf(path: string): { runs: string[]; chats: string[]; tags: string[]; doc: string } | undefined {
   const d = docs.get(path)
   if (!d?.loaded) return undefined
   const hit = live.get(path)
   if (hit?.text === d.text) return hit
   const note = path.endsWith('.md')
-  const got = { text: d.text, runs: note ? runChipsOf(d.text) : [], chats: note ? chatRoomsIn(d.text) : [], doc: sharedDocOfFile(path, d.text) }
+  const got = { text: d.text, runs: note ? runChipsOf(d.text) : [], chats: note ? chatRoomsIn(d.text) : [], tags: note ? headTags(d.text) : [], doc: sharedDocOfFile(path, d.text) }
   live.set(path, got)
   return got
 }
@@ -42,6 +43,8 @@ export const homeless = (r: ChatRoom): boolean => !!chatHomes.value && isHomeles
 
 /** A note's runnable components as chips (db, js/ts, http…). */
 export const runsOf = (n: VaultNode): string[] => liveOf(n.path)?.runs ?? n.runs ?? []
+/** The tags of a note's first line (shown before its components). */
+export const headTagsOf = (n: VaultNode): string[] => liveOf(n.path)?.tags ?? n.tags ?? []
 const docOf = (n: VaultNode): string | undefined => {
   const l = liveOf(n.path)
   return l ? l.doc || undefined : n.doc

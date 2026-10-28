@@ -4,6 +4,8 @@ import { layout, type Pane } from '@nb/workspace/paneLayout'
 import { useNotebookScreen } from './notebookScreen'
 import PaneTabs from './PaneTabs.vue'
 import NoteBody from './NoteBody.vue'
+import NotebookGraph from './graph/NotebookGraph.vue'
+import { GRAPH_TAB } from '@nb/workspace/viewTabs'
 
 /**
  * One pane of the notes: its tab row, its open file (or what to do when there is none), and — while a tab is
@@ -21,7 +23,8 @@ const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
   <section class="pane tw:min-w-0 tw:flex tw:flex-col tw:relative tw:[&.cur]:after:content-[''] tw:[&.cur]:after:absolute tw:[&.cur]:after:top-0 tw:[&.cur]:after:left-0 tw:[&.cur]:after:right-0 tw:[&.cur]:after:h-2 tw:[&.cur]:after:bg-accent/80" :class="{ cur: layout.cur === pi && layout.panes.length > 1 }" :style="{ flex: layout.panes.length > 1 ? `${pi ? 1 - layout.split : layout.split} 1 0` : '1 1 0' }" @pointerdown.capture="layout.cur = pi">
     <PaneTabs :p="p" :pi="pi" />
 
-    <NoteBody v-if="tabOf(p) && p.active" :p="p" :pi="pi" :path="p.active" />
+    <NotebookGraph v-if="tabOf(p) && p.active === GRAPH_TAB" :key="p.id" :pi="pi" />
+    <NoteBody v-else-if="tabOf(p) && p.active" :p="p" :pi="pi" :path="p.active" />
     <div v-else class="pempty tw:flex-1 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-10 tw:text-muted">
       <Icon name="notebook" :size="34" />
       <p class="tw:m-0">Нет открытой заметки</p>

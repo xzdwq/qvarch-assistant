@@ -138,10 +138,10 @@ const ICONS = {
 export const KIND_ICONS = ['code', 'checkSquare', 'phone', 'users', 'presentation', 'coffee', 'utensils', 'bug', 'book', 'mail', 'briefcase', 'monitor', 'zap', 'star', 'headphones', 'car', 'tag'] as const
 
 export type IconName = keyof typeof ICONS
-/** An icon as SVG markup (for DOM made outside Vue: the editor's widgets). */
+/** An icon as SVG markup (for DOM made outside Vue: the editor's widgets; with its namespace — a picture of it loads too). */
 export function iconSvg(name: string, size = 14, stroke = 1.8): string {
   const body = (ICONS as Record<string, string>)[name] ?? ICONS.tag
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
 }
 </script>
 

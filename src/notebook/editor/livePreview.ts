@@ -11,6 +11,7 @@ import { CodeBarWidget, codeFencesField } from './codeBlocks'
 import { componentRanges } from './components/componentField'
 import { chipStamp, EventChip } from './eventChips'
 import { ImageWidget } from './images'
+import { tagSpans } from '@nb/domain/graph/tags'
 
 /**
  * Live preview, like Obsidian's: what is finished reads as the result — headings, bold, links, lists, checkboxes,
@@ -264,6 +265,8 @@ function decorate(v: EditorView): DecorationSet {
             out.push(hide.range(b - 2, b))
           }
         }
+        // #tags: a chip each (its text stays — typed into as any text)
+        for (const t of tagSpans(line.text)) out.push(Decoration.mark({ class: 'cm-tag', attributes: { 'data-tag': t.name, title: `#${t.name} · Ctrl+клик — заметки с тегом` } }).range(line.from + t.at, line.from + t.at + t.len))
         // emoji: a bit bigger than the text; up to three alone on a line — big
         if (/\p{Extended_Pictographic}/u.test(line.text)) {
           const big = EMOJI_LINE.test(line.text)

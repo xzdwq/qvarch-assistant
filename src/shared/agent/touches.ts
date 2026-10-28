@@ -58,7 +58,7 @@ const TOOL_TOUCHES: Record<string, (a: Args, doc: string) => Seen[]> = {
   },
   notes_search: (a) => [{ kind: 'search', op: 'search', ref: s(a.query), label: `«${cut(s(a.query), 40)}»` }],
   notes_list: (a) => [{ kind: 'folder', op: 'read', ref: s(a.folder), label: s(a.folder) || 'все заметки' }],
-  note_backlinks: (a, doc) => note('read', s(a.path) || doc),
+  note_related: (a, doc) => note('read', s(a.path) || doc),
   chat_history: () => [{ kind: 'chat', op: 'read', ref: '', label: 'история чата' }],
   share_to_chat: (a) => note('write', s(a.path)),
   folder_create: (a) => [{ kind: 'folder', op: 'write', ref: [s(a.folder), s(a.name)].filter(Boolean).join('/'), label: s(a.name) }],

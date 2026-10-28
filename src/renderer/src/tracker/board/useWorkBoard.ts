@@ -6,7 +6,7 @@ import type QuickAdd from '../../components/QuickAdd.vue'
 import type Timeline from '../../components/Timeline.vue'
 import { refreshMentions } from '../../lib/mentions'
 import { todayKey } from '../../lib/today'
-import { useNow } from '../../lib/useDay'
+import { useDay, useNow } from '../../lib/useDay'
 import { useRange, type RangeDay } from '../../lib/useRange'
 import { rememberedChoice, useBoardPeriod } from './useBoardPeriod'
 
@@ -27,7 +27,12 @@ export interface WorkBoardProps {
 export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstance | undefined>) {
   const period = useBoardPeriod()
   const { day, per } = period
-  const { days, reload } = useRange(period.weekStart, period.weekEnd)
+  const range = useRange(period.weekStart, period.weekEnd)
+  const days = range.days
+  /** The chosen day in full (its calls too) — for the timeline. */
+  const chosen = useDay(day)
+  /** The period and the chosen day read again after an edit here (only today's changes are pushed from main). */
+  const reload = async (): Promise<void> => void (await Promise.all([range.reload(), chosen.reload()]))
   const now = useNow(5_000)
   const isToday = computed(() => day.value === todayKey.value)
   const empty = (d: string): RangeDay => ({ day: d, entries: [], notes: [], plan: [], dayTasks: [] })
@@ -104,6 +109,7 @@ export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstan
     ...period,
     settings: computed(() => props.settings),
     days,
+    dayData: chosen.data,
     reload,
     now,
     isToday,

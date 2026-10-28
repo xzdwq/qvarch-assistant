@@ -10,8 +10,9 @@ import { tree } from '@nb/workspace/vaultTreeStore'
 import { noteName } from '@nb/domain/notePaths'
 import { useNotebookScreen } from './notebookScreen'
 import { shortDate } from '@nb/domain/noteFacts'
-import { runsOf, treeBadges } from '@nb/workspace/treeFacts'
+import { headTagsOf, runsOf, treeBadges } from '@nb/workspace/treeFacts'
 import { useTreeDrop } from './useTreeDrop'
+import { filterByTag, shownTree } from '@nb/workspace/tagFilter'
 
 /**
  * The vault's tree: folders (sections) and notes / boards, a linked pair as one plaque; a click opens (Ctrl — in a
@@ -23,7 +24,15 @@ const { newNote, finishRename } = actions
 const { openTreeMenu } = menu
 const { dragPath, dropDir, pairTarget, onDragStart, onDragOver, onDrop } = useTreeDrop({ moveTo: actions.moveTo, pair: actions.pair, importDropped: transfer.importDropped })
 
-const rows = computed(() => treeRows(tree.value, layout.open, layout.sort))
+/** The rows: the tag's notes only (their folders unfolded) while a tag is chosen, else the whole tree. */
+const rows = computed(() => (shownTree.value ? treeRows(shownTree.value.tree, shownTree.value.dirs, layout.sort) : treeRows(tree.value, layout.open, layout.sort)))
+const isOpen = (path: string) => (shownTree.value ? shownTree.value.dirs.includes(path) : layout.open.includes(path))
+/** A note's row: its name; its first line's tags and its components (chips); its date. A first line's tag as a chip: 5 characters at most, a longer one cut with «…» (the whole — in the hint). */
+const CHIP_CHARS = 5
+const chipWord = (t: string) => (t.length > CHIP_CHARS ? `${t.slice(0, CHIP_CHARS - 1)}…` : t)
+/** The chips line's hint: the tags in full, the components. */
+const chipsTitle = (n: VaultNode) =>
+  [headTagsOf(n).length ? `Теги: ${headTagsOf(n).map((t) => `#${t}`).join(', ')}` : '', runsOf(n).length ? `Компоненты: ${runsOf(n).join(', ')}` : ''].filter(Boolean).join('\n')
 /** The badge's words: with how many it is shared, a folder — whole or some of its documents. */
 function shareTitle(n: VaultNode): string {
   const b = treeBadges.value.get(n.path)
@@ -56,6 +65,12 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
     @contextmenu.prevent="openTreeMenu($event)"
     @click.self="focus = undefined"
   >
+    <!-- the tree filtered by a tag: which, and off -->
+    <div v-if="layout.tag" class="tw:sticky tw:top-0 tw:z-1 tw:flex tw:items-center tw:gap-6 tw:mb-4 tw:py-3 tw:px-6 tw:rounded-r2 tw:bg-accent/16 tw:text-accent-fg tw:text-[12px] tw:whitespace-nowrap">
+      <Icon name="tag" :size="12" /><span class="tw:min-w-0 tw:truncate">#{{ layout.tag }}</span><span v-if="shownTree" class="tw:text-muted">· {{ rows.filter((r) => !r.node.dir).length }}</span>
+      <span class="tw:flex-1"></span>
+      <button class="tw:inline-flex tw:p-2 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-accent-fg tw:hover:bg-white/8" title="Снять фильтр по тегу" @click="filterByTag(undefined)"><Icon name="x" :size="12" /></button>
+    </div>
     <div
       v-for="r in rows"
       :key="r.node.path"
@@ -72,9 +87,9 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
       @contextmenu.prevent.stop="openTreeMenu($event, r.node)"
       @keydown.f2="startRename(r.node.path)"
     >
-      <Icon v-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev tw:[&&]:flex-none tw:text-muted" />
+      <Icon v-if="r.node.dir" :name="isOpen(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev tw:[&&]:flex-none tw:text-muted" />
       <NodeMark v-if="r.node.dir && r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="folder" :size="14" class="fic tw:[&&]:flex-none tw:[&&]:text-accent-fg" />
-      <Icon v-else-if="r.node.dir" :name="layout.open.includes(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic tw:[&&]:flex-none tw:text-accent-fg" :style="r.node.color ? { color: r.node.color } : {}" />
+      <Icon v-else-if="r.node.dir" :name="isOpen(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic tw:[&&]:flex-none tw:text-accent-fg" :style="r.node.color ? { color: r.node.color } : {}" />
       <NodeMark v-else-if="r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="note" :size="13" class="fic emo tw:[&&]:flex-none tw:[&&]:text-accent-fg tw:ml-14 tw:-mr-3" />
       <span v-else-if="r.node.color" class="fmark tw:flex-none tw:w-10 tw:h-10 tw:mt-0 tw:mr-2 tw:mb-0 tw:ml-19 tw:rounded-r2" :style="{ background: r.node.color }"></span>
       <Icon v-else :name="r.node.board ? 'presentation' : 'note'" :size="13" class="fic note tw:[&&]:flex-none tw:ml-17 tw:text-muted" />
@@ -91,15 +106,17 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
       />
       <span v-else-if="r.node.dir" class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span>
       <span v-else class="ncol tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:leading-[1.2]">
-        <span class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span><small class="vtree-date">{{ shortDate(r.node.ctime) }}</small>
-        <!-- the runnable components: one line, the rest hidden behind «…» -->
-        <span v-if="runsOf(r.node).length" class="tw:block tw:min-w-0 tw:mt-2 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:leading-14 tw:text-dim tw:text-[10px]" :title="`Компоненты: ${runsOf(r.node).join(', ')}`"><b v-for="c in runsOf(r.node)" :key="c" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-white/7 tw:font-data tw:font-normal tw:text-text-2">{{ c }}</b></span>
+        <span class="nname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ r.node.name }}</span>
+        <!-- the first line's tags and the runnable components: one line, the rest hidden behind «…» -->
+        <span v-if="runsOf(r.node).length || headTagsOf(r.node).length" class="tw:block tw:min-w-0 tw:my-2 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:leading-14 tw:text-dim tw:text-[10px]" :title="chipsTitle(r.node)"><b v-for="t in headTagsOf(r.node)" :key="`#${t}`" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-tag-chip tw:font-normal tw:text-tag-chip-fg">{{ chipWord(t) }}</b><b v-for="c in runsOf(r.node)" :key="c" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-white/7 tw:font-data tw:font-normal tw:text-text-2">{{ c }}</b></span>
+        <small class="vtree-date">{{ shortDate(r.node.ctime) }}</small>
       </span>
       <span v-if="treeBadges.get(r.node.path)" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-2 tw:h-16 tw:px-4 tw:rounded-[8px] tw:font-data tw:text-[10.5px] tw:[&.whole]:bg-accent/16 tw:[&.whole]:text-accent-fg tw:[&.part]:bg-warn/16 tw:[&.part]:text-warn-fg" :class="treeBadges.get(r.node.path)!.whole ? 'whole' : 'part'" :title="shareTitle(r.node)"><Icon name="users" :size="10" /><template v-if="treeBadges.get(r.node.path)!.people">{{ treeBadges.get(r.node.path)!.people }}</template></span>
       <span v-if="r.node.pair" class="npair tw:inline-flex tw:flex-none tw:text-accent-fg tw:group-[.grp-top]/nrow:not-group-[.grp-bot]/nrow:hidden tw:group-[.grp-bot]/nrow:hidden" :title="'Связано с: ' + noteName(r.node.pair)"><Icon name="link" :size="11" /></span>
       <span v-if="!r.node.dir && isDirty(r.node.path)" class="ndot tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-warn" title="Сохраняется…"></span>
     </div>
-    <div v-if="!rows.length" class="nempty tw:py-12 tw:px-10 tw:text-muted tw:text-[12.5px]">
+    <div v-if="!rows.length && layout.tag" class="nempty tw:py-12 tw:px-10 tw:text-muted tw:text-[12.5px]">Нет заметок с #{{ layout.tag }}</div>
+    <div v-else-if="!rows.length" class="nempty tw:py-12 tw:px-10 tw:text-muted tw:text-[12.5px]">
       Пока пусто.
       <button class="lnk tw:inline-flex tw:items-center tw:gap-4 tw:p-0 tw:border-0 tw:[background:none] tw:text-accent-fg tw:text-[12px] tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:bg-transparent tw:[.zoom_&]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text tw:hover:enabled:not-[.zoom_&]:bg-hover tw:hover:enabled:not-[.zoom_&]:border-border-3" @click="newNote('')">Создать заметку</button>
     </div>

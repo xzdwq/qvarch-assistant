@@ -4,6 +4,7 @@ import { autocompletion, type CompletionContext, type CompletionResult } from '@
 import { FENCE_PICK, FORMATTABLE, formatCode } from '@renderer/lib/codeblocks'
 import { ICON_CHECK, ICON_COPY, ICON_FORMAT, widgetButton } from './icons'
 import { wikiNotes } from './wikiComplete'
+import { noteTags } from './tagComplete'
 
 /**
  * Code blocks of a note (``` … ```, any indent — inside a list item too): where they are, the bar on them (the
@@ -167,4 +168,4 @@ function fenceLanguages(ctx: CompletionContext): CompletionResult | null {
   }
 }
 // (one completion for the note: a fence's languages, the notes after «[[»)
-export const fenceLanguagePicker = autocompletion({ override: [fenceLanguages, wikiNotes], activateOnTyping: true, selectOnOpen: false, icons: false, closeOnBlur: true })
+export const fenceLanguagePicker = autocompletion({ override: [fenceLanguages, wikiNotes, noteTags], activateOnTyping: true, selectOnOpen: false, icons: false, closeOnBlur: true })

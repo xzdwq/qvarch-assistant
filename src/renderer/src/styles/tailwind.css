@@ -64,6 +64,8 @@
   --color-down-fg: var(--down-fg);
   --color-warn: var(--warn);
   --color-warn-fg: var(--warn-fg);
+  --color-tag-chip: var(--tag-chip);
+  --color-tag-chip-fg: var(--tag-chip-fg);
   --color-stop: var(--stop);
   --color-caution: var(--caution);
   /* the browser: block stripes, the page load timeline, history, hooks (styles/colors/browser.css) */

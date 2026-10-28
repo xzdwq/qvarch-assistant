@@ -1,9 +1,13 @@
 import { EditorView } from '@codemirror/view'
 import { openUrl } from '@renderer/lib/links'
+import { filterByTag } from '@nb/workspace/tagFilter'
 import { editorHost } from './editorHost'
 import { WIKI_LINK } from './livePreview'
 
-/** Clicks on what is rendered: a link opens in the browser, [[a note]] opens it; Ctrl+click works on raw text too. */
+/**
+ * Clicks on what is rendered: a link opens in the browser, [[a note]] opens it, Ctrl+click on a #tag filters the tree
+ * by it; Ctrl+click works on a raw [[link]] too.
+ */
 export const linkClicks = EditorView.domEventHandlers({
   mousedown(e, v) {
     const el = e.target as HTMLElement
@@ -21,6 +25,13 @@ export const linkClicks = EditorView.domEventHandlers({
       return true
     }
     if (!(e.ctrlKey || e.metaKey)) return false
+    // Ctrl+click on a #tag: the tree shows the notes of the tag
+    const tag = el.closest<HTMLElement>('.cm-tag')?.dataset.tag
+    if (tag) {
+      e.preventDefault()
+      filterByTag(tag)
+      return true
+    }
     const pos = v.posAtCoords({ x: e.clientX, y: e.clientY })
     if (pos == null) return false
     const line = v.state.doc.lineAt(pos)

@@ -35,6 +35,22 @@
   --ai-op-search: #c084fc;
   --ai-graph-edge: rgba(255, 255, 255, 0.16);
   --ai-graph-edge-lit: #fb923c;
+  /* a #tag: a yellow chip (in the text — with the tag's icon; under a note's name in the tree — its word alone) */
+  --tag-chip: rgba(250, 204, 21, 0.18);
+  --tag-chip-fg: #fde047;
+  /* the notebook's graph: a note, one not made yet (a link to it only), a folder, each kind of thing notes share */
+  --graph-note: #94a3b8;
+  --graph-ghost: #4b5563;
+  --graph-folder: #a8a29e;
+  --graph-label: #cbd5e1;
+  --graph-link: rgba(203, 213, 225, 0.22);
+  --graph-link-lit: #fbbf24;
+  --graph-tag: #c084fc;
+  --graph-table: #34d399;
+  --graph-endpoint: #60a5fa;
+  --graph-host: #38bdf8;
+  --graph-jira: #f59e0b;
+  --graph-event: #f472b6;
   /* a chat: the wall under its messages, one's own bubbles — one gradient over the whole view (as messengers do) */
   --chat-wall:
     radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%),

@@ -5,6 +5,7 @@ import { mayUse, type TurnRequest } from '../../shared/agent/turn'
 import { linksIn, sectionOf, type NoteLinkRef } from '../../shared/notebook/links'
 import { sharedDocOf } from '../../shared/transport/space'
 import { filesOf, resolveWiki, type VaultHit, type VaultNode } from '../../shared/vault'
+import { reasonText, type RelatedNote } from '../../shared/notebook/graph'
 import type { McpTool } from '../mcp'
 
 /**
@@ -18,7 +19,8 @@ export interface TurnToolsCtx {
   base: McpTool[]
   tree: () => VaultNode[]
   search: (q: string) => VaultHit[]
-  backlinks: (path: string) => string[]
+  /** The notes related to one (the notebook's graph): links here and from here, shared tags, tables, requests. */
+  related: (path: string) => RelatedNote[]
   mkdir: (dir: string, name: string) => string
   /** The window does it (the notes live there): read, write, refresh. */
   ui: <T>(op: string, args: Record<string, unknown>) => Promise<T>
@@ -114,27 +116,28 @@ export function turnTools(c: TurnToolsCtx): McpTool[] {
     {
       name: 'notes_search',
       access: 'read',
-      description: 'Поиск по тексту всех заметок (личных и общих папок): пути и строки с совпадениями.',
+      description:
+        'Поиск по всем заметкам (личным и общим папкам): по тексту — пути и строки с совпадениями; по графу — `#тег` (и вложенные), таблица из SQL, путь запроса (`/api/orders`), сайт, задача — с тем, чем найдено.',
       inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
       run: async (a) => {
         const hits = c.search(str(a.query, 'query', 300)).filter((h) => inFolders(c.profile, h.path))
         if (!hits.length) return 'Ничего не найдено'
         return hits
           .slice(0, 30)
-          .map((h) => `${h.path}${h.lines.length ? `\n${h.lines.map((x) => `  ${x.line + 1}: ${x.text.trim()}`).join('\n')}` : ''}`)
+          .map((h) => `${h.path}${h.via?.length ? ` (по связям: ${h.via.map(reasonText).join(', ')})` : ''}${h.lines.length ? `\n${h.lines.map((x) => `  ${x.line + 1}: ${x.text.trim()}`).join('\n')}` : ''}`)
           .join('\n')
       },
     },
     {
-      name: 'note_backlinks',
+      name: 'note_related',
       access: 'read',
-      description: 'Какие заметки ссылаются ([[…]]) на заметку path («» — на текущий документ).',
+      description: 'Связи заметки path («» — текущий документ): кто ссылается сюда, куда ссылается она, заметки с общими тегами, таблицами SQL, запросами, задачами — сильнейшие первыми, с причинами.',
       inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
       run: async (a) => {
         const path = typeof a.path === 'string' && a.path.trim() ? notePath(a.path.trim()) : doc?.path
         if (!path) return 'Чат без документа — укажи path'
-        const list = c.backlinks(path)
-        return list.length ? list.join('\n') : `На ${path} никто не ссылается`
+        const list = c.related(path).filter((r) => inFolders(c.profile, r.path))
+        return list.length ? list.map((r) => `${r.path}: ${r.reasons.map(reasonText).join(', ')}`).join('\n') : `У ${path} нет связанных заметок`
       },
     },
     {

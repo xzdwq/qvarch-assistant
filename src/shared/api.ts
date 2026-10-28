@@ -29,6 +29,7 @@ import type { SharedFolderLink } from './transport/sharedFolder'
 import type { KeptState } from './transport/sharedText'
 import type { MediaReport } from './transport/space'
 import type { VaultEntryKind, VaultHit, VaultNode } from './vault'
+import type { NotebookGraph, RelatedNote } from './notebook/graph'
 import type { Remind, RepeatRule } from './repeat'
 import type { TabletMsg, TabletPrefs, TabletState } from './tablet'
 import type { AudioNoteKind } from './tracker/constants'
@@ -328,6 +329,14 @@ export interface QaApi {
   vaultNotesWith(needle: string): Promise<string[]>
   /** The notes that link to this one (`[[…]]`). */
   vaultBacklinks(path: string): Promise<string[]>
+  /** «Связи»: the notes linking to this one, and the related ones with why (the notebook's graph). */
+  vaultRelated(path: string): Promise<{ backlinks: string[]; related: RelatedNote[] }>
+  /** Every tag of the notes with how many have it. */
+  vaultTags(): Promise<Array<{ name: string; label: string; count: number }>>
+  /** The notes tagged so (`#a` — `#a/b` too). */
+  vaultTagged(tag: string): Promise<string[]>
+  /** The whole notebook as a graph to draw: its notes, what they share, their links. */
+  vaultGraph(): Promise<NotebookGraph>
   /** The lines AI agents wrote in a personal note (line hash → the agent's name). */
   vaultAgentLines(path: string): Promise<Record<string, string>>
   vaultSetAgentLines(path: string, lines: Record<string, string>): Promise<void>

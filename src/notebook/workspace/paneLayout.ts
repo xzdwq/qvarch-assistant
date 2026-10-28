@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import type { SortMode } from '@shared/vaultTree'
 import { doc, save } from './noteDocs'
+import { isViewTab } from './viewTabs'
 
 /**
  * The notebook's panes and tabs, and the screen's layout (the side's width and tab, the tree's open folders and
@@ -26,6 +27,8 @@ interface Layout {
   /** The text's scale, % (Ctrl + wheel). */
   zoom: number
   sort: SortMode
+  /** The tree shows only the notes of this tag (`a` — `a/b` too); none — all. */
+  tag?: string
   /** The files panel is hidden. */
   sideHidden?: boolean
   /** The note's text over the whole width (margins at its sides), else a column of 820 px. */
@@ -73,6 +76,8 @@ export function openFile(path: string, opts: { pane?: number; newPane?: boolean 
   }
   p.active = path
   layout.cur = i
+  // a view (the graph) is no file: nothing to read, no folders
+  if (isViewTab(path)) return
   doc(path)
   // its folders open in the tree
   const parts = path.split('/')

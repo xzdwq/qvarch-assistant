@@ -5,6 +5,7 @@ import { useRecorder } from '@renderer/lib/recorder'
 import { remoteError } from '../../shared/remoteError'
 import { doc, setText } from '@nb/workspace/noteDocs'
 import { layout, type Pane } from '@nb/workspace/paneLayout'
+import { isViewTab } from '@nb/workspace/viewTabs'
 import { putTranscript } from '@nb/workspace/noteSync'
 import { transcribe, transcribeError, TranscribeCancelled } from '@nb/workspace/transcription'
 import type { NoteEditors } from './noteEditors'
@@ -16,7 +17,7 @@ export function useNoteVoice(say: (t: string) => void, editors: NoteEditors) {
   const recInto = ref<{ path: string; pane: string; inline?: boolean }>()
 
   async function startRec(p: Pane): Promise<void> {
-    if (!p.active) return
+    if (!p.active || isViewTab(p.active)) return
     if (recorder.rec.value) return void stopRec()
     if (await recorder.start('voice')) {
       const ed = isBoard(p.active) ? undefined : editors.of(p)

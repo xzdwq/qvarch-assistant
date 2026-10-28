@@ -152,7 +152,7 @@ export class AgentRunner {
         base: qvarchTools({ ...this.host.toolCtx, ui }),
         tree: () => vault.tree(),
         search: (q) => vault.search(q),
-        backlinks: (p) => vault.backlinks(p),
+        related: (p) => vault.related(p).related,
         mkdir: (dir, name) => vault.create(dir, 'folder', name),
         ui,
       }))

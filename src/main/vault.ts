@@ -1,7 +1,7 @@
 import { shell } from 'electron'
 import { existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { basename, extname, join, sep } from 'node:path'
-import { audiosOf, imagesOf, type VaultEntryKind, type VaultHit, type VaultNode } from '../shared/vault'
+import { audiosOf, filesOf, imagesOf, type VaultEntryKind, type VaultHit, type VaultNode } from '../shared/vault'
 import { findNode } from '../shared/vaultTree'
 import { BOARD_EXT } from '../shared/whiteboard'
 import type { DocBundle } from '../shared/docBundle'
@@ -15,7 +15,9 @@ import { VaultBundles } from './vault/vaultBundle'
 import { VaultWatcher } from './vault/vaultWatcher'
 import { readVaultTree } from './vault/vaultTree'
 import { VaultFacts } from './vault/vaultFacts'
-import { backlinks, eventMentions, searchNotes } from './vault/vaultSearch'
+import { eventMentions, searchNotes } from './vault/vaultSearch'
+import { VaultGraph } from './vault/vaultGraph'
+import type { NotebookGraph, RelatedNote } from '../shared/notebook/graph'
 
 /** A new thing's default name and extension, by its kind. */
 const NEW_KIND: Record<VaultEntryKind, { name: string; ext: string }> = {
@@ -47,6 +49,8 @@ export class Vault {
   private watcher: VaultWatcher
   /** The tree's facts of the files (shared, runnable components), read only when a file changed. */
   private facts = new VaultFacts()
+  /** The notes' graph (tags, links, what their components work with), kept up to date in the background. */
+  private graph: VaultGraph
 
   constructor(dataRoot: string, listen: VaultListeners) {
     this.root = join(dataRoot, 'vault')
@@ -56,7 +60,16 @@ export class Vault {
     this.runs = new VaultRuns(this.files)
     this.media = new VaultMedia(this.files, (needle) => this.usedBy(needle), (rel) => listen.onMedia([rel]))
     this.bundles = new VaultBundles(this.files, this.meta, this.runs, this.media, (dir, kind, name, text) => this.create(dir, kind, name, text))
-    this.watcher = new VaultWatcher(this.files, listen.onChange, listen.onMedia)
+    this.graph = new VaultGraph(dataRoot, { abs: (rel) => this.files.abs(rel), files: () => filesOf(this.tree()) })
+    // a note changed outside is indexed again as a saved one is
+    this.watcher = new VaultWatcher(
+      this.files,
+      (paths) => {
+        for (const p of paths) this.graph.touched(p)
+        listen.onChange(paths)
+      },
+      listen.onMedia,
+    )
   }
 
   // ---------- marks ----------
@@ -119,6 +132,7 @@ export class Vault {
   }
   write(rel: string, text: string): void {
     this.files.write(rel, text)
+    this.graph.touched(rel)
   }
 
   /** A new note / board / folder in `dir` with a free name ("Без названия", "Без названия 2", …). Returns its path. */
@@ -145,6 +159,7 @@ export class Vault {
     const same = join(dst, want + ext)
     if (same.toLowerCase() === src.toLowerCase()) {
       if (same !== src) renameSync(src, same) // only the letter case changed
+      this.graph.moved(this.files.rel(src), this.files.rel(same))
       return this.files.rel(same)
     }
     const file = this.files.freeFile(dst, want, ext)
@@ -153,6 +168,7 @@ export class Vault {
     const before = this.files.rel(src)
     this.files.forgetUnder(before)
     this.remapMeta(before, this.files.rel(file))
+    this.graph.moved(before, this.files.rel(file))
     return this.files.rel(file)
   }
 
@@ -179,6 +195,7 @@ export class Vault {
     await shell.trashItem(file)
     this.files.forgetUnder(rel)
     this.remapMeta(rel)
+    this.graph.removed(rel)
     for (const a of gone) this.deleteAudio(a)
     for (const i of pics) this.deleteImage(i)
   }
@@ -194,13 +211,38 @@ export class Vault {
   eventMentions(): Record<string, string[]> {
     return eventMentions(this.tree(), (p) => this.read(p))
   }
-  /** The notes that link to this one (`[[…]]`). */
+  /** The notes that link to this one (`[[…]]`, a shared note's link). */
   backlinks(rel: string): string[] {
-    return backlinks(this.tree(), (p) => this.read(p), rel)
+    return this.graph.backlinks(rel)
   }
-  /** All notes whose name or text has the query (any case); a few matching lines of each. */
+  /** «Связи»: the notes linking here, and the related ones with why. */
+  related(rel: string): { backlinks: string[]; related: RelatedNote[] } {
+    return this.graph.related(rel)
+  }
+  /** Every tag of the notes with how many have it. */
+  tags(): Array<{ name: string; label: string; count: number }> {
+    return this.graph.tags()
+  }
+  /** The notes tagged so (nested tags too). */
+  tagged(tag: string): string[] {
+    return this.graph.tagged(tag)
+  }
+  /** The whole notebook as a graph to draw. */
+  notebookGraph(): NotebookGraph {
+    return this.graph.notebook()
+  }
+  /**
+   * All notes whose name or text has the query (any case), a few matching lines of each; and the ones its graph
+   * finds (`#тег`, a table, a request…) — with why.
+   */
   search(q: string, limit = 60): VaultHit[] {
-    return searchNotes(this.tree(), (p) => this.read(p), q, limit)
+    const hits = searchNotes(this.tree(), (p) => this.read(p), q, limit)
+    for (const [path, via] of this.graph.search(q)) {
+      const hit = hits.find((h) => h.path === path)
+      if (hit) hit.via = via
+      else if (hits.length < limit) hits.push({ path, name: basename(path, '.md'), inName: false, count: 0, lines: [], via })
+    }
+    return hits
   }
   /** The notes and boards that have this text as it is (`limit` — at most this many found). */
   notesWith(needle: string, limit = Infinity): string[] {
@@ -273,8 +315,10 @@ export class Vault {
   // ---------- changes made outside (another editor, Explorer) ----------
   watch(): void {
     this.watcher.start()
+    this.graph.start()
   }
   stop(): void {
     this.watcher.stop()
+    this.graph.close()
   }
 }

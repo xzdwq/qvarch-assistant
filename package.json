@@ -1,6 +1,6 @@
 {
   "name": "qvarch-assistant",
-  "version": "0.234.0",
+  "version": "0.240.0",
   "description": "Desktop work-time tracker with an always-on-top timeline island",
   "main": "./out/main/index.js",
   "scripts": {
@@ -46,6 +46,7 @@
     "electron-vite": "^5.0.0",
     "embedded-postgres": "^18.4.0-beta.17",
     "emojibase-data": "17.0.0",
+    "force-graph": "1.52.0",
     "js-yaml": "^4.1.0",
     "marked": "^18.1.0",
     "mermaid": "12.1.0",

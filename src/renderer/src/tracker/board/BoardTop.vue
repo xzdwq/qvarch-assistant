@@ -7,13 +7,12 @@ import Timeline from '../../components/Timeline.vue'
 import DayStrip from '../../components/DayStrip.vue'
 import { kindColor, kindLabel } from '../../lib/palette'
 import { todayKey } from '../../lib/today'
-import { useDay } from '../../lib/useDay'
 import { dayCell, timelineWindow } from '@shared/tracker/boardTime'
 import { useWorkBoard, type TimelineInstance } from './useWorkBoard'
 import { saveCopy } from '../entry/copyEntry'
 
 /** The board's top: the chosen day's timeline (with its chain of events) or the period's day cells. */
-const { settings, day, days, reload, now, isToday, top, openId, quick, fail, tlRef } = useWorkBoard()
+const { settings, day, days, dayData, reload, now, isToday, top, openId, quick, fail, tlRef } = useWorkBoard()
 
 // ---------- the period's day cells ----------
 const week = computed(() => days.value.map((d) => dayCell(d, now.value, settings.value.schedule.workDays)))
@@ -21,15 +20,12 @@ const maxDay = computed(() => Math.max(8 * 3_600_000, ...week.value.map((w) => w
 
 // ---------- the chosen day's timeline ----------
 const setFollow = (on: boolean) => void window.qa.updateSettings({ ui: { timeline: { follow: on } } })
-const { data: dayData, reload: reloadDay } = useDay(day)
 const sched = computed(() => scheduleRanges(day.value, settings.value.schedule))
 const tlBounds = computed<[Ms, Ms]>(() => [dayStart(day.value), dayEnd(day.value)])
 const tlInitial = computed<[Ms, Ms]>(() => timelineWindow(day.value, dayData.value.entries, sched.value.work, isToday.value ? now.value : undefined))
 const tlSel = ref<Selection | null>(null)
 watch(day, () => (tlSel.value = null))
-async function reloadAll(): Promise<void> {
-  await Promise.all([reload(), reloadDay()])
-}
+const reloadAll = reload
 /** A span chosen on the timeline: the quick line gets its time. */
 function onTlSelection(sel: Selection | null, commit: boolean): void {
   tlSel.value = sel

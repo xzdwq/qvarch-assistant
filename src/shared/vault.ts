@@ -1,4 +1,5 @@
 /** The notebook (Markdown files): a node of the tree, a search hit, and the helpers both sides use. */
+import type { GraphReason } from './notebook/graph'
 
 /** What can be made in the vault's tree. */
 export const VAULT_ENTRY_KINDS = ['note', 'folder', 'board'] as const
@@ -31,6 +32,8 @@ export interface VaultNode {
   runs?: string[]
   /** The chats a note shows (their rooms), each once. */
   chats?: string[]
+  /** The tags of a note's first line (shown under its name). */
+  tags?: string[]
   children?: VaultNode[]
 }
 
@@ -52,6 +55,8 @@ export interface VaultHit {
   count: number
   /** A few lines with it: the line number, the match in the line, and a snippet with the match at `at`. */
   lines: Array<{ line: number; col: number; len: number; text: string; at: number }>
+  /** Found by its graph too: by what (a tag, a table, a request…). */
+  via?: GraphReason[]
 }
 
 /** A picture of a note / a board: vault/.images/<file> (its own line `![[.images/<file>]]` in a note). */

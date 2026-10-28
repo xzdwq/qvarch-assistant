@@ -10,6 +10,7 @@ import Popover from '../components/Popover.vue'
 import { atPoint, openWhile } from '../lib/usePopover'
 import { useTablet } from '../lib/tablet'
 import { closeTab, doc, files, layout, loadTree, onOutside, openFile, saveAll } from '../lib/notebook'
+import { isViewTab } from '@nb/workspace/viewTabs'
 import { provideNotebookScreen } from '@nb/screen/notebookScreen'
 import NoteSidebar from '@nb/screen/NoteSidebar.vue'
 import NotePane from '@nb/screen/NotePane.vue'
@@ -34,7 +35,7 @@ onMounted(async () => {
   await loadTree()
   // tabs remembered from last time: gone files close, the rest load
   const all = new Set(files.value)
-  for (let i = layout.panes.length - 1; i >= 0; i--) for (const t of [...layout.panes[i].tabs]) (all.has(t.path) ? doc(t.path) : closeTab(i, t.path))
+  for (let i = layout.panes.length - 1; i >= 0; i--) for (const t of [...layout.panes[i].tabs]) (isViewTab(t.path) ? undefined : all.has(t.path) ? doc(t.path) : closeTab(i, t.path))
   // the very first time — a note to start with; later all tabs closed stay closed (the screen is as it was left)
   if (!layout.shown && !layout.panes.some((p) => p.tabs.length) && files.value.length) openFile(files.value[0])
   layout.shown = true
