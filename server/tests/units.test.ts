@@ -7,9 +7,9 @@ import { pendingSteps } from '../src/migrate'
 import { deviceName } from '../src/modules/core'
 
 describe('a reaction', () => {
-  it('any emoji (with its modifiers); no words, no markup', () => {
-    expect(['👍', '❤️', '👍🏽', '🧑‍💻', '🇷🇺'].map(isReaction)).toEqual([true, true, true, true, false])
-    expect(['ok', 'a👍', '<b>', '', '👍'.repeat(9)].map(isReaction)).toEqual([false, false, false, false, false])
+  it('any one emoji (with its modifiers, a flag too); no words, no markup', () => {
+    expect(['👍', '❤️', '👍🏽', '🧑‍💻', '🇷🇺'].map(isReaction)).toEqual([true, true, true, true, true])
+    expect(['ok', 'a👍', '<b>', '', '👍'.repeat(9), 'RU'].map(isReaction)).toEqual([false, false, false, false, false, false])
   })
 })
 

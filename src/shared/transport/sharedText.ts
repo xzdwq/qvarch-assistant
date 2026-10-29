@@ -68,6 +68,8 @@ export interface KeptState {
   state: string
   /** (none — kept before the text was: the file counts as changed) */
   text?: string
+  /** Its metadata (the AI's memory and turns) — readable without the document (the notes' search). */
+  ai?: DocAi
 }
 
 /** Who makes a change and when (the server's clock, epoch ms). */

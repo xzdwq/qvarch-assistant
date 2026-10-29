@@ -1,4 +1,4 @@
-import { DEFAULT_IN_TOOLS } from './places'
+import { DEFAULT_IN_TOOLS, mayStandInTools } from './places'
 import { cleanTheme, DEFAULT_THEME } from './theme'
 import type { UiPrefs, UiPrefsPatch } from './types'
 
@@ -31,9 +31,15 @@ export function mergeUi(base: UiPrefs, patch?: UiPrefsPatch): UiPrefs {
     menu: cleanMenu({ ...DEFAULT_UI.menu, ...base.menu, ...patch?.menu }),
   }
 }
+/**
+ * The menu as kept: a section that may stand in «Инструменты» no more leaves them — hidden on the bar (it was off
+ * the bar; it stays off it, the person shows it when they want).
+ */
 function cleanMenu(m: UiPrefs['menu']): UiPrefs['menu'] {
   const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : [])
-  return { order: ids(m.order), hidden: ids(m.hidden), tools: ids(m.tools) }
+  const tools = ids(m.tools)
+  const left = tools.filter((id) => !mayStandInTools(id))
+  return { order: ids(m.order), hidden: [...new Set([...ids(m.hidden), ...left])], tools: tools.filter(mayStandInTools) }
 }
 function clampTimeline(t: UiPrefs['timeline']): UiPrefs['timeline'] {
   const n = (v: unknown, lo: number, hi: number, d: number) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d)

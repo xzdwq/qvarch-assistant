@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../../shared/docBundle'
+import { isEmoji } from '../../shared/emoji'
 import { toVaultEntryKind } from '../../shared/vault'
 import { docAiOf } from '../../shared/agent/docAi'
 import type { AppContext } from '../app/appContext'
@@ -43,8 +44,8 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('vaultSetDocAi', (_e, p, ai) => vault.setDocAi(str(p), docAiOf(ai)))
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
   handle('vaultPair', (_e, a, b) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
-  // an emoji mark: one emoji (a few code points), no text
-  handle('vaultSetEmoji', (_e, p, emoji) => vault.setEmoji(str(p), typeof emoji === 'string' && emoji && emoji.length <= 16 && /\p{Extended_Pictographic}/u.test(emoji) ? emoji : undefined))
+  // an emoji mark: one emoji (a flag, a ZWJ sequence too), no text
+  handle('vaultSetEmoji', (_e, p, emoji) => vault.setEmoji(str(p), isEmoji(emoji) ? emoji : undefined))
   handle('vaultSetColor', (_e, p, color) => vault.setColor(str(p), typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined))
 
   // ---------- recordings and pictures ----------

@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import EmbeddedPostgres from 'embedded-postgres'
 import pg from 'pg'
 import { readSchema, runSql } from '../../src/main/sql/engine'
-import { bindSql, type DbConn } from '../../src/shared/sql'
+import { bindSql, erAround, guardSql, type DbConn } from '../../src/shared/sql'
+import { erCatalogOf, readEr } from '../../src/main/sql/erCatalog'
 import { testDir } from '../testTemp'
 
 /**
@@ -165,4 +166,29 @@ describe('PostgreSQL: read, safely', () => {
     await expect(runSql(conn({ port: 1 }), 'select 1', [], 'run')).rejects.toThrow(/не принимает подключение|подключиться/)
     expect(Date.now() - t0).toBeLessThan(12_000)
   }, 15_000)
+})
+
+describe('PostgreSQL: the structure for an ER diagram', () => {
+  it('columns (type, null, default, comment), keys — a composite one too —, references, a self-reference; nothing left open', async () => {
+    await admin.query('create schema er')
+    await admin.query("create table er.customers (id serial primary key, email text not null unique, boss int references er.customers(id))")
+    await admin.query("comment on table er.customers is 'Клиенты'; comment on column er.customers.email is 'Почта клиента'")
+    await admin.query('create table er.orders (id int primary key, customer_id int not null references er.customers(id), line int, note text)')
+    await admin.query('create table er.order_lines (order_id int, line int, qty int default 1, primary key (order_id, line), foreign key (order_id) references er.orders(id))')
+    const s = await readEr(conn())
+    const t = (name: string) => s.tables.find((x) => x.schema === 'er' && x.name === name)!
+    expect(t('customers').comment).toBe('Клиенты')
+    const email = t('customers').columns.find((c) => c.name === 'email')!
+    expect(email).toMatchObject({ type: 'text', nullable: false, unique: true, comment: 'Почта клиента', pk: false })
+    expect(t('customers').columns.find((c) => c.name === 'boss')!.fk).toEqual([expect.objectContaining({ schema: 'er', table: 'customers', column: 'id' })])
+    expect(t('orders').columns.find((c) => c.name === 'customer_id')!).toMatchObject({ nullable: false, fk: [expect.objectContaining({ table: 'customers', column: 'id' })] })
+    const lines = t('order_lines')
+    expect(lines.columns.filter((c) => c.pk).map((c) => c.name)).toEqual(['order_id', 'line'])
+    expect(lines.columns.find((c) => c.name === 'qty')!.default).toBe('1')
+    expect(erAround(s, ['er.order_lines'], 2).sort()).toEqual(['er.customers', 'er.order_lines', 'er.orders'])
+    expect(await noneLeft()).toBe(0)
+  })
+  it('the catalogue’s queries pass the guard (read only)', () => {
+    for (const q of Object.values(erCatalogOf('pg'))) expect(guardSql(q, 'pg')).toEqual({ ok: true })
+  })
 })

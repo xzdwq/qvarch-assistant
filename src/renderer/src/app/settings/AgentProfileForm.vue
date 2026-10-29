@@ -21,7 +21,9 @@ const status = ref('')
 const error = ref('')
 const busy = ref(false)
 const provider = computed(() => AGENT_PROVIDERS[form.provider])
-const field = 'tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted'
+/** An agent harness elsewhere: its own tools and loop — its session and headers asked, not where it works. */
+const harness = computed(() => provider.value.protocol === 'harness')
+const field ='tw:flex tw:flex-col tw:gap-4 tw:text-[12px] tw:text-muted'
 
 /** Saved; the key — only when typed (empty — the kept one stays). */
 async function save(): Promise<boolean> {
@@ -65,7 +67,7 @@ async function saveAndClose(): Promise<void> {
       </label>
       <label :class="field">
         Модель
-        <SuggestInput v-model="form.model" :options="models" :placeholder="provider.model ?? (form.provider === 'claude-code' ? 'как в Claude Code' : 'выберите после «Проверить»')" />
+        <SuggestInput v-model="form.model" :options="models" :placeholder="provider.model ?? (form.provider === 'claude-code' ? 'как в Claude Code' : harness ? 'как настроен агент' : 'выберите после «Проверить»')" />
       </label>
       <label v-if="form.provider !== 'claude-code'" :class="field">Адрес<input v-model="form.baseUrl" :placeholder="provider.baseUrl ?? 'http://…/v1'" /></label>
       <label v-if="provider.key !== 'none'" :class="field">
@@ -74,8 +76,16 @@ async function saveAndClose(): Promise<void> {
       </label>
       <label v-if="form.provider === 'claude-code'" :class="field">Папка проекта (только чтение)<input v-model="form.project" placeholder="C:\…\project" /></label>
       <label :class="field">Папки базы знаний<input v-model="folders" placeholder="все заметки; или через запятую" /></label>
-      <label :class="field">Папка для работ ИИ<input v-model="form.workRoot" placeholder="корень блокнота" /></label>
+      <label v-if="!harness" :class="field">Папка для работ ИИ<input v-model="form.workRoot" placeholder="корень блокнота" /></label>
+      <label v-if="harness" :class="field" title="Заголовок, по которому агент помнит разговор; у каждого чата свой. «-» — без сессии">
+        Заголовок сессии
+        <input v-model="form.sessionHeader" :placeholder="provider.sessionHeader ?? 'нет — каждый ход отдельно'" />
+      </label>
     </div>
+    <label v-if="harness" :class="field">
+      Дополнительные заголовки (по строке «Имя: значение»)
+      <textarea v-model="form.headers" rows="2" maxlength="2000" placeholder="X-Profile: default" />
+    </label>
     <label :class="field">
       Указания (роль, манера, что важно)
       <textarea v-model="form.instructions" rows="4" :maxlength="INSTRUCTIONS_MAX" placeholder="Например: ты аналитик, отвечай со ссылками на требования" />

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { isBoard } from '@shared/whiteboard'
 import { reasonText } from '@shared/notebook/graph'
+import { META_PLACE } from '@shared/agent/docAiSearch'
+import { openFile } from '@nb/workspace/paneLayout'
+import { setDocAiOpen } from './docai/docAiOpen'
 import Icon from '@renderer/components/Icon.vue'
 import { useNotebookScreen } from './notebookScreen'
 
@@ -8,6 +11,11 @@ import { useNotebookScreen } from './notebookScreen'
 const { q, hits, searching, setSearchInput, toggleSearch, openHit } = useNotebookScreen().search
 /** A line cut around its match: before, the match, after. */
 const parts = (s: string, at: number, len: number) => ({ a: s.slice(0, at), m: s.slice(at, at + len), b: s.slice(at + len) })
+/** A note found in its metadata: opened, its «Метаданные» shown. */
+function openMeta(path: string): void {
+  openFile(path)
+  setDocAiOpen(path, true)
+}
 </script>
 
 <template>
@@ -22,6 +30,11 @@ const parts = (s: string, at: number, len: number) => ({ a: s.slice(0, at), m: s
       <div v-for="h in hits" :key="h.path" class="hit tw:mb-6">
         <button class="hname tw:flex tw:items-center tw:gap-6 tw:w-full tw:py-4 tw:px-6 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[13px] tw:font-semibold tw:text-left tw:hover:bg-white/6 tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" :title="h.path" @click="openHit(h)">
           <Icon :name="isBoard(h.path) ? 'presentation' : 'note'" :size="12" /><span class="tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ h.name }}</span><em class="tw:not-italic tw:text-[11px] tw:font-medium tw:text-muted" v-if="h.count">{{ h.count }}</em>
+        </button>
+        <!-- found in its metadata too: where (a click — the note with its «Метаданные» open) -->
+        <button v-for="(m, i) in h.meta ?? []" :key="`m${i}`" class="tw:flex tw:items-center tw:gap-5 tw:w-full tw:min-w-0 tw:pt-2 tw:pr-6 tw:pb-2 tw:pl-24 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[12px] tw:text-left tw:whitespace-nowrap tw:hover:bg-white/6" :title="`Найдено в метаданных — ${META_PLACE[m.where]}`" @click="openMeta(h.path)">
+          <span class="tw:flex-none tw:px-5 tw:rounded-r1 tw:bg-accent/16 tw:text-accent-fg tw:text-[10.5px]">{{ META_PLACE[m.where] }}</span>
+          <span class="tw:min-w-0 tw:truncate"><span>{{ parts(m.text, m.at, m.len).a }}</span><mark class="tw:bg-warn/30 tw:text-text-hi tw:rounded-[2px]">{{ parts(m.text, m.at, m.len).m }}</mark><span>{{ parts(m.text, m.at, m.len).b }}</span></span>
         </button>
         <!-- found by its graph too: by what -->
         <div v-if="h.via?.length" class="hvia tw:flex tw:gap-4 tw:min-w-0 tw:pt-1 tw:pr-6 tw:pb-3 tw:pl-24 tw:overflow-hidden tw:whitespace-nowrap" :title="h.via.map(reasonText).join('\n')">

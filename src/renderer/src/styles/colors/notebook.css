@@ -35,6 +35,34 @@
   --ai-op-search: #c084fc;
   --ai-graph-edge: rgba(255, 255, 255, 0.16);
   --ai-graph-edge-lit: #fb923c;
+  /* an ER diagram's map: what is out of view, dimmed */
+  --er-map-mask: rgba(8, 10, 14, 0.6);
+  /* an ER diagram's schemas, each its own colour (in turn) */
+  --er-schema-1: #60a5fa;
+  --er-schema-2: #f59e0b;
+  --er-schema-3: #34d399;
+  --er-schema-4: #f472b6;
+  --er-schema-5: #a78bfa;
+  --er-schema-6: #22d3ee;
+  --er-schema-7: #fb7185;
+  --er-schema-8: #a3e635;
+  /* an ER diagram: each kind of a column's type (its type's words, the lines of its references) */
+  --er-type-number: #60a5fa;
+  --er-type-text: #34d399;
+  --er-type-time: #f59e0b;
+  --er-type-bool: #f472b6;
+  --er-type-json: #c084fc;
+  --er-type-uuid: #22d3ee;
+  --er-type-binary: #a8a29e;
+  --er-type-other: #94a3b8;
+  /* the trajectory of the AI's turns: each kind of step (its badge and its stretch on the time bar) */
+  --traj-system: #94a3b8;
+  --traj-context: #34d399;
+  --traj-user: #60a5fa;
+  --traj-model: #a78bfa;
+  --traj-tool: #f59e0b;
+  --traj-answer: #c4b5fd;
+  --traj-error: #f87171;
   /* a #tag: a yellow chip (in the text — with the tag's icon; under a note's name in the tree — its word alone) */
   --tag-chip: rgba(250, 204, 21, 0.18);
   --tag-chip-fg: #fde047;

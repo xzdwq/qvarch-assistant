@@ -181,7 +181,8 @@ export class VaultGraph {
     this.flush()
     const want = q.trim().toLowerCase()
     const out = new Map<string, GraphReason[]>()
-    if (want.replace(/^#/, '').length < 2) return out
+    // a tag — any length (`#1`); anything else — two letters at least (one finds everything)
+    if (!want.replace(/^#/, '') || (!want.startsWith('#') && want.length < 2)) return out
     const rows = want.startsWith('#') ? this.store.tagged(want.slice(1)) : this.store.find(want, SEARCH_KINDS)
     for (const r of rows) {
       const list = out.get(r.path) ?? out.set(r.path, []).get(r.path)!

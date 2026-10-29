@@ -17,6 +17,8 @@ export interface JiraCache {
   account?: { accountId: string; name: string }
   syncedAt?: number
   issues: JiraIssue[]
+  /** The tasks' ancestors not among them (the tree's upper levels: done, of other projects, above the epics). */
+  parents?: JiraIssue[]
   starred: string[]
   myStatus: Record<string, MyTaskStatus>
 }

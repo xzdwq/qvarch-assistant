@@ -6,6 +6,7 @@ import { linksIn, sectionOf, type NoteLinkRef } from '../../shared/notebook/link
 import { sharedDocOf } from '../../shared/transport/space'
 import { filesOf, resolveWiki, type VaultHit, type VaultNode } from '../../shared/vault'
 import { reasonText, type RelatedNote } from '../../shared/notebook/graph'
+import { META_PLACE } from '../../shared/agent/docAiSearch'
 import type { McpTool } from '../mcp'
 
 /**
@@ -124,7 +125,10 @@ export function turnTools(c: TurnToolsCtx): McpTool[] {
         if (!hits.length) return 'Ничего не найдено'
         return hits
           .slice(0, 30)
-          .map((h) => `${h.path}${h.via?.length ? ` (по связям: ${h.via.map(reasonText).join(', ')})` : ''}${h.lines.length ? `\n${h.lines.map((x) => `  ${x.line + 1}: ${x.text.trim()}`).join('\n')}` : ''}`)
+          .map(
+            (h) =>
+              `${h.path}${h.via?.length ? ` (по связям: ${h.via.map(reasonText).join(', ')})` : ''}${h.lines.length ? `\n${h.lines.map((x) => `  ${x.line + 1}: ${x.text.trim()}`).join('\n')}` : ''}${h.meta?.length ? `\n${h.meta.map((m) => `  [${META_PLACE[m.where]}] ${m.text}`).join('\n')}` : ''}`,
+          )
           .join('\n')
       },
     },

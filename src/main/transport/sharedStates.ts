@@ -4,6 +4,7 @@ import { SPACE_LINK_FILE } from '../../shared/transport/space'
 import { SHARED_FORMATS } from '../../shared/transport/sharedFormats'
 import type { SharedFolderLink } from '../../shared/transport/sharedFolder'
 import type { KeptState } from '../../shared/transport/sharedText'
+import { docAiOf, NO_DOC_AI, type DocAi } from '../../shared/agent/docAi'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -32,8 +33,11 @@ export class SharedStates {
   ) {
     this.dir = join(root, 'shared')
   }
-  /** A document's file — its state (`ystate`) or the text it was kept with (`ytext`); an id that is not one — refused. */
-  private file(doc: string, ext: 'ystate' | 'ytext' = 'ystate'): string {
+  /**
+   * A document's file — its state (`ystate`), the text it was kept with (`ytext`), its metadata (`yai`: the AI's memory
+   * and turns, JSON — the notes' search reads it); an id that is not one — refused.
+   */
+  private file(doc: string, ext: 'ystate' | 'ytext' | 'yai' = 'ystate'): string {
     if (!UUID.test(doc)) throw new Error('Неверный идентификатор документа')
     return join(this.dir, `${doc}.${ext}`)
   }
@@ -53,6 +57,19 @@ export class SharedStates {
     writeFileSync(`${f}.tmp`, Buffer.from(kept.state, 'base64'))
     renameSync(`${t}.tmp`, t)
     renameSync(`${f}.tmp`, f)
+    if (kept.ai) {
+      const a = this.file(doc, 'yai')
+      writeFileSync(`${a}.tmp`, JSON.stringify(docAiOf(kept.ai)))
+      renameSync(`${a}.tmp`, a)
+    }
+  }
+  /** A document's metadata as last kept (none kept, broken — none). */
+  aiOf(doc: string): DocAi {
+    try {
+      return docAiOf(JSON.parse(readFileSync(this.file(doc, 'yai'), 'utf8')))
+    } catch {
+      return NO_DOC_AI
+    }
   }
 
   /** A folder of the notebook (outside it — refused). */

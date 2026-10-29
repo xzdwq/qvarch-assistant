@@ -30,6 +30,10 @@ export class JiraApi {
   myself(): Promise<{ accountId: string; displayName: string } | undefined> {
     return this.call(this.jiraUrl('/rest/api/3/myself'))
   }
+  /** Every field of the site: its id and schema (a custom one's kind — the site's own parent fields are found by it). */
+  async fields(): Promise<Array<{ id: string; schema?: { custom?: string } }>> {
+    return (await this.call<Array<{ id: string; schema?: { custom?: string } }>>(this.jiraUrl('/rest/api/3/field'))) ?? []
+  }
   /** A project's releases (fix versions). */
   async projectVersions(project: string): Promise<JiraVersion[]> {
     const vs = await this.call<Array<{ id: string; name: string; released?: boolean; archived?: boolean; releaseDate?: string; description?: string }>>(this.jiraUrl(`/rest/api/3/project/${project}/versions`))

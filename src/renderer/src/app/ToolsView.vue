@@ -10,7 +10,7 @@ import { toolItem } from './toolsRegistry'
  * Инструменты: a side list (its width dragged; folded down to the icons) and the one picked — its own tools
  * (comparing texts, encodings, JSON ↔ YAML, regular expressions, timestamps, cron, the clipboard's history, signing
  * a PDF) and the sections the person moved here (Настройки → Оформление → Меню), in the person's order. The
- * terminal and the browser stay once opened (their sessions, their pages); the window keeps this section on too.
+ * browser stays once opened (its pages); the window keeps this section on too.
  */
 const props = defineProps<{ menu: UiPrefs['menu'] }>()
 const items = computed(() => toolsIds(props.menu).flatMap((id) => (toolItem(id) ? [{ id, ...toolItem(id)! }] : [])))
@@ -70,7 +70,7 @@ function dragWidth(e: PointerEvent): void {
       <span v-if="!mini" class="grip tw:absolute tw:top-0 tw:-right-3 tw:bottom-0 tw:z-3 tw:w-6 tw:cursor-col-resize tw:hover:bg-accent-line" title="Ширина панели" @pointerdown="dragWidth"></span>
     </aside>
     <section class="tbody tw:relative tw:min-w-0 tw:min-h-0 tw:overflow-hidden">
-      <!-- the terminal and the browser: kept once opened; the rest — the picked one -->
+      <!-- the browser: kept once opened; the rest — the picked one -->
       <component :is="t.view" v-for="t in alive" v-show="current?.id === t.id" :key="t.id" class="tw:[&&]:h-full" :active="shown && current?.id === t.id" @open-http="openHttp" />
       <KeepAlive v-if="current && !current.alive">
         <component :is="current.view" :key="current.id" />

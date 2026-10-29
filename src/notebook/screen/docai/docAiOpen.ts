@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
 /**
- * «Работа ИИ» open — each note its own (a pane showing another note shows its own state; back to the note — as it was
+ * «Метаданные» open — each note its own (a pane showing another note shows its own state; back to the note — as it was
  * left). Opened and closed by its button only.
  */
 const open = reactive(new Set<string>())

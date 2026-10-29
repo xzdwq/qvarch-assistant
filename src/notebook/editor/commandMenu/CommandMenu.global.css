@@ -126,7 +126,7 @@
   border: 0;
   border-radius: var(--r2);
   background: transparent;
-  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  font-family: var(--font-emoji);
   font-size: 22px;
   line-height: 1;
 }

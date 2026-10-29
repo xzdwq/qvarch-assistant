@@ -1,5 +1,6 @@
-import type { JiraFacets, JiraIssue, JiraListQuery, JiraVersion } from '../../shared/jira'
+import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraVersion } from '../../shared/jira'
 import { listTasks, priorityRank } from '../../shared/jira'
+import { taskTree } from '../../shared/jiraTree'
 
 /** A page of a list: `offset` from 0, `limit` within 1…200. */
 function pageOf<T>(list: T[], offset: number, limit: number): T[] {
@@ -23,13 +24,16 @@ export interface IssueSearch {
   starred: string[]
   /** Today, YYYY-MM-DD (the list's «overdue» and similar). */
   today: string
+  /** The tasks' ancestors fetched apart (the tree's upper levels). */
+  parents?: readonly JiraIssue[]
 }
 
 /**
  * A page of the open tasks that match a search (key, title, labels, components, status, people, the
  * description), the facets of all the open ones; without the descriptions.
  */
-export function findIssues(issues: JiraIssue[], s: IssueSearch): { items: JiraIssue[]; total: number; facets: JiraFacets } {
+/** `total` — the rows (pages are of them; in the tree the ancestors too), `found` — the tasks themselves. */
+export function findIssues(issues: JiraIssue[], s: IssueSearch): { items: JiraListItem[]; total: number; found: number; facets: JiraFacets } {
   const words = wordsOf(s.q)
   const top = (i: JiraIssue) => (i.mine || s.starred.includes(i.key) ? 0 : 1)
   const hit = (i: JiraIssue) => {
@@ -52,12 +56,15 @@ export function findIssues(issues: JiraIssue[], s: IssueSearch): { items: JiraIs
     labels: uniq(openOnes.flatMap((i) => i.labels ?? [])).sort((a, b) => a.localeCompare(b, 'ru')),
     priorities: uniq(openOnes.map((i) => i.priority)).sort((a, b) => rankOf(a) - rankOf(b)),
   }
-  return { items: pageOf(list, s.offset, s.limit).map(withoutDescription), total: list.length, facets }
+  // the tree: the found tasks under their ancestors (any task known — open ones not found, the ones fetched apart)
+  const rows: JiraListItem[] =
+    s.query?.view === 'tree' ? taskTree(list, new Map([...(s.parents ?? []), ...issues].map((i) => [i.key, i])), new Set(s.query.folded ?? [])) : list
+  return { items: pageOf(rows, s.offset, s.limit).map(withoutDescription), total: rows.length, found: list.length, facets }
 }
 
 /** A task without its description (the windows ask for one task's description at a time). */
-export function withoutDescription({ description: _d, ...i }: JiraIssue): JiraIssue {
-  return i
+export function withoutDescription<T extends JiraIssue>({ description: _d, ...i }: T): T {
+  return i as T
 }
 
 /**

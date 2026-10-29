@@ -6,7 +6,8 @@ import { findNode } from '../shared/vaultTree'
 import { BOARD_EXT } from '../shared/whiteboard'
 import type { DocBundle } from '../shared/docBundle'
 import type { AgentLines } from '../shared/notebook/agentLines'
-import type { DocAi } from '../shared/agent/docAi'
+import { NO_DOC_AI, type DocAi } from '../shared/agent/docAi'
+import { metaHits } from '../shared/agent/docAiSearch'
 import { cleanName, VaultFiles } from './vault/vaultFiles'
 import { VaultMeta } from './vault/vaultMeta'
 import { VaultRuns } from './vault/vaultRuns'
@@ -231,17 +232,30 @@ export class Vault {
   notebookGraph(): NotebookGraph {
     return this.graph.notebook()
   }
+  /** A shared note's metadata by its document (where the shared states are kept; set once they are). */
+  sharedMeta: (doc: string) => DocAi = () => NO_DOC_AI
   /**
-   * All notes whose name or text has the query (any case), a few matching lines of each; and the ones its graph
-   * finds (`#тег`, a table, a request…) — with why.
+   * All notes whose name or text has the query (any case), a few matching lines of each; the ones its graph finds
+   * (`#тег`, a table, a request…) — with why; the ones whose metadata has it (the AI's memory, its turns) — with where.
    */
   search(q: string, limit = 60): VaultHit[] {
-    const hits = searchNotes(this.tree(), (p) => this.read(p), q, limit)
-    for (const [path, via] of this.graph.search(q)) {
+    const tree = this.tree()
+    const hits = searchNotes(tree, (p) => this.read(p), q, limit)
+    const add = (path: string, more: Pick<VaultHit, 'via' | 'meta'>) => {
       const hit = hits.find((h) => h.path === path)
-      if (hit) hit.via = via
-      else if (hits.length < limit) hits.push({ path, name: basename(path, '.md'), inName: false, count: 0, lines: [], via })
+      if (hit) Object.assign(hit, more)
+      else if (hits.length < limit) hits.push({ path, name: basename(path, '.md'), inName: false, count: 0, lines: [], ...more })
     }
+    for (const [path, via] of this.graph.search(q)) add(path, { via })
+    const walk = (ns: VaultNode[]): void =>
+      ns.forEach((n) => {
+        if (n.dir) return walk(n.children ?? [])
+        if (n.board) return
+        const ai = n.doc ? this.sharedMeta(n.doc) : this.meta.docAiOf(n.path)
+        const meta = ai.memory || ai.turns.length ? metaHits(ai, q) : []
+        if (meta.length) add(n.path, { meta })
+      })
+    walk(tree)
     return hits
   }
   /** The notes and boards that have this text as it is (`limit` — at most this many found). */

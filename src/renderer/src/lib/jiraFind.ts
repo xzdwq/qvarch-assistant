@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
-import type { JiraFacets, JiraIssue, JiraListQuery } from '@shared/jira'
+import type { JiraFacets, JiraListItem, JiraListQuery } from '@shared/jira'
 import { useJira } from './jira'
 
 /**
@@ -8,8 +8,11 @@ import { useJira } from './jira'
  */
 export function useJiraFind(q: Ref<string>, opts: { page?: number; active?: Ref<boolean>; mode?: 'list' | 'pick'; query?: Ref<JiraListQuery> } = {}) {
   const PAGE = opts.page ?? 50
-  const items = shallowRef<JiraIssue[]>([])
+  const items = shallowRef<JiraListItem[]>([])
+  /** The rows there are (the pages are of them). */
   const total = ref(0)
+  /** The tasks found (in the tree — without their ancestors shown for them). */
+  const found = ref(0)
   const loading = ref(false)
   const facets = shallowRef<JiraFacets>({ statuses: [], priorities: [], labels: [] })
   const jira = useJira()
@@ -24,6 +27,7 @@ export function useJiraFind(q: Ref<string>, opts: { page?: number; active?: Ref<
       if (my !== seq) return
       items.value = reset ? r.items : [...items.value, ...r.items]
       total.value = r.total
+      found.value = r.found
       facets.value = r.facets
     } finally {
       if (my === seq) loading.value = false
@@ -45,5 +49,5 @@ export function useJiraFind(q: Ref<string>, opts: { page?: number; active?: Ref<
     const el = e.target as HTMLElement
     if (el.scrollTop + el.clientHeight > el.scrollHeight - 160) void load(false)
   }
-  return { items, total, facets, loading, more: () => load(false), reload: () => load(true), onScroll }
+  return { items, total, found, facets, loading, more: () => load(false), reload: () => load(true), onScroll }
 }

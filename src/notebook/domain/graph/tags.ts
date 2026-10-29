@@ -1,7 +1,7 @@
 /**
  * A note's tags, as Obsidian writes them: `#тег` in the text (`#работа/релиз` — nested; found by `#работа` too) and
- * `tags:` in the front matter. Not a tag: a heading's `# `, a number (`#12`), a place in a link (`[[A#раздел]]`,
- * `https://x#a`), anything in `code`.
+ * `tags:` in the front matter; a number is a tag too (`#1`). Not a tag: a heading's `# `, a `#` after a word (`C#`),
+ * a place in a link (`[[A#раздел]]`, `https://x#a`), anything in `code`.
  */
 
 export interface NoteTag {
@@ -16,10 +16,10 @@ const TAG = /(?<![\p{L}\p{N}_/&#\\])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu
 export const TAG_TYPED = /(?<![\p{L}\p{N}_/&#\\])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)$/u
 /** What a tag's name goes on with (the rest of it, as typed). */
 export const TAG_REST = /^[\p{L}\p{N}_\-/]*$/u
-/** A tag's name cleaned: no trailing `/` `-`; a number alone — none. */
+/** A tag's name cleaned: no trailing `/` `-` (a number is a tag too: `#1`, `#2026`). */
 function clean(raw: string): string | undefined {
   const t = raw.replace(/[/-]+$/, '').replace(/^#/, '').trim()
-  return t && /[\p{L}_]/u.test(t) ? t : undefined
+  return t || undefined
 }
 /** A text's links and code blanked (their `#` are not tags) — its lines kept. */
 const blanked = (text: string) =>

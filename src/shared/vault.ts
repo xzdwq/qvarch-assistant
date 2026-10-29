@@ -1,5 +1,6 @@
 /** The notebook (Markdown files): a node of the tree, a search hit, and the helpers both sides use. */
 import type { GraphReason } from './notebook/graph'
+import type { MetaHit } from './agent/docAiSearch'
 
 /** What can be made in the vault's tree. */
 export const VAULT_ENTRY_KINDS = ['note', 'folder', 'board'] as const
@@ -57,6 +58,8 @@ export interface VaultHit {
   lines: Array<{ line: number; col: number; len: number; text: string; at: number }>
   /** Found by its graph too: by what (a tag, a table, a request…). */
   via?: GraphReason[]
+  /** Found in its metadata too: the AI's memory, its turns. */
+  meta?: MetaHit[]
 }
 
 /** A picture of a note / a board: vault/.images/<file> (its own line `![[.images/<file>]]` in a note). */

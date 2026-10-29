@@ -43,6 +43,8 @@ export const homeless = (r: ChatRoom): boolean => !!chatHomes.value && isHomeles
 
 /** A note's runnable components as chips (db, js/ts, http…). */
 export const runsOf = (n: VaultNode): string[] => liveOf(n.path)?.runs ?? n.runs ?? []
+/** A note shows a chat (its chip goes first among the components). */
+export const hasChatOf = (n: VaultNode): boolean => (liveOf(n.path)?.chats ?? n.chats ?? []).length > 0
 /** The tags of a note's first line (shown before its components). */
 export const headTagsOf = (n: VaultNode): string[] => liveOf(n.path)?.tags ?? n.tags ?? []
 const docOf = (n: VaultNode): string | undefined => {

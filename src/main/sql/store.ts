@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import { ProcessSupervisor } from '../process/processSupervisor'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DB_DEFAULTS, connName, sqlTemplates, type DbConn, type DbSchema, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
+import { DB_DEFAULTS, connName, sqlTemplates, type DbConn, type DbSchema, type ErSchema, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
 import type { Vault } from '../vault'
 
 /**
@@ -92,7 +92,7 @@ export class SqlStore {
 
   /** A query run (or explained) on a connection by its name; `runId` — to stop it. */
   run(runId: string, connRef: string, sql: string, values: unknown[], mode: SqlMode): Promise<SqlRunOut> {
-    return this.exec(runId, connRef, sql, values, mode, false)
+    return this.exec(runId, connRef, sql, values, mode, 'query')
   }
   private schemas = new Map<string, DbSchema>()
   /** The connection's tables and columns, kept 5 minutes (a query's typing asks often). */
@@ -101,13 +101,30 @@ export class SqlStore {
     if (!s) return { error: `Нет подключения «${connRef}»` }
     const kept = this.schemas.get(s.id)
     if (kept && !fresh && Date.now() - kept.at < 5 * 60_000) return kept
-    const out = await this.exec(`schema#${s.id}`, s.id, '', [], 'run', true)
+    const out = await this.exec(`schema#${s.id}`, s.id, '', [], 'run', 'schema')
     const sc = (out.run as { schema?: DbSchema } | undefined)?.schema
     if (!out.ok || !sc) return { error: out.error ?? 'Схему не прочитать' }
     this.schemas.set(s.id, sc)
     return sc
   }
-  private exec(runId: string, connRef: string, sql: string, values: unknown[], mode: SqlMode, schema: boolean): Promise<SqlRunOut> {
+  private ers = new Map<string, ErSchema>()
+  /**
+   * The connection's structure for an ER diagram (tables, columns, keys, references) — read only when asked (a button),
+   * in a process of its own like any query (`runId` — to stop it: cancelled on the server); kept 5 minutes.
+   */
+  async er(runId: string, connRef: string, fresh = false): Promise<ErSchema | { error: string }> {
+    const s = this.read().find((x) => x.name === connRef || x.id === connRef)
+    if (!s) return { error: `Нет подключения «${connRef}»` }
+    const kept = this.ers.get(s.id)
+    if (kept && !fresh && Date.now() - kept.at < 5 * 60_000) return kept
+    const out = await this.exec(runId, s.id, '', [], 'run', 'er')
+    const er = (out.run as { er?: ErSchema } | undefined)?.er
+    if (!out.ok || !er) return { error: out.error ?? 'Структуру базы не прочитать' }
+    this.ers.set(s.id, er)
+    return er
+  }
+  /** What a process is started for: a query, the completion's schema, the ER diagram's structure. */
+  private exec(runId: string, connRef: string, sql: string, values: unknown[], mode: SqlMode, what: 'query' | 'schema' | 'er'): Promise<SqlRunOut> {
     const s = this.read().find((x) => x.name === connRef || x.id === connRef)
     if (!s) return Promise.resolve({ ok: false, error: connRef ? `Нет подключения «${connRef}» — добавьте его в «Базы данных»` : 'Не выбрано подключение', ms: 0 })
     if (this.queries.count((id) => id !== runId && this.runConn.get(id) === s.id) >= PER_CONN) return Promise.resolve({ ok: false, error: `К «${s.name}» уже идут ${PER_CONN} запроса — дождитесь их или остановите`, ms: 0 })
@@ -117,7 +134,7 @@ export class SqlStore {
     const t0 = Date.now()
     this.runConn.set(runId, s.id)
     const done = this.queries.start(runId, {
-      job: { conn, sql, values, mode, schema },
+      job: { conn, sql, values, mode, schema: what === 'schema', er: what === 'er' },
       timeoutSec: sec,
       // the server's own limit failed to stop it, the process did not answer: stopped from here
       timeoutError: `Нет ответа дольше ${sec} с — запрос снят, соединение закрыто`,

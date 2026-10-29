@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { JIRA_DUE_FILTERS, JIRA_SORTS, priorityRank, type JiraDueFilter, type JiraIssue, type JiraListQuery, type JiraSort, type TaskRef } from '@shared/jira'
-import { formatDuration } from '@shared/timeline'
+import { JIRA_DUE_FILTERS, JIRA_SORTS, type JiraDueFilter, type JiraIssue, type JiraListQuery, type JiraSort, type TaskRef } from '@shared/jira'
+import { jiraColumnsOf, type JiraColumn } from '@shared/jiraColumns'
 import Icon from '../components/Icon.vue'
-import { formatSec, useJira } from '../lib/jira'
+import { useJira } from '../lib/jira'
 import JiraDetails from '../components/JiraDetails.vue'
 import FilterMenu from '../components/FilterMenu.vue'
 import EventModal from '../components/EventModal.vue'
-import TaskWorked, { type Worked } from '../components/TaskWorked.vue'
+import type { Worked } from '../components/TaskWorked.vue'
 import { useJiraFind } from '../lib/jiraFind'
+import TaskRow from './TaskRow.vue'
+import TaskFieldsMenu from './TaskFieldsMenu.vue'
 
 /**
- * Jira: every open task of the projects, by project and due date — page by page as the list is scrolled; the
- * search goes to the main process. My own status (review / done) is set here. The estimate is compared with the
- * time tracked in the app on blocks linked to the task.
+ * Jira: every open task of the projects — a list by project, or the tree of their parents (a solution → its epics →
+ * their stories → the tasks), page by page as it is scrolled; the search goes to the main process. The fields shown
+ * are picked («Поля»). The estimate is compared with the time tracked in the app on blocks linked to the task.
  */
 const emit = defineEmits<{ settings: []; openDay: [day: string] }>()
 const jira = useJira()
@@ -58,10 +60,41 @@ const fAssignee = fq('assignee')
 const fPriority = fq('priorities')
 const fDue = fq('due')
 const fLabels = fq('labels')
-const anyFilter = computed(() => !!(query.value.statuses?.length || query.value.assignee?.length || query.value.priorities?.length || query.value.due?.length || query.value.labels?.length))
-const resetFilters = () => (query.value = { sort: query.value.sort, desc: query.value.desc })
+/** The tree of parents or the flat list (kept with the filters). */
+const tree = computed(() => query.value.view === 'tree')
+const toggleView = () => (query.value = { ...query.value, view: tree.value ? 'list' : 'tree' })
+/** A task's children hidden / shown in the tree (kept). */
+function foldNode(key: string): void {
+  const f = new Set(query.value.folded ?? [])
+  if (f.has(key)) f.delete(key)
+  else f.add(key)
+  query.value = { ...query.value, folded: f.size ? [...f] : undefined }
+}
 
-const { items, total, facets, loading, onScroll, more } = useJiraFind(q, { page: 60, query })
+// ---------- the fields shown (remembered) ----------
+const COLS_KEY = 'qa.jira.cols'
+const cols = ref<JiraColumn[]>(
+  (() => {
+    try {
+      return jiraColumnsOf(JSON.parse(localStorage.getItem(COLS_KEY) ?? 'null'))
+    } catch {
+      return jiraColumnsOf(undefined)
+    }
+  })(),
+)
+watch(cols, (v) => {
+  try {
+    localStorage.setItem(COLS_KEY, JSON.stringify(v))
+  } catch {
+    // fine
+  }
+})
+const anyFilter = computed(() => !!(query.value.statuses?.length || query.value.assignee?.length || query.value.priorities?.length || query.value.due?.length || query.value.labels?.length))
+const resetFilters = () => (query.value = { sort: query.value.sort, desc: query.value.desc, view: query.value.view, folded: query.value.folded })
+
+const { items, total, found, facets, loading, onScroll, more } = useJiraFind(q, { page: 60, query })
+/** The tasks among the loaded rows (an ancestor shown for its descendants is none; a folded one counts what it hides). */
+const tasksIn = (rows: typeof items.value) => rows.reduce((n, i) => n + (i.context ? 0 : 1) + (i.folded ? (i.inside ?? 0) : 0), 0)
 const statusOpts = computed(() => facets.value.statuses.map((x) => ({ id: x, label: x })))
 const priorityOpts = computed(() => facets.value.priorities.map((x) => ({ id: x, label: x })))
 const labelOpts = computed(() => (facets.value.labels ?? []).map((x) => ({ id: x, label: x })))
@@ -108,8 +141,6 @@ watch(() => jira.value.syncedAt, () => (full.value = {}))
 
 /** «В работу»: the window of a new event, the task in it — the day and the time are picked there. */
 const workTask = ref<TaskRef>()
-const prioClass = (i: JiraIssue) => ['', 'p1', 'p2', 'p3', 'p4', 'p5', ''][priorityRank(i)]
-const fmtCreated = (t?: number) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '')
 /**
  * The list is filled to the bottom of the box: the next pages come by scrolling — but a short list (the projects
  * folded, a first page of one project) has nothing to scroll, so they are asked for at once until it overflows.
@@ -142,14 +173,14 @@ onBeforeUnmount(offDay)
 onMounted(loadTracked)
 watch(() => jira.value.syncedAt, loadTracked)
 
-const isDone = (i: JiraIssue) => i.category === 'done'
-/** The loaded page(s), by project (they come sorted by project). */
+/** The loaded page(s), by project (they come sorted by it; in the tree — by its branch's root's project). */
 const groups = computed(() => {
-  const out: Array<[string, { name: string; items: JiraIssue[] }]> = []
+  const out: Array<[string, { name: string; items: typeof items.value }]> = []
   for (const i of items.value) {
+    const key = i.section ?? i.project.key
     const last = out[out.length - 1]
-    if (last && last[0] === i.project.key) last[1].items.push(i)
-    else out.push([i.project.key, { name: i.project.name || i.project.key, items: [i] }])
+    if (last && last[0] === key) last[1].items.push(i)
+    else out.push([key, { name: (i.project.key === key && i.project.name) || key, items: [i] }])
   }
   return out
 })
@@ -190,9 +221,8 @@ function foldAll(): void {
 watch([folded, () => items.value.length, loading], () => !loading.value && void fill())
 
 const today = new Date().toISOString().slice(0, 10)
-const fmtDue = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`
-function open(i: JiraIssue): void {
-  if (jira.value.siteUrl) openUrl(`${jira.value.siteUrl}/browse/${i.key}`)
+function open(key: string): void {
+  if (jira.value.siteUrl) openUrl(`${jira.value.siteUrl}/browse/${key}`)
 }
 /** The button turns while a sync goes (at least a moment — a quick one would not be seen). */
 const spinning = ref(false)
@@ -206,8 +236,6 @@ async function sync(): Promise<void> {
   }
 }
 const hm = (t?: number) => (t ? new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '')
-/** Tracked vs estimate, 0..1+ */
-const ratio = (i: JiraIssue) => (i.estimateSec ? (tracked.value[i.key] ?? 0) / 1000 / i.estimateSec : 0)
 const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syncedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—'))
 </script>
 
@@ -223,6 +251,8 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
         <FilterMenu v-model="fLabels" label="Метки" icon="tag" :options="labelOpts" />
         <button v-if="anyFilter" class="ico tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:text-muted tw:inline-flex tw:py-5 tw:px-7" title="Сбросить фильтры" @click="resetFilters"><Icon name="x" :size="13" /></button>
         <span class="spacer tw:flex-1"></span>
+        <button class="ico tw:inline-flex tw:items-center tw:gap-5 tw:py-5 tw:px-7 tw:[&.on]:text-accent-fg" :class="{ on: tree }" :title="tree ? 'Дерево: задачи под историями, эпиками и выше · нажмите — списком' : 'Списком · нажмите — деревом (по родителям: solution → эпик → история → задача)'" @click="toggleView"><Icon :name="tree ? 'branch' : 'list'" :size="14" /></button>
+        <TaskFieldsMenu v-model="cols" />
         <span class="sortbox tw:inline-flex tw:items-center tw:gap-2">
           <select class="tw:h-28 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px]" v-model="query.sort" title="Сортировка (внутри проекта)">
             <option v-for="o in SORTS" :key="o.id" :value="o.id">{{ o.label }}</option>
@@ -240,7 +270,7 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 
     <template v-else>
       <div class="bar tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
-        <span class="muted small tw:text-[12px]">Все незакрытые задачи · {{ total }}<template v-if="items.length < total"> · показано {{ items.length }}</template></span>
+        <span class="muted small tw:text-[12px]">Все незакрытые задачи · {{ found }}<template v-if="items.length < total"> · загружено строк {{ items.length }} из {{ total }}</template></span>
         <span class="spacer tw:flex-1"></span>
         <span class="muted small tw:text-[12px]" :title="jira.error ? `Последняя попытка ${hm(jira.errorAt)}: ${jira.error}
 Задачи — из последней удачной синхронизации (${syncedText}). Следующая попытка — по расписанию или кнопкой.` : ''">
@@ -255,30 +285,10 @@ const syncedText = computed(() => (jira.value.syncedAt ? new Date(jira.value.syn
 
       <section v-for="[key, g] in groups" :key="key" class="proj tw:group/proj tw:bg-panel tw:border tw:border-border tw:rounded-[4px] tw:py-10 tw:px-14" :class="{ folded: folded.has(key) }">
         <h3 class="tw:flex tw:items-center tw:gap-6 tw:cursor-pointer tw:select-none tw:mt-2 tw:mr-0 tw:mb-8 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2 tw:group-[.folded]/proj:mb-2" :title="folded.has(key) ? 'Развернуть' : 'Свернуть'" @click="fold(key)">
-          <Icon name="chevronRight" :size="12" class="fchev tw:[transform:rotate(90deg)] tw:[transition:transform_0.15s] tw:text-muted tw:group-[.folded]/proj:transform-none" />{{ g.name }} <span class="muted tw:font-normal tw:text-[12px]">{{ key }}</span><span class="cnt tw:ml-auto tw:py-0 tw:px-7 tw:rounded-[9px] tw:bg-hover tw:text-muted tw:font-normal">{{ g.items.length }}</span>
+          <Icon name="chevronRight" :size="12" class="fchev tw:[transform:rotate(90deg)] tw:[transition:transform_0.15s] tw:text-muted tw:group-[.folded]/proj:transform-none" />{{ g.name }} <span class="muted tw:font-normal tw:text-[12px]">{{ key }}</span><span class="cnt tw:ml-auto tw:py-0 tw:px-7 tw:rounded-[9px] tw:bg-hover tw:text-muted tw:font-normal">{{ tasksIn(g.items) }}</span>
         </h3>
         <template v-for="i in folded.has(key) ? [] : g.items" :key="i.key">
-        <div class="row tw:group/row tw:grid tw:grid-cols-[18px_18px_84px_minmax(0,1fr)_96px_120px_76px_64px_48px_60px_150px_28px] tw:items-center tw:gap-10 tw:py-5 tw:px-4 tw:border-t tw:border-t-white/4 tw:text-[13px] tw:[&.done]:opacity-50 tw:[&.open]:bg-panel-2" :class="{ done: isDone(i), open: isOpen(i.key) }">
-          <button class="chev tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:not-group-[.open]/row:text-muted tw:inline-flex tw:p-2 tw:border-0 tw:bg-transparent tw:text-muted tw:[transition:transform_0.12s] tw:group-[.open]/row:[transform:rotate(90deg)] tw:group-[.open]/row:text-accent-fg tw:hover:enabled:not-[.seg_&]:bg-hover tw:hover:enabled:not-[.seg_&]:border-border-3" :title="isOpen(i.key) ? 'Свернуть' : 'Описание и поля'" @click="toggleOpen(i.key)"><Icon name="chevronRight" :size="13" /></button>
-          <span class="mine tw:inline-flex tw:justify-center tw:text-accent-fg" :title="i.mine ? 'Назначена на вас' : i.assignee ? `Исполнитель: ${i.assignee}` : 'Без исполнителя'"><Icon v-if="i.mine" name="users" :size="13" /></span>
-          <a class="key tw:text-info-fg tw:font-semibold tw:no-underline tw:hover:underline" href="#" :title="`Открыть ${i.key} в Jira`" @click.prevent="open(i)">{{ i.key }}</a>
-          <span class="sum tw:flex tw:items-center tw:gap-5 tw:min-w-0 tw:cursor-default tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap" :title="i.summary" @click="toggleOpen(i.key)">
-            <span class="sumt tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">{{ i.summary }}</span>
-            <i v-for="c in (i.components ?? []).slice(0, 2)" :key="`c${c}`" class="tg comp tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:not-italic tw:font-data tw:text-[10.5px] tw:bg-info/16 tw:text-info-fg">{{ c }}</i>
-            <i v-for="l in (i.labels ?? []).slice(0, 3)" :key="`l${l}`" class="tg tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-panel-3 tw:text-text-2 tw:not-italic tw:font-data tw:text-[10.5px]">{{ l }}</i>
-          </span>
-          <span class="type muted tw:text-[11px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ i.type }}</span>
-          <span class="st tw:[&.mine]:inline-flex tw:[&.mine]:justify-center tw:[&.created]:not-[&.due]:font-data tw:[&.created]:not-[&.due]:tabular-nums tw:[justify-self:start] tw:max-w-full tw:py-1 tw:px-8 tw:rounded-r2 tw:text-[11px] tw:font-semibold tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:bg-muted/18 tw:text-text-2 tw:[&.done]:bg-up/18 tw:[&.done]:text-up-fg tw:[&.due]:tabular-nums tw:[&.due]:font-data tw:[&.due]:text-[12px] tw:[&.due]:not-[&.done]:text-muted tw:[&&]:[&.due]:[&.late]:text-down-fg tw:[&.due]:[&.late]:font-bold" :class="i.category">{{ i.status }}</span>
-          <span class="prio tw:[&.mine]:inline-flex tw:[&.mine]:justify-center tw:overflow-hidden tw:text-muted tw:text-[11.5px] tw:text-ellipsis tw:whitespace-nowrap tw:[&.p1]:not-[&.p2]:not-[&.p3]:text-down-fg tw:[&.p1]:not-[&.p2]:font-bold tw:[&.p2]:not-[&.p3]:text-warn-fg tw:[&.p2]:font-semibold tw:[&.p3]:text-text-2 tw:[&.created]:not-[&.p1]:not-[&.p2]:not-[&.p3]:not-[&.due]:text-muted tw:[&.created]:not-[&.due]:font-data tw:[&.created]:not-[&.due]:text-[11.5px] tw:[&.created]:not-[&.due]:tabular-nums tw:[&.due]:tabular-nums tw:[&.due]:font-data tw:[&.due]:text-[12px] tw:[&.due]:not-[&.p1]:not-[&.p2]:not-[&.p3]:text-muted tw:[&&&&]:[&.due]:[&.late]:text-down-fg tw:[&&]:[&.due]:[&.late]:font-bold" :class="prioClass(i)" :title="i.priority ? `Приоритет: ${i.priority}` : 'Без приоритета'">{{ i.priority ?? '' }}</span>
-          <TaskWorked :blocks="worked[i.key] ?? []" />
-          <span class="due tw:tabular-nums tw:font-data tw:text-[12px] tw:text-muted tw:[&.late]:text-down-fg tw:[&.late]:font-bold" :class="{ late: i.due && i.due < today && !isDone(i) }" :title="i.due ? `Срок выполнения ${i.due.split('-').reverse().join('.')}` : 'Без срока'">{{ i.due ? fmtDue(i.due) : '' }}</span>
-          <span class="created tw:text-muted tw:font-data tw:text-[11.5px] tw:tabular-nums" :title="i.created ? `Создана ${new Date(i.created).toLocaleString('ru-RU')}` : ''">{{ fmtCreated(i.created) }}</span>
-          <span class="est tw:flex tw:flex-col tw:gap-3 tw:text-[11px] tw:text-muted tw:tabular-nums tw:font-data" :title="`Оценка ${formatSec(i.estimateSec)} · размечено в приложении ${formatDuration(tracked[i.key] ?? 0)} · списано в Jira ${formatSec(i.spentSec)}`">
-            <span class="nums">{{ formatDuration(tracked[i.key] ?? 0) }} / {{ formatSec(i.estimateSec) }}</span>
-            <span v-if="i.estimateSec" class="ebar tw:h-4 tw:rounded-[2px] tw:bg-white/8 tw:overflow-hidden"><span class="tw:block tw:h-full tw:bg-up tw:[&.over]:bg-down" :class="{ over: ratio(i) > 1 }" :style="{ width: `${Math.min(100, ratio(i) * 100)}%` }"></span></span>
-          </span>
-          <button class="work tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:not-hover:bg-transparent tw:[.seg_&]:py-5 tw:[.seg_&]:px-12 tw:[.seg_&]:text-[12px] tw:[.seg_&]:not-hover:text-muted tw:inline-flex tw:justify-center tw:p-4 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-accent/18 tw:hover:text-accent-fg tw:hover:enabled:not-[.seg_&]:border-border-3" title="В работу — новое событие по задаче (выберите день и время)" @click="workTask = { key: i.key, summary: i.summary }"><Icon name="play" :size="13" /></button>
-        </div>
+        <TaskRow :i="i" :cols="cols" :open="isOpen(i.key)" :tree="tree" :tracked="tracked[i.key] ?? 0" :worked="worked[i.key] ?? []" :today="today" @details="toggleOpen(i.key)" @fold="foldNode(i.key)" @jira="open" @work="workTask = { key: i.key, summary: i.summary }" />
         <JiraDetails v-if="isOpen(i.key)" class="det tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-18 tw:border-l-2 tw:border-l-accent tw:bg-panel-2" :issue="full[i.key] ?? i" />
         </template>
       </section>

@@ -74,7 +74,7 @@ export function useForceGraph(el: Ref<HTMLElement | undefined>, view: ForceGraph
     const x = (n.x ?? 0) - width / 2
     const y = (n.y ?? 0) + n.r + fs
     if (n.emoji) {
-      ctx.font = `${icon}px system-ui, "Segoe UI Emoji", sans-serif`
+      ctx.font = `${icon}px "Twemoji Country Flags", system-ui, "Segoe UI Emoji", sans-serif`
       ctx.fillText(n.emoji, x, y)
       ctx.font = `${fs}px "Inter Variable", system-ui, sans-serif`
     } else {

@@ -22,7 +22,8 @@ import { useNotebookScreen } from '../notebookScreen'
 import { NODE_LOOK } from './graphLook'
 import { useForceGraph, type GNode } from './useForceGraph'
 
-defineProps<{ pi: number }>()
+/** (a view tab's pane and path — every view gets them) */
+defineProps<{ pi: number; path?: string }>()
 const { search } = useNotebookScreen()
 
 // ---------- the graph, read again a moment after the notes change ----------

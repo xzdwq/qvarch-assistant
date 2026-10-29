@@ -56,8 +56,11 @@ describe('tags', () => {
     const text = '---\ntags: [Релиз, work]\n---\n# Заголовок\nтекст #релиз и #проект/модуль-а.'
     expect(tagsIn(text).map((t) => t.name)).toEqual(['релиз', 'work', 'проект/модуль-а'])
   })
-  it('not a tag: a heading, a number, a place in a link, code, an address', () => {
-    expect(tagsIn('## Раздел\n#12 [[Заметка#раздел]] `#code` https://x.test/#frag [a](https://x.test#b) C#').map((t) => t.name)).toEqual([])
+  it('not a tag: a heading, a place in a link, code, an address, a # after a word', () => {
+    expect(tagsIn('## Раздел\n[[Заметка#раздел]] `#code` https://x.test/#frag [a](https://x.test#b) C# a#b').map((t) => t.name)).toEqual([])
+  })
+  it('a number is a tag too', () => {
+    expect(tagsIn('#1\n\nтекст #2026').map((t) => t.name)).toEqual(['1', '2026'])
   })
 })
 

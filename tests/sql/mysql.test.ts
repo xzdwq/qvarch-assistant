@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createDB } from 'mysql-memory-server'
 import mysql from 'mysql2/promise'
 import { readSchema, runSql } from '../../src/main/sql/engine'
-import { bindSql, type DbConn } from '../../src/shared/sql'
+import { bindSql, guardSql, type DbConn } from '../../src/shared/sql'
+import { erCatalogOf, readEr } from '../../src/main/sql/erCatalog'
 
 /**
  * The MySQL side against a real server (downloaded once, run apart): the same as PostgreSQL's — read only, a lock of
@@ -112,5 +113,22 @@ describe('MySQL: read, safely', () => {
     expect(run.plan!.analyzed).toBe(true)
     expect(JSON.stringify(run.plan!.root)).toMatch(/Table scan/)
     expect(await noneLeft()).toBe(0)
+  })
+})
+
+describe('MySQL: the structure for an ER diagram', () => {
+  it('columns, comments, keys, references; nothing left open', async () => {
+    await admin.query("create table er_customers (id int primary key, email varchar(80) not null unique comment 'Почта') comment 'Клиенты'")
+    await admin.query('create table er_orders (id int primary key, customer_id int null, foreign key (customer_id) references er_customers(id))')
+    const s = await readEr(conn())
+    const t = (name: string) => s.tables.find((x) => x.name === name)!
+    expect(t('er_customers').comment).toBe('Клиенты')
+    expect(t('er_customers').columns.find((c) => c.name === 'email')).toMatchObject({ unique: true, nullable: false, comment: 'Почта' })
+    expect(t('er_customers').columns.find((c) => c.name === 'id')!.pk).toBe(true)
+    expect(t('er_orders').columns.find((c) => c.name === 'customer_id')).toMatchObject({ nullable: true, fk: [expect.objectContaining({ table: 'er_customers', column: 'id' })] })
+    expect(await noneLeft()).toBe(0)
+  })
+  it('the catalogue’s queries pass the guard (read only)', () => {
+    for (const q of Object.values(erCatalogOf('mysql'))) expect(guardSql(q, 'mysql')).toEqual({ ok: true })
   })
 })

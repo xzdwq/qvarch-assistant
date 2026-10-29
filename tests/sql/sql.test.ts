@@ -9,6 +9,7 @@ import { rowsCsv } from '../../src/shared/tableData'
 import { formatCode } from '../../src/shared/codeformat'
 import { bindSql, guardSql, rowsAsObjects, sqlTemplates, sqlTitle, withTitle } from '../../src/shared/sql'
 import { testDir } from '../testTemp'
+import { erCatalogOf, readEr } from '../../src/main/sql/erCatalog'
 
 describe('what may be sent: one reading statement', () => {
   const ok = (s: string, kind: 'pg' | 'mysql' | 'sqlite' = 'pg') => guardSql(s, kind).ok
@@ -170,5 +171,32 @@ describe('SQLite: a file read only', () => {
     const db = new DatabaseSync(file)
     expect((db.prepare('select count(*) as n from log').get() as { n: number }).n).toBe(0)
     db.close()
+  })
+})
+
+describe('SQLite: the structure for an ER diagram', () => {
+  let dir: string
+  let file: string
+  beforeAll(() => {
+    dir = testDir('sqlite-er-')
+    file = join(dir, 'er.sqlite')
+    const db = new DatabaseSync(file)
+    db.exec(`create table customers (id integer primary key, email text not null unique);
+      create table orders (id integer primary key, customer_id int references customers, note text default 'нет');
+      create view v_orders as select id from orders;`)
+    db.close()
+  })
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+  it('keys, unique, a reference to the primary key without its column, a view', async () => {
+    const s = await readEr({ id: 't', name: 't', kind: 'sqlite', file })
+    const t = (name: string) => s.tables.find((x) => x.name === name)!
+    expect(t('customers').columns.find((c) => c.name === 'id')!.pk).toBe(true)
+    expect(t('customers').columns.find((c) => c.name === 'email')).toMatchObject({ unique: true, nullable: false })
+    expect(t('orders').columns.find((c) => c.name === 'customer_id')!.fk).toEqual([expect.objectContaining({ table: 'customers', column: 'id' })])
+    expect(t('orders').columns.find((c) => c.name === 'note')!.default).toBe("'нет'")
+    expect(t('v_orders').view).toBe(true)
+  })
+  it('the catalogue’s queries pass the guard (read only)', () => {
+    for (const q of Object.values(erCatalogOf('sqlite'))) expect(guardSql(q, 'sqlite')).toEqual({ ok: true })
   })
 })

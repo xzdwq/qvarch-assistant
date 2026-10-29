@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * «ИИ в документе» in a note's status line: its panel slides up over the note, held to the line — the document's
+ * «Метаданные» in a note's status line: its panel slides up over the note, held to the line — the document's
  * memory (what every AI turn reads: its aim, what was agreed, how to work in it — kept short; the agents keep it, and
- * so may everyone who edits the note) and the AI's work in it: the journal of turns, or the graph of what they touched.
+ * so may everyone who edits the note) and the AI's turns in it: the journal as a trajectory, or the graph of what they touched.
  * Its head dragged up or down — its height (kept, as the view chosen).
  */
 import { computed, ref, watch } from 'vue'
@@ -18,7 +18,7 @@ import { docAiNow, mayEditDocAi, MemoryChanged, setDocMemory } from '@nb/workspa
 import { openNoteAt } from '@nb/workspace/noteGoto'
 import { noteName } from '@nb/domain/notePaths'
 import DocAiGraph from './DocAiGraph.vue'
-import DocAiJournal from './DocAiJournal.vue'
+import DocAiTrajectory from './DocAiTrajectory.vue'
 import { isDocAiOpen, setDocAiOpen } from './docAiOpen'
 
 /** `bar` — the status line the panel is held to (its width, its top). */
@@ -112,20 +112,20 @@ function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
   <button
     class="tw:inline-flex tw:items-center tw:gap-4 tw:h-20 tw:py-0 tw:px-6 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:bg-white/8 tw:hover:text-text tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg"
     :class="{ on: open }"
-    :title="open ? 'Скрыть работу ИИ' : 'Работа ИИ в документе: его память, журнал и граф'"
+    :title="open ? 'Скрыть метаданные' : 'Метаданные документа: память ИИ, журнал ходов (траектория) и граф'"
     @click="open = !open"
   >
-    <Icon name="sparkles" :size="12" />Работа ИИ<b v-if="ai.turns.length" class="tw:font-data tw:font-normal">{{ ai.turns.length }}</b>
+    <Icon name="layers" :size="12" />Метаданные<b v-if="ai.turns.length" class="tw:font-data tw:font-normal">{{ ai.turns.length }}</b>
   </button>
   <Popover v-slot="{ room }" v-model:open="open" :anchor="bar" :place="onBar" max-height="none" stay class="tw:fixed tw:z-4000 tw:border tw:border-border-2 tw:border-b-0 tw:rounded-t-[14px] tw:bg-pop tw:[box-shadow:var(--shadow-pop-edge)] tw:text-[12.5px] tw:overflow-hidden">
     <div class="tw:flex tw:flex-col tw:gap-10 tw:pb-12 tw:px-14" :style="{ height: `${Math.min(height, room ?? height)}px` }">
       <!-- the head: drag it up / down — the height -->
       <div class="tw:flex tw:flex-none tw:items-center tw:gap-8 tw:-mx-14 tw:pt-4 tw:pb-2 tw:px-14 tw:cursor-ns-resize tw:select-none" title="Потяните вверх или вниз — высота панели" @pointerdown="startDrag($event, room ?? height)" @pointermove="onDrag" @pointerup="endDrag" @pointercancel="endDrag">
         <span class="tw:absolute tw:left-1/2 tw:top-4 tw:w-36 tw:h-3 tw:-ml-18 tw:rounded-full tw:bg-white/14"></span>
-        <Icon name="sparkles" :size="14" class="tw:mt-8 tw:text-accent-fg" />
-        <b class="tw:mt-8 tw:text-text-hi tw:text-[13px]">ИИ в документе</b>
+        <Icon name="layers" :size="14" class="tw:mt-8 tw:text-accent-fg" />
+        <b class="tw:mt-8 tw:text-text-hi tw:text-[13px]">Метаданные документа</b>
         <span class="tw:flex-1"></span>
-        <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:mt-8 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Скрыть (так же — «Работа ИИ» внизу)" @click="open = false"><Icon name="x" :size="13" /></button>
+        <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:mt-8 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Скрыть (так же — «Метаданные» внизу)" @click="open = false"><Icon name="x" :size="13" /></button>
       </div>
 
       <!-- the memory -->
@@ -161,13 +161,13 @@ function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
       <div class="tw:flex-none tw:h-1 tw:-mx-14 tw:bg-border"></div>
       <!-- the AI's work: the journal, or the graph -->
       <div class="tw:flex tw:flex-none tw:items-center tw:gap-8 tw:text-[11.5px]">
-        <b class="tw:text-text">Работа ИИ</b>
+        <b class="tw:text-text">Ходы ИИ</b>
         <span class="tw:inline-flex tw:border tw:border-border-2 tw:rounded-full tw:overflow-hidden">
           <button v-for="v in DOC_AI_VIEWS" :key="v" class="tw:h-22 tw:py-0 tw:px-10 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:bg-accent/18 tw:[&.on]:text-text" :class="{ on: view === v }" @click="view = v">{{ VIEW_LABEL[v] }}</button>
         </span>
         <span class="tw:text-muted">последние {{ ai.turns.length }} ходов</span>
       </div>
-      <DocAiJournal v-if="view === 'journal'" class="tw:flex-1" :turns="ai.turns" />
+      <DocAiTrajectory v-if="view === 'journal'" class="tw:flex-1" :turns="ai.turns" />
       <DocAiGraph v-else class="tw:flex-1" :turns="ai.turns" :title="noteName(path)" @open="go" />
     </div>
   </Popover>

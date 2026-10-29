@@ -1,7 +1,8 @@
-import type { JiraFacets, JiraIssue, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from '../../shared/jira'
+import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from '../../shared/jira'
 import { JiraApi } from './jiraApi'
 import { JiraAuth } from './jiraAuth'
-import { JIRA_ISSUE_FIELDS, jiraIssueFrom, validProjectKeys } from './jiraIssueMapping'
+import { JIRA_ISSUE_FIELDS, jiraIssueFrom, parentFieldsOf, validProjectKeys } from './jiraIssueMapping'
+import { fetchAncestors } from './jiraAncestors'
 import { findIssues, findVersions, withoutDescription } from './jiraQueries'
 import { JiraSignIn } from './jiraSignIn'
 import { JiraStorage, type JiraCache } from './jiraStorage'
@@ -108,8 +109,8 @@ export class Jira {
     return this.cache.issues.find((i) => i.key === key)
   }
   /** A page of the open tasks that match a search — by project, then due date and state; without the descriptions. */
-  find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list', query?: JiraListQuery): { items: JiraIssue[]; total: number; facets: JiraFacets } {
-    return findIssues(this.cache.issues, { q, offset, limit, mode, query, starred: this.cache.starred, today: new Date().toLocaleDateString('sv-SE') })
+  find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list', query?: JiraListQuery): { items: JiraListItem[]; total: number; found: number; facets: JiraFacets } {
+    return findIssues(this.cache.issues, { q, offset, limit, mode, query, starred: this.cache.starred, today: new Date().toLocaleDateString('sv-SE'), parents: this.cache.parents ?? [] })
   }
   star(key: string, on: boolean): void {
     this.cache.starred = on ? [...new Set([...this.cache.starred, key])] : this.cache.starred.filter((k) => k !== key)
@@ -187,6 +188,13 @@ export class Jira {
 
   // ---------- sync ----------
 
+  /** The site's own parent fields (id → schema), found once a run (none found, an error — Jira's `parent` alone). */
+  private parentFieldsCache?: Record<string, string>
+  private async parentFields(): Promise<Record<string, string>> {
+    if (!this.parentFieldsCache) this.parentFieldsCache = parentFieldsOf(await this.api.fields().catch(() => []))
+    return this.parentFieldsCache
+  }
+
   /** Every task of the projects that is not done (mine among them), and everything picked by hand. */
   async sync(): Promise<void> {
     if (this.syncing || !this.cache.cloudId) return
@@ -195,13 +203,19 @@ export class Jira {
     this.syncing = true
     this.changed()
     try {
-      const toIssue = (key: string, fields: Record<string, any>) => jiraIssueFrom(key, fields, this.cache.account?.accountId)
-      const open = await this.api.search(`project in (${projects.join(',')}) AND statusCategory != Done ORDER BY updated DESC`, JIRA_ISSUE_FIELDS, ALL_LIMIT, toIssue)
+      const parentFields = await this.parentFields()
+      const fields = [...JIRA_ISSUE_FIELDS, ...Object.keys(parentFields)]
+      const toIssue = (key: string, f: Record<string, any>) => jiraIssueFrom(key, f, this.cache.account?.accountId, parentFields)
+      const open = await this.api.search(`project in (${projects.join(',')}) AND statusCategory != Done ORDER BY updated DESC`, fields, ALL_LIMIT, toIssue)
       const byKey = new Map<string, JiraIssue>()
       for (const i of open) byKey.set(i.key, i)
       const missing = this.cache.starred.filter((k) => !byKey.has(k))
-      if (missing.length) for (const i of await this.api.search(`key in (${missing.join(',')})`, JIRA_ISSUE_FIELDS, missing.length, toIssue)) byKey.set(i.key, i)
+      if (missing.length) for (const i of await this.api.search(`key in (${missing.join(',')})`, fields, missing.length, toIssue)) byKey.set(i.key, i)
       this.cache.issues = [...byKey.values()]
+      // the tree's upper levels: the parents not among the tasks (done, of other projects, above the epics)
+      this.cache.parents = (
+        await fetchAncestors(this.cache.issues, (k) => byKey.has(k), (keys) => this.api.search(`key in (${keys.join(',')})`, fields, keys.length, toIssue))
+      ).map(withoutDescription)
       this.cache.syncedAt = Date.now()
       this.error = undefined
       this.storage.writeCache(this.cache)

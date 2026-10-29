@@ -9,7 +9,7 @@ import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
-import type { JiraFacets, JiraIssue, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from './jira'
+import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi } from './browser'
 import type { TestFilesApi } from './testFiles'
@@ -241,7 +241,7 @@ export interface QaApi {
   jiraWorked(): Promise<Record<string, Array<{ day: string; id: string; start: number; end: number }>>>
   /** A page of the open Jira tasks matching a search (no descriptions). */
   /** `query` — the task list's filters and sort (without it: the old order — by project and due date / for picking). */
-  jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick', query?: JiraListQuery): Promise<{ items: JiraIssue[]; total: number; facets: JiraFacets }>
+  jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick', query?: JiraListQuery): Promise<{ items: JiraListItem[]; total: number; found: number; facets: JiraFacets }>
   /** Терминал: shells that live until the app quits. */
   termCreate(cwd?: string): Promise<TermSession>
   termWrite(id: string, data: string): void

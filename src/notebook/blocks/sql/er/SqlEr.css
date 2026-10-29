@@ -1,0 +1,62 @@
+/* SqlEr: Vue Flow's own parts in the app's colours (its DOM is the library's — reached with :deep). */
+
+.er-flow {
+  background: var(--bg);
+}
+/* the lines (their colour — their column's kind of type, set on each): may be empty (NULL) — dashed; lit — thicker;
+   the rest, while something is lit — faint */
+.er-flow :deep(.vue-flow__edge-path) {
+  stroke-width: 1.4;
+}
+.er-flow :deep(.er-optional .vue-flow__edge-path) {
+  stroke-dasharray: 5 4;
+}
+.er-flow :deep(.er-lit .vue-flow__edge-path) {
+  stroke-width: 2.4;
+}
+.er-flow :deep(.vue-flow__edge.er-dim) {
+  opacity: 0.18;
+}
+.er-flow :deep(.vue-flow__edge) {
+  cursor: pointer;
+}
+/* the cards: no frame of the library's own (the card draws its own) */
+.er-flow :deep(.vue-flow__node-table) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.er-flow :deep(.vue-flow__node-table.selected) {
+  outline: 1.5px solid var(--accent);
+  border-radius: 8px;
+}
+/* a column's ends: there for the lines, not seen */
+.er-flow :deep(.er-handle) {
+  width: 4px;
+  height: 4px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+.er-flow :deep(.vue-flow__minimap) {
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+}
+.er-flow :deep(.vue-flow__controls) {
+  box-shadow: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.er-flow :deep(.vue-flow__controls-button) {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  fill: var(--text-2);
+}
+.er-flow :deep(.vue-flow__controls-button:hover) {
+  background: var(--hover);
+}

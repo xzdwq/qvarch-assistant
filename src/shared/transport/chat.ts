@@ -1,4 +1,5 @@
 import type { DeviceInfo } from './protocol'
+import { isEmoji } from '../emoji'
 
 /** A message of a room: `seq` — its place in the room (the server gives them in a row, from 1). */
 export interface ChatMessage {
@@ -75,8 +76,8 @@ export const HISTORY_MAX = 2000
 
 /** The reactions offered first (any emoji may be put — the full list is a click away). */
 export const REACTIONS = ['👍', '❤️', '😄', '😮', '🎉', '✅'] as const
-/** An emoji as a reaction: a short text with a pictograph (no words, no markup). */
-export const isReaction = (x: unknown): x is string => typeof x === 'string' && x.length > 0 && x.length <= 16 && /\p{Extended_Pictographic}/u.test(x) && !/[\p{L}\p{N}<>]/u.test(x)
+/** An emoji as a reaction: one emoji, a flag too (no words, no markup). */
+export const isReaction = isEmoji
 
 /** What a message may carry (each drawn its own way): a block's result, a picture shown right there, a file. */
 export const ATTACH_KINDS = ['sql', 'http', 'code', 'pw', 'value', 'image', 'file', 'trace', 'voice'] as const

@@ -16,6 +16,10 @@ import SqlLibrary from './SqlLibrary.vue'
 import MenuButton, { type MenuItem } from '@renderer/components/MenuButton.vue'
 import DataGrid from '@renderer/components/DataGrid.vue'
 import { useGrid } from '@renderer/lib/grid'
+import SqlEr from './er/SqlEr.vue'
+import HeightGrip from '../../ui/HeightGrip.vue'
+import { useSqlEr } from './er/useSqlEr'
+import { openErTab } from './er/erTabs'
 
 /**
  * «@бд»: a query to a database (```sql db=<connection> name=<rows>): run read-only, one connection for it alone; its
@@ -133,6 +137,31 @@ const off = (n: PlanNode) => {
   return (r >= 10 || r <= 0.1) && Math.max(real, n.est.rows) >= 1000
 }
 const pub = computed(() => parts.value.info.name)
+// ---------- the ER diagram: read only when asked (its own panel; stopped — cancelled on the server) ----------
+const er = useSqlEr({ db: () => parts.value.info.db, sql: () => body.value })
+const erItems = computed<MenuItem[]>(() => [
+  { label: 'По таблицам запроса', icon: 'database', title: 'Таблицы, которые называет запрос, и их связи', disabled: !conn.value, run: () => er.build('query') },
+  { label: 'Выбрать таблицы…', icon: 'list', title: 'Отметить таблицы базы самому — и их связи', disabled: !conn.value, run: () => er.build('picked') },
+  { label: 'Вся база', icon: 'grid', title: 'Все таблицы базы (большая — спросит ещё раз)', disabled: !conn.value, run: () => er.build('all') },
+])
+// ---------- what it shows under the query (the ER diagram, the rows): one height for both (h=, its edge dragged) ----------
+/** The height when none is kept, px. */
+const OUT_H = 520
+/** Taken by the ER's bar and the rows' head, px. */
+const ER_BAR = 36
+const RES_HEAD = 34
+const dragH = ref<number>()
+const outH = computed(() => dragH.value ?? parts.value.info.h ?? OUT_H)
+const hasEr = computed(() => er.phase.value !== 'idle')
+const hasRes = computed(() => !!run.value && run.value.state !== 'run' && !!(table.value || plan.value || run.value.error))
+/** Both shown — the diagram 60 %, the rows 40 %; one — all of it. */
+const erH = computed(() => (hasRes.value ? Math.round(outH.value * 0.6) : outH.value) - ER_BAR)
+/** The rows' room (no height kept and no diagram — as before: the grid's own). */
+const resH = computed(() => (parts.value.info.h || dragH.value || hasEr.value ? (hasEr.value ? Math.round(outH.value * 0.4) : outH.value) - RES_HEAD : undefined))
+function keepH(px: number): void {
+  dragH.value = undefined
+  fence.patchInfo({ h: px })
+}
 const planItems = computed<MenuItem[]>(() => [
   { label: 'План без выполнения', icon: 'list', title: 'Что собирается делать сервер — мгновенно, запрос не выполняется', run: () => go('plan') },
   { label: 'План с выполнением', icon: 'zap', title: 'Запрос выполняется (только чтение, с откатом) и замеряется: время и строки каждого шага', run: () => go('analyze') },
@@ -156,6 +185,7 @@ const planItems = computed<MenuItem[]>(() => [
     <div class="bs-ed"><CodeArea v-model="body" lang="sql" :lang-ext="langExt" :run="() => go()" :min-height="60" placeholder="select … from … where id = {{ значение.из.заметки }}" /></div>
     <div class="bs-acts tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap">
       <MenuButton label="План" icon="list" :disabled="run?.state === 'run'" title="План запроса: что делает сервер и где узкие места" :width="300" :items="planItems" />
+      <MenuButton label="ER" icon="branch" :disabled="!conn || er.busy.value" title="ER-диаграмма: таблицы, колонки, ключи и связи — строится только по нажатию" :width="260" :items="erItems" />
       <button class="pill tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-24 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:border-accent tw:hover:enabled:text-text tw:disabled:opacity-50 tw:hover:enabled:bg-hover" title="Отформатировать запрос (ключевые слова, отступы) — по правилам СУБД подключения" @click="format"><Icon name="code" :size="12" />Форматировать</button>
       <button v-if="conn" class="pill tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-24 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[12px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:border-accent tw:hover:enabled:text-text tw:disabled:opacity-50 tw:hover:enabled:bg-hover" :disabled="schemaBusy" :title="schemaErr ? `Схема не прочитана: ${schemaErr}` : 'Подсказки при наборе: схемы, таблицы, колонки (с типами). Прочитать схему заново'" @click="loadSchema(true)"><Icon name="refresh" :size="12" />{{ schemaBusy ? 'схема…' : schemaErr ? 'схема: ошибка' : `схема · ${tableCount}` }}</button>
       <span class="muted hint tw:text-muted tw:overflow-hidden tw:text-[11.5px] tw:text-ellipsis" :title="pub ? `Строки результата — в переменной {{${pub}}}: {{${pub}[0].поле}}` : ''">Ctrl+Enter — выполнить</span>
@@ -163,6 +193,7 @@ const planItems = computed<MenuItem[]>(() => [
     <p v-if="fmtErr" class="bs-miss tw:m-0 tw:text-down-fg tw:text-[12.5px] tw:whitespace-pre-wrap">{{ fmtErr }}</p>
     <p v-if="run?.sql?.missing.length" class="bs-miss tw:m-0 tw:text-down-fg tw:text-[12.5px] tw:whitespace-pre-wrap">Нет значения: <code v-for="m in run.sql.missing" :key="m">{{ '{' }}{{ '{' }}{{ m }}{{ '}' }}{{ '}' }}</code> — выполните блок, который его даёт</p>
 
+    <SqlEr v-if="hasEr" :er="er" :height="erH" @tab="openErTab(er, parts.info.db ?? '', body)" />
     <div v-if="run && run.state !== 'run' && (table || plan || run.error)" class="bs-res tw:border tw:border-border-2 tw:rounded-[8px] tw:overflow-hidden tw:bg-bg tw:min-w-0 tw:max-w-full tw:contain-[inline-size]">
       <div class="bs-rh tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap tw:py-4 tw:px-8 tw:border-b tw:border-b-border tw:[background:var(--bg-2,transparent)] tw:text-[12.5px]">
         <button class="fold tw:inline-grid tw:place-items-center tw:w-20 tw:h-20 tw:p-0 tw:border-0 tw:[background:none] tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :title="open ? 'Свернуть' : 'Показать'" @mousedown.prevent @click="open = !open"><Icon name="chevronRight" :size="12" :style="open ? 'transform: rotate(90deg)' : ''" /></button>
@@ -185,8 +216,8 @@ const planItems = computed<MenuItem[]>(() => [
       </div>
       <template v-if="open">
         <p v-if="run.error" class="bs-err tw:m-0 tw:text-down-fg tw:text-[12.5px] tw:whitespace-pre-wrap tw:py-6 tw:px-10">{{ run.error }}</p>
-        <DataGrid v-if="table" :grid="grid" />
-        <div v-if="plan" class="bs-plan tw:pt-6 tw:pr-8 tw:pb-8 tw:pl-8">
+        <DataGrid v-if="table" :grid="grid" :max-height="resH" />
+        <div v-if="plan" class="bs-plan tw:pt-6 tw:pr-8 tw:pb-8 tw:pl-8 tw:overflow-y-auto" :style="resH ? { maxHeight: `${resH}px` } : undefined">
           <ul v-if="plan.findings.length" class="finds tw:mt-0 tw:mr-0 tw:mb-8 tw:ml-0 tw:p-0 tw:[list-style:none]">
             <li class="tw:flex tw:items-baseline tw:gap-6 tw:py-2 tw:px-0 tw:text-[12.5px]" v-for="(f, i) in plan.findings" :key="i" :class="f.level"><Icon :name="f.level === 'warn' ? 'zap' : 'list'" :size="12" />{{ f.text }}</li>
           </ul>
@@ -212,6 +243,8 @@ const planItems = computed<MenuItem[]>(() => [
         </div>
       </template>
     </div>
+    <!-- the shown part's bottom edge: dragged — the ER and the rows taller or lower (kept in the block: h=) -->
+    <HeightGrip v-if="hasEr || hasRes" :height="outH" @drag="(h) => (dragH = h)" @done="keepH" />
   </div>
 </template>
 

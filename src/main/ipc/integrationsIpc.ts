@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUNDLE_EXT, MAX_BUNDLE, parseBundle } from '../../shared/docBundle'
 import { cleanFileName } from '../../shared/transport/chat'
+import { docAiOf } from '../../shared/agent/docAi'
 import type { AppContext } from '../app/appContext'
 import { LocalChats } from '../transport/localChats'
 import { ReactionStats } from '../transport/reactionStats'
@@ -27,7 +28,9 @@ export function registerIntegrationsIpc(app: AppContext): void {
   listen('sharedLog', (_e, line) => transport.log.write(`window ${String(line).slice(0, 500)}`))
   handle('sharedFolderLink', (_e, dir, link) => shared.writeLink(String(dir), link && typeof link === 'object' ? link : null))
   handle('sharedLoad', (_e, doc) => shared.load(String(doc)))
-  handle('sharedSave', (_e, doc, kept) => shared.save(String(doc), { state: String(kept?.state ?? ''), ...(typeof kept?.text === 'string' ? { text: kept.text } : {}) }))
+  handle('sharedSave', (_e, doc, kept) =>
+    shared.save(String(doc), { state: String(kept?.state ?? ''), ...(typeof kept?.text === 'string' ? { text: kept.text } : {}), ...(kept?.ai && typeof kept.ai === 'object' ? { ai: docAiOf(kept.ai) } : {}) }),
+  )
   handle('sharedMedia', (_e, space, rels, ways) => transport.syncMedia(String(space), Array.isArray(rels) ? rels.map(String) : [], { send: ways?.send !== false, fetch: ways?.fetch !== false }))
   handle('sharedResultsPut', (_e, space, doc, changes) => transport.results.put(String(space), String(doc), changes && typeof changes === 'object' ? changes : {}))
   const local = new LocalChats(app.store.root)

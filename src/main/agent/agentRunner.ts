@@ -1,6 +1,6 @@
-import { runAgentLoop, type ToolSpec, type TraceLine } from '../../shared/agent/agentLoop'
+import { runAgentLoop, type ModelTrace, type ToolSpec, type TraceLine } from '../../shared/agent/agentLoop'
 import { buildPack, type Pack } from '../../shared/agent/contextPack'
-import { baseUrlOf, modelOf, type AgentProfile } from '../../shared/agent/profiles'
+import { baseUrlOf, headersOf, modelOf, sessionHeaderOf, type AgentProfile } from '../../shared/agent/profiles'
 import { AGENT_PROVIDERS, type AgentProtocol } from '../../shared/agent/providers'
 import type { TurnAnswer, TurnRequest } from '../../shared/agent/turn'
 import { TOUCHES_MAX, touchesOf, type Touch } from '../../shared/agent/touches'
@@ -10,8 +10,10 @@ import type { McpTool } from '../mcp'
 import { qvarchTools } from '../mcpTools'
 import { componentsBrief } from '../../notebook/blocks/catalog'
 import type { AgentStore } from './agentStore'
+import { TurnTrajectory } from './turnTrajectory'
 import { claudeCodeTurn, claudeVersion } from './claudeCode'
 import { anthropicError, anthropicModels, AnthropicSession } from './sessions/anthropicSession'
+import { harnessTurn, type RemoteTool } from './sessions/harnessSession'
 import { openAiModels, OpenAiSession } from './sessions/openaiSession'
 import { turnTools } from './turnTools'
 
@@ -24,9 +26,17 @@ interface TurnRun {
   signal: AbortSignal
   /** Each tool call as it is made (the window shows the agent working). */
   onTrace: (t: TraceLine) => void
+  /** Each step of the model (the turn's trajectory; a provider that runs its own loop — none). */
+  onModel: (m: ModelTrace) => void
+  /** A tool of a harness elsewhere, as it told (its trajectory's steps). */
+  onRemoteTool: (t: RemoteTool) => void
+  /** The conversation's id at a harness (each chat and agent its own). */
+  session: string
 }
 /** How each protocol runs a turn, lists its models, says its errors (the compiler checks none is missing). */
 interface ProtocolRunner {
+  /** It works with tools of its own (a harness elsewhere): it is not told of ours. */
+  ownTools?: boolean
   turn(r: TurnRun, host: McpHost): Promise<{ text: string; note?: string }>
   models(p: AgentProfile, key?: string): Promise<string[]>
   error(e: unknown): string | undefined
@@ -97,7 +107,7 @@ const RUNNERS: Record<AgentProtocol, ProtocolRunner> = {
   anthropic: {
     async turn(r) {
       const session = new AnthropicSession({ key: needKey(r.profile, r.key), baseUrl: baseUrlOf(r.profile), model: modelOf(r.profile), system: r.pack.system, prompt: r.pack.prompt, tools: specs(r.tools) })
-      return runAgentLoop({ session, callTool: callerOf(r.tools), signal: r.signal, onTrace: r.onTrace })
+      return runAgentLoop({ session, callTool: callerOf(r.tools), signal: r.signal, onTrace: r.onTrace, onModel: r.onModel })
     },
     models: (p, key) => anthropicModels(needKey(p, key), baseUrlOf(p)),
     error: anthropicError,
@@ -107,13 +117,44 @@ const RUNNERS: Record<AgentProtocol, ProtocolRunner> = {
       const p = r.profile
       if (!modelOf(p)) throw new Error(`Не выбрана модель для «${p.name}»`)
       const session = new OpenAiSession({ baseUrl: baseUrlOf(p) ?? '', key: needKey(p, r.key) || undefined, headers: AGENT_PROVIDERS[p.provider].headers, model: modelOf(p), system: r.pack.system, prompt: r.pack.prompt, tools: specs(r.tools) })
-      const out = await runAgentLoop({ session, callTool: callerOf(r.tools), signal: r.signal, onTrace: r.onTrace })
+      const out = await runAgentLoop({ session, callTool: callerOf(r.tools), signal: r.signal, onTrace: r.onTrace, onModel: r.onModel })
       return session.toolless ? { ...out, note: [out.note, 'модель без инструментов — ответ только по контексту'].filter(Boolean).join('; ') } : out
     },
     models: (p, key) => {
       const base = baseUrlOf(p)
       if (!base) throw new Error('Укажите адрес сервера')
       return openAiModels({ baseUrl: base, key: key || undefined, headers: AGENT_PROVIDERS[p.provider].headers })
+    },
+    error: () => undefined,
+  },
+  harness: {
+    ownTools: true,
+    async turn(r) {
+      const p = r.profile
+      const base = baseUrlOf(p)
+      if (!base) throw new Error(`Укажите адрес агента «${p.name}» (до /v1)`)
+      const live = (t: RemoteTool) => {
+        r.onRemoteTool(t)
+        r.onTrace({ tool: t.name, args: (t.args ?? '').slice(0, 160), ok: !t.failed, result: (t.result ?? '').slice(0, 160) })
+      }
+      return harnessTurn({
+        baseUrl: base,
+        key: needKey(p, r.key) || undefined,
+        headers: { ...AGENT_PROVIDERS[p.provider].headers, ...headersOf(p) },
+        model: modelOf(p),
+        system: r.pack.system,
+        prompt: r.pack.prompt,
+        sessionHeader: sessionHeaderOf(p),
+        sessionId: r.session,
+        toolEvent: AGENT_PROVIDERS[p.provider].toolEvent,
+        signal: r.signal,
+        onTool: live,
+      })
+    },
+    models: (p, key) => {
+      const base = baseUrlOf(p)
+      if (!base) throw new Error('Укажите адрес агента (до /v1)')
+      return openAiModels({ baseUrl: base, key: key || undefined, headers: { ...AGENT_PROVIDERS[p.provider].headers, ...headersOf(p) } })
     },
     error: () => undefined,
   },
@@ -141,12 +182,20 @@ export class AgentRunner {
     const trace: TraceLine[] = []
     /** What the turn's calls touched (their arguments whole — the journal's graph is drawn from them). */
     const touches: Touch[] = []
-    const answer = (a: Omit<TurnAnswer, 'trace' | 'touches'>): TurnAnswer => ({ ...a, trace, ...(touches.length ? { touches: touches.slice(0, TOUCHES_MAX) } : {}) })
+    /** The turn step by step (the journal's trajectory). */
+    const traj = new TurnTrajectory()
+    const answer = (a: Omit<TurnAnswer, 'trace' | 'touches' | 'steps'>): TurnAnswer => ({
+      ...a,
+      trace,
+      ...(touches.length ? { touches: touches.slice(0, TOUCHES_MAX) } : {}),
+      steps: traj.ended(a.text, a.error),
+    })
     try {
       // an agent writes in the background (the note one is in never switches), its lines marked as its
       const ui = <T>(op: string, args: Record<string, unknown>) => this.host.toolCtx.ui<T>(op, { ...args, quiet: true, by: { turn: req.turn, name: req.agentName } })
       const vault = this.app.vault
-      const tools = touchedBy(touches, req.doc?.path ?? '', turnTools({
+      const t0 = Date.now()
+      const tools = touchedBy(touches, req.doc?.path ?? '', traj.timed(turnTools({
         req,
         profile,
         base: qvarchTools({ ...this.host.toolCtx, ui }),
@@ -155,9 +204,10 @@ export class AgentRunner {
         related: (p) => vault.related(p).related,
         mkdir: (dir, name) => vault.create(dir, 'folder', name),
         ui,
-      }))
-      const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: true, components: componentsBrief(), ...(req.memory ? { memory: req.memory } : {}) })
-      const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => (trace.push(t), onTrace(t)) }, this.host)
+      })))
+      const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: !runner.ownTools, components: componentsBrief(), ...(req.memory ? { memory: req.memory } : {}) })
+      traj.given(pack, Date.now() - t0, req.messages[req.question]?.text ?? '', { memory: !!req.memory?.memory, links: req.links.length, messages: req.messages.length })
+      const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => (trace.push(t), onTrace(t)), onModel: (m) => traj.model(m), onRemoteTool: (t) => traj.remote(t), session: `qvarch-${req.room}-${profile.id}` }, this.host)
       return answer({ text: out.text, ...(out.note ? { note: out.note } : {}) })
     } catch (e) {
       if (ac.signal.aborted) return answer({ text: '', error: 'Остановлено', stopped: true })

@@ -1,4 +1,5 @@
 import { readSchema, runSql, SqlError, type SqlMode } from './engine'
+import { readEr } from './erCatalog'
 import type { DbConn } from '../../shared/sql'
 
 /**
@@ -13,6 +14,8 @@ interface Job {
   mode: SqlMode
   /** The tables and columns read instead (for completion). */
   schema?: boolean
+  /** The tables, columns, keys and references read instead (an ER diagram). */
+  er?: boolean
 }
 const port = process.parentPort
 const ac = new AbortController()
@@ -25,7 +28,11 @@ port.on('message', (e: { data: Job | { type: 'stop' } }) => {
   }
   if (started) return
   started = true
-  const work = m.schema ? readSchema(m.conn, ac.signal).then((schema) => ({ schema })) : runSql(m.conn, m.sql, m.values, m.mode, ac.signal)
+  const work = m.er
+    ? readEr(m.conn, ac.signal).then((er) => ({ er }))
+    : m.schema
+      ? readSchema(m.conn, ac.signal).then((schema) => ({ schema }))
+      : runSql(m.conn, m.sql, m.values, m.mode, ac.signal)
   void work.then(
     (run) => port.postMessage({ ok: true, run }),
     (err: unknown) => port.postMessage({ ok: false, error: err instanceof SqlError ? err.message : err instanceof Error ? err.message : String(err) }),

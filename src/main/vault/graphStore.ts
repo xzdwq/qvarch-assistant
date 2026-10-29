@@ -2,8 +2,11 @@ import { rmSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import type { GraphEdge, GraphNodeKind } from '../../shared/notebook/graph'
 
-/** The index's layout; another one — the index is made anew (it is derived: the notes are the truth). */
-const SCHEMA = 1
+/**
+ * The index's version — its layout and how the notes are read (raised when either changes: 2 — a number is a tag); another
+ * one — the index is made anew (it is derived: the notes are the truth).
+ */
+const SCHEMA = 2
 
 /** An edge of some note, as stored. */
 export interface StoredEdge extends GraphEdge {

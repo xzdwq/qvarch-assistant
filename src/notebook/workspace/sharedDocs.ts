@@ -5,6 +5,7 @@ import { fromB64, isEmptyUpdate, mergeUpdates, SharedText, toB64, type SharedMod
 import { NO_MEDIA, ROLE_RIGHTS, sharedMark, type MediaReport, type Space, type SpaceRole } from '@shared/transport/space'
 import { serverCall, serverNow, serverOnline, useTransport } from '@renderer/lib/transport'
 import { retryDelay } from '@shared/transport/constants'
+import type { DocAi } from '@shared/agent/docAi'
 import { onServerEvents, type ServerEventHandlers } from '@renderer/lib/serverEvents'
 import { docs, onSaveAll, setText } from './noteDocs'
 import { mediaAsked, mediaExpected, mediaReported } from './mediaFollow'
@@ -127,7 +128,9 @@ function send(doc: string, l: Live): void {
 function keepNow(doc: string, l: Live): Promise<void> {
   clearTimeout(l.saveTimer)
   l.saveTimer = undefined
-  return window.qa.sharedSave(doc, { state: toB64(l.st.state()), text: l.st.value }).catch(() => undefined)
+  // a note's metadata kept beside (the notes' search reads it without the document)
+  const ai = l.st instanceof SharedText ? (JSON.parse(JSON.stringify(l.st.aiNow())) as DocAi) : undefined
+  return window.qa.sharedSave(doc, { state: toB64(l.st.state()), text: l.st.value, ...(ai ? { ai } : {}) }).catch(() => undefined)
 }
 /** Every state waiting to be kept — kept now (the notes are being saved: the window closes, reloads). */
 async function keepAll(): Promise<void> {

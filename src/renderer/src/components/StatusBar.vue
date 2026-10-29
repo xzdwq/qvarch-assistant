@@ -8,12 +8,16 @@ import { todayKey } from '../lib/today'
 import { useJira } from '../lib/jira'
 import { useOutlook } from '../lib/outlook'
 import { termLight, useTermSessions } from '../lib/terminal'
+import { dockOn, toggleDock } from '../lib/termDock'
 import { recItems, recState, startBrowser } from '../lib/browser'
 import { useTransport } from '../lib/transport'
 
-/** The window's bottom line (a terminal's status bar): the call, the connections, today's time, the clock. */
+/**
+ * The window's bottom line (a terminal's status bar): the call, the connections, the terminal (always: its light,
+ * a click — its bottom panel), today's time, the clock.
+ */
 defineProps<{ section: string }>()
-const emit = defineEmits<{ terminal: []; browser: [] }>()
+const emit = defineEmits<{ browser: [] }>()
 startBrowser()
 const terms = useTermSessions()
 /** The server's version, by the app's (the last known; none — never connected). */
@@ -40,7 +44,7 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
     <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
     <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Jira: ${TIP[jl]}${jira.error ? ` — ${jira.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="jl"></i>JIRA</span>
     <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Outlook: ${TIP[ol]}${outlook.error ? ` — ${outlook.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="ol"></i>OUTLOOK</span>
-    <button v-if="terms.length" class="it term tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:hover:not-[&.err]:text-text tw:[&.err]:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :class="termLight.kind" :title="termLight.title" @click="emit('terminal')">
+    <button class="it term tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:hover:not-[&.err]:text-text tw:[&.err]:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3 tw:[&.open]:bg-accent/16 tw:[&.open]:not-[&.err]:text-text" :class="[termLight.kind, { open: dockOn }]" :title="`${terms.length ? termLight.title : 'Терминал'} · ${dockOn ? 'скрыть панель' : 'открыть панель внизу'}`" @click="toggleDock">
       <i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
     </button>
     <button v-if="recState.on" class="it term rec tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Браузер записывает запросы — открыть" @click="emit('browser')"><i class="led err blinkrec tw:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-down"></i>REC · {{ recItems.length }}</button>

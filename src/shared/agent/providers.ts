@@ -3,8 +3,12 @@
  * provider of an existing protocol is a line here; a new protocol — its session in main (main/agent/sessions).
  */
 
-/** How a provider is spoken to: Claude Code (an agent of its own, our tools over MCP), the Messages API, Chat Completions. */
-export const AGENT_PROTOCOLS = ['claude-code', 'anthropic', 'openai'] as const
+/**
+ * How a provider is spoken to: Claude Code (an agent of its own, our tools over MCP), the Messages API, Chat Completions,
+ * an agent harness elsewhere (Hermes, Atomic Agent…: its own tools and loop, spoken to over a streamed Chat Completions;
+ * it answers in the chat).
+ */
+export const AGENT_PROTOCOLS = ['claude-code', 'anthropic', 'openai', 'harness'] as const
 export type AgentProtocol = (typeof AGENT_PROTOCOLS)[number]
 
 /** Whether a key is asked for. */
@@ -24,9 +28,13 @@ export interface AgentProvider {
   budget: number
   /** A word of help under the form. */
   hint: string
+  /** A harness: the header its conversation is kept by (each chat its own; the profile may name another). */
+  sessionHeader?: string
+  /** A harness: the name of the streamed event that tells its tools' work (none — not told). */
+  toolEvent?: string
 }
 
-export const AGENT_PROVIDER_IDS = ['claude-code', 'anthropic', 'openai', 'openrouter', 'ollama', 'custom'] as const
+export const AGENT_PROVIDER_IDS = ['claude-code', 'anthropic', 'openai', 'openrouter', 'ollama', 'custom', 'hermes', 'harness'] as const
 export type AgentProviderId = (typeof AGENT_PROVIDER_IDS)[number]
 
 export const AGENT_PROVIDERS: Record<AgentProviderId, AgentProvider> = {
@@ -36,5 +44,22 @@ export const AGENT_PROVIDERS: Record<AgentProviderId, AgentProvider> = {
   openrouter: { title: 'OpenRouter', protocol: 'openai', baseUrl: 'https://openrouter.ai/api/v1', key: 'required', headers: { 'X-Title': 'Qvarch Assistant' }, budget: 120_000, hint: 'Ключ из openrouter.ai; модели любых поставщиков.' },
   ollama: { title: 'Ollama', protocol: 'openai', baseUrl: 'http://localhost:11434/v1', key: 'none', budget: 24_000, hint: 'Локальные модели: Ollama должна быть запущена. Инструменты — только у моделей, которые их поддерживают.' },
   custom: { title: 'Свой сервер', protocol: 'openai', key: 'optional', budget: 32_000, hint: 'Любой OpenAI-совместимый сервер (LM Studio, vLLM…): адрес до /v1.' },
+  hermes: {
+    title: 'Hermes Agent',
+    protocol: 'harness',
+    baseUrl: 'http://localhost:8642/v1',
+    key: 'required',
+    budget: 60_000,
+    sessionHeader: 'X-Hermes-Session-Id',
+    toolEvent: 'hermes.tool.progress',
+    hint: 'Агент со своими инструментами и памятью: его API-сервер (API_SERVER_ENABLED, API_SERVER_KEY), адрес до /v1. У каждого чата своя сессия у агента; его шаги — в «Метаданных». Он отвечает в чате, заметки не правит.',
+  },
+  harness: {
+    title: 'Другой агент (OpenAI-совместимый)',
+    protocol: 'harness',
+    key: 'optional',
+    budget: 60_000,
+    hint: 'Любой агент со своим API в формате Chat Completions (Atomic Agent — atomic-agent serve, и другие): адрес до /v1; заголовок сессии — если агент помнит разговор по нему.',
+  },
 }
 export const isAgentProvider = (x: unknown): x is AgentProviderId => typeof x === 'string' && Object.hasOwn(AGENT_PROVIDERS, x)

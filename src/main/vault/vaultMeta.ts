@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BOARD_EXT } from '../../shared/whiteboard'
+import { isEmoji } from '../../shared/emoji'
 import type { AgentLines } from '../../shared/notebook/agentLines'
 import { docAiOf, type DocAi } from '../../shared/agent/docAi'
 import type { VaultFiles } from './vaultFiles'
@@ -100,7 +101,7 @@ export class VaultMeta {
   /** Marks set without saving (an import sets many, then saves once). */
   markUnsaved(rel: string, marks: { color?: unknown; emoji?: unknown }): void {
     if (typeof marks.color === 'string' && /^#[0-9a-f]{6}$/i.test(marks.color)) this.data.colors[rel] = marks.color
-    if (typeof marks.emoji === 'string' && marks.emoji.length <= 16) this.data.emojis[rel] = marks.emoji
+    if (isEmoji(marks.emoji)) this.data.emojis[rel] = marks.emoji
   }
   /** A link set without saving (both directions). */
   linkUnsaved(a: string, b: string): void {

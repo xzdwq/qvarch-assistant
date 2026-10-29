@@ -3,6 +3,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { syntaxTree } from '@codemirror/language'
 import { AUDIO_EMBED, IMAGE_EMBED } from '@shared/vault'
 import { parseNoteLink } from '@shared/noteEvents'
+import { EMOJI_IN, EMOJI_ONLY, mayHaveEmoji } from '@shared/emoji'
 import { sharedDocOf } from '@shared/transport/space'
 import { fenceLang } from '@renderer/lib/codeblocks'
 import { transcribing } from '@renderer/lib/notebook'
@@ -85,8 +86,6 @@ const hide = Decoration.replace({})
 const bullet = Decoration.replace({ widget: new BulletWidget() })
 const rule = Decoration.replace({ widget: new RuleWidget() })
 
-const EMOJI = /\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic}|\p{Emoji_Modifier})*/gu
-const EMOJI_LINE = /^\s*(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic}|\p{Emoji_Modifier})*\s*){1,3}$/u
 /** A [[link]] to another note ([[name|label]] — the label shown). Global: reset lastIndex before exec loops. */
 export const WIKI_LINK = /\[\[([^\]\n]+)\]\]/g
 
@@ -268,11 +267,11 @@ function decorate(v: EditorView): DecorationSet {
         // #tags: a chip each (its text stays — typed into as any text)
         for (const t of tagSpans(line.text)) out.push(Decoration.mark({ class: 'cm-tag', attributes: { 'data-tag': t.name, title: `#${t.name} · Ctrl+клик — заметки с тегом` } }).range(line.from + t.at, line.from + t.at + t.len))
         // emoji: a bit bigger than the text; up to three alone on a line — big
-        if (/\p{Extended_Pictographic}/u.test(line.text)) {
-          const big = EMOJI_LINE.test(line.text)
-          EMOJI.lastIndex = 0
+        if (mayHaveEmoji(line.text)) {
+          const big = EMOJI_ONLY.test(line.text)
+          EMOJI_IN.lastIndex = 0
           let em: RegExpExecArray | null
-          while ((em = EMOJI.exec(line.text))) out.push(Decoration.mark({ class: big ? 'cm-emoji big' : 'cm-emoji' }).range(line.from + em.index, line.from + em.index + em[0].length))
+          while ((em = EMOJI_IN.exec(line.text))) out.push(Decoration.mark({ class: big ? 'cm-emoji big' : 'cm-emoji' }).range(line.from + em.index, line.from + em.index + em[0].length))
         }
       }
       pos = line.to + 1

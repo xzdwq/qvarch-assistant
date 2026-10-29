@@ -1,0 +1,7 @@
+/* TaskRow: what its template cannot carry as utilities (scoped). */
+
+/* a status in progress (its category is a class the data sets) */
+.st.indeterminate {
+  background: rgba(68, 138, 255, 0.2);
+  color: var(--info-fg);
+}

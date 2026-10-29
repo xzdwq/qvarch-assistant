@@ -14,6 +14,9 @@ import ReleaseView from './ReleaseView.vue'
 import ToolsView from './ToolsView.vue'
 import HttpView from './HttpView.vue'
 import TerminalView from './TerminalView.vue'
+import TermDock from './terminal/TermDock.vue'
+import TermSlot from './terminal/TermSlot.vue'
+import { termEver, termTarget } from '../lib/termDock'
 import BrowserView from './BrowserView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import StatusBar from '../components/StatusBar.vue'
@@ -103,13 +106,10 @@ function run(cmd: AppCommand): void {
   window.qa.command(cmd)
 }
 
-/** Once opened, the terminal stays mounted (hidden in other sections) — while it is on the bar (in «Инструменты» they keep it). */
-const termOpened = ref(false)
-watch(view, (v) => v === 'terminal' && (termOpened.value = true), { immediate: true })
 /** The browser too: once opened it stays (its pages live in the main process; hidden in other sections). */
 const brOpened = ref(false)
 watch(view, (v) => v === 'browser' && (brOpened.value = true), { immediate: true })
-/** «Инструменты» too: the terminal / the browser moved there live in it. */
+/** «Инструменты» too: the browser moved there lives in it. */
 const toolsOpened = ref(false)
 watch(view, (v) => v === 'tools' && (toolsOpened.value = true), { immediate: true })
 // a section moved into «Инструменты» lives there now (never twice)
@@ -117,7 +117,6 @@ watch(
   () => settings.value?.ui.menu,
   (m) => {
     if (!m) return
-    if (placeOf(m, 'terminal') === 'tools') termOpened.value = false
     if (placeOf(m, 'browser') === 'tools') brOpened.value = false
   },
 )
@@ -232,11 +231,15 @@ function setAppZoom(z: number): void {
         <div v-else-if="view === 'tools'" class="termslot tw:hidden"></div>
         <SettingsView v-else :settings="settings" @changed="onSettings" />
       </Transition>
-      <TerminalView v-if="termOpened" v-show="view === 'terminal'" class="termkeep tw:[&&]:h-full" />
+      <!-- the terminal's section: the one terminal is moved in while shown here (else it is in the bottom panel) -->
+      <TermSlot v-show="view === 'terminal'" :active="view === 'terminal'" class="termkeep tw:[&&]:h-full" />
       <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep tw:[&&]:h-full" :active="view === 'browser'" @open-http="openHttp" />
       <div v-if="toolsOpened" v-show="view === 'tools'" class="toolskeep tw:h-full"><ToolsView :menu="settings.ui.menu" /></div>
     </main>
-    <StatusBar :section="sectionName" @terminal="openPlace('terminal')" @browser="openPlace('browser')" />
+    <TermDock :zoom="appZoom" />
+    <StatusBar :section="sectionName" @browser="openPlace('browser')" />
+    <!-- the one terminal: in the bottom panel or in its section, wherever it is shown -->
+    <Teleport v-if="termEver && termTarget" :to="termTarget"><TerminalView class="tw:[&&]:h-full" /></Teleport>
       <ImageMenu />
   </div>
 </template>

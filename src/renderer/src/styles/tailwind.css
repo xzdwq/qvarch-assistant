@@ -82,6 +82,7 @@
   /* type */
   --font-ui: var(--font-ui);
   --font-data: var(--font-data);
+  --font-emoji: var(--font-emoji);
   /* corners */
   --radius-r1: var(--r1);
   --radius-r2: var(--r2);

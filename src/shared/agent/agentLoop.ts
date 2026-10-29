@@ -55,12 +55,28 @@ export const MAX_STEPS = 24
 const SHORT = 160
 const short = (s: string) => (s.length > SHORT ? `${s.slice(0, SHORT)}…` : s)
 
-export async function runAgentLoop(o: { session: ModelSession; callTool: (c: ToolCall) => Promise<string>; signal: AbortSignal; maxSteps?: number; onTrace?: (t: TraceLine) => void }): Promise<TurnResult> {
+/** A step of the model as the turn's trajectory takes it: its words, how many tools it called, how long it thought. */
+export interface ModelTrace {
+  text: string
+  calls: number
+  ms: number
+}
+
+export async function runAgentLoop(o: {
+  session: ModelSession
+  callTool: (c: ToolCall) => Promise<string>
+  signal: AbortSignal
+  maxSteps?: number
+  onTrace?: (t: TraceLine) => void
+  onModel?: (m: ModelTrace) => void
+}): Promise<TurnResult> {
   const trace: TraceLine[] = []
   let said = ''
   for (let i = 0; i < (o.maxSteps ?? MAX_STEPS); i++) {
     if (o.signal.aborted) return { text: said, trace, note: 'Остановлено' }
+    const t0 = Date.now()
     const step = await o.session.step(o.signal)
+    o.onModel?.({ text: step.text.trim(), calls: step.calls.length, ms: Date.now() - t0 })
     if (step.text.trim()) said = step.text.trim()
     if (step.stopped) return { text: said, trace, note: step.stopped }
     if (!step.calls.length) return { text: said, trace }

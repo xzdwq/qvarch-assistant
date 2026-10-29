@@ -77,5 +77,7 @@ describe('the notebook’s graph', () => {
     expect([...n.graph.search('#проект').keys()]).toEqual(['a.md'])
     expect(n.graph.search('/api/orders').get('b.md')?.[0]).toMatchObject({ kind: 'endpoint' })
     expect(n.graph.tags()).toEqual([{ name: 'проект/модуль', label: 'проект/модуль', count: 1 }])
+    n.write('c.md', '#1')
+    expect([...n.graph.search('#1').keys()]).toEqual(['c.md'])
   })
 })

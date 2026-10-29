@@ -12,7 +12,7 @@ import { colorOf, emojiOf, pairOf } from './nodeInfo'
 import ShareButton from './share/ShareButton.vue'
 import CommentsButton from './share/CommentsButton.vue'
 import NoteRelations from './NoteRelations.vue'
-import { isViewTab, VIEW_TABS } from '@nb/workspace/viewTabs'
+import { isViewTab, viewIcon, viewTitle } from '@nb/workspace/viewTabs'
 
 /**
  * A pane's tab row: its tabs (dragged to reorder or to the other pane), «+»; for the active note — sharing, its
@@ -53,11 +53,11 @@ async function copyNoteReport(path: string): Promise<void> {
         @drop.prevent="onTabDrop"
         @dragend="onTabDrop"
       >
-        <Icon v-if="isViewTab(t.path)" :name="VIEW_TABS[t.path].icon" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />
+        <Icon v-if="isViewTab(t.path)" :name="viewIcon(t.path)" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />
         <NodeMark v-else-if="emojiOf(t.path)" :emoji="emojiOf(t.path)" :color="colorOf(t.path)" icon="note" :size="12" />
         <span v-else-if="colorOf(t.path)" class="fmark sm tw:flex-none tw:rounded-r2 tw:m-0 tw:w-9 tw:h-9" :style="{ background: colorOf(t.path) }"></span>
         <Icon v-else :name="isBoard(t.path) ? 'presentation' : 'note'" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />
-        <span class="tname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ isViewTab(t.path) ? VIEW_TABS[t.path].title : noteName(t.path) }}</span>
+        <span class="tname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ isViewTab(t.path) ? viewTitle(t.path) : noteName(t.path) }}</span>
         <span v-if="isDirty(t.path)" class="ndot tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-warn"></span>
         <span v-if="pairOf(t.path)" class="tpair tw:inline-flex tw:text-accent-fg" :title="'Связано с: ' + noteName(pairOf(t.path)!)"><Icon name="link" :size="10" /></span>
         <button class="tx tw:flex-none tw:inline-flex tw:p-2 tw:border-0 tw:rounded-r2 tw:[background:none] tw:text-muted tw:opacity-0 tw:group-hover/tab:not-group-[.on]/tab:opacity-100 tw:group-[.on]/tab:opacity-100 tw:hover:bg-white/10 tw:hover:text-text tw:[.zoom_&]:inline-flex tw:[.zoom_&]:items-center tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:py-0 tw:[.zoom_&]:px-4 tw:[.zoom_&]:border-0 tw:[.zoom_&]:rounded-none tw:[.zoom_&]:not-hover:bg-transparent tw:[.zoom_&]:not-hover:text-muted tw:[.zoom_&]:text-[11px] tw:[.zoom_&]:hover:bg-white/8 tw:[.zoom_&]:hover:text-text tw:hover:enabled:not-[.zoom_&]:border-border-3" title="Закрыть (Ctrl+W)" @click.stop="closeTab(pi, t.path)"><Icon name="x" :size="11" /></button>

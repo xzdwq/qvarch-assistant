@@ -10,28 +10,34 @@ const VIEWS = ['work', 'notebook', 'release', 'browser', 'http', 'terminal', 'to
 
 describe('the sections: on the bar or in «Инструменты»', () => {
   const menu = { order: [], hidden: [], tools: [...DEFAULT_IN_TOOLS] }
-  it('by default Релиз, HTTP and Терминал stand in «Инструменты», before its own tools', () => {
-    expect(headerIds(menu, VIEWS)).toEqual(['work', 'notebook', 'browser', 'tools'])
-    expect(toolsIds(menu)).toEqual(['release', 'http', 'terminal', ...TOOL_IDS])
+  it('by default Релиз and HTTP stand in «Инструменты», before its own tools; Терминал — on the bar (never in them)', () => {
+    expect(headerIds(menu, VIEWS)).toEqual(['work', 'notebook', 'browser', 'terminal', 'tools'])
+    expect(toolsIds(menu)).toEqual(['release', 'http', ...TOOL_IDS])
+    expect(placeOf({ ...menu, tools: ['terminal'] }, 'terminal')).toBe('header')
     expect(placeOf(menu, 'http')).toBe('tools')
     expect(placeOf(menu, 'diff')).toBe('tools')
   })
   it('older settings (no «tools») get the default on reading', () => {
     expect(mergeUi(DEFAULT_UI, { menu: { order: ['notebook'], hidden: [] } as never }).menu.tools).toEqual([...DEFAULT_IN_TOOLS])
   })
+  it('a section kept in «Инструменты» that may stand there no more: out of them, hidden on the bar (off it, as it was)', () => {
+    const m = mergeUi(DEFAULT_UI, { menu: { order: [], hidden: ['http'], tools: ['release', 'terminal', 'diff'] } }).menu
+    expect(m.tools).toEqual(['release', 'diff'])
+    expect(m.hidden).toEqual(['http', 'terminal'])
+  })
   it('a section moved back to the bar goes to its end, shown; moved into the tools — to their end', () => {
     const bar = headerIds(menu, VIEWS)
     const back = moveSection(menu, 'http', 'header', bar)
-    expect(headerIds(back, VIEWS)).toEqual(['work', 'notebook', 'browser', 'tools', 'http'])
+    expect(headerIds(back, VIEWS)).toEqual(['work', 'notebook', 'browser', 'terminal', 'tools', 'http'])
     expect(toolsIds(back)).not.toContain('http')
     const into = moveSection({ ...menu, hidden: ['browser'] }, 'browser', 'tools', bar)
     expect(toolsIds(into).at(-1)).toBe('browser')
-    expect(headerIds(into, VIEWS)).toEqual(['work', 'notebook', 'tools'])
+    expect(headerIds(into, VIEWS)).toEqual(['work', 'notebook', 'terminal', 'tools'])
     expect(into.hidden).toEqual([])
   })
   it('the tools sorted as dragged; unknown ids dropped', () => {
-    const m = reorderTools(menu, ['pdf', 'terminal', 'nope', 'diff'])
-    expect(toolsIds(m).slice(0, 3)).toEqual(['pdf', 'terminal', 'diff'])
+    const m = reorderTools(menu, ['pdf', 'http', 'terminal', 'nope', 'diff'])
+    expect(toolsIds(m).slice(0, 3)).toEqual(['pdf', 'http', 'diff'])
   })
 })
 

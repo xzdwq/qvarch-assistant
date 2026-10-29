@@ -29,10 +29,30 @@ export interface JiraIssue {
   labels?: string[]
   /** Fix versions. */
   versions?: string[]
-  /** The parent (an epic / a story). */
+  /** The parent, at any level (a story's epic, an epic's solution…). */
   parent?: { key: string; summary: string }
+  /** The level of its type in Jira's hierarchy: -1 a sub-task, 0 a task / story / bug, 1 an epic, 2+ above. */
+  level?: number
+  /** Who reported it (Jira's «Автор»). */
   reporter?: string
+  /** Who made it. */
+  creator?: string
   created?: number
+}
+
+/**
+ * A task as a list shows it: in the tree — its depth, how many children it has, whether it is folded; `context` — an
+ * ancestor shown for its descendants (not matching the filters itself, or not open, or of another project).
+ */
+export interface JiraListItem extends JiraIssue {
+  /** The project section it is listed under (in the tree — its root's: a branch is never split). */
+  section?: string
+  depth?: number
+  children?: number
+  /** How many of the found tasks are under it (any depth). */
+  inside?: number
+  folded?: boolean
+  context?: boolean
 }
 
 /** A release (a fix version) of a Jira project. */
@@ -115,7 +135,13 @@ export interface JiraListQuery {
   due?: JiraDueFilter[]
   /** Jira labels: a task with any of them. */
   labels?: string[]
+  /** A flat list (by project) or the tree of parents (solution → epic → story → task). */
+  view?: JiraListView
+  /** In the tree: the tasks whose children are hidden. */
+  folded?: string[]
 }
+export const JIRA_LIST_VIEWS = ['list', 'tree'] as const
+export type JiraListView = (typeof JIRA_LIST_VIEWS)[number]
 /** What the filters can offer: the statuses and priorities the open tasks have. */
 export interface JiraFacets {
   statuses: string[]

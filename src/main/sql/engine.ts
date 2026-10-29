@@ -56,7 +56,7 @@ const SCHEMA_SQL: Record<DbConn['kind'], string> = {
   sqlite: "select null, m.name, p.name, p.type from sqlite_master m join pragma_table_info(m.name) p where m.type in ('table', 'view') and m.name not like 'sqlite\\_%' escape '\\' order by m.name, p.cid",
 }
 /** The schema a bare table name is in: PostgreSQL's «public», MySQL's database; SQLite has none. */
-const DEFAULT_SCHEMA: Record<DbKind, (c: DbConn) => string | undefined> = { pg: () => 'public', mysql: (c) => c.database || undefined, sqlite: () => undefined }
+export const DEFAULT_SCHEMA: Record<DbKind, (c: DbConn) => string | undefined> = { pg: () => 'public', mysql: (c) => c.database || undefined, sqlite: () => undefined }
 /** The tables and their columns the connection's user can see — read the same safe way as any query. */
 export async function readSchema(c: DbConn, signal?: AbortSignal): Promise<DbSchema> {
   const big = { ...c, maxRows: 100_000 }

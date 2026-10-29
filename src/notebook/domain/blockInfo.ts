@@ -61,7 +61,11 @@ export interface BlockInfo {
   view?: DataView
   /** An unnamed runnable block's own id (its results are kept by it — not by its line, which moves). */
   id?: string
+  /** The height of what a block shows under its text (a query's ER diagram and rows), px — as its edge was dragged. */
+  h?: number
 }
+/** A block's shown part's height within these bounds, px. */
+export const BLOCK_H = { min: 200, max: 2400 } as const
 
 /** A block's own id: eight small letters and digits. */
 export const BLOCK_ID = /^[a-z0-9]{8}$/
@@ -105,6 +109,9 @@ const SETTINGS: Record<string, (out: BlockInfo, v: string) => void> = {
   },
   id: (out, v) => {
     if (BLOCK_ID.test(v)) out.id = v
+  },
+  h: (out, v) => {
+    if (Number(v) > 0) out.h = Math.round(Math.min(BLOCK_H.max, Math.max(BLOCK_H.min, Number(v))))
   },
 }
 
@@ -150,6 +157,7 @@ export function infoMd(i: BlockInfo): string {
     i.timeout ? `timeout=${i.timeout}` : '',
     i.out ? `out=${i.out}` : '',
     i.id ? `id=${i.id}` : '',
+    i.h ? `h=${i.h}` : '',
   ]
     .filter(Boolean)
     .join(' ')

@@ -1,5 +1,6 @@
 import type { TraceLine } from './agentLoop'
 import { isTouch, TOUCHES_MAX, type Touch } from './touches'
+import { keptSteps, TRAJ_KINDS, TRAJ_TURNS_KEPT, type TrajStep } from './trajectory'
 
 /**
  * The AI's own part of a document: its memory — a short text of what matters about the document (its aim, what was
@@ -51,6 +52,8 @@ export interface DocTurn {
   memory?: boolean
   /** What its calls touched (the graph is drawn from them). */
   touches?: Touch[]
+  /** The turn step by step (the trajectory); the latest turns only. */
+  steps?: TrajStep[]
 }
 export interface DocAi {
   memory?: DocMemory
@@ -80,13 +83,15 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 export const isDocMemory = (x: unknown): x is DocMemory => isObj(x) && typeof x.text === 'string' && typeof x.by === 'string' && typeof x.at === 'number'
 export const isDocTurn = (x: unknown): x is DocTurn =>
   isObj(x) && typeof x.id === 'string' && typeof x.at === 'number' && typeof x.agent === 'string' && (TURN_OUTCOMES as readonly unknown[]).includes(x.outcome) && isObj(x.tools)
+const isTrajStep = (x: unknown): x is TrajStep => isObj(x) && (TRAJ_KINDS as readonly unknown[]).includes(x.kind) && typeof x.at === 'number' && typeof x.ms === 'number' && typeof x.text === 'string'
 /** What another app (or an older one) wrote, read safely: the malformed parts left out. */
 export function docAiOf(x: unknown): DocAi {
   if (!isObj(x)) return NO_DOC_AI
   const turns = (Array.isArray(x.turns) ? x.turns.filter(isDocTurn).slice(-DOC_TURNS_MAX) : []).map((t) => {
-    const { touches, ...rest } = t
+    const { touches, steps, ...rest } = t
     const ok = Array.isArray(touches) ? touches.filter(isTouch).slice(0, TOUCHES_MAX) : []
-    return ok.length ? { ...rest, touches: ok } : rest
+    const okSteps = Array.isArray(steps) ? keptSteps(steps.filter(isTrajStep)) : []
+    return { ...rest, ...(ok.length ? { touches: ok } : {}), ...(okSteps.length ? { steps: okSteps } : {}) }
   })
   return { ...(isDocMemory(x.memory) ? { memory: x.memory } : {}), turns }
 }
@@ -124,6 +129,7 @@ export function docTurnOf(o: {
   stopped?: boolean
   memory?: boolean
   touches?: readonly Touch[]
+  steps?: readonly TrajStep[]
 }): DocTurn {
   const outcome: TurnOutcome = o.error ? 'error' : o.stopped ? 'stopped' : 'ok'
   return {
@@ -140,10 +146,14 @@ export function docTurnOf(o: {
     ...(o.error ? { error: o.error.slice(0, ERROR_MAX) } : {}),
     ...(o.memory ? { memory: true } : {}),
     ...(o.touches?.length ? { touches: o.touches.slice(0, TOUCHES_MAX) } : {}),
+    ...(o.steps?.length ? { steps: keptSteps(o.steps) } : {}),
   }
 }
-/** The journal with a turn more (the oldest gone past the limit). */
-export const withTurn = (turns: readonly DocTurn[], t: DocTurn): DocTurn[] => [...turns.filter((x) => x.id !== t.id), t].slice(-DOC_TURNS_MAX)
+/** The journal with a turn put in (once): the latest DOC_TURNS_MAX turns; only the latest TRAJ_TURNS_KEPT keep their steps. */
+export const withTurn = (turns: readonly DocTurn[], t: DocTurn): DocTurn[] => {
+  const all = [...turns.filter((x) => x.id !== t.id), t].slice(-DOC_TURNS_MAX)
+  return all.map((x, i) => (i < all.length - TRAJ_TURNS_KEPT && x.steps ? (({ steps: _s, ...rest }) => rest)(x) : x))
+}
 
 /** The memory as an agent reads it (in the system part of every turn), with how to keep it. */
 export function memoryForAgent(m: DocMemory | undefined, mayWrite: boolean): string {

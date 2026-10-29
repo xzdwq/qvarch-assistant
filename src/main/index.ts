@@ -140,6 +140,8 @@ function makeServices(): Activity {
   ctx.vault.watch()
   // after the vault: the chats get their documents in the notebook
   ctx.transport = new Transport(ctx)
+  // the notes' search reads a shared note's metadata where its states are kept
+  ctx.vault.sharedMeta = (doc) => ctx.transport.states.aiOf(doc)
   ctx.voice = new Voice(store.root, () => (isWhisperModel(store.cfg.voice.model) ? store.cfg.voice.model : 'small'), (s) => ctx.emitToAll('onVoice', s))
   return activity
 }

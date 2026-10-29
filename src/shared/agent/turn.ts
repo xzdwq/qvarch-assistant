@@ -1,6 +1,7 @@
 import type { TraceLine } from './agentLoop'
 import type { DocMemory } from './docAi'
 import type { Touch } from './touches'
+import type { TrajStep } from './trajectory'
 import type { PackLink, PackMessage } from './contextPack'
 import type { Caller } from './trigger'
 
@@ -42,6 +43,8 @@ export interface TurnAnswer {
   stopped?: boolean
   /** What its calls touched (the journal's graph). */
   touches?: Touch[]
+  /** The turn step by step (the journal's trajectory). */
+  steps?: TrajStep[]
 }
 
 /**
