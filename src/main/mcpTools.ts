@@ -4,12 +4,13 @@ import type { VaultNode } from '../shared/vault'
 import type { McpTool } from './mcp'
 import { notesTools } from './tools/notesTools'
 import { runTools } from './tools/runTools'
+import { cronTools } from './tools/cronTools'
+import type { CronSchedule } from './cron/cronSchedule'
 import { workTools } from './tools/workTools'
 
 /**
  * The tools Qvarch gives an AI assistant. Reading and running — always; writing notes and keeping the time —
- * allowed beforehand (the user's choice); tests against hosts off the allowed list (*-dev, *-qa…) — the user is
- * asked, with a warning. Time is never deleted or moved — only created and extended.
+ * allowed beforehand (the user's choice). Time is never deleted or moved — only created and extended.
  */
 export interface ToolCtx {
   tree: () => VaultNode[]
@@ -25,10 +26,9 @@ export interface ToolCtx {
   ui: <T>(op: string, args: Record<string, unknown>) => Promise<T>
   /** The kinds of work (which are work, their names). */
   kinds: () => KindDef[]
-  allow: () => string[]
-  /** Hosts off the list: the user says yes or no. */
-  confirmHosts: (hosts: string[], note: string) => Promise<boolean>
+  /** The notes run on a schedule. */
+  crons: CronSchedule
 }
 
 /** Every tool, by area. */
-export const qvarchTools = (c: ToolCtx): McpTool[] => [...notesTools(c), ...runTools(c), ...workTools(c)]
+export const qvarchTools = (c: ToolCtx): McpTool[] => [...notesTools(c), ...runTools(c), ...cronTools(c), ...workTools(c)]

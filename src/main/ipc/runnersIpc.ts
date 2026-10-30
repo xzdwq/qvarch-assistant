@@ -1,10 +1,13 @@
 import { rmSync } from 'node:fs'
+import type { WebContents } from 'electron'
+import type { EmitBatch } from '../../notebook/domain/emits'
 import type { QaApi, PwResult, PwStep } from '../../shared/api'
 import { PW_BROWSERS } from '../../notebook/domain/blockInfo'
 import { LOOP_MAX, LOOP_MAX_LIMIT, LOOP_PARALLEL_LIMIT, type LoopResult } from '../../notebook/domain/loop'
 import type { AppContext } from '../app/appContext'
 import { ProcessSupervisor } from '../process/processSupervisor'
 import { browserCookies, cookiesBack, originsOf } from '../runner/pwSession'
+import { sweepPwLeftovers } from '../runner/pwLeftovers'
 import { emit, handle, listen } from './router'
 
 /**
@@ -13,6 +16,10 @@ import { emit, handle, listen } from './router'
  */
 type CodeResult = Awaited<ReturnType<QaApi['runCode']>>
 const str = (v: unknown) => String(v ?? '')
+/** A run's emit() batch (any runner's process sends them the same way). */
+const isEmit = (m: unknown): m is { type: 'emit'; batch: EmitBatch } => !!m && (m as { type?: unknown }).type === 'emit'
+/** The batch on to the window that runs the note (sent before the run's end: the same channel keeps the order). */
+const passEmit = (to: WebContents, runId: string, batch: EmitBatch) => void (!to.isDestroyed() && emit(to, 'onRunEmit', runId, batch))
 
 export function registerRunnersIpc(app: AppContext): (reason: string) => void {
   const code = new ProcessSupervisor<CodeResult>({
@@ -30,7 +37,7 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
       timeoutSec: sec,
       timeoutError: `Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`,
       owner: e.sender,
-      onMessage: (m, run) => run.finish(m as CodeResult),
+      onMessage: (m, run) => (isEmit(m) ? passEmit(e.sender, str(runId), m.batch) : run.finish(m as CodeResult)),
       exitError: (c) => (c ? `Процесс выполнения завершился (код ${c}) — возможно, не хватило памяти (предел 512 МБ)` : 'Процесс выполнения завершился'),
     })
   })
@@ -64,7 +71,8 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
       owner: e.sender,
       onMessage: (raw, run) => {
         const m = raw as { type: 'pass'; n: number; vars: Record<string, unknown> } | { type: 'end'; result: LoopResult }
-        if (m?.type === 'pass') {
+        if (isEmit(raw)) passEmit(e.sender, id, raw.batch)
+        else if (m?.type === 'pass') {
           if (!e.sender.isDestroyed()) emit(e.sender, 'onLoopPass', id, m.n, m.vars)
           // (no window to run the pass — the loop has nothing to go on with)
           else run.finish({ ok: false, error: 'Окно закрыто', logs: [], passes: 0, ms: 0 })
@@ -97,6 +105,7 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
     if (pw.has(id)) pw.finish(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
     rmSync(dir, { recursive: true, force: true })
     const sec = Math.min(3600, Math.max(5, Number(job.timeoutSec) || 120))
+    // (whatever this run ends with — the older leftovers taken away after it, in the background)
     return pw.start(id, {
       job: {
         type: 'run',
@@ -123,7 +132,8 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
       owner: e.sender,
       onMessage: (raw, run) => {
         const m = raw as { type: 'progress'; steps?: PwStep[] } | { type: 'done'; result?: PwResult }
-        if (m?.type === 'progress') emit(e.sender, 'onPwProgress', id, m.steps ?? [])
+        if (isEmit(raw)) passEmit(e.sender, id, raw.batch)
+        else if (m?.type === 'progress') emit(e.sender, 'onPwProgress', id, m.steps ?? [])
         else if (m?.type === 'done' && m.result) {
           const r = m.result as PwResult & { cookies?: unknown }
           const got = r.cookies
@@ -140,9 +150,11 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
         }
       },
       exitError: (c) => (c ? `Процесс Playwright завершился (код ${c})` : 'Процесс Playwright завершился'),
-    })
+    }).finally(() => void sweepPwLeftovers())
   })
   listen('runPwStop', (_e, runId) => pw.stop(str(runId), 'Остановлено'))
+  // Playwright's temp folders runs killed before their browser closed left behind: at the start, and after a run
+  void sweepPwLeftovers()
   /** Every run stopped (the app closing). */
   return (reason: string) => {
     for (const s of [code, loop, pw]) s.stopAll(reason)

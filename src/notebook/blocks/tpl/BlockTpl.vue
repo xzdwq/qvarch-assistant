@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { interpolate } from '@nb/domain/values'
 import { blockRunKey } from '@nb/domain/noteBlocks'
-import { envAtLine } from '@nb/engine'
+import { envAtLine, noteRun } from '@nb/engine'
 import { doc } from '@renderer/lib/notebook'
 import { useFold } from '@renderer/lib/foldState'
 import { copyMd } from '@renderer/lib/copyMd'
@@ -30,6 +30,8 @@ const filled = computed(() => {
   return interpolate(body.value, envAtLine(props.path, props.line, doc(props.path).text).values())
 })
 const missing = computed(() => [...new Set(filled.value?.missing ?? [])])
+/** Its last run — the text sent into the chat, or why not (`chat` only). */
+const sent = computed(() => noteRun(props.path).runs[key.value])
 const missingText = computed(() => missing.value.map((m) => `{{${m}}}`).join(', '))
 // (published under its name by the note itself, when whole — syncTemplates: the ones off screen too)
 const open = useFold(() => `${props.path}#${key.value}#result`, true)
@@ -44,7 +46,17 @@ async function copy(): Promise<void> {
 
 <template>
   <div class="bt tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-tpl) tw:rounded-[8px] tw:bg-panel">
-    <RunHead icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename" />
+    <RunHead icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename">
+      <button
+        class="tw:inline-flex tw:items-center tw:gap-4 tw:h-22 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:bg-hover tw:hover:text-text tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg"
+        :class="{ on: parts.info.chat }"
+        :title="parts.info.chat ? 'Текст уходит в чат документа при каждом выполнении (@ИИ · … в нём зовёт ИИ). Клик — не отправлять' : 'Отправлять заполненный текст в чат документа при каждом выполнении (в том числе по расписанию); @ИИ · … в тексте позовёт ИИ'"
+        @mousedown.prevent
+        @click="fence.patchInfo({ chat: !parts.info.chat })"
+      >
+        <Icon name="send" :size="12" />в чат
+      </button>
+    </RunHead>
     <div class="bt-ed"><CodeArea v-model="body" lang="markdown" :min-height="40" placeholder="✅ **{{ user.body.data.email }}** — {{ rows[0].status }}" /></div>
     <div v-if="filled" class="bt-res tw:border tw:border-border-2 tw:rounded-[8px] tw:bg-bg">
       <div class="bt-rh tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:py-2 tw:px-6 tw:border-b tw:border-b-border tw:text-[12.5px] tw:whitespace-nowrap">
@@ -57,6 +69,11 @@ async function copy(): Promise<void> {
       </div>
       <Markdown v-if="open" class="bt-md tw:py-6 tw:px-12 tw:select-text" :text="filled.text" />
     </div>
+    <p v-if="parts.info.chat" class="tw:m-0 tw:min-w-0 tw:truncate tw:text-[11.5px]" :class="sent?.state === 'error' ? 'tw:text-down-fg' : 'tw:text-muted'" :title="sent?.error ?? ''">
+      <template v-if="sent?.state === 'error'">Не отправлено: {{ sent.error }}</template>
+      <template v-else-if="sent?.state === 'ok'">Отправлено в чат документа · {{ new Date(sent.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</template>
+      <template v-else>Уйдёт в чат документа при выполнении («Выполнить всё», расписание)</template>
+    </p>
   </div>
 </template>
 

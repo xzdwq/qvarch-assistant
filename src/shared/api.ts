@@ -2,6 +2,8 @@ import type { AgentProfile, AgentProfileView } from './agent/profiles'
 import type { TurnAnswer, TurnRequest } from './agent/turn'
 import type { TraceLine } from './agent/agentLoop'
 import type { DocAi } from './agent/docAi'
+import type { CronJob, CronRun } from './cronJobs'
+import type { ValueFileApi } from './valueFiles'
 import type { LocalChat } from './transport/localChat'
 import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
@@ -17,6 +19,7 @@ import type { SqlApi } from './sql'
 import type { TableFileApi } from './tableData'
 import type { PwBrowser } from '../notebook/domain/blockInfo'
 import type { LoopJob, LoopResult, PassResult } from '../notebook/domain/loop'
+import type { EmitBatch } from '../notebook/domain/emits'
 import type { ClipState } from './clip'
 import type { TermAlert, TermConfig, TermSession } from './terminal'
 import type { OutlookState } from './outlook'
@@ -294,6 +297,8 @@ export interface QaApi {
   sql<K extends keyof SqlApi>(m: K, ...a: Parameters<SqlApi[K]>): Promise<Awaited<ReturnType<SqlApi[K]>>>
   /** Table files: rows saved as Excel / CSV, a table file read as a grid, the clipboard's table (see TableFileApi). */
   tableFile<K extends keyof TableFileApi>(m: K, ...a: Parameters<TableFileApi[K]>): Promise<Awaited<ReturnType<TableFileApi[K]>>>
+  /** A note's value kept as a file each run (the «Сохранить в файл» block); its folder opened, chosen. */
+  valueFile<K extends keyof ValueFileApi>(m: K, ...a: Parameters<ValueFileApi[K]>): Promise<Awaited<ReturnType<ValueFileApi[K]>>>
   /** Where the visible pages go (sent often — no answer). */
   browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number }; scale?: number }>): void
   /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */
@@ -368,7 +373,7 @@ export interface QaApi {
   runLoad(path: string): Promise<string | undefined>
   runSave(path: string, json: string): Promise<void>
   /** A code block run in a process of its own (killed by runCodeStop / its time limit). */
-  runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number }>
+  runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number; emits?: number }>
   runCodeStop(runId: string): void
   /** A loop's head run in a process of its own: each pass it asks for comes as onLoopPass, answered by runLoopPass. */
   runLoop(runId: string, job: LoopJob & { timeoutSec: number }): Promise<LoopResult>
@@ -380,6 +385,8 @@ export interface QaApi {
   runPwStop(runId: string): void
   /** The steps of a Playwright run going on. */
   onPwProgress(cb: (runId: string, steps: PwStep[]) => void): () => void
+  /** A run's emit() parts as they come (code, a scenario, a loop's head): numbered batches, in order. */
+  onRunEmit(cb: (runId: string, batch: EmitBatch) => void): () => void
   /** A file of a block's last run (a screenshot). */
   runFile(path: string, key: string, name: string): Promise<Uint8Array>
   /** The block's trace opened in Trace Viewer (the app's browser). */
@@ -395,11 +402,18 @@ export interface QaApi {
   browserOpen(url: string): void
   /** The AI assistants' server (MCP): its settings, the clients set up. */
   mcpInfo(): Promise<McpInfoView>
-  mcpSet(patch: { on?: boolean; port?: number; allow?: string[]; newToken?: boolean }): Promise<McpInfoView>
+  mcpSet(patch: { on?: boolean; port?: number; newToken?: boolean }): Promise<McpInfoView>
   mcpInstall(client: McpClient): Promise<string>
   /** The main process asks the window to do something with the notes (for an AI tool). */
   onMcpCall(cb: (id: string, op: string, args: Record<string, unknown>) => void): () => void
   mcpReply(id: string, ok: boolean, value: unknown): void
+  /** Notes run on a schedule: the jobs, one made / changed (a broken expression — refused), deleted, run now. */
+  cronList(): Promise<CronJob[]>
+  cronSave(patch: Partial<CronJob>): Promise<CronJob>
+  cronRemove(id: string): Promise<void>
+  cronRunNow(id: string): Promise<CronRun>
+  /** The jobs changed (made, run, followed a renamed note). */
+  onCrons(cb: (jobs: CronJob[]) => void): () => void
   /** The main window tells the chats' short state (for the island). */
   islandChatPublish(state: IslandChatState): void
   /** The island: the chats' short state now, and as it changes. */
@@ -497,6 +511,8 @@ export interface PwResult {
   /** What the run left: final.png / failure.png, trace.zip, allure-results. */
   files?: string[]
   browser?: string
+  /** The emit() batches sent (the window waits till it has them all). */
+  emits?: number
 }
 
 /** The AI clients Qvarch can set itself up in: Claude Desktop (its config file), Claude Code (its own command). */
@@ -505,7 +521,6 @@ export interface McpInfoView {
   on: boolean
   port: number
   token: string
-  allow: string[]
   url: string
   listening: boolean
   error?: string

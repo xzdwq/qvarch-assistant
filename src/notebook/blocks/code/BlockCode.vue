@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
 import { isTsLang } from '@nb/domain/blockInfo'
-import { prettyValue, summary } from '@nb/domain/values'
+import { summary } from '@nb/domain/values'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
 import RunHead from '../../ui/RunHead.vue'
@@ -44,7 +45,7 @@ const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
       <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px]" title="Общие функции: не выполняются сами, подставляются перед каждым блоком кода заметки"><input type="checkbox" :checked="info.lib" @change="setLib(($event.target as HTMLInputElement).checked)" />lib</label>
     </RunHead>
     <div class="bc-ed"><CodeArea v-model="code" :lang="ts ? 'typescript' : 'js'" :run="go" :min-height="40" placeholder="return items.filter((x) => x.price > 100)" /></div>
-    <p v-if="!info.lib && vars.length" class="bc-vars tw:m-0 tw:text-muted tw:text-[11.5px]">Доступно: <code class="tw:my-0 tw:mx-3 tw:text-accent-fg tw:font-data" v-for="v in vars" :key="v">{{ v }}</code><span class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">· set('имя', значение) — опубликовать ещё</span></p>
+    <p v-if="!info.lib && vars.length" class="bc-vars tw:m-0 tw:text-muted tw:text-[11.5px]">Доступно: <code class="tw:my-0 tw:mx-3 tw:text-accent-fg tw:font-data" v-for="v in vars" :key="v">{{ v }}</code><span class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">· set('имя', значение) — опубликовать ещё · emit('имя', порция) — копить по ходу (.text, .merge)</span></p>
     <div v-if="run && !info.lib && run.state !== 'run'" class="bc-out tw:flex tw:flex-col tw:gap-2">
       <div v-for="(l, i) in run.logs ?? []" :key="i" class="lg tw:py-1 tw:px-8 tw:border-l-2 tw:border-l-border-2 tw:text-text-2 tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]" :class="l.level">{{ l.text }}</div>
       <p v-if="run.error" class="er tw:mt-4 tw:mr-0 tw:mb-0 tw:ml-0 tw:text-down-fg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap">{{ run.error }}</p>
@@ -54,7 +55,7 @@ const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
           <b>Результат</b><span class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">{{ summary(run.value) }}</span>
           <span v-if="info.name" class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">→ {{ '{' }}{{ '{' }}{{ info.name }}{{ '}' }}{{ '}' }}</span>
         </div>
-        <div v-if="showValue" class="bc-val"><CodeArea :model-value="prettyValue(run.value)" :lang="typeof run.value === 'object' ? 'json' : 'text'" readonly :min-height="24" /></div>
+        <div v-if="showValue" class="bc-val"><ValueView :value="run.value" :name="info.name" /></div>
       </template>
       <p v-else-if="!run.logs?.length" class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">Выполнено. Ничего не вернул — добавьте return, чтобы опубликовать результат.</p>
     </div>

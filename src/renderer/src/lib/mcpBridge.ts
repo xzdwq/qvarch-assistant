@@ -5,6 +5,7 @@ import { doc, docs, files, loadTree, openFile, save, setText } from './notebook'
 import { MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
 import { agentByOf, agentWrote, agentWroteMemory } from './agentWrites'
 import { isHeld, postMessage, roomOf } from './chat'
+import type { RunTrigger } from '@shared/cronJobs'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
@@ -77,7 +78,7 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     syncNoteData(path, text)
     const want = typeof a.block === 'string' && a.block ? a.block : undefined
     if (!want) {
-      await runAll(path, text)
+      await runAll(path, text, { by: 'ai', at: Date.now() })
       const n = noteRun(path)
       const stop = n.all?.error ? `\n\n⛔ Прогон остановился на «${n.all.at}»: ${n.all.error}` : ''
       return `${noteReport(path, text)}${stop}\n\n${vars(path)}`.trim()
@@ -87,6 +88,19 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
     await runItemWhereItStands(path, text, item)
     return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
+  },
+  /**
+   * A scheduled run: «Выполнить всё» in the background (the note not opened; its `trigger` — the schedule); where
+   * it stopped, if it did.
+   */
+  async cron(a) {
+    const path = String(a.path)
+    if (!files.value.includes(path)) throw new Error(`Заметки «${path}» нет`)
+    const text = await textOf(path)
+    await runsLoaded(path)
+    await runAll(path, text, a.trigger as RunTrigger)
+    const all = noteRun(path).all
+    return all?.error ? { error: `«${all.at}»: ${all.error}` } : {}
   },
   /** An agent rewrites a document's memory (docAi). */
   async memory(a) {

@@ -12,7 +12,8 @@ import VarNameField from './VarNameField.vue'
  * ▶ / ■, and how its last run went.
  */
 /** `send` — the kind it goes into a chat as («В чат»; none — not sent); `src` — the block's text (a kind sent as written). */
-const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string; send?: ShotKind; src?: string }>(), { canRun: true, src: '' })
+/** `named` — the block publishes its result under a name (one that publishes nothing — no name field). */
+const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string; send?: ShotKind; src?: string; named?: boolean }>(), { canRun: true, src: '', named: true })
 /** «В чат» shown: a result to send (a run done), or a kind that goes as written. */
 const sendable = computed(() => !!props.send && (sendsUnrun(props.send) || (!!props.run && props.run.state !== 'run')))
 const emit = defineEmits<{ rename: [name: string | undefined]; run: []; stop: [] }>()
@@ -48,7 +49,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 <template>
   <div class="rh tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
     <span class="rk tw:inline-flex tw:items-center tw:gap-6 tw:text-muted"><Icon :name="icon" :size="13" />{{ kind }}</span>
-    <VarNameField v-model="draft" :bad="bad" :placeholder="namePlaceholder" :title="bad ? 'Имя — латиница, цифры, _ ; не с цифры' : 'Имя: под ним результат доступен другим блокам и тексту — {{ имя }}'" @commit="commit" @cancel="((draft = name ?? ''), (bad = false))" />
+    <VarNameField v-if="named" v-model="draft" :bad="bad" :placeholder="namePlaceholder" :title="bad ? 'Имя — латиница, цифры, _ ; не с цифры' : 'Имя: под ним результат доступен другим блокам и тексту — {{ имя }}'" @commit="commit" @cancel="((draft = name ?? ''), (bad = false))" />
     <slot />
     <span class="grow tw:flex-1"></span>
     <span v-if="run?.state === 'run'" class="rs run tw:inline-flex tw:items-center tw:gap-5 tw:overflow-hidden tw:text-ellipsis tw:text-accent-fg"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-accent tw:animate-[RunHead-pulse_0.9s_infinite]"></i>выполняется…</span>

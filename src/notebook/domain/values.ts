@@ -90,5 +90,27 @@ export function prettyValue(v: unknown, max = 200_000): string {
   return s.length > max ? `${s.slice(0, max)}\n… (обрезано: ${Math.round(s.length / 1024)} КБ)` : s
 }
 
+/**
+ * A value as a file to keep — whole, never cut: an object (or a text of JSON) as pretty JSON, any other text as it
+ * is; `parse` — a text is read as JSON when it is one (an answer's body).
+ */
+export function valueFile(v: unknown, parse = false): { text: string; ext: 'json' | 'txt' } {
+  if (typeof v === 'string') {
+    if (parse && /^\s*[[{]/.test(v))
+      try {
+        return { text: JSON.stringify(JSON.parse(v), null, 2), ext: 'json' }
+      } catch {
+        // not JSON after all — the text as it is
+      }
+    return { text: v, ext: 'txt' }
+  }
+  try {
+    const s = JSON.stringify(v, null, 2)
+    return s === undefined ? { text: String(v), ext: 'txt' } : { text: s, ext: 'json' }
+  } catch {
+    return { text: String(v), ext: 'txt' }
+  }
+}
+
 /** A deep copy through JSON (what crosses to another process, what is kept in the runs file). */
 export const jsonClone = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T

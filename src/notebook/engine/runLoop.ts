@@ -1,7 +1,8 @@
 import { toRaw } from 'vue'
-import type { LoopRange, LoopResult } from '../domain/loop'
+import { pauseMs, type LoopRange, type LoopResult } from '../domain/loop'
 import { jsonClone } from '../domain/values'
 import { errorText, runApi } from './runApi'
+import { followEmits } from './runEmits'
 import { PassEnv, type RunEnv } from './runEnv'
 import { itemError, itemIsSoft, itemName, libsOf, loopHasPw, runItemsIn, type RunItem } from './runItems'
 import { noteRun, saveRunsSoon } from './runStore'
@@ -10,7 +11,8 @@ import type { LoopRun, PassRun } from './runTypes'
 /**
  * A loop run: its head (plain JS, in a process of its own) asks for passes — each runs the loop's blocks with the
  * values given, in order; the first failing one (not «soft») fails the pass. Afterwards each named block's name is
- * the list of its values over the passes, the loop's name — what its head returned, or its passes' records.
+ * the list of its values over the passes, the loop's name — what its head returned, or its passes' records. A pause
+ * (`pause=`) spaces the passes' starts; the loop's time limit counts it too.
  * (The same loop run again while it goes: the old run stopped and waited for first.)
  */
 
@@ -70,8 +72,25 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
   if (!env.id) for (const k of items.map(itemName)) if (k) delete n.ctx[k]
   let stopped = false
   const passEnvs = new Map<number, RunEnv>()
+  /** The pauses being waited out (a stop ends them at once). */
+  const naps = new Set<() => void>()
+  const nap = (ms: number) =>
+    new Promise<void>((done) => {
+      const wake = () => (clearTimeout(t), naps.delete(wake), done())
+      const t = setTimeout(wake, ms)
+      naps.add(wake)
+    })
+  /** The passes' starts, spaced by the loop's pause (the first at once; parallel ones one pause after another). */
+  let started: Promise<void> | undefined
+  const turnToStart = (): Promise<void> => {
+    const pause = loop.info.pause
+    if (!pause) return Promise.resolve()
+    started = started ? started.then(() => (stopped ? undefined : nap(pauseMs(pause)))) : Promise.resolve()
+    return started
+  }
   const stop = () => {
     stopped = true
+    for (const wake of [...naps]) wake()
     for (const pe of passEnvs.values()) for (const x of items) stopChild(x, pe)
   }
   loopStops.set(runId, stop)
@@ -88,9 +107,12 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
   }
   /** A pass's items, in order; always ends by answering the head (a loop never waits for a pass that is gone). */
   async function runPass(p: PassRun, pe: RunEnv): Promise<void> {
-    const t0 = performance.now()
+    let t0 = performance.now()
     let error: string | undefined
     try {
+      await turnToStart()
+      // (the pause is not the pass's own time)
+      t0 = performance.now()
       for (const x of items) {
         if (stopped) {
           error = 'Остановлено'
@@ -122,6 +144,7 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
     }
   }
   passHandlers.set(runId, handler)
+  const gather = followEmits(runId, env, 'loop', loop.key, loop.info.keep)
   let res: LoopResult
   try {
     res = await runApi().runLoop(runId, {
@@ -141,6 +164,8 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
   const until = Date.now() + PASS_WAIT_MS
   while (lr.passes.some((p) => p.state === 'run') && Date.now() < until) await new Promise((r) => setTimeout(r, 50))
   for (const p of lr.passes) if (p.state === 'run') Object.assign(p, { state: 'error', error: 'Не дождались — остановлено' })
+  const lost = await gather.end(res.emits, res.ok)
+  if (lost && res.ok) res = { ...res, ok: false, error: lost }
   if (passHandlers.get(runId) === handler) passHandlers.delete(runId)
   if (loopStops.get(runId) === stop) loopStops.delete(runId)
   publishLoopResults(loop, env, items, lr, res)

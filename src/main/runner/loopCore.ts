@@ -2,7 +2,9 @@ import vm from 'node:vm'
 import { inspect } from 'node:util'
 import { stripTypeScriptTypes } from 'node:module'
 import type { LoopJob, LoopResult, PassResult } from '../../notebook/domain/loop'
+import type { EmitBatch } from '../../notebook/domain/emits'
 import { errorText } from './errorText'
+import { Emitter } from './emitter'
 
 /**
  * A loop's head run: plain JS (or TS) whose `body({ … })` makes a pass — the loop's blocks run with those values,
@@ -55,10 +57,12 @@ class Pass<T> extends Promise<T> {
   }
 }
 
-export async function runLoopHead(job: LoopJob, pass: (n: number, vars: Record<string, unknown>) => Promise<PassResult>): Promise<LoopResult> {
+/** `emitted` — where the head's emit() batches go (none — kept nowhere: a test of the head alone). */
+export async function runLoopHead(job: LoopJob, pass: (n: number, vars: Record<string, unknown>) => Promise<PassResult>, emitted: (b: EmitBatch) => void = () => undefined): Promise<LoopResult> {
   const t0 = performance.now()
   const logs: Log[] = []
   const sets: Record<string, unknown> = {}
+  const out = new Emitter(emitted, plain)
   const log = (level: Log['level']) => (...a: unknown[]) => {
     if (logs.length < 2000) logs.push({ level, text: a.map(show).join(' ').slice(0, 20000) })
   }
@@ -124,6 +128,7 @@ export async function runLoopHead(job: LoopJob, pass: (n: number, vars: Record<s
       if (!isName(k)) throw new Error(`set: «${k}» — не имя переменной`)
       sets[k] = v
     },
+    emit: out.emit,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -159,6 +164,6 @@ export async function runLoopHead(job: LoopJob, pass: (n: number, vars: Record<s
     const lost = all.find((r) => r.failed && !r.p.seen)
     if (lost) error = `${lost.failed!.message} (ошибка прохода не обработана: await body(…) или try/catch вокруг него)`
   }
-  const base = { logs, sets: plain(sets) as Record<string, unknown>, passes: Math.min(asked, job.max), ms: performance.now() - t0 }
+  const base = { logs, sets: plain(sets) as Record<string, unknown>, passes: Math.min(asked, job.max), ms: performance.now() - t0, emits: out.close() }
   return error ? { ok: false, error, ...base } : { ok: true, value: plain(value), hasValue: value !== undefined, ...base }
 }

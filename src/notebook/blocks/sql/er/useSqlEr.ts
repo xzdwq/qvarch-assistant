@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, type Ref } from 'vue'
 import type { Edge, Node } from '@vue-flow/core'
 import { erAround, erKey, erTablesNamed, type ErSchema } from '@shared/sql'
 import { remoteError } from '@shared/remoteError'
@@ -30,8 +30,11 @@ export function useSqlEr(o: { db: () => string | undefined; sql: () => string })
   const picked = ref<string[]>([])
   const schema = shallowRef<ErSchema>()
   const error = ref('')
-  /** The cards (two-way with the diagram: a card dragged keeps its place here). */
-  const nodes = ref<Node<ErNodeData>[]>([])
+  /**
+   * The cards (two-way with the diagram: a card dragged keeps its place here). Typed as a plain Ref: unwrapping Vue
+   * Flow's node type sends tsc into its depths (TS2589) — reactive as deep as any ref.
+   */
+  const nodes = ref([]) as Ref<Node<ErNodeData>[]>
   const edges = shallowRef<Edge<ErEdgeData>[]>([])
   /** The tables to draw (asked for and their neighbours). */
   const keys = ref<string[]>([])
@@ -121,9 +124,7 @@ export function useSqlEr(o: { db: () => string | undefined; sql: () => string })
     const s = schema.value
     if (!s) return
     keys.value = keys.value.filter((k) => k !== table)
-    // (in place: a new array of Vue Flow's node type sends tsc into its type's depths)
-    const at = nodes.value.findIndex((n) => n.id === table)
-    if (at >= 0) nodes.value.splice(at, 1)
+    nodes.value = nodes.value.filter((n) => n.id !== table)
     edges.value = edgesOf(s, keys.value)
   }
   /** Put beside the card it was asked from, on a free place (right of it, else left; lower and lower until none overlaps). */

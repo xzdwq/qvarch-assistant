@@ -11,6 +11,7 @@ import { registerFilesIpc } from './ipc/filesIpc'
 import { registerHistoryIpc } from './ipc/historyIpc'
 import { registerIntegrationsIpc } from './ipc/integrationsIpc'
 import { registerMcpIpc } from './ipc/mcpIpc'
+import { makeCronSchedule, registerCronIpc } from './ipc/cronIpc'
 import { registerAgentIpc } from './ipc/agentIpc'
 import { registerNotebookIpc } from './ipc/notebookIpc'
 import { registerReleaseIpc } from './ipc/releaseIpc'
@@ -161,7 +162,10 @@ function registerIpc(activity: Activity): void {
   registerIslandChatIpc(ctx)
   registerNotebookIpc(ctx)
   stopRuns = registerRunnersIpc(ctx)
-  registerAgentIpc(ctx, registerMcpIpc(ctx))
+  const crons = makeCronSchedule(ctx)
+  const host = registerMcpIpc(ctx, crons)
+  registerCronIpc(ctx, crons, host)
+  registerAgentIpc(ctx, host)
 }
 
 // closing windows keeps the tracker alive in the tray

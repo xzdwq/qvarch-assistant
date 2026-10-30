@@ -10,7 +10,7 @@ import { codeFenceCommand, dateCommand, dividerCommand, emojiCommand, todoComman
 const BY_ID = new Map<string, NoteCommand>([...ALL_BLOCK_SPECS.flatMap((s) => s.commands ?? []), emojiCommand, todoCommand, codeFenceCommand, dividerCommand, dateCommand].map((c) => [c.id, c]))
 
 /** The menu's order (ids; every command once — checked by a test). */
-export const MENU_ORDER = ['audio', 'emoji', 'http', 'pw', 'sql', 'fuzz', 'files', 'regress', 'browser', 'loop', 'tpl', 'js', 'data', 'ref', 'work', 'board', 'chat', 'table', 'chart', 'mermaid', 'callout', 'toggle', 'toc', 'image', 'todo', 'code', 'divider', 'date'] as const
+export const MENU_ORDER = ['audio', 'emoji', 'http', 'pw', 'sql', 'fuzz', 'files', 'regress', 'browser', 'loop', 'tpl', 'save', 'cron', 'js', 'data', 'ref', 'work', 'board', 'chat', 'table', 'chart', 'mermaid', 'callout', 'toggle', 'toc', 'image', 'todo', 'code', 'divider', 'date'] as const
 
 /** Every «@» command in the menu's order. */
 export const NOTE_COMMANDS: readonly NoteCommand[] = MENU_ORDER.map((id) => {

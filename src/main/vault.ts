@@ -118,10 +118,17 @@ export class Vault {
   get runsRoot(): string {
     return this.runs.root
   }
-  /** Marks, links and runs follow a rename / move (`to` undefined — deleted: they go). */
+  /** Marks, links and runs follow a rename / move (`to` undefined — deleted: they go); so do the others told. */
   private remapMeta(from: string, to?: string): void {
     this.runs.remap(from, to)
     this.meta.remap(from, to)
+    for (const fn of this.remapListeners) fn(from, to)
+  }
+  private readonly remapListeners = new Set<(from: string, to?: string) => void>()
+  /** Told of every rename / move / delete of a note or a folder (what keeps notes by their path follows them). */
+  onRemap(fn: (from: string, to?: string) => void): () => void {
+    this.remapListeners.add(fn)
+    return () => this.remapListeners.delete(fn)
   }
 
   // ---------- tree and files ----------

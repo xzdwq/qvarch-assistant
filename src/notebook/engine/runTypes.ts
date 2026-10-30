@@ -22,6 +22,8 @@ export interface CtxItem {
   block: string
   /** Someone else's (a shared note: the one who ran it). */
   by?: string
+  /** Gathered by emit() in a run that did not end well (stopped, failed) — what came is kept. */
+  partial?: boolean
 }
 /** A block's last run (the fields a kind fills — the others stay empty). */
 export interface BlockRun {
@@ -43,6 +45,11 @@ export interface BlockRun {
   /** The ready checks of a Playwright block (qa.…). */
   checks?: QaCheck[]
   files?: string[]
+  /**
+   * «Сохранить в файл»: the last file written and its value's hash (the next run writes only when it differs);
+   * `skipped` — why this run wrote nothing (empty, partial); `unchanged` — the same as the last file.
+   */
+  saved?: { file?: string; hash?: string; unchanged?: boolean; skipped?: string; removed?: number }
   browser?: string
   /** A database query: what was sent (the note's values as parameters), its rows, its plan, the server. */
   sql?: { text: string; values: unknown[]; mode: SqlMode; db: string; missing: string[] }

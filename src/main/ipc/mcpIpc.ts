@@ -1,14 +1,18 @@
-import { app as electronApp, dialog } from 'electron'
+import { app as electronApp } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpClient } from '../../shared/api'
 import { contentsOf, type AppContext } from '../app/appContext'
 import { Mcp, type McpTool } from '../mcp'
+import type { CronSchedule } from '../cron/cronSchedule'
 import { qvarchTools, type ToolCtx } from '../mcpTools'
 import { CLAUDE_MISSING, commandOf, findClaude, viaShell } from '../agent/claudePath'
 import { saveEntry } from '../tracker/dayEdits'
 import { emit, handle, listen } from './router'
 import { WindowAsk } from './windowAsk'
+
+/** The window's work that may take long (a note's run: its tests, its loops) — waited for up to half an hour. */
+const LONG_OPS: ReadonlySet<string> = new Set(['run', 'cron'])
 
 /** What the agents' runner takes from here: the server (turn tokens), what the tools are made of. */
 export interface McpHost {
@@ -19,7 +23,7 @@ export interface McpHost {
  * AI assistants (MCP): the server and its tools; the notes' part is done by the window (where the editor holds the
  * notes) — asked by a message, answered by mcpReply.
  */
-export function registerMcpIpc(app: AppContext): McpHost {
+export function registerMcpIpc(app: AppContext, crons: CronSchedule): McpHost {
   const asker = new WindowAsk((id, op, args) => {
     const w = contentsOf(app.windows.main)
     if (w) emit(w, 'onMcpCall', id, op, args)
@@ -27,7 +31,7 @@ export function registerMcpIpc(app: AppContext): McpHost {
   }, 'Окно Qvarch закрыто — откройте приложение')
   listen('mcpReply', (_e, id, ok, value) => asker.settle(String(id), ok, value))
   /** The window asked to do something with the notes; its answer (a run may take long — tests; the rest — seconds). */
-  const askWindow = <T>(op: string, args: Record<string, unknown>): Promise<T> => asker.ask<T>(op, args, op === 'run' ? 30 * 60_000 : 60_000)
+  const askWindow = <T>(op: string, args: Record<string, unknown>): Promise<T> => asker.ask<T>(op, args, LONG_OPS.has(op) ? 30 * 60_000 : 60_000)
   const toolCtx: ToolCtx = {
     tree: () => app.vault.tree(),
     mkdir: (dir, name) => app.vault.create(dir, 'folder', name),
@@ -42,22 +46,7 @@ export function registerMcpIpc(app: AppContext): McpHost {
     },
     ui: askWindow,
     kinds: () => app.store.cfg.kinds,
-    allow: (): string[] => mcp.cfg.allow,
-    confirmHosts: async (hosts, note) => {
-      const opts = {
-        type: 'warning' as const,
-        title: 'AI-ассистент: запуск против стенда',
-        message: `${note}: адреса не из разрешённого списка`,
-        detail: `${hosts.join('\n')}\n\nРазрешены без вопроса: ${mcp.cfg.allow.join(', ')}. Это может быть рабочий стенд — тесты могут менять данные. Разрешить на этот сеанс?`,
-        buttons: ['Запретить', 'Разрешить'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      }
-      const main = app.windows.main
-      const r = main && !main.isDestroyed() && main.isVisible() ? await dialog.showMessageBox(main, opts) : await dialog.showMessageBox(opts)
-      return r.response === 1
-    },
+    crons,
   }
   const mcp: Mcp = new Mcp(app.store.root, (): McpTool[] => qvarchTools(toolCtx), electronApp.getVersion())
   void mcp.restart()

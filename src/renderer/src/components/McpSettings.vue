@@ -5,25 +5,21 @@ import type { McpClient, McpInfoView } from '@shared/api'
 import Icon from './Icon.vue'
 
 /**
- * Settings → ИИ-агенты: Qvarch as an MCP server — on / off, its address and token, the hosts tests may run
- * against without asking, and the clients set up (Claude Code — VS Code and the terminal; Claude Desktop).
+ * Settings → ИИ-агенты: Qvarch as an MCP server — on / off, its address and token, and the clients set up
+ * (Claude Code — VS Code and the terminal; Claude Desktop).
  */
 const info = ref<McpInfoView>()
 const msg = ref('')
 const err = ref('')
 const showToken = ref(false)
-const allowText = ref('')
 async function load(): Promise<void> {
   info.value = await window.qa.mcpInfo()
-  allowText.value = info.value.allow.join(', ')
 }
 void load()
 async function set(p: Parameters<typeof window.qa.mcpSet>[0]): Promise<void> {
   err.value = ''
   info.value = await window.qa.mcpSet(p)
-  allowText.value = info.value.allow.join(', ')
 }
-const saveAllow = () => set({ allow: allowText.value.split(/[,\s]+/).filter(Boolean) })
 const codeCmd = computed(() => (info.value ? `claude mcp add --transport http --scope user qvarch ${info.value.url} --header "Authorization: Bearer ${info.value.token}"` : ''))
 const desktopJson = computed(() =>
   info.value ? JSON.stringify({ mcpServers: { qvarch: { command: info.value.exe, args: [info.value.bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } } }, null, 2) : '',
@@ -75,15 +71,6 @@ async function copy(t: string, what: string): Promise<void> {
       <p v-if="msg" class="okm tw:m-0 tw:text-[var(--mcp-ok)] tw:text-[12.5px]">{{ msg }}</p>
       <p v-if="err" class="errm tw:m-0 tw:text-down-fg tw:text-[12.5px]">{{ err }}</p>
     </div>
-
-    <h3 class="mt">Стенды без подтверждения</h3>
-    <div class="fields">
-      <label class="span2">
-        Адреса через запятую (* — любое)
-        <input v-model="allowText" spellcheck="false" @change="saveAllow" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" />
-      </label>
-    </div>
-    <p class="muted small">Тест или запрос к другому адресу ассистент запустит только после вашего «Разрешить» (на этот сеанс приложения).</p>
 
     <h3 class="mt">Доступ</h3>
     <div class="fields">

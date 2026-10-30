@@ -23,8 +23,6 @@ export interface McpConfig {
   on: boolean
   port: number
   token: string
-  /** Hosts the AI may run tests against without asking (wildcards). */
-  allow: string[]
 }
 export interface McpInfo extends McpConfig {
   url: string
@@ -34,7 +32,6 @@ export interface McpInfo extends McpConfig {
   exe: string
 }
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
-export const DEFAULT_ALLOW = ['*-dev*', '*-qa*', 'localhost', '127.0.0.1']
 
 export class Mcp {
   private server?: Server
@@ -65,7 +62,6 @@ export class Mcp {
       on: c.on ?? true,
       port: Number(c.port) > 1023 && Number(c.port) < 65536 ? Number(c.port) : 7843,
       token: typeof c.token === 'string' && c.token.length >= 24 ? c.token : randomBytes(24).toString('hex'),
-      allow: Array.isArray(c.allow) && c.allow.every((x) => typeof x === 'string') ? c.allow : DEFAULT_ALLOW,
     }
     this.save()
   }
@@ -84,7 +80,6 @@ export class Mcp {
   async set(patch: Partial<McpConfig> & { newToken?: boolean }): Promise<McpInfo> {
     if (typeof patch.on === 'boolean') this.cfg.on = patch.on
     if (Number(patch.port) > 1023 && Number(patch.port) < 65536) this.cfg.port = Number(patch.port)
-    if (Array.isArray(patch.allow)) this.cfg.allow = patch.allow.map((x) => String(x).trim()).filter(Boolean).slice(0, 50)
     if (patch.newToken) this.cfg.token = randomBytes(24).toString('hex')
     this.save()
     await this.restart()
@@ -232,9 +227,3 @@ function send(line) {
   }
 }
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> & { name?: string; arguments?: unknown; protocolVersion?: string } }
-
-/** Whether a host is on the allowed list (wildcards *). */
-export function hostAllowed(host: string, allow: string[]): boolean {
-  const h = host.toLowerCase()
-  return allow.some((p) => new RegExp(`^${p.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(h))
-}

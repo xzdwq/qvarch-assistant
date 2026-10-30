@@ -1,7 +1,7 @@
 import { nextTick } from 'vue'
 import { resolveWiki, type VaultNode } from '@shared/vault'
 import { findNode } from '@shared/vaultTree'
-import { serializeBoard } from '@shared/whiteboard'
+import { BOARD_EXT, serializeBoard } from '@shared/whiteboard'
 import { freshBoard } from '@renderer/lib/boardPrefs'
 import { remoteError } from '../../shared/remoteError'
 import { forgetRuns, moveRuns } from '@nb/engine'
@@ -11,7 +11,7 @@ import { remap } from '@nb/workspace/noteSync'
 import { relinkAfterMove } from '@nb/workspace/wikiRelink'
 import { askPlace } from '@nb/workspace/noteGoto'
 import { files, loadTree, tree } from '@nb/workspace/vaultTreeStore'
-import { dirOf, noteName } from '@nb/domain/notePaths'
+import { copyPath, dirOf, extOf, noteName } from '@nb/domain/notePaths'
 import type { NoteEditors } from './noteEditors'
 import type { TreeEditing } from './useTreeEditing'
 
@@ -128,6 +128,21 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
     await window.qa.vaultSetEmoji(n.path, emoji)
     await loadTree()
   }
+  /**
+   * A copy beside a document (a note, a board): «Копия - X», or «Копия Копия - X» when that is taken… Its text as
+   * the editor holds it (typed, not saved yet — too); the copy is a document of its own (its marks and runs — not
+   * copied). Focused in the tree.
+   */
+  const copyDoc = (path: string) =>
+    attempt(async () => {
+      const d = docs.get(path)
+      const text = d?.loaded ? d.text : await window.qa.vaultRead(path)
+      const to = copyPath(path, files.value)
+      const made = await window.qa.vaultCreate(dirOf(to), extOf(path).toLowerCase() === BOARD_EXT ? 'board' : 'note', noteName(to), text)
+      await loadTree()
+      ensureOpen(dirOf(made))
+      focus.value = made
+    })
   /** A wiki link followed; no such note — made (as Obsidian does). */
   function openWiki(target: string, newPane = false): void {
     const path = resolveWiki(target, files.value)
@@ -142,5 +157,5 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       openFile(created, { newPane })
     })()
   }
-  return { newNote, newBoard, newFolder, rename, finishRename, moveTo, remove, pair, showPair, setColor, setEmoji, openWiki }
+  return { newNote, newBoard, newFolder, rename, finishRename, moveTo, remove, pair, showPair, setColor, setEmoji, copyDoc, openWiki }
 }

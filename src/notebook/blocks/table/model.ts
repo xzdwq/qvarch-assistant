@@ -5,6 +5,7 @@
  * Below: what the table block does to it (columns, order, chosen cells, filling from a value).
  */
 import { rangeBounds, tsvRows, type CellRange } from '../../../shared/gridRange'
+import { valueGrid } from '../../../shared/valueGrid'
 import { isName } from '../../domain/blockInfo'
 import { cellAt, deleteColAt, hasBodyMerges, insertColAt, overlaps } from './modelMerges'
 import { parseTotals, totalsFitted, totalsMd, type ColumnTotal } from './modelTotals'
@@ -154,26 +155,8 @@ export function tableMd(t: TableModel): string {
  * the order met; a key a row lacks — an empty cell); a list of plain values — one column; one object — its keys the
  * columns, one row; a list of lists — as they are; a plain value — one cell. Objects inside cells — as JSON.
  */
-export function valueTable(v: unknown): { head: string[]; rows: string[][] } {
-  const cell = (x: unknown) => normCell(x === null || x === undefined ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x))
-  const isObj = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)
-  const objects = (xs: Array<Record<string, unknown>>) => {
-    const head: string[] = []
-    const seen = new Set<string>()
-    for (const x of xs) for (const k of Object.keys(x)) if (!seen.has(k)) (seen.add(k), head.push(k))
-    return { head: head.length ? head : ['значение'], rows: xs.map((x) => (head.length ? head.map((k) => cell(x[k])) : [''])) }
-  }
-  if (Array.isArray(v)) {
-    if (v.length && v.every(isObj)) return objects(v)
-    if (v.length && v.every((x) => Array.isArray(x))) {
-      const n = Math.max(1, ...v.map((x) => (x as unknown[]).length))
-      return { head: Array.from({ length: n }, (_, i) => `Столбец ${i + 1}`), rows: v.map((x) => Array.from({ length: n }, (_, i) => cell((x as unknown[])[i]))) }
-    }
-    return { head: ['значение'], rows: v.map((x) => [cell(x)]) }
-  }
-  if (isObj(v)) return objects([v])
-  return { head: ['значение'], rows: [[cell(v)]] }
-}
+export const valueTable = (v: unknown): { head: string[]; rows: string[][] } =>
+  valueGrid(v, (x) => normCell(x === null || x === undefined ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x)))
 /** A table's content in a few letters (was it edited since it was filled?). */
 export function tableHash(t: { head: string[]; rows: string[][] }): string {
   return textHash(JSON.stringify([t.head, t.rows]))

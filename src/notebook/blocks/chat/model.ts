@@ -1,4 +1,4 @@
-import { fenceBodyLines } from '../../domain/fence'
+import { bodyField, withBodyField } from '../../domain/fence'
 import { fencedBlocksOf } from '../../domain/noteBlocks'
 
 /**
@@ -11,24 +11,8 @@ export const chatFeedMd = () => '```chatfeed\n```'
 /** The text a note with a feed has (a notification's chat is opened in one). */
 export const CHAT_FEED_MARK = '```chatfeed'
 
-/** A field of a block's body (`key: value` on a line of its own; '' — none). */
-function fieldOf(src: string, key: string): string {
-  const re = new RegExp(`^\\s*${key}\\s*:\\s*(.*?)\\s*$`, 'i')
-  for (const l of fenceBodyLines(src)) {
-    const m = re.exec(l)
-    if (m) return m[1]
-  }
-  return ''
-}
-/** A block's text with a field set (its line replaced, or added at the end of the body). */
-function withField(src: string, key: string, value: string): string {
-  const lines = src.split('\n')
-  const re = new RegExp(`^(\\s*${key}\\s*:\\s*).*$`, 'i')
-  const at = lines.findIndex((l, i) => i > 0 && i < lines.length - 1 && re.test(l))
-  if (at >= 0) lines[at] = lines[at].replace(re, `$1${value}`)
-  else lines.splice(Math.max(1, lines.length - 1), 0, `${key}: ${value}`)
-  return lines.join('\n')
-}
+const fieldOf = bodyField
+const withField = withBodyField
 
 /** The room's id of a block ('' — none). */
 export function chatRoomOf(src: string): string {

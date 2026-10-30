@@ -20,6 +20,8 @@ import { regressSpec } from './regress/spec'
 import { sqlSpec } from './sql/spec'
 import { tableSpec } from './table/spec'
 import { tocSpec } from './toc/spec'
+import { cronSpec } from './cron/spec'
+import { saveSpec } from './save/spec'
 import { toggleSpec } from './toggle/spec'
 import { tplSpec } from './tpl/spec'
 import { workSpec } from './work/spec'
@@ -33,6 +35,7 @@ export const BLOCK_SPECS = {
   chart: chartSpec,
   mermaid: mermaidSpec,
   toc: tocSpec,
+  cron: cronSpec,
   callout: calloutSpec,
   toggle: toggleSpec,
   work: workSpec,
@@ -51,6 +54,7 @@ export const BLOCK_SPECS = {
   files: filesSpec,
   sql: sqlSpec,
   tpl: tplSpec,
+  save: saveSpec,
   loop: loopSpec,
   loopEnd: loopEndSpec,
 } satisfies { readonly [K in BlockKind]: BlockSpec<K> }

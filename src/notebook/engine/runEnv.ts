@@ -22,6 +22,8 @@ export abstract class RunEnv {
   abstract values(): Values
   /** A value a block here published (by its name, or set() of code). */
   abstract publish(name: string, value: unknown, from: ValueSource, block: string): void
+  /** The run it is part of: the note's env it started in (a pass's — its loop's). What emit() gathers lives as long. */
+  abstract readonly root: RunEnv
   /** The id a block's (or a loop's) run goes by in the main process. */
   runSlot(key: string): string {
     return `${this.notePath}#${key}${this.id}`
@@ -39,6 +41,9 @@ export abstract class RunEnv {
 /** The note itself: its context, its blocks' runs. */
 export class NoteEnv extends RunEnv {
   readonly id = ''
+  get root(): RunEnv {
+    return this
+  }
   get runs(): Record<string, BlockRun> {
     return noteRun(this.notePath).runs
   }
@@ -67,6 +72,9 @@ export class PassEnv extends RunEnv {
   ) {
     super(outer.notePath)
     this.id = `${outer.id}@${loopKey}#${pass.n}`
+  }
+  get root(): RunEnv {
+    return this.outer.root
   }
   // (made on first use: an old pass of a long loop has let its runs go — reading its values writes nothing)
   get runs(): Record<string, BlockRun> {

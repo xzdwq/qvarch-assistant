@@ -14,6 +14,7 @@
  * The start and the end are comments: in other Markdown viewers the note is its blocks as they are. Loops nest.
  */
 import { isName } from './blockInfo'
+import { keepOf } from './emits'
 import { FENCE_OPEN, findFenceClose } from './fence'
 
 export const LOOP_OPEN = /^<!--\s*qa:loop\b(.*?)-->\s*$/
@@ -30,11 +31,36 @@ export interface LoopInfo {
   timeout: number
   /** Its error does not stop «Выполнить всё». */
   soft?: boolean
+  /** A pause between its passes (none — one right after another). */
+  pause?: LoopPause
+  /** What its head's emit() gathers goes on from the last run: its last N items / lines. */
+  keep?: number
 }
 export const LOOP_MAX = 1000
 export const LOOP_MAX_LIMIT = 100_000
 export const LOOP_TIMEOUT = 600
 export const LOOP_PARALLEL_LIMIT = 16
+
+/** A pause between passes, seconds: a fixed one (min = max) or a random one within a range. */
+export interface LoopPause {
+  min: number
+  max: number
+}
+export const LOOP_PAUSE_LIMIT = 3600
+/** «5», «2-8», «0.5-1,5» (seconds; a range the other way round — turned) → the pause; none, zero, anything else — none. */
+export function parsePause(v: string): LoopPause | undefined {
+  const m = /^\s*(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*$/.exec(v)
+  if (!m) return undefined
+  const sec = (s: string) => Math.min(LOOP_PAUSE_LIMIT, Number(s.replace(',', '.')))
+  const a = sec(m[1])
+  const b = m[2] === undefined ? a : sec(m[2])
+  const p = { min: Math.min(a, b), max: Math.max(a, b) }
+  return p.max > 0 ? p : undefined
+}
+/** A pause as it is written: «5», «2-8». */
+export const pauseText = (p: LoopPause | undefined): string => (!p ? '' : p.min === p.max ? `${p.min}` : `${p.min}-${p.max}`)
+/** One pause, ms: a point of its range (`rand` in [0, 1)). */
+export const pauseMs = (p: LoopPause, rand: () => number = Math.random): number => Math.round((p.min + (p.max - p.min) * rand()) * 1000)
 
 /** A positive whole number of an attribute, capped; undefined — not one. */
 const countUpTo = (limit: number, v: string): number | undefined => {
@@ -55,9 +81,15 @@ const LOOP_SETTINGS: Record<string, (out: LoopInfo, v: string) => void> = {
   timeout: (out, v) => {
     out.timeout = countUpTo(86_400, v) ?? out.timeout
   },
+  pause: (out, v) => {
+    out.pause = parsePause(v) ?? out.pause
+  },
+  keep: (out, v) => {
+    out.keep = keepOf(v) ?? out.keep
+  },
 }
 
-/** Parses the attributes of a loop's start comment (name=, parallel=, max=, timeout=, soft). */
+/** Parses the attributes of a loop's start comment (name=, parallel=, max=, timeout=, pause=, soft). */
 export function parseLoopInfo(attrs: string): LoopInfo {
   const out: LoopInfo = { parallel: 1, max: LOOP_MAX, timeout: LOOP_TIMEOUT }
   for (const p of attrs.trim().split(/\s+/).filter(Boolean)) {
@@ -72,7 +104,7 @@ export function parseLoopInfo(attrs: string): LoopInfo {
 }
 /** Writes a loop's start comment (defaults left out). */
 export function loopOpenMd(i: LoopInfo): string {
-  const a = [i.name ? `name=${i.name}` : '', i.parallel > 1 ? `parallel=${i.parallel}` : '', i.max !== LOOP_MAX ? `max=${i.max}` : '', i.timeout !== LOOP_TIMEOUT ? `timeout=${i.timeout}` : '', i.soft ? 'soft' : ''].filter(Boolean)
+  const a = [i.name ? `name=${i.name}` : '', i.parallel > 1 ? `parallel=${i.parallel}` : '', i.max !== LOOP_MAX ? `max=${i.max}` : '', i.timeout !== LOOP_TIMEOUT ? `timeout=${i.timeout}` : '', i.pause ? `pause=${pauseText(i.pause)}` : '', i.keep ? `keep=${i.keep}` : '', i.soft ? 'soft' : ''].filter(Boolean)
   return `<!-- qa:loop${a.length ? ` ${a.join(' ')}` : ''} -->`
 }
 export const LOOP_CLOSE_MD = '<!-- /qa:loop -->'
@@ -192,4 +224,6 @@ export interface LoopResult {
   /** The passes asked for. */
   passes: number
   ms: number
+  /** The emit() batches the head sent (the window waits till it has them all). */
+  emits?: number
 }

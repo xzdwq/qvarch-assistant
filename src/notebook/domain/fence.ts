@@ -32,3 +32,25 @@ export const joinFence = (fence: string, info: BlockInfo, body: string) => `${fe
 
 /** The lines between a block's fences. */
 export const fenceBodyLines = (src: string) => src.split('\n').slice(1, -1)
+
+/** A field of a block's body lines (`key: value` on a line of its own; '' — none). */
+export function fieldOfLines(lines: readonly string[], key: string): string {
+  const re = new RegExp(`^\\s*${key}\\s*:\\s*(.*?)\\s*$`, 'i')
+  for (const l of lines) {
+    const m = re.exec(l)
+    if (m) return m[1]
+  }
+  return ''
+}
+/** A field of a block's body (its whole text, fences too) — a block's settings a path may be in. */
+export const bodyField = (src: string, key: string): string => fieldOfLines(fenceBodyLines(src), key)
+/** A block's text with a field set (its line replaced, or added at the end of the body; '' — the line taken away). */
+export function withBodyField(src: string, key: string, value: string): string {
+  const lines = src.split('\n')
+  const re = new RegExp(`^(\\s*${key}\\s*:\\s*).*$`, 'i')
+  const at = lines.findIndex((l, i) => i > 0 && i < lines.length - 1 && re.test(l))
+  if (!value) return at >= 0 ? lines.filter((_, i) => i !== at).join('\n') : src
+  if (at >= 0) lines[at] = lines[at].replace(re, `$1${value}`)
+  else lines.splice(Math.max(1, lines.length - 1), 0, `${key}: ${value}`)
+  return lines.join('\n')
+}

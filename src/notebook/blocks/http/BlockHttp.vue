@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { prettyValue } from '@nb/domain/values'
+import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
@@ -23,16 +23,6 @@ async function go(): Promise<void> {
   await start()
 }
 const tab = ref<'body' | 'headers' | 'sent'>('body')
-/** The answer's body shown: JSON pretty-printed, anything else as it came. */
-const shownBody = computed(() => {
-  const b = run.value?.response?.body ?? ''
-  try {
-    return /^\s*[[{]/.test(b) ? prettyValue(JSON.parse(b)) : prettyValue(b)
-  } catch {
-    return prettyValue(b)
-  }
-})
-const isJson = computed(() => /^\s*[[{]/.test(run.value?.response?.body ?? ''))
 const statusCls = computed(() => {
   const s = run.value?.response?.status ?? 0
   return s >= 200 && s < 300 ? 'ok' : s >= 400 ? 'err' : 'warn'
@@ -62,7 +52,7 @@ const open = useFold(() => `${props.path}#${key.value}#result`, true)
         <span v-if="run.error" class="er tw:text-down-fg tw:overflow-hidden tw:text-ellipsis" :title="run.error">{{ run.error }}</span>
       </div>
       <template v-if="open && run.response">
-        <div v-if="tab === 'body'" class="bh-out"><CodeArea :model-value="shownBody" :lang="isJson ? 'json' : 'text'" readonly :min-height="30" /></div>
+        <div v-if="tab === 'body'" class="bh-out"><ValueView :value="run.response.body":name="parts.info.name || 'ответ'" parse :min-height="30" /></div>
         <table v-else-if="tab === 'headers'" class="hdrs tw:border-collapse tw:font-data tw:text-[12px]">
           <tr v-for="([k, v], i) in run.response.headers" :key="i"><td class="tw:pt-2 tw:pr-10 tw:pb-2 tw:pl-0 tw:align-top tw:break-all tw:first:text-accent-fg tw:first:whitespace-nowrap">{{ k }}</td><td class="tw:pt-2 tw:pr-10 tw:pb-2 tw:pl-0 tw:align-top tw:break-all tw:first:text-accent-fg tw:first:whitespace-nowrap">{{ v }}</td></tr>
         </table>

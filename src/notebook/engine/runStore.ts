@@ -1,4 +1,4 @@
-import { reactive, toRaw } from 'vue'
+import { markRaw, reactive, toRaw } from 'vue'
 import type { ValueSource } from '../domain/blockInfo'
 import { jsonClone, type Values } from '../domain/values'
 import { runApi } from './runApi'
@@ -77,6 +77,25 @@ export function publishToNote(path: string, name: string, value: unknown, from: 
   noteRun(path).ctx[name] = { value: jsonClone(value), at: Date.now(), from, block }
   saveRunsSoon(path)
 }
+/**
+ * A value gathered by emit() put into the note's context as it comes (runEmits gives a new one each time it is
+ * shown — never cloned deep here, never watched deep: a long stream stays cheap); `partial` — its run did not end
+ * well (stopped, failed): what came is kept.
+ */
+export function publishGathered(path: string, name: string, value: unknown, from: ValueSource, block: string, partial = false): void {
+  noteRun(path).ctx[name] = { value: value && typeof value === 'object' ? markRaw(value) : value, at: Date.now(), from, block, ...(partial ? { partial } : {}) }
+  saveRunsSoon(path)
+}
+/**
+ * A variable of the note cleared (the «Значение» block's eraser): it is gone until a block publishes it again; one
+ * gathered with keep=N starts its history anew. A data block's value comes back at once — it is the note's text.
+ */
+export function clearValue(path: string, name: string): void {
+  const ctx = noteRun(path).ctx
+  if (!(name in ctx)) return
+  delete ctx[name]
+  saveRunsSoon(path)
+}
 /** A block's results moved to another key (it got an id of its own: they stay with it). */
 export function moveRun(path: string, from: string, to: string): void {
   const n = noteRun(path)
@@ -108,6 +127,11 @@ export const onRunsChanged = (fn: (path: string) => void) => void changeListener
 /** The note's runs saved in a moment (800 ms; 4 s while a loop runs — its passes come fast); told to whoever listens. */
 export function saveRunsSoon(path: string): void {
   for (const fn of changeListeners) fn(path)
+  // (a stream of changes — emit() batches — never puts the save off for ever: past SAVE_MAX_WAIT since the first change
+  // not saved, the save already set stays as it is)
+  const since = unsavedSince.get(path)
+  if (since !== undefined && saveTimers.has(path) && Date.now() - since > SAVE_MAX_WAIT) return
+  if (!saveTimers.has(path)) unsavedSince.set(path, Date.now())
   clearTimeout(saveTimers.get(path))
   const busy = Object.values(notes.get(path)?.loops ?? {}).some((l) => l.state === 'run')
   saveTimers.set(
@@ -115,6 +139,9 @@ export function saveRunsSoon(path: string): void {
     setTimeout(() => void writeRuns(path), busy ? 4000 : 800),
   )
 }
+/** The first change of a note not saved yet (ms) — the save is not put off past SAVE_MAX_WAIT after it. */
+const unsavedSince = new Map<string, number>()
+const SAVE_MAX_WAIT = 1000
 /** The runs not saved yet — saved now (before a document is packed). */
 export async function flushRuns(): Promise<void> {
   const paths = [...saveTimers.keys()]
@@ -123,6 +150,7 @@ export async function flushRuns(): Promise<void> {
 }
 function writeRuns(path: string): Promise<void> {
   saveTimers.delete(path)
+  unsavedSince.delete(path)
   const n = noteRun(path)
   let json: string
   try {
@@ -165,6 +193,7 @@ export function forgetRuns(path: string): void {
     if (isUnder(path, p)) {
       clearTimeout(saveTimers.get(p))
       saveTimers.delete(p)
+      unsavedSince.delete(p)
     }
 }
 /** A note (or a folder) renamed / moved: its runs go with it (on the disk they are moved by the vault). */
@@ -180,6 +209,7 @@ export function moveRuns(from: string, to: string): void {
     if (isUnder(from, p)) {
       clearTimeout(saveTimers.get(p))
       saveTimers.delete(p)
+      unsavedSince.delete(p)
       saveRunsSoon(to + p.slice(from.length))
     }
 }

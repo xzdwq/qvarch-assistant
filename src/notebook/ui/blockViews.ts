@@ -21,6 +21,8 @@ import { regressView } from '../blocks/regress/view'
 import { sqlView } from '../blocks/sql/view'
 import { tableView } from '../blocks/table/view'
 import { tocView } from '../blocks/toc/view'
+import { cronView } from '../blocks/cron/view'
+import { saveView } from '../blocks/save/view'
 import { toggleView } from '../blocks/toggle/view'
 import { tplView } from '../blocks/tpl/view'
 import { workView } from '../blocks/work/view'
@@ -32,6 +34,8 @@ export const BLOCK_VIEWS: { readonly [K in BlockKind]: K extends RunnableKind ? 
   chart: chartView,
   mermaid: mermaidView,
   toc: tocView,
+  cron: cronView,
+  save: saveView,
   callout: calloutView,
   toggle: toggleView,
   work: workView,

@@ -11,12 +11,12 @@ import { QUICK_EMOJI } from '@nb/domain/noteFacts'
 
 /**
  * The tree's right-click menu: on a folder or the empty space — new note / board / folder, import; on a file — open,
- * its linked one, unlink; on a node — rename, show in Explorer, export, its colour and emoji, delete. A popover at the
+ * its linked one, unlink, a copy beside it; on a node — rename, show in Explorer, export, its colour and emoji, delete. A popover at the
  * click (the point already fitted into the window).
  */
 const props = defineProps<{ menu: { x: number; y: number; node?: VaultNode } }>()
 const { actions, transfer, editing, menu: treeMenu, toast } = useNotebookScreen()
-const { newNote, newBoard, newFolder, pair, remove, setColor, setEmoji } = actions
+const { newNote, newBoard, newFolder, pair, remove, setColor, setEmoji, copyDoc } = actions
 const { importDoc, exportDoc } = transfer
 const { startRename } = editing
 const { runOnNode, moreEmoji } = treeMenu
@@ -55,6 +55,7 @@ const markColors = Array.from({ length: 7 }, (_, i) => cssHex(`--note-mark-${i +
     <template v-if="menu.node">
       <div class="csep tw:h-1 tw:my-4 tw:mx-6 tw:bg-white/8"></div>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => startRename(n!.path))"><Icon name="pencil" :size="13" />Переименовать</button>
+      <button v-if="!menu.node.dir" class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" title="Копия рядом: «Копия - имя» (если такая есть — «Копия Копия - имя»…)" @click="runOnNode((n) => copyDoc(n!.path))"><Icon name="copy" :size="13" />Сделать копию</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => reveal(n!.path))"><Icon name="external" :size="13" />Показать в проводнике</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" :title="menu.node.dir ? 'Вся папка одним файлом .qvdoc: подпапки, заметки, доски, картинки — откроется на другом компьютере' : 'Один файл .qvdoc: с картинками, аудио, досками — откроется на другом компьютере'" @click="runOnNode((n) => exportDoc(n!.path))"><Icon name="upload" :size="13" />{{ menu.node.dir ? 'Экспорт папки в файл…' : 'Экспорт в файл…' }}</button>
       <div class="csep tw:h-1 tw:my-4 tw:mx-6 tw:bg-white/8"></div>

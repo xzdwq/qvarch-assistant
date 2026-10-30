@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { bodyVars, findLoops, LOOP_CLOSE_MD, LOOP_MAX, LOOP_PARALLEL_LIMIT, LOOP_TIMEOUT, loopKey, loopOpenMd, loopStartAt, type LoopInfo } from '@nb/domain/loop'
-import { prettyValue, summary } from '@nb/domain/values'
+import ValueView from '../../ui/ValueView.vue'
+import { bodyVars, findLoops, LOOP_CLOSE_MD, LOOP_MAX, LOOP_PARALLEL_LIMIT, LOOP_TIMEOUT, loopKey, loopOpenMd, loopStartAt, parsePause, pauseText, type LoopInfo, type LoopPause } from '@nb/domain/loop'
+import { summary } from '@nb/domain/values'
 import { loopHasPw, loopReport, noteRun, passTitle, pickPass, runLoopAt, stopLoopAt, type BlockRun, type RunState } from '@nb/engine'
 import { doc } from '@renderer/lib/notebook'
 import { useFold } from '@renderer/lib/foldState'
@@ -46,6 +47,12 @@ function write(i: LoopInfo = info.value, ts = parsed.value.ts, now = false): voi
 }
 watch(head, () => write())
 const set = (patch: Partial<LoopInfo>) => write({ ...info.value, ...patch }, parsed.value.ts, true)
+/** The pause typed («5», «2-8»; empty or not one — none); what it came to. */
+function setPause(v: string): LoopPause | undefined {
+  const pause = parsePause(v)
+  set({ pause })
+  return pause
+}
 const num = (v: string, lo: number, hi: number, def: number) => Math.min(hi, Math.max(lo, Math.floor(Number(v)) || def))
 
 const key = computed(() => loopKey(info.value.name, props.line))
@@ -121,6 +128,9 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
       <label class="nm tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Больше проходов — цикл останавливается: защита от бесконечного while"
         >макс.<input class="tw:w-52 tw:h-22 tw:py-0 tw:px-4 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" type="number" min="1" :value="info.max" @change="set({ max: num(($event.target as HTMLInputElement).value, 1, 100000, LOOP_MAX) })"
       /></label>
+      <label class="nm tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Пауза между проходами, секунды: 5 — ровно 5; 2-8 — случайно от 2 до 8 каждый раз (дробные — 0.5-1.5). Пусто — без паузы. Параллельные проходы стартуют с этой паузой друг за другом"
+        >пауза<input class="tw:w-60 tw:h-22 tw:py-0 tw:px-4 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" placeholder="сек" spellcheck="false" :value="pauseText(info.pause)" @change="($event.target as HTMLInputElement).value = pauseText(setPause(($event.target as HTMLInputElement).value))" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+      /></label>
       <MenuButton icon="list" title="Заполнить заголовок готовым видом цикла: for…of, счётчик, for…in, Object.entries, while, параллельно…" :width="280" :items="presetItems" />
     </RunHead>
     <div v-if="!head.trim()" class="bl-pre">
@@ -159,7 +169,7 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
           <button class="fold tw:inline-grid tw:flex-none tw:place-items-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @mousedown.prevent @click="showValue = !showValue"><Icon name="chevronRight" :size="12" :style="showValue ? 'transform: rotate(90deg)' : ''" /></button>
           <b>Вернул</b><span class="muted tw:text-muted">{{ summary(lr.value) }}</span>
         </div>
-        <CodeArea v-if="showValue" :model-value="prettyValue(lr.value)" :lang="typeof lr.value === 'object' ? 'json' : 'text'" readonly :min-height="24" />
+        <ValueView v-if="showValue" :value="lr.value" :name="info.name" />
       </template>
     </div>
   </div>

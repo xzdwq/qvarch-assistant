@@ -30,6 +30,7 @@ import { startAgents } from '../lib/agentTurns'
 import { startIslandChat } from '../lib/islandChat'
 import { chatPortLocal } from '../lib/chatPortLocal'
 import { provideChatPort } from '@nb/blocks/chat/chatPort'
+import { setChatSend } from '@nb/engine'
 import { startAppLinks } from '../lib/appLinks'
 import { startSharedFolders } from '@nb/workspace/sharedFolders'
 import { startSharedRunResults } from '@nb/workspace/sharedRunResults'
@@ -45,8 +46,9 @@ startChat()
 // this person's AI agents answer in the chats when called
 startAgents()
 startIslandChat()
-// the chats every chat block, the feed and the comments of this window work with
+// the chats every chat block, the feed and the comments of this window work with; a run's text sent into one too
 provideChatPort(chatPortLocal)
+setChatSend(chatPortLocal.send)
 // the app's own links (a shared note — joined by its code when not here yet, a task, an event) open wherever clicked
 startAppLinks()
 // the shared folders kept in step from the start (not only once the notebook is opened)

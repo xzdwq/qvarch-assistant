@@ -1,4 +1,4 @@
-/** Formatting the code of a notebook code block: SQL (sql-formatter), JS / TS / HTML / CSS (prettier), JSON, shell. */
+/** Formatting the code of a notebook code block: SQL (sql-formatter), JS / TS / HTML / CSS / YAML (prettier), JSON, shell. */
 /** The common indent of the lines (a block inside a list item is indented) — taken off and put back. */
 function dedent(code: string): { body: string; pad: string } {
   const lines = code.split('\n')
@@ -20,6 +20,7 @@ const PRETTIER_PLUGINS = {
   typescript: () => Promise.all([import('prettier/plugins/typescript'), import('prettier/plugins/estree')]),
   babel: () => Promise.all([import('prettier/plugins/babel'), import('prettier/plugins/estree')]),
   json5: () => Promise.all([import('prettier/plugins/babel'), import('prettier/plugins/estree')]),
+  yaml: () => Promise.all([import('prettier/plugins/yaml')]),
 } satisfies Record<string, () => Promise<unknown[]>>
 type PrettierParser = keyof typeof PRETTIER_PLUGINS
 
@@ -50,6 +51,7 @@ const PRETTIER_PARSER_OF = new Map<string, PrettierParser>([
   ['html', 'html'],
   ['css', 'css'],
   ['typescript', 'typescript'],
+  ['yaml', 'yaml'],
 ])
 
 /** Formats a block's code; throws with a short message when the code does not parse. */

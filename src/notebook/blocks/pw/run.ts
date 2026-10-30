@@ -5,6 +5,7 @@ import { errorText, runApi } from '../../engine/runApi'
 import type { RunEnv } from '../../engine/runEnv'
 import { libsOf, runsSnapshot } from '../../engine/runItems'
 import { loadedNoteRun, saveRunsSoon } from '../../engine/runStore'
+import { followEmits } from '../../engine/runEmits'
 
 /** The Playwright runs going on: their run id → where their run is kept (the steps come by it). */
 const running = new Map<string, { env: RunEnv; key: string }>()
@@ -22,7 +23,8 @@ function listenToProgress(): void {
 }
 
 /**
- * A Playwright block: the installed browser driven in a process of its own; its return value and set() published.
+ * A Playwright block: the installed browser driven in a process of its own; its return value and set() published,
+ * emit() gathered as it goes.
  * (One at a time per block — its files are the block's: a loop with one goes pass by pass.)
  */
 export const pwRunner: BlockRunner = {
@@ -33,6 +35,7 @@ export const pwRunner: BlockRunner = {
     const own = { env, key }
     running.set(runId, own)
     env.recordRun(key, { state: 'run', at: Date.now(), steps: [] })
+    const gather = followEmits(runId, env, 'pw', key, info.keep)
     try {
       const r = await runApi().runPw(runId, {
         code,
@@ -49,12 +52,15 @@ export const pwRunner: BlockRunner = {
         session: !!info.session,
         timeoutSec: info.timeout,
       })
-      env.recordRun(key, { state: r.ok ? 'ok' : 'error', at: Date.now(), ms: r.ms, logs: r.logs, error: r.error, value: r.value, hasValue: r.hasValue, steps: r.steps, checks: r.checks, files: r.files, browser: r.browser })
-      if (r.ok && info.name && r.hasValue) env.publish(info.name, r.value, 'pw', key)
+      const lost = await gather.end(r.emits, r.ok)
+      const ok = r.ok && !lost
+      env.recordRun(key, { state: ok ? 'ok' : 'error', at: Date.now(), ms: r.ms, logs: r.logs, error: r.error ?? lost, value: r.value, hasValue: r.hasValue, steps: r.steps, checks: r.checks, files: r.files, browser: r.browser })
+      if (ok && info.name && r.hasValue) env.publish(info.name, r.value, 'pw', key)
       for (const [k, v] of Object.entries(r.sets ?? {})) env.publish(k, v, 'set', key)
       saveRunsSoon(env.notePath)
-      return r.ok
+      return ok
     } catch (e) {
+      await gather.end(undefined, false)
       env.recordRun(key, { state: 'error', at: Date.now(), error: errorText(e) })
       saveRunsSoon(env.notePath)
       return false

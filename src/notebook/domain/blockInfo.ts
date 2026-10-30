@@ -10,9 +10,17 @@
  *   ```sql db=main name=rows        a read-only database query
  *   ```md template name=text        Markdown with {{ values }}, published filled
  */
+import { keepOf } from './emits'
 
-/** Where a value of the note's context came from (a block kind, set() of code, the browser component). */
-export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser' | 'table'
+/**
+ * Where a value of the note's context came from (a block kind, set() of code, the browser component); `run` — what
+ * started «Выполнить всё» (its `trigger`).
+ */
+export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser' | 'table' | 'run' | 'save'
+/** The values the note's text itself gives (data, a table): nothing to clear — they come back from the text at once. */
+export const TEXT_VALUE_SOURCES: ReadonlySet<ValueSource> = new Set<ValueSource>(['data', 'table'])
+/** The value «Выполнить всё» gives of what started it (by hand, by the AI, by a schedule) — no block may take its name. */
+export const TRIGGER_NAME = 'trigger'
 
 /** The browsers a Playwright block can drive (installed ones; Chromium — if it was downloaded). */
 export const PW_BROWSERS = ['msedge', 'chrome', 'chromium'] as const
@@ -53,6 +61,8 @@ export interface BlockInfo {
   db?: string
   /** A text by a template (```md template): Markdown with {{ values }} — published as the text filled. */
   template?: boolean
+  /** A text by a template sent, filled, into the note's chat (an `@ИИ · …` in it calls that AI) — each run. */
+  chat?: boolean
   /** The head of a loop (```js loop, right under <!-- qa:loop -->). */
   loop?: boolean
   /** Inside a loop — how its results are shown: one at a time (none), gathered into one (acc), each apart (each). */
@@ -61,6 +71,8 @@ export interface BlockInfo {
   view?: DataView
   /** An unnamed runnable block's own id (its results are kept by it — not by its line, which moves). */
   id?: string
+  /** What its emit() gathers goes on from the last run: its last N items / lines (none — every run anew). */
+  keep?: number
   /** The height of what a block shows under its text (a query's ER diagram and rows), px — as its edge was dragged. */
   h?: number
 }
@@ -81,6 +93,7 @@ const FLAGS = new Map<string, keyof BlockInfo>([
   ['soft', 'soft'],
   ['session', 'session'],
   ['template', 'template'],
+  ['chat', 'chat'],
   ['loop', 'loop'],
 ])
 
@@ -113,6 +126,9 @@ const SETTINGS: Record<string, (out: BlockInfo, v: string) => void> = {
   h: (out, v) => {
     if (Number(v) > 0) out.h = Math.round(Math.min(BLOCK_H.max, Math.max(BLOCK_H.min, Number(v))))
   },
+  keep: (out, v) => {
+    out.keep = keepOf(v) ?? out.keep
+  },
 }
 
 /** Parses an info line: `lang key=value flag …` (unknown words are ignored). */
@@ -134,13 +150,14 @@ export function parseInfo(info: string): BlockInfo {
 
 /** A name a block may publish under: a JS identifier, not one the runners give themselves. */
 export const isName = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s) && !RESERVED_NAMES.has(s)
-const RESERVED_NAMES = new Set(['ctx', 'runs', 'set', 'body', 'loop', 'console', 'page', 'context', 'browser', 'expect', 'step', 'devices', 'await', 'return', 'function', 'class', 'const', 'let', 'var', 'new', 'this', 'import', 'export', 'default', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'in', 'of', 'delete', 'void', 'yield', 'null', 'true', 'false', 'undefined'])
+const RESERVED_NAMES = new Set([TRIGGER_NAME, 'ctx', 'runs', 'set', 'body', 'loop','console', 'page', 'context', 'browser', 'expect', 'step', 'devices', 'await', 'return', 'function', 'class', 'const', 'let', 'var', 'new', 'this', 'import', 'export', 'default', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'in', 'of', 'delete', 'void', 'yield', 'null', 'true', 'false', 'undefined'])
 
 /** Writes an info line back (a stable order of its words; defaults left out). */
 export function infoMd(i: BlockInfo): string {
   return [
     i.lang,
     i.template ? 'template' : '',
+    i.template && i.chat ? 'chat' : '',
     i.loop ? 'loop' : '',
     i.pw ? 'playwright' : '',
     i.run && !i.pw ? 'run' : '',
@@ -158,6 +175,7 @@ export function infoMd(i: BlockInfo): string {
     i.out ? `out=${i.out}` : '',
     i.id ? `id=${i.id}` : '',
     i.h ? `h=${i.h}` : '',
+    i.keep ? `keep=${i.keep}` : '',
   ]
     .filter(Boolean)
     .join(' ')

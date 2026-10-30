@@ -4,7 +4,7 @@ import type { QaApi } from '../../shared/api'
  * The calls the run engine makes to the main process (the preload bridge `window.qa`): the runs file, requests,
  * queries, code / Playwright / loop processes. Tests put a stand-in with setRunApi.
  */
-export type RunApi = Pick<QaApi, 'runLoad' | 'runSave' | 'httpLoad' | 'httpRun' | 'httpAbort' | 'sql' | 'runCode' | 'runCodeStop' | 'runPw' | 'runPwStop' | 'onPwProgress' | 'runLoop' | 'runLoopPass' | 'runLoopStop' | 'onLoopPass'>
+export type RunApi = Pick<QaApi, 'runLoad' | 'runSave' | 'httpLoad' | 'httpRun' | 'httpAbort' | 'sql' | 'runCode' | 'runCodeStop' | 'runPw' | 'runPwStop' | 'onPwProgress' | 'runLoop' | 'runLoopPass' | 'runLoopStop' | 'onLoopPass' | 'onRunEmit' | 'valueFile'>
 
 let override: RunApi | undefined
 

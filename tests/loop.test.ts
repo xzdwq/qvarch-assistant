@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { bodyVars, findLoops, loopAt, loopOpenMd, parseLoopInfo, LOOP_CLOSE_MD } from '../src/notebook/domain/loop'
+import { bodyVars, findLoops, loopAt, loopOpenMd, parseLoopInfo, parsePause, pauseMs, pauseText, LOOP_CLOSE_MD } from '../src/notebook/domain/loop'
 import { findBlocks } from '../src/notebook/domain/findBlocks'
 import { fenceKindOfInfoLine } from '../src/notebook/domain/findBlocks'
 import { runLoopHead } from '../src/main/runner/loopCore'
 import type { LoopJob, PassResult } from '../src/notebook/domain/loop'
+import type { EmitBatch } from '../src/notebook/domain/emits'
 
 const note = [
   '# Заметка',
@@ -54,6 +55,20 @@ describe('loop: the note', () => {
     expect(ls[0].end).toBeUndefined()
     expect(loopAt(ls, 2)).toBeUndefined()
   })
+  it('a pause between passes: fixed or random within a range, written back', () => {
+    expect(parsePause('5')).toEqual({ min: 5, max: 5 })
+    expect(parsePause(' 8 - 2 ')).toEqual({ min: 2, max: 8 })
+    expect(parsePause('0,5-1.5')).toEqual({ min: 0.5, max: 1.5 })
+    expect(parsePause('99999')).toEqual({ min: 3600, max: 3600 })
+    for (const bad of ['', '0', 'abc', '-3', '2-', '1-2-3']) expect(parsePause(bad)).toBeUndefined()
+    expect(pauseMs({ min: 2, max: 8 }, () => 0)).toBe(2000)
+    expect(pauseMs({ min: 2, max: 8 }, () => 0.5)).toBe(5000)
+    expect(pauseMs({ min: 3, max: 3 }, () => 0.9)).toBe(3000)
+    const info = parseLoopInfo('name=p pause=2-8')
+    expect(info.pause).toEqual({ min: 2, max: 8 })
+    expect(loopOpenMd(info)).toBe('<!-- qa:loop name=p pause=2-8 -->')
+    expect(pauseText({ min: 0.5, max: 0.5 })).toBe('0.5')
+  })
   it('settings: limits kept, written back', () => {
     expect(parseLoopInfo('parallel=99 max=0 timeout=5 soft name=1bad')).toEqual({ parallel: 16, max: 1000, timeout: 5, soft: true })
     expect(loopOpenMd({ name: 'p', parallel: 3, max: 50, timeout: 600 })).toBe('<!-- qa:loop name=p parallel=3 max=50 -->')
@@ -75,6 +90,14 @@ describe('loop: the head', () => {
     })
     expect(r).toMatchObject({ ok: true, value: [1, 4, 9, 16, 25], hasValue: true, passes: 5 })
     expect(seen).toEqual([1, 2, 3, 4, 5])
+  })
+  it('the head\'s emit(): its parts sent in batches, their count in the result', async () => {
+    const batches: EmitBatch[] = []
+    const r = await runLoopHead(job('for (const x of items) { const v = await body({ x }); emit("sq", v.sq); emit.text("log", `${x};`) }'), async (_n, vars) => ({ ok: true, values: { sq: (vars.x as number) ** 2 } }), (b) => batches.push(b))
+    expect(r).toMatchObject({ ok: true, emits: batches.length })
+    const parts = batches.flatMap((b) => b.parts)
+    expect(parts.filter((p) => p.name === 'sq').map((p) => p.value)).toEqual([1, 4, 9, 16, 25])
+    expect(parts.filter((p) => p.name === 'log').map((p) => p.value).join('')).toBe('1;2;3;4;5;')
   })
   it('Promise.all: at most `parallel` passes at a time, results in order', async () => {
     let active = 0

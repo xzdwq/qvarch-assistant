@@ -9,12 +9,13 @@ import { join } from 'node:path'
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import { expect } from 'playwright/test'
 import { makeQa } from './qaRuntime'
+import { Emitter } from './emitter'
 import type { QaCheck } from '../../shared/qaChecks'
 
 /**
  * A notebook's Playwright block, run in a process of its own (one per run): the installed Edge / Chrome is
  * driven headless (or shown — «headed»), the code gets page, context, browser, expect (Playwright's own),
- * step(name, fn), set(), the context's values. What is left in `dir`: a screenshot (the last page, or the one it
+ * step(name, fn), set(), emit() (a variable gathered as it goes), the context's values. What is left in `dir`: a screenshot (the last page, or the one it
  * failed on), the trace (trace.zip — Trace Viewer) and Allure results (allure-results/).
  * The app asks it to stop with a message; it closes the browser and answers — or is killed.
  */
@@ -92,6 +93,8 @@ async function run(job: Job): Promise<void> {
   const started = Date.now()
   const logs: Log[] = []
   const sets: Record<string, unknown> = {}
+  // (the parts as they come: { type: 'emit', batch } before 'done' — which says how many there were)
+  const out = new Emitter((batch) => port.postMessage({ type: 'emit', batch }), plain)
   const steps: PwStep[] = []
   /** The ready checks' results (qa.…). */
   const checks: QaCheck[] = []
@@ -178,6 +181,7 @@ async function run(job: Job): Promise<void> {
         if (!isName(k)) throw new Error(`set: «${k}» — не имя переменной`)
         sets[k] = v
       },
+      emit: out.emit,
       setTimeout,
       clearTimeout,
       setInterval,
@@ -239,9 +243,10 @@ async function run(job: Job): Promise<void> {
       // the results are an extra
     }
   })()
+  const emits = out.close()
   port.postMessage({
     type: 'done',
-    result: { ok: !error, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, steps, checks, error, ms: performance.now() - t0, files, browser: browser?.version(), ...(outCookies ? { cookies: outCookies } : {}) },
+    result: { ok: !error, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, steps, checks, error, ms: performance.now() - t0, files, browser: browser?.version(), emits, ...(outCookies ? { cookies: outCookies } : {}) },
   })
 }
 

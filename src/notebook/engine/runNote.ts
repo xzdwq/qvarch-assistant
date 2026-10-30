@@ -1,7 +1,8 @@
 import { load as yamlLoad } from 'js-yaml'
 import type { SqlMode } from '../../shared/sql'
+import type { RunTrigger } from '../../shared/cronJobs'
 import type { RunnableKind } from '../blocks/specs'
-import type { BlockInfo, ValueSource } from '../domain/blockInfo'
+import { TRIGGER_NAME, type BlockInfo, type ValueSource } from '../domain/blockInfo'
 import { findLoops } from '../domain/loop'
 import { blockRunKey, fencedBlocksOf } from '../domain/noteBlocks'
 import { tableVars } from '../domain/tableVars'
@@ -24,12 +25,16 @@ const runAllCurrent = new Map<string, { item: RunItem; env: RunEnv }>()
 /** The notes whose «Выполнить всё» was asked to stop. */
 const stopAllAsked = new Set<string>()
 
-/** Everything from the top, in order (a loop — with all its passes); the first failing one (not soft) stops it. */
-export async function runAll(path: string, text: string): Promise<void> {
+/**
+ * Everything from the top, in order (a loop — with all its passes); the first failing one (not soft) stops it. What
+ * started it is the note's `trigger` value (by hand, by the AI, by a schedule) — its blocks and templates see it.
+ */
+export async function runAll(path: string, text: string, trigger: RunTrigger = { by: 'hand', at: Date.now() }): Promise<void> {
   const n = noteRun(path)
   syncNoteData(path, text)
   const list = runItemsIn(text)
   const env = new NoteEnv(path)
+  env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
   stopAllAsked.delete(path)
   n.all = { at: '', done: 0, total: list.length }
   try {

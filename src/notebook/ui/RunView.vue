@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { BlockRun } from '@nb/engine'
-import { prettyValue } from '@nb/domain/values'
 import { useGrid } from '@renderer/lib/grid'
 import { copyMd } from '@renderer/lib/copyMd'
-import CodeArea from '@renderer/components/CodeArea.vue'
+import ValueView from './ValueView.vue'
 import DataGrid from '@renderer/components/DataGrid.vue'
 import Icon from '@renderer/components/Icon.vue'
 import Markdown from '@renderer/components/Markdown.vue'
@@ -22,10 +21,10 @@ async function copy(): Promise<void> {
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
 }
-/** The answer's body (an HTTP answer) or the value, as text. */
-const shown = computed(() => {
-  if (props.shape === 'answer') return props.run?.response ? props.run.response.body : props.value === undefined ? undefined : prettyValue((props.value as { body?: unknown }).body ?? props.value)
-  return props.value !== undefined ? prettyValue(props.value) : props.run?.hasValue ? prettyValue(props.run.value) : undefined
+/** The answer's body (an HTTP answer) or the value (none — nothing kept of this pass). */
+const shown = computed((): { v: unknown } | undefined => {
+  if (props.shape === 'answer') return props.run?.response ? { v: props.run.response.body } : props.value === undefined ? undefined : { v: (props.value as { body?: unknown }).body ?? props.value }
+  return props.value !== undefined ? { v: props.value } : props.run?.hasValue ? { v: props.run.value } : undefined
 })
 </script>
 
@@ -42,7 +41,7 @@ const shown = computed(() => {
     <DataGrid v-else-if="table" :grid="grid" :max-height="260" />
     <template v-else>
       <p v-if="shape === 'answer' && run?.response" class="st tw:mt-0 tw:mr-0 tw:mb-4 tw:ml-0 tw:text-up-fg tw:font-data tw:text-[12px] tw:[&.bad]:text-down-fg" :class="{ bad: run.response.status >= 400 }">{{ run.response.status }} {{ run.response.statusText }} <span class="muted tw:m-0 tw:text-muted tw:text-[12px]">{{ Math.round(run.response.time) }} мс</span></p>
-      <CodeArea v-if="shown !== undefined" :model-value="shown" lang="json" readonly :min-height="24" />
+      <ValueView v-if="shown" :value="shown.v" parse />
       <p v-else-if="!run" class="muted tw:m-0 tw:text-muted tw:text-[12px]">Результат этого прохода не сохранён (старые проходы длинного цикла хранят только значения).</p>
     </template>
   </div>

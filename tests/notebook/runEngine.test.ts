@@ -4,6 +4,7 @@ import type { HttpRunResult } from '../../src/shared/http'
 import * as engine from '../../src/notebook/engine'
 import { setRunApi } from '../../src/notebook/engine/runApi'
 import { parseInfo } from '../../src/notebook/domain/blockInfo'
+import type { EmitBatch, EmitMode } from '../../src/notebook/domain/emits'
 
 /**
  * A stand-in for `window.qa` (the preload bridge): every run channel answers from a handler a test may replace;
@@ -23,6 +24,7 @@ function okHttp(url: string, body: string, status = 200): HttpRunResult {
 }
 function makeFakeQa() {
   let passCb: ((runId: string, n: number, vars: Record<string, unknown>) => void) | undefined
+  let emitCb: ((runId: string, batch: EmitBatch) => void) | undefined
   const passWaiters = new Map<string, (r: unknown) => void>()
   const h: Handlers = {
     httpRun: async (req) => okHttp(req.url, '{"id":7}'),
@@ -48,6 +50,15 @@ function makeFakeQa() {
       passCb = cb
       return () => undefined
     }),
+    // (a file «written»: its hash — the value and the mark; the same as the last — unchanged)
+    valueFile: vi.fn(async (_m: string, job: { name: string; value: unknown; partial: boolean; lastHash?: string; format: string }) => {
+      const hash = `${job.format}|${job.partial}|${JSON.stringify(job.value)}`
+      return job.lastHash === hash ? { hash, unchanged: true } : { file: `C:\\exports\\${job.name}${job.partial ? ' (частично)' : ''}.${job.format}`, hash }
+    }),
+    onRunEmit: vi.fn((cb: typeof emitCb) => {
+      emitCb = cb
+      return () => undefined
+    }),
     runLoopPass: vi.fn((runId: string, n: number, r: unknown) => passWaiters.get(`${runId}|${n}`)?.(r)),
     runLoopStop: vi.fn((_runId: string) => undefined),
     runLoop: vi.fn(async (runId: string, _job: Parameters<QaApi['runLoop']>[1]) => {
@@ -62,7 +73,9 @@ function makeFakeQa() {
       return { ok: true, logs: [], passes: passes.length, ms: 1 }
     }),
   }
-  return { qa, h }
+  /** A run's emit() batch, as main sends it. */
+  const sendEmit = (runId: string, batch: EmitBatch) => emitCb?.(runId, batch)
+  return { qa, h, sendEmit }
 }
 
 /**
@@ -70,7 +83,7 @@ function makeFakeQa() {
  * their passes, run ids, stale answers, loading saved runs, reports. Written against the engine before the
  * refactor; the refactored engine must pass it unchanged.
  */
-const { qa, h } = makeFakeQa()
+const { qa, h, sendEmit } = makeFakeQa()
 setRunApi(qa as unknown as Parameters<typeof setRunApi>[0])
 
 /** The engine as the app uses it (and a request run where it stands — the stale-answer case). */
@@ -110,7 +123,7 @@ describe('run engine: «Выполнить всё»', () => {
     const vals = Object.fromEntries(Object.entries(n.ctx).map(([k, v]) => [k, v.value]))
     expect(vals).toMatchObject({ cfg: { base: 'https://x.test' }, total: 42, extra: 1, msg: 'Status 200', rows: [{ id: 7 }], shot: 'title' })
     expect((vals.user as { body: unknown }).body).toEqual({ id: 7 })
-    expect(Object.fromEntries(Object.entries(n.ctx).map(([k, v]) => [k, `${v.from}:${v.block}`]))).toEqual({ cfg: 'data:cfg', user: 'http:user', total: 'code:total', extra: 'set:total', msg: 'tpl:msg', rows: 'sql:rows', shot: 'pw:shot' })
+    expect(Object.fromEntries(Object.entries(n.ctx).map(([k, v]) => [k, `${v.from}:${v.block}`]))).toEqual({ trigger: 'run:trigger', cfg: 'data:cfg', user: 'http:user', total: 'code:total', extra: 'set:total', msg: 'tpl:msg', rows: 'sql:rows', shot: 'pw:shot' })
     expect(Object.fromEntries(Object.entries(n.runs).map(([k, r]) => [k, r.state]))).toEqual({ user: 'ok', total: 'ok', msg: 'ok', rows: 'ok', shot: 'ok' })
     // the request with its templates filled, the run ids as the main process sees them
     expect(qa.httpRun.mock.calls[0][0].url).toBe('https://x.test/u')
@@ -144,6 +157,207 @@ describe('run engine: «Выполнить всё»', () => {
     await E.runAll(path, note(fence('ts lib', 'const f = 1'), fence('js run', 'return f')))
     expect(Object.keys(E.noteRun(path).runs)).toEqual(['_code4'])
     expect(qa.runCode.mock.calls[0][1].libs).toEqual([{ code: 'const f = 1', ts: true }])
+  })
+})
+
+describe('run engine: what started a run, a text sent into the chat', () => {
+  const ROOM = '0f8a3c2e-1b7d-4e5f-9a6b-2c3d4e5f6a7b'
+  const sent: Array<[string, string]> = []
+  engine.setChatSend((room, text) => (sent.push([room, text]), true))
+  beforeEach(() => void (sent.length = 0))
+  const withChat = (...parts: string[][]) => note(['```chat', `room: ${ROOM}`, '```'], ...parts)
+
+  it('«Выполнить всё» gives {{trigger}}: by hand unless told; a template sees it', async () => {
+    const path = fresh()
+    await loaded(path)
+    await E.runAll(path, note(fence('md template name=msg', 'by {{trigger.by}}')))
+    expect(E.noteRun(path).ctx.msg.value).toBe('by hand')
+    await E.runAll(path, note(fence('md template name=msg', 'by {{trigger.by}} «{{trigger.cron.title}}»')), { by: 'cron', at: 1, cron: { id: 'j', title: 'Утро', expr: '0 9 * * *' } })
+    expect(E.noteRun(path).ctx.msg.value).toBe('by cron «Утро»')
+    expect(E.noteRun(path).ctx.trigger.from).toBe('run')
+  })
+  it('a template with `chat` sends its text into the note\'s chat — a scheduled one marked', async () => {
+    const path = fresh()
+    await loaded(path)
+    const text = withChat(fence('md template name=msg chat', '@ИИ · Я сводка на {{trigger.by}}'))
+    await E.runAll(path, text)
+    expect(sent).toEqual([[ROOM, '@ИИ · Я сводка на hand']])
+    await E.runAll(path, text, { by: 'cron', at: 1, cron: { id: 'j', title: 'Утро', expr: '0 9 * * *' } })
+    expect(sent[1]).toEqual([ROOM, '@ИИ · Я сводка на cron\n\n_⏰ по расписанию «Утро» (0 9 * * *)_'])
+  })
+  it('no chat in the note — the template fails, saying why; without `chat` nothing is sent', async () => {
+    const path = fresh()
+    await loaded(path)
+    await E.runAll(path, note(fence('md template name=msg chat', 'привет')))
+    expect(E.noteRun(path).runs.msg).toMatchObject({ state: 'error' })
+    expect(E.noteRun(path).runs.msg.error).toContain('нет чата')
+    await E.runAll(path, withChat(fence('md template name=msg', 'привет')))
+    expect(sent).toEqual([])
+  })
+})
+
+describe('run engine: values gathered as a run goes (emit)', () => {
+  const part = (name: string, value: unknown, mode: EmitMode = 'append') => ({ name, mode, value })
+  /** Code that sends these batches (in this order) and then ends, saying how many it sent. */
+  const emitting = (batches: EmitBatch[], end: { ok?: boolean; sent?: number } = {}) =>
+    (h.runCode = async (runId) => {
+      for (const b of batches) {
+        sendEmit(runId, b)
+        await new Promise((r) => setTimeout(r, 1))
+      }
+      return { ok: end.ok ?? true, ...(end.ok === false ? { error: 'boom' } : {}), logs: [], ms: 1, emits: end.sent ?? batches.length }
+    })
+
+  it('a list grows as the batches come; a text, an object too; batches out of order put in order', async () => {
+    const path = fresh()
+    await loaded(path)
+    const seen: number[] = []
+    h.runCode = async (runId) => {
+      sendEmit(runId, { seq: 2, parts: [part('rows', 3), part('log', 'c', 'text')] })
+      sendEmit(runId, { seq: 1, parts: [part('rows', 1), part('rows', 2), part('log', 'ab', 'text'), part('meta', { a: 1 }, 'merge')] })
+      seen.push((E.noteRun(path).ctx.rows.value as unknown[]).length)
+      sendEmit(runId, { seq: 3, parts: [part('meta', { b: 2 }, 'merge')] })
+      return { ok: true, logs: [], ms: 1, emits: 3 }
+    }
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    const n = E.noteRun(path)
+    expect(seen).toEqual([3])
+    expect(n.ctx.rows.value).toEqual([1, 2, 3])
+    expect(n.ctx.log.value).toBe('abc')
+    expect(n.ctx.meta.value).toEqual({ a: 1, b: 2 })
+    expect(n.ctx.rows.partial).toBeUndefined()
+    expect(n.runs.x.state).toBe('ok')
+  })
+  it('what is shown is a new value on every show — the one a block holds never changes under it (else it is not seen to change)', async () => {
+    const path = fresh()
+    await loaded(path)
+    const shown: unknown[][] = []
+    h.runCode = async (runId) => {
+      sendEmit(runId, { seq: 1, parts: [part('rows', 1)] })
+      shown.push(E.noteRun(path).ctx.rows.value as unknown[])
+      await new Promise((r) => setTimeout(r, 70))
+      sendEmit(runId, { seq: 2, parts: [part('rows', 2)] })
+      await new Promise((r) => setTimeout(r, 70))
+      shown.push(E.noteRun(path).ctx.rows.value as unknown[])
+      // (batches sooner than a show may come — the last one still shown, a moment later)
+      sendEmit(runId, { seq: 3, parts: [part('rows', 3)] })
+      sendEmit(runId, { seq: 4, parts: [part('rows', 4)] })
+      await new Promise((r) => setTimeout(r, 120))
+      shown.push(E.noteRun(path).ctx.rows.value as unknown[])
+      return { ok: true, logs: [], ms: 1, emits: 4 }
+    }
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    expect(shown[0]).not.toBe(shown[1])
+    expect(shown[0]).toEqual([1])
+    expect(shown[1]).toEqual([1, 2])
+    expect(shown[2]).toEqual([1, 2, 3, 4])
+    expect(E.noteRun(path).ctx.rows.value).toEqual([1, 2, 3, 4])
+  })
+  it('a variable cleared — gone; one gathered with keep starts its history anew', async () => {
+    const path = fresh()
+    await loaded(path)
+    emitting([{ seq: 1, parts: [part('rows', 1)] }])
+    const kept = note(fence('js run name=x keep=5', '1'))
+    await E.runAll(path, kept)
+    await E.runAll(path, kept)
+    expect(E.noteRun(path).ctx.rows.value).toEqual([1, 1])
+    E.clearValue(path, 'rows')
+    expect(E.noteRun(path).ctx.rows).toBeUndefined()
+    await E.runAll(path, kept)
+    expect(E.noteRun(path).ctx.rows.value).toEqual([1])
+  })
+  it('a batch lost on its way — the run fails saying so, what came kept and marked partial', async () => {
+    const path = fresh()
+    await loaded(path)
+    emitting([{ seq: 1, parts: [part('rows', 1)] }, { seq: 3, parts: [part('rows', 3)] }], { sent: 3 })
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    const n = E.noteRun(path)
+    expect(n.runs.x.state).toBe('error')
+    expect(n.runs.x.error).toContain('потеряны порции emit: дошло 1 из 3')
+    expect(n.ctx.rows).toMatchObject({ value: [1], partial: true })
+  })
+  it('a run failed (or stopped) — what came kept, marked partial', async () => {
+    const path = fresh()
+    await loaded(path)
+    emitting([{ seq: 1, parts: [part('rows', 1)] }], { ok: false })
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    expect(E.noteRun(path).ctx.rows).toMatchObject({ value: [1], partial: true })
+  })
+  it('every run starts anew; keep=N — goes on from the last run, its last N', async () => {
+    const path = fresh()
+    await loaded(path)
+    emitting([{ seq: 1, parts: [part('rows', 1), part('rows', 2)] }])
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    await E.runAll(path, note(fence('js run name=x', '1')))
+    expect(E.noteRun(path).ctx.rows.value).toEqual([1, 2])
+    const kept = note(fence('js run name=x keep=3', '1'))
+    await E.runAll(path, kept)
+    await E.runAll(path, kept)
+    expect(E.noteRun(path).ctx.rows.value).toEqual([2, 1, 2])
+  })
+  it('two blocks of one run add to one variable; another way into it — the run says so', async () => {
+    const path = fresh()
+    await loaded(path)
+    h.runCode = async (runId, job) => {
+      sendEmit(runId, { seq: 1, parts: [part('rows', job.code === '1' ? 'a' : 'b', job.code === '3' ? 'text' : 'append')] })
+      return { ok: true, logs: [], ms: 1, emits: 1 }
+    }
+    await E.runAll(path, note(fence('js run name=x', '1'), fence('js run name=y', '2')))
+    expect(E.noteRun(path).ctx.rows.value).toEqual(['a', 'b'])
+    await E.runAll(path, note(fence('js run name=x', '1'), fence('js run name=z soft', '3')))
+    expect(E.noteRun(path).runs.z.error).toContain('уже накапливается другим способом')
+    expect(E.noteRun(path).ctx.rows.value).toEqual(['a'])
+  })
+  it('a loop\'s passes in parallel add to one variable — none lost', async () => {
+    const path = fresh()
+    await loaded(path)
+    const text = note(['<!-- qa:loop name=passes parallel=4 -->'], fence('js loop', 'await Promise.all(items.map((i) => body({ i })))'), fence('js run name=calc', 'return i'), ['<!-- /qa:loop -->'])
+    h.loopPasses = () => Array.from({ length: 8 }, (_, i) => ({ i }))
+    h.runCode = async (runId, job) => {
+      const i = job.ctx.i as number
+      sendEmit(runId, { seq: 1, parts: [part('seen', i)] })
+      await new Promise((r) => setTimeout(r, 8 - i))
+      sendEmit(runId, { seq: 2, parts: [part('seen', i * 10)] })
+      return { ok: true, value: i, hasValue: true, logs: [], ms: 1, emits: 2 }
+    }
+    await E.runAll(path, text)
+    const seen = E.noteRun(path).ctx.seen.value as number[]
+    expect([...seen].sort((a, b) => a - b)).toEqual([0, 0, 1, 2, 3, 4, 5, 6, 7, 10, 20, 30, 40, 50, 60, 70])
+  })
+})
+
+describe('run engine: a value kept as a file each run (save)', () => {
+  const save = (body: string) => ['```save', body, '```']
+  it('a new file when the value changed; the same — not written; empty, missing — said', async () => {
+    const path = fresh()
+    await loaded(path)
+    let rows: unknown = [{ id: 1 }]
+    h.runCode = async () => ({ ok: true, value: rows, hasValue: true, logs: [], ms: 1 })
+    const text = note(fence('js run name=rows', '1'), save('ref: rows'))
+    await E.runAll(path, text)
+    const first = E.noteRun(path).runs._save4.saved
+    expect(first).toMatchObject({ file: 'C:\\exports\\rows.xlsx' })
+    expect(qa.valueFile.mock.calls[0][1]).toMatchObject({ note: path.replace(/\.md$/, '').split('/').pop(), name: 'rows', format: 'xlsx', partial: false })
+    await E.runAll(path, text)
+    expect(E.noteRun(path).runs._save4.saved).toMatchObject({ unchanged: true, file: 'C:\\exports\\rows.xlsx' })
+    rows = []
+    await E.runAll(path, text)
+    expect(E.noteRun(path).runs._save4).toMatchObject({ state: 'ok', saved: { skipped: 'пусто — файл не записан' } })
+    await E.runAll(path, note(save('ref: nothing')))
+    expect(E.noteRun(path).runs._save1).toMatchObject({ state: 'error' })
+    expect(E.noteRun(path).runs._save1.error).toContain('Нет значения {{nothing}}')
+  })
+  it('a partial value: saved with a mark — or skipped (partial: skip)', async () => {
+    const path = fresh()
+    await loaded(path)
+    h.runCode = async (runId) => {
+      sendEmit(runId, { seq: 1, parts: [{ name: 'got', mode: 'append', value: 1 }] })
+      return { ok: false, error: 'стоп', logs: [], ms: 1, emits: 1 }
+    }
+    await E.runAll(path, note(fence('js run name=x soft', '1'), save('ref: got\nformat: json')))
+    expect(E.noteRun(path).runs._save4.saved?.file).toBe('C:\\exports\\got (частично).json')
+    await E.runAll(path, note(fence('js run name=x soft', '1'), save('ref: got\npartial: skip')))
+    expect(E.noteRun(path).runs._save4.saved?.skipped).toContain('неполные')
   })
 })
 
@@ -190,6 +404,33 @@ describe('run engine: loops', () => {
     ])
     // the note's blocks show the latest pass
     expect(n.runs.calc.value).toBe(20)
+  })
+  it('a pause spaces the passes (the first at once); a stop ends the pause there and then', async () => {
+    const path = fresh()
+    await loaded(path)
+    const paused = (p: string) => note(['<!-- qa:loop name=paced pause=' + p + ' -->'], fence('js loop', 'for (const i of [1, 2, 3]) await body({ i })'), fence('js run name=calc', 'return i'), ['<!-- /qa:loop -->'])
+    h.loopPasses = () => [{ i: 1 }, { i: 2 }, { i: 3 }]
+    const at: number[] = []
+    h.runCode = async () => (at.push(Date.now()), { ok: true, value: 1, hasValue: true, logs: [], ms: 1 })
+    const t0 = Date.now()
+    await E.runAll(path, paused('0.15'))
+    expect(at).toHaveLength(3)
+    expect(at[0] - t0).toBeLessThan(100)
+    expect(at[1] - at[0]).toBeGreaterThanOrEqual(140)
+    expect(at[2] - at[1]).toBeGreaterThanOrEqual(140)
+    // a long pause stopped: the loop ends at once, the pass after it never runs
+    const path2 = fresh()
+    await loaded(path2)
+    at.length = 0
+    const text = paused('30')
+    const run = E.runAll(path2, text)
+    await new Promise((r) => setTimeout(r, 80))
+    const t1 = Date.now()
+    E.stopRunAll(path2)
+    await run
+    expect(Date.now() - t1).toBeLessThan(1000)
+    expect(at).toHaveLength(1)
+    expect(E.noteRun(path2).loops.paced.passes[1]).toMatchObject({ state: 'error', error: 'Остановлено' })
   })
   it('a failing block fails its pass; the head failing fails the loop', async () => {
     const path = fresh()

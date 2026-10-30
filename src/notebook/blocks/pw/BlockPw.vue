@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
 import { doc, save, setText } from '@renderer/lib/notebook'
 import { blockRunKey, fencedBlocksOf } from '@nb/domain/noteBlocks'
-import { prettyValue, summary } from '@nb/domain/values'
+import { summary } from '@nb/domain/values'
 import { isTsLang, type BlockInfo, type PwBrowser } from '@nb/domain/blockInfo'
 import { errorText } from '@nb/engine'
 import CodeArea from '@renderer/components/CodeArea.vue'
@@ -328,7 +329,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
           <b>Результат</b><span class="muted tw:text-muted tw:text-[11.5px]">{{ summary(run.value) }}</span>
           <span v-if="info.name" class="muted tw:text-muted tw:text-[11.5px]">→ {{ '{' }}{{ '{' }}{{ info.name }}{{ '}' }}{{ '}' }}</span>
         </div>
-        <div v-if="showValue" class="bp-val"><CodeArea :model-value="prettyValue(run.value)" :lang="typeof run.value === 'object' ? 'json' : 'text'" readonly :min-height="24" /></div>
+        <div v-if="showValue" class="bp-val"><ValueView :value="run.value" :name="info.name" /></div>
       </template>
     </div>
   </div>

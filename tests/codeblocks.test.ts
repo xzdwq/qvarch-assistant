@@ -17,6 +17,10 @@ describe('notebook code blocks', () => {
     expect(await formatCode('html', '<div><p>a</p><span>b</span></div>')).toContain('<p>a</p>')
     expect(await formatCode('json', '  {"a":1}')).toBe('  {\n    "a": 1\n  }')
   })
+  it('YAML through prettier: indents evened, comments kept', async () => {
+    expect(await formatCode('yaml', 'a:   1\nb:\n    - x   # first\n    - y')).toBe('a: 1\nb:\n  - x # first\n  - y')
+    await expect(formatCode('yaml', 'a: [1, 2')).rejects.toBeTruthy()
+  })
   it('bash: bodies indented', async () => {
     expect(await formatCode('bash', 'if [ -f x ]; then\necho hi\nfi')).toBe('if [ -f x ]; then\n  echo hi\nfi')
   })

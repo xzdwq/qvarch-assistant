@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { TABLE_FILE_METHODS } from '../../shared/tableData'
 import type { AppContext } from '../app/appContext'
 import { TableFiles } from '../tableFiles/tableFiles'
+import { ValueFiles } from '../valueFiles'
+import { VALUE_FILE_METHODS } from '../../shared/valueFiles'
 import { handle, handleDispatch, listen } from './router'
 
 /**
@@ -15,6 +17,9 @@ import { handle, handleDispatch, listen } from './router'
 export function registerFilesIpc(app: AppContext): void {
   const tableFiles = new TableFiles()
   handleDispatch('tableFile', TABLE_FILE_METHODS, () => tableFiles)
+  // a note's value kept as a file each run («Сохранить в файл»)
+  const valueFiles = new ValueFiles()
+  handleDispatch('valueFile', VALUE_FILE_METHODS, () => valueFiles)
   /** A «save as» dialog over the main window: the path picked, or undefined. */
   const saveAs = async (opts: Electron.SaveDialogOptions): Promise<string | undefined> => {
     const main = app.windows.main
