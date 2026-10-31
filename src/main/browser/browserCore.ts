@@ -210,13 +210,13 @@ export class BrowserCore implements TabEventsHost {
     view.setVisible(false)
     return view
   }
-  /** Tabs not shown for the set minutes fall asleep — not one recording, with the tools open, as a device, loading or playing sound. */
+  /** Tabs not shown for the set minutes fall asleep — not one recording, running a scenario, with the tools open, as a device, loading or playing sound. */
   private sleepIdle(): void {
     const min = this.store.settings.sleepMin
     if (!min || this.recorder.recording) return
     const old = Date.now() - min * 60_000
     for (const [id, t] of this.tabs) {
-      if (t.asleep || this.pages.isShown(id) || t.seen > old || t.dev || t.t.device || t.t.loading || t.rec) continue
+      if (t.asleep || this.pages.isShown(id) || t.seen > old || t.dev || t.t.device || t.t.loading || t.rec || t.dbg.has('run')) continue
       try {
         if (t.view.webContents.isCurrentlyAudible() || /^about:blank$/.test(t.t.url)) continue
         this.win?.contentView.removeChildView(t.view)

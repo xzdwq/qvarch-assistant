@@ -50,9 +50,9 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
   // the page's HTML for a hook's search (no «loadingFinished» comes for it)
   wc.on('did-finish-load', () => b.hookSearch.pageLoaded(tab))
   // the recording tab: each page of it records (not only the one that asked), the address changes are waited for
-  wc.on('dom-ready', () => b.scenario.recordsIn(t.id) && wc.send('qa:pwrec', true))
+  wc.on('dom-ready', () => b.scenario.onDomReady(wc))
   wc.on('did-navigate', (_e, url) => {
-    b.scenario.onNavigated(tab, url)
+    b.scenario.onNavigated(wc, url)
     b.hookSearch.sync(tab, url)
     t.url = url
     t.favicon = undefined
@@ -62,7 +62,7 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
   })
   wc.on('did-navigate-in-page', (_e, url, isMain) => {
     if (!isMain) return
-    b.scenario.onNavigated(tab, url)
+    b.scenario.onNavigated(wc, url)
     t.url = url
     // a single-page site's own pages count as openings too
     b.store.visit(tab, url, t.title, true)

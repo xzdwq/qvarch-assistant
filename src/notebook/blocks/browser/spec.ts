@@ -8,7 +8,7 @@ export const browserSpec: BlockSpec<'browser'> = {
   kind: 'browser',
   title: 'Браузер',
   detect: { by: 'fence', matches: (h) => h.lang === 'browser' },
-  estimateHeight: (src) => 110 + browserHeightOf(src),
+  estimateHeight: (src) => 128 + browserHeightOf(src),
   rawEditable: true,
   commands: [
     {

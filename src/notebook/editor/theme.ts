@@ -156,6 +156,8 @@ const editorTheme = EditorView.theme(
     // who changed a line last: a thin bar of their colour left of the line numbers
     // (room on the left for an AI run's ✦)
     '.cm-authors .cm-gutterElement': { padding: '0 1px 0 13px' },
+    // (a column's spacer in a note with no signs of it: no width)
+    '.cm-gutterElement.cm-gutter-none': { padding: '0 !important' },
     '.cm-author-bar': { position: 'relative', width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
     // an AI agent's lines: one solid bar in the AI's colour (no gaps between its lines); ✦ beside it where its run starts
     '.cm-author-bar.ai': { opacity: '1', borderRadius: '0', backgroundColor: 'var(--ai-line)' },

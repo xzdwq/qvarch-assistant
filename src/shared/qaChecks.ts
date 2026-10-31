@@ -1,4 +1,5 @@
 import { emptyFuzz, fuzzLines } from './fuzz'
+import { locatorExpr, topLevelLine } from './qaCode'
 import type { QaMark } from './browser/constants'
 /**
  * «Проверить ▾» of a Playwright block: the recorded actions wrapped into a ready check (the `qa` object of the
@@ -94,14 +95,17 @@ const quote = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'
 function matrixWrap(lines: string[]): { code: string } | { error: string } {
   if (lines.some((l) => /\bqa\.eachFile\(/.test(l))) return { error: 'Сценарий уже идёт с каждым файлом набора — матрица с этим не сочетается' }
   if (lines.some((l) => /\bqa\.layoutEach\(/.test(l))) return { error: 'Сценарий уже идёт на каждом экране (вёрстка «весь сценарий») — матрица с этим не сочетается. Переключите вёрстку на «на этой странице»' }
-  const start = lines.findIndex((l) => /^\s*await\s+page\./.test(l))
-  if (start < 0) return { error: NO_ACTIONS }
+  const first = lines.findIndex((l) => /^\s*await\s+page\./.test(l))
+  if (first < 0) return { error: NO_ACTIONS }
+  // (the matrix wraps whole statements: an action inside a step's callback — from that step on)
+  const start = topLevelLine(lines, first)
   const fields: string[] = []
   const body = lines.slice(start).map((l) => {
     const m = FILL.exec(l)
     if (!m) return l
     const id = `f${fields.length + 1}`
-    fields.push(`  ${id}: { name: ${quote(fieldName(m[2], m[5] ?? '', fields.length + 1))}, value: ${m[3]}, field: () => ${m[2]} },`)
+    // (a field held in a variable of the scenario: by its locator itself — the variable is not there yet at the head)
+    fields.push(`  ${id}: { name: ${quote(fieldName(m[2], m[5] ?? '', fields.length + 1))}, value: ${m[3]}, field: () => ${locatorExpr(lines, m[2])} },`)
     return `${m[1]}await ${m[2]}.fill(v.${id})${m[5] ?? ''}`
   })
   if (!fields.length) return { error: 'В сценарии нет ввода в поля (строк «Ввести …») — матрице нечего перебирать. Запишите заполнение формы и сохранение' }
@@ -236,7 +240,8 @@ const outdent = (l: string, pad: string) => (l.startsWith(`${pad}  `) ? pad + l.
 /** The line that closes a wrapper opened at `pad` («})»), from `from` on. */
 const closingAt = (lines: string[], from: number, pad: string) => {
   let k = from
-  while (k < lines.length && !new RegExp(`^${pad}\\}\\)`).test(lines[k])) k++
+  // (its closing line — the matrix's may say its mode: «}, { mode: 'query' })»)
+  while (k < lines.length && !new RegExp(`^${pad}\\}(?:, \\{ mode: '\\w+' \\})?\\)`).test(lines[k])) k++
   return k
 }
 /** The checks taken out their own way; any other — a wrapper's body back, or a line of its own gone. */
@@ -300,8 +305,12 @@ export function unwrapCheck(code: string, kind: QaCheckKind): string {
   return kind === 'context' ? unwrapCheck(out.join('\n'), 'compare') : out.join('\n')
 }
 
-/** A line that does something on the page (not the window's size, not the first opening, not a comment). */
-const isAction = (l: string) => /^\s*await\s+(page\.|expect\()/.test(l) && !/page\.(setViewportSize|goto)\(/.test(l)
+/**
+ * A line that does something on the page (not the window's size, not the first opening, not a comment): the page's
+ * own call, a check, or an act on a locator however it is held (a variable, a function of the scenario).
+ */
+const LOCATOR_ACT = /^\s*await\s+(?!qa\.|step\()\S.*\.(click|dblclick|press|pressSequentially|fill|type|check|uncheck|selectOption|setInputFiles|hover|tap)\(/
+const isAction = (l: string) => (/^\s*await\s+(page\.|expect\()/.test(l) || LOCATOR_ACT.test(l)) && !/page\.(setViewportSize|goto)\(/.test(l)
 // (qa.window — the window line, not an action)
 const lastAction = (lines: string[]) => {
   for (let i = lines.length - 1; i >= 0; i--) if (isAction(lines[i]) && !/^\s*await\s+expect\(/.test(lines[i])) return i

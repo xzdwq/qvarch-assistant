@@ -1,4 +1,4 @@
-import { app as electronApp, dialog, shell } from 'electron'
+import { app as electronApp, clipboard, dialog, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -43,6 +43,11 @@ export function registerNotebookIpc(app: AppContext): void {
   // (read as kept: the malformed parts left out, the memory within its size)
   handle('vaultSetDocAi', (_e, p, ai) => vault.setDocAi(str(p), docAiOf(ai)))
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
+  handle('vaultCopyPath', (_e, p) => {
+    const abs = vault.absPath(str(p))
+    clipboard.writeText(abs)
+    return abs
+  })
   handle('vaultPair', (_e, a, b) => vault.setPair(str(a), typeof b === 'string' && b ? str(b) : undefined))
   // an emoji mark: one emoji (a flag, a ZWJ sequence too), no text
   handle('vaultSetEmoji', (_e, p, emoji) => vault.setEmoji(str(p), isEmoji(emoji) ? emoji : undefined))

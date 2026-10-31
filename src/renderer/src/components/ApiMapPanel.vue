@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import { avgMs, compareSpec, errCount, searchMatch, searchText, searchWords, statusLine, type ApiEndpoint } from '@shared/apiMap'
 import type { ApiOp, ApiSpec } from '@shared/openapi'
 import { apiMapHosts, apiMapTick, checkState } from '../lib/browser'
@@ -98,8 +99,8 @@ const FILTERS = {
 type Flt = '' | keyof typeof FILTERS
 const flt = ref<Flt>('')
 /** The search as typed (the field), and as searched — a moment after the typing stops. */
-const qIn = ref('')
-const q = ref('')
+const qIn = useDraft('apimap:search')
+const q = ref(qIn.value)
 let qTimer: ReturnType<typeof setTimeout> | undefined
 watch(qIn, (v) => {
   clearTimeout(qTimer)

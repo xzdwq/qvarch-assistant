@@ -39,7 +39,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
       await loadTree()
       openFile(path, { pane })
       await nextTick()
-      editors.selectTitle(curPane().id)
+      editors.selectTitle(curPane())
     })
   /** A new board (an endless sheet for schemes and notes) — a .qboard file in the folder. */
   const newBoard = (dir = targetDir.value, pane?: number) =>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import type { ApiOp, ApiSpec } from '@shared/openapi'
 import { specExamples } from '@shared/openapi'
 import { appendToNote, blocksOf, newNote } from '../lib/apiCopy'
@@ -25,7 +26,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ find: []; clear: []; toHttp: [ids: string[]]; made: [p: { path: string; name: string }] }>()
 
-const q = ref('')
+const q = useDraft('swagger:search')
 const only = ref(!!props.onlyNotCalled)
 watch(
   () => props.onlyNotCalled,

@@ -3,6 +3,7 @@ import type { ValueSource } from '../domain/blockInfo'
 import { findLoops, loopAt, type LoopRange } from '../domain/loop'
 import { jsonClone, type Values } from '../domain/values'
 import { noteRun, noteValues, publishToNote } from './runStore'
+import { keyNow, keyStarted, runSettled } from './runKeys'
 import type { BlockRun, LoopRun, PassRun } from './runTypes'
 
 /**
@@ -24,14 +25,23 @@ export abstract class RunEnv {
   abstract publish(name: string, value: unknown, from: ValueSource, block: string): void
   /** The run it is part of: the note's env it started in (a pass's — its loop's). What emit() gathers lives as long. */
   abstract readonly root: RunEnv
-  /** The id a block's (or a loop's) run goes by in the main process. */
+  /**
+   * The id a block's (or a loop's) run goes by in the main process — the key it started with (its results moved
+   * meanwhile: stopped from where they are now).
+   */
   runSlot(key: string): string {
-    return `${this.notePath}#${key}${this.id}`
+    return `${this.notePath}#${this.id ? key : keyStarted(this.notePath, key)}${this.id}`
   }
-  /** A block's run written here (and wherever it is shown); the run as kept. */
+  /** Where a run started under `key` keeps its results now (the note's own runs may move: a block given its id). */
+  keyNow(key: string): string {
+    return this.id ? key : keyNow(this.notePath, key)
+  }
+  /** A block's run written here (and wherever it is shown); the run as kept. A run over — its key settled. */
   recordRun(key: string, run: BlockRun): BlockRun {
-    this.runs[key] = run
-    this.onRunRecorded(key, run)
+    const k = this.keyNow(key)
+    this.runs[k] = run
+    if (run.state !== 'run' && !this.id) runSettled(this.notePath, key)
+    this.onRunRecorded(k, run)
     return run
   }
   /** A run written: the env shows it elsewhere too (a pass — on the note's block when it is the pass shown). */

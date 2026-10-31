@@ -88,6 +88,28 @@ describe('«Проверить ▾»: the field matrix', () => {
   it('out — the scenario as recorded', () => {
     expect(unwrapCheck(code(wrapCheck(form, 'matrix')), 'matrix')).toBe(form)
   })
+  it('a scenario in steps: whole steps wrapped (never from inside one); a field in a variable — by its locator', () => {
+    const stepped = [
+      "const box = page.getByPlaceholder('Найти')",
+      "await step('Открыть', async () => {",
+      "  await page.goto('https://app.example.com/list')",
+      '})',
+      "await step('Найти', async () => {",
+      "  await box.fill('болт')",
+      "  await box.press('Enter')",
+      '})',
+    ].join('\n')
+    const out = code(wrapCheck(stepped, 'matrix'))
+    const lines = out.split('\n')
+    expect(lines[0]).toBe("const box = page.getByPlaceholder('Найти')")
+    expect(lines[1]).toBe('await qa.fieldMatrix({')
+    expect(out).toContain("field: () => page.getByPlaceholder('Найти') },")
+    expect(out).toContain("\n  await step('Открыть', async () => {")
+    expect(out).toContain('    await box.fill(v.f1)')
+    // (the brackets as they were: each opened one closed)
+    const open = (out.match(/[({[]/g) ?? []).length
+    expect((out.match(/[)}\]]/g) ?? []).length).toBe(open)
+  })
   it('no typing / ends with typing — said why', () => {
     expect(code(wrapCheck("await page.goto('x')\nawait page.getByText('a').click()", 'matrix'))).toMatch(/нет ввода/)
     expect(code(wrapCheck("await page.goto('x')\nawait page.getByLabel('a').fill('1')", 'matrix'))).toMatch(/кончается вводом/)

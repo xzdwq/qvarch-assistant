@@ -35,7 +35,8 @@ const notice = computed(() => {
   if (!roomId.value) return 'В блоке не указан чат (room: …)'
   if (room.value) return ''
   if (transport.value.status === 'off') return 'Сервер не подключён — Настройки → Сервер и чат'
-  if (!chatOnline.value) return transport.value.message || 'Подключение к серверу…'
+  // (the server's chats seen before are kept on the computer: only a chat never opened here waits for the server)
+  if (!chatOnline.value) return 'Нет связи с сервером, а этот чат ещё не открывался на этом компьютере — он появится, когда будет связь'
   return 'Этого чата нет среди ваших: он удалён или вас в нём нет'
 })
 /** The chat shown with no server: what becomes of what one writes. */
@@ -44,7 +45,7 @@ const offline = computed(() => {
   if (isHeld(room.value.id)) return 'Чат на этом компьютере · добавите человека — перейдёт на сервер со всей историей'
   if (chatOnline.value) return ''
   const later = transport.value.status === 'off' ? 'когда сервер будет подключён (Настройки → Сервер и чат)' : 'когда появится связь'
-  return `Нет связи — сообщения отправятся, ${later}`
+  return `Нет связи — ИИ отвечает и так, сообщения уйдут на сервер, ${later}`
 })
 
 // a chat made with no server: held here by its block (its title in it) until the server makes it — then the title goes

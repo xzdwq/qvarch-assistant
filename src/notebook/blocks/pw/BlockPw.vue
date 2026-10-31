@@ -5,7 +5,7 @@ import { useFold } from '@renderer/lib/foldState'
 import { doc, save, setText } from '@renderer/lib/notebook'
 import { blockRunKey, fencedBlocksOf } from '@nb/domain/noteBlocks'
 import { summary } from '@nb/domain/values'
-import { isTsLang, type BlockInfo, type PwBrowser } from '@nb/domain/blockInfo'
+import { isTsLang, PW_OWN_BROWSER, type BlockInfo, type PwBrowser } from '@nb/domain/blockInfo'
 import { errorText } from '@nb/engine'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
@@ -15,7 +15,7 @@ import { useFenceSource } from '../../ui/useFenceSource'
 import MatrixEditor from './MatrixEditor.vue'
 import FuzzEditor from './FuzzEditor.vue'
 import { readFuzz } from '@shared/fuzz'
-import { pwRec, startPwRec, stopPwRec } from '@renderer/lib/pwrec'
+import { pwRec, startPwRec, startPwRecIn, stopPwRec } from '@renderer/lib/pwrec'
 import { QA_CHECKS, checksFor, checksIn, fileSetOf, layoutModeOf, setFileSet, setLayoutMode, unwrapCheck, type QaCheckKind } from '@shared/qaChecks'
 import { withCheck } from './model'
 import type { TestFileSet } from '@shared/testFiles'
@@ -152,6 +152,18 @@ const BROWSERS: Array<{ id: PwBrowser; label: string; title: string }> = [
   { id: 'msedge', label: 'Edge', title: 'Microsoft Edge, установленный в системе' },
   { id: 'chrome', label: 'Chrome', title: 'Google Chrome, установленный в системе' },
 ]
+// ---------- the app's own browser: which of its pages (the Браузер's tab, a browser of this note) ----------
+const own = computed(() => info.value.browser === PW_OWN_BROWSER)
+const ownOpen = ref(false)
+const ownBtn = ref<HTMLElement>()
+/** The note's browser blocks (a name each to be picked by; an unnamed one cannot be). */
+const noteBrowsers = ref<Array<{ name?: string; line: number }>>([])
+const listNoteBrowsers = () => (noteBrowsers.value = fencedBlocksOf(doc(props.path).text).filter((b) => b.kind === 'browser').map((b) => ({ name: b.info.name, line: b.line0 })))
+function pickOwn(name?: string): void {
+  patch({ browser: PW_OWN_BROWSER, in: name })
+  ownOpen.value = false
+}
+const ownTitle = 'Встроенный браузер Qvarch: сценарий идёт на виду — во вкладке раздела «Браузер» или в браузере этой заметки (его профиль и вход)'
 const vars = computed(() => Object.keys(values()))
 // (folded or open — as it was left, back from another tab too)
 const showValue = useFold(() => `${props.path}#${key.value}#result`, false)
@@ -187,12 +199,31 @@ async function openTrace(): Promise<void> {
     traceErr.value = errorText(e)
   }
 }
-// recording the scenario in the Браузер
+// recording the scenario: in the Браузер (from an address), or in a browser of this note (from its page)
 const recUrl = ref<string>()
 const recording = computed(() => pwRec.value?.note === props.path && pwRec.value?.key === key.value)
+const recOpen = ref(false)
+const recBtn = ref<HTMLElement>()
 function askRec(): void {
+  recOpen.value = false
   const m = /page\.goto\(\s*['"`]([^'"`]+)['"`]/.exec(code.value)
   recUrl.value = m && /^https?:/.test(m[1]) ? m[1] : 'https://'
+}
+/** «Записать»: a choice when the note has browsers of its own, else straight to the Браузер's address. */
+function onRecBtn(): void {
+  listNoteBrowsers()
+  if (!noteBrowsers.value.length) return askRec()
+  recOpen.value = !recOpen.value
+}
+async function recIn(name: string): Promise<void> {
+  recOpen.value = false
+  recErr.value = ''
+  try {
+    fence.flush()
+    await startPwRecIn(props.path, key.value, name)
+  } catch (e) {
+    recErr.value = errorText(e)
+  }
 }
 const recErr = ref('')
 async function rec(): Promise<void> {
@@ -218,7 +249,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="patch({ lang: 'ts' })">TS</button>
       </span>
     </RunHead>
-    <div v-if="recording" class="recon tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockPw-prblink_1.2s_ease-in-out_infinite]"></i>Идёт запись в Браузере · строк: {{ pwRec!.count }}<span class="grow tw:flex-1"></span><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec()">Стоп — вставить сюда</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec(true)">Отменить</button></div>
+    <div v-if="recording" class="recon tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockPw-prblink_1.2s_ease-in-out_infinite]"></i><span class="tw:min-w-0 tw:truncate">Идёт запись {{ pwRec!.in ? `в «${pwRec!.in}»` : 'в Браузере' }} · строк: {{ pwRec!.count }}</span><span class="grow tw:flex-1"></span><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec()">Стоп — вставить сюда</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec(true)">Отменить</button></div>
     <div v-else-if="recUrl !== undefined" class="recon ask tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]">
       <i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockPw-prblink_1.2s_ease-in-out_infinite]"></i><span>С какой страницы начать:</span>
       <input class="tw:flex-1 tw:min-w-120 tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg tw:text-text tw:font-data tw:text-[12px]" v-model="recUrl" spellcheck="false" placeholder="https://…" @keydown.enter.prevent="rec" @keydown.esc.prevent="recUrl = undefined" />
@@ -228,12 +259,14 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
     <div class="bp-ed"><CodeArea v-model="code" :lang="ts ? 'typescript' : 'js'" :min-height="40" placeholder="await page.goto('https://…')" /></div>
     <div class="bp-opts tw:flex tw:flex-wrap tw:items-center tw:gap-y-6 tw:gap-x-10 tw:min-w-0">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
-        <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="b in BROWSERS" :key="b.id" :class="{ on: (info.browser ?? 'msedge') === b.id }" :title="b.title" @mousedown.prevent @click="patch({ browser: b.id })">{{ b.label }}</button>
+        <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="b in BROWSERS" :key="b.id" :class="{ on: (info.browser ?? 'msedge') === b.id }" :title="b.title" @mousedown.prevent @click="patch({ browser: b.id, in: undefined })">{{ b.label }}</button>
+        <button ref="ownBtn" class="tw:inline-flex tw:items-center tw:gap-3 tw:max-w-160 tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: own }" :title="ownTitle" @mousedown.prevent @click="listNoteBrowsers(), (ownOpen = !ownOpen)"><span class="tw:min-w-0 tw:truncate">Qvarch{{ own && info.in ? ` · ${info.in}` : '' }}</span><Icon name="chevronDown" :size="9" class="tw:flex-none" /></button>
       </span>
-      <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Показывать окно браузера во время выполнения (иначе — без окна)"><input type="checkbox" :checked="info.headed" @change="patch({ headed: ($event.target as HTMLInputElement).checked })" />окно</label>
+      <label v-if="!own" class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Показывать окно браузера во время выполнения (иначе — без окна)"><input type="checkbox" :checked="info.headed" @change="patch({ headed: ($event.target as HTMLInputElement).checked })" />окно</label>
       <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Записывать трассировку (Trace Viewer): каждое действие со снимком страницы, сеть, консоль"><input type="checkbox" :checked="!info.notrace" @change="patch({ notrace: !($event.target as HTMLInputElement).checked })" />трассировка</label>
-        <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Войти как в разделе «Браузер»: тест получает его cookies — сайт, на который вы вошли там (в том числе через ADFS), открывается уже с входом"><input type="checkbox" :checked="info.session" @change="patch({ session: ($event.target as HTMLInputElement).checked })" />вход из Браузера</label>
-        <button class="recb tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:h-22 tw:py-0 tw:px-8 tw:border tw:border-stop/50 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:hover:bg-stop/12 tw:hover:enabled:border-border-3" title="Записать сценарий: откроется Браузер, ваши клики и ввод станут строками теста; «Стоп» вернёт сюда" @mousedown.prevent @click="askRec"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop"></i>Записать</button>
+        <label v-if="!own" class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Войти как в разделе «Браузер»: тест получает его cookies — сайт, на который вы вошли там (в том числе через ADFS), открывается уже с входом"><input type="checkbox" :checked="info.session" @change="patch({ session: ($event.target as HTMLInputElement).checked })" />вход из Браузера</label>
+        <button ref="recBtn" class="recb tw:inline-flex tw:flex-none tw:items-center tw:gap-6 tw:h-22 tw:py-0 tw:px-8 tw:border tw:border-stop/50 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:hover:bg-stop/12 tw:hover:enabled:border-border-3 tw:[&.on]:bg-stop/12" :class="{ on: recOpen }" title="Записать сценарий: в разделе «Браузер» или в браузере этой заметки — ваши клики и ввод станут строками теста; «Стоп» вставит их сюда" @mousedown.prevent @click="onRecBtn"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop"></i>Записать</button>
+        <span v-if="recErr && recUrl === undefined && lmode !== 'record'" class="ck-err tw:m-0 tw:text-down-fg tw:text-[12px]">{{ recErr }}</span>
         <button ref="ckBtn" class="ckb tw:inline-flex tw:items-center tw:gap-5 tw:h-24 tw:py-0 tw:px-8 tw:text-[12px] tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" :class="{ on: ckOpen }" title="Обернуть записанные действия в готовую проверку" @mousedown.prevent @click="(ckOpen = !ckOpen), (ckErr = '')"><Icon name="checkSquare" :size="12" />Проверить<Icon name="chevronDown" :size="10" /></button>
         <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px] tw:whitespace-nowrap" title="Ошибка этого сценария не останавливает «Выполнить всё» (ожидаемое падение, нестабильный тест)"><input type="checkbox" :checked="info.soft" @change="patch({ soft: ($event.target as HTMLInputElement).checked })" />не останавливать</label>
       <p v-if="ckErr" class="ck-err tw:m-0 tw:text-down-fg tw:text-[12px]">{{ ckErr }}</p>
@@ -277,6 +310,16 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
         <button class="tw:group/g30 tw:flex tw:flex-col tw:items-start tw:gap-2 tw:py-7 tw:px-9 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-left tw:hover:bg-hover" v-for="c in menuChecks" :key="c.id" :class="{ on: present.includes(c.id) }" :title="c.hint" @mousedown.prevent @click="addCheck(c.id)">
           <b class="tw:flex tw:items-center tw:gap-6 tw:w-full tw:font-medium tw:whitespace-nowrap tw:group-[.on]/g30:text-accent"><Icon v-if="present.includes(c.id)" name="check" :size="12" />{{ c.label }}<em class="tw:ml-auto tw:text-muted tw:not-italic tw:font-normal tw:text-[11px]" v-if="present.includes(c.id)">убрать</em></b>
         </button>
+    </Popover>
+    <!-- the app's own browser: which page -->
+    <Popover v-model:open="ownOpen" :anchor="ownBtn" :width="280" align-left :chrome="0" class="tw:flex tw:flex-col tw:gap-2 tw:p-6 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+      <button class="tw:flex tw:items-center tw:gap-6 tw:py-6 tw:px-9 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-left tw:whitespace-nowrap tw:hover:bg-hover" title="Своя вкладка блока в разделе «Браузер»: на время прогона раздел открывается" @mousedown.prevent @click="pickOwn()"><Icon :name="own && !info.in ? 'check' : 'browser'" :size="12" />Вкладка раздела «Браузер»</button>
+      <button v-for="b in noteBrowsers" :key="b.line" class="tw:flex tw:items-center tw:gap-6 tw:py-6 tw:px-9 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:text-muted" :disabled="!b.name" :title="b.name ? `Открытая вкладка браузера «${b.name}» этой заметки: заметка должна быть на экране` : 'У этого браузера нет имени — допишите name=… в его строку'" @mousedown.prevent @click="b.name && pickOwn(b.name)"><Icon :name="own && info.in === b.name ? 'check' : 'globe'" :size="12" /><span class="tw:min-w-0 tw:truncate">{{ b.name ? `Браузер «${b.name}» в заметке` : `Браузер без имени (строка ${b.line})` }}</span></button>
+    </Popover>
+    <!-- recording: where -->
+    <Popover v-model:open="recOpen" :anchor="recBtn" :width="280" align-left :chrome="0" class="tw:flex tw:flex-col tw:gap-2 tw:p-6 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
+      <button class="tw:flex tw:items-center tw:gap-6 tw:py-6 tw:px-9 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-left tw:whitespace-nowrap tw:hover:bg-hover" title="Откроется раздел «Браузер» с адресом, который вы укажете" @mousedown.prevent @click="askRec"><Icon name="browser" :size="12" />В разделе «Браузер»…</button>
+      <button v-for="b in noteBrowsers" :key="b.line" class="tw:flex tw:items-center tw:gap-6 tw:py-6 tw:px-9 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-left tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:disabled:text-muted" :disabled="!b.name" :title="b.name ? `С той страницы, что открыта сейчас в браузере «${b.name}»` : 'У этого браузера нет имени — допишите name=… в его строку'" @mousedown.prevent @click="b.name && recIn(b.name)"><Icon name="globe" :size="12" /><span class="tw:min-w-0 tw:truncate">{{ b.name ? `В браузере «${b.name}» заметки` : `Браузер без имени (строка ${b.line})` }}</span></button>
     </Popover>
     <!-- the ready checks: a verdict each, a table when there is one -->
     <div v-if="run?.checks?.length" class="qa-checks tw:flex tw:flex-col tw:gap-6 tw:my-6 tw:mx-0">

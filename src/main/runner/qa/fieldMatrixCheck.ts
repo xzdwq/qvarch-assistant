@@ -1,6 +1,7 @@
 import type { Locator } from 'playwright-core'
 import { findPaths, getAt, judge, type FieldInfo, type MatrixCase } from '../../../shared/qaMatrix'
 import { saveOf as saveCarrying, valuesIn } from '../outcome'
+import { asked, judgeQuery, valueKey, type MatrixMode } from '../../../shared/qaMatrixQuery'
 import { MUT, type Exchange } from '../traffic'
 import { fieldProbe } from './pageProbes'
 import type { QaContext } from './qaContext'
@@ -30,6 +31,64 @@ const saveOf = (x: Exchange) => `${x.method} ${pathOf(x.url)}`
 /** A change as a try keeps it (no live request, no bytes). */
 const keptChange = (x: Exchange) => ({ status: x.status, res: x.res, line: line(x), ep: saveOf(x), body: x.body })
 const good = (x?: { status?: number }) => !!x?.status && x.status >= 200 && x.status < 300
+/** An address as text (its query decoded — a value typed is looked for in it). */
+const decoded = (url: string) => {
+  try {
+    return decodeURIComponent(url.replace(/\+/g, ' '))
+  } catch {
+    return url
+  }
+}
+/** A value typed kept whole up to this; a scenario's own measures of one value — up to this as JSON. */
+const VALUE_KEPT = 120
+const RETURNED_KEPT = 1500
+/**
+ * What the scenario gave back for a value, kept small (its measures are what matter — a page's text it returned is
+ * cut: a matrix of many values never makes a value too big to keep or to read).
+ */
+function keptSmall(v: unknown): unknown {
+  let text: string
+  try {
+    text = JSON.stringify(v)
+  } catch {
+    return String(v).slice(0, RETURNED_KEPT)
+  }
+  if (text === undefined || text.length <= RETURNED_KEPT) return v
+  return { cut: `${text.slice(0, RETURNED_KEPT)}…`, size: text.length }
+}
+/** A value's outcome, as the block's value gives it: what was typed, how it was judged, what the scenario measured. */
+export interface MatrixOutcome {
+  field: string
+  label: string
+  value: string
+  state: string
+  result: string
+  detail: string
+  status?: number
+  found?: number
+  error?: string
+  returned?: unknown
+  /** What it depended on: the scenario without its values (`sig`), the value (`vk`); the request it went in (`query`). */
+  sig?: string
+  vk?: string
+  query?: string
+  /** Taken from the run before (its inputs the same, not asked to run anew). */
+  reused?: boolean
+}
+/**
+ * How the matrix runs: by the field's save or its request (`mode`); the outcomes of the run before (`memo`) — a
+ * value's kept while its inputs are the same (`sig` — the scenario's now); the values asked to run anew (`recheck`).
+ */
+export interface MatrixOpts {
+  mode?: MatrixMode
+  memo?: readonly MatrixOutcome[]
+  sig?: string
+  recheck?: readonly string[]
+  /** Each field's values' keys, in their order (their writing in the code: a generated value is new each run). */
+  keys?: Record<string, string[]>
+  /** The outcomes handed on before the verdict (a failed verdict ends the run: they are the block's value all the same). */
+  gathered?: (outcomes: MatrixOutcome[]) => void
+}
 
 /**
  * The field matrix: the scenario run once as recorded (the reference: the save goes, and where each field's
@@ -39,7 +98,8 @@ const good = (x?: { status?: number }) => !!x?.status && x.status >= 200 && x.st
  */
 export function fieldMatrixCheck(ctx: QaContext) {
   const { page, step, sent, traffic } = ctx
-  return (fields: Record<string, MatrixField>, run: (v: Record<string, string>) => Promise<unknown>) =>
+  /** `opts.mode` — how the field is judged: by its save (a form), by its request (a search, a filter); none — found out. */
+  return (fields: Record<string, MatrixField>, run: (v: Record<string, string>) => Promise<unknown>, opts: MatrixOpts = {}) =>
     step('Проверка: матрица значений полей', async () => {
       const name = 'Матрица значений полей'
       const ids = Object.keys(fields)
@@ -55,16 +115,21 @@ export function fieldMatrixCheck(ctx: QaContext) {
       page.setDefaultTimeout(6000)
       // the answers kept: the page's data loaded before a save — what the try before stored
       const keepOff = traffic.keep()
+      // the run before's outcomes still true (the same scenario): a field that saves nothing, its request known from them
+      const memo = (opts.memo ?? []).filter((o) => !!o && o.sig === opts.sig && !!o.vk)
+      const knownQuery = opts.mode !== 'save' ? memo.find((o) => o.query)?.query : undefined
       try {
-        // 1. the fields looked at: the scenario up to its first typing
-        const STOP = new Error('__qa_matrix_stop')
-        try {
-          await run(new Proxy({} as Record<string, string>, { get: () => { throw STOP } }))
-        } catch (e) {
-          if (e !== STOP) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `сценарий не дошёл до первого поля: ${msg(e)}` })
-        }
+        // 1. the fields looked at: the scenario up to its first typing (known already — not looked at again)
         const info: Record<string, Partial<FieldInfo>> = {}
-        for (const k of ids) info[k] = ((await fields[k].field().first().evaluate(fieldProbe, undefined, { timeout: 3000 }).catch(() => undefined)) as Partial<FieldInfo> | undefined) ?? {}
+        if (!knownQuery) {
+          const STOP = new Error('__qa_matrix_stop')
+          try {
+            await run(new Proxy({} as Record<string, string>, { get: () => { throw STOP } }))
+          } catch (e) {
+            if (e !== STOP) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `сценарий не дошёл до первого поля: ${msg(e)}` })
+          }
+          for (const k of ids) info[k] = ((await fields[k].field().first().evaluate(fieldProbe, undefined, { timeout: 3000 }).catch(() => undefined)) as Partial<FieldInfo> | undefined) ?? {}
+        }
 
         /** The endpoints whose answers hold the fields' stored values (known after the first try's run). */
         let storeEps: Set<string> | undefined
@@ -74,17 +139,21 @@ export function fieldMatrixCheck(ctx: QaContext) {
          * itself (it may go a moment after the click: a form validating on the server, a debounce), or the form's
          * word, or the run's stop. The data the page loaded before saving is kept: the stored values of the try before.
          */
-        const once = async (over: Record<string, string>, title: string, saveKey?: string) => {
+        const once = async (over: Record<string, string>, title: string, saveKey?: string, queryKey?: string) => {
           for (let t = Date.now(); Date.now() - t < 5000 && sent.some((x) => !x.done && MUT.test(x.method) && ctx.api(x)); ) await page.waitForTimeout(100)
           const from = sent.length
           let error: string | undefined
+          /** What the scenario gave back for this value (its own measures: what it found, what it saw). */
+          let returned: unknown
           await step(title, async () => {
             try {
-              await run(valuesOf(over))
+              returned = await run(valuesOf(over))
             } catch (e) {
               error = msg(e)
             }
           })
+          // a field that saves nothing: its request (the one carrying the value) answered — waited for, up to 30 s
+          if (queryKey) for (let t = Date.now(); Date.now() - t < 30000 && sent.slice(from).some((x) => saveOf(x) === queryKey && !x.done); ) await page.waitForTimeout(150)
           // the save: the try's own endpoint once known; before — the change carrying the values typed (not whatever
           // else the page sent on the way: a dialog's OK, a list's search)
           const typed = ids.map((k) => over[k] ?? recorded[k])
@@ -110,7 +179,9 @@ export function fieldMatrixCheck(ctx: QaContext) {
             .slice(0, at < 0 ? part.length : at)
             .filter((x) => x.method === 'GET' && x.res !== undefined && (!storeEps || storeEps.has(saveOf(x))))
             .map((x) => ({ ep: saveOf(x), res: x.res! }))
-          const out = { error, muts: ctx.mutations(from).map(keptChange), hints: await ctx.hints(), gets }
+          // the page's requests of the try (their answers — only the request the value goes in: the rest let go)
+          const reqs = part.filter((x) => ctx.api(x)).map((x) => ({ ep: saveOf(x), method: x.method, url: x.url, body: x.body, status: x.done ? x.status : undefined, line: line(x), ...(queryKey && saveOf(x) === queryKey && x.res !== undefined ? { res: x.res } : {}) }))
+          const out = { error, muts: ctx.mutations(from).map(keptChange), hints: await ctx.hints(), gets, reqs, returned }
           traffic.release(traffic.mark())
           return out
         }
@@ -124,16 +195,100 @@ export function fieldMatrixCheck(ctx: QaContext) {
             }, undefined, { timeout: 300 })
             .catch(() => undefined) as Promise<string | undefined>
 
+        /** A field's own values to try (the «Значения матрицы»: a generator made into its value now). */
+        const casesOf = (k: string): MatrixCase[] =>
+          (fields[k].cases ?? []).map((c) => {
+            const raw = typeof c.value === 'function' ? (c.value as () => unknown)() : c.value
+            const value = typeof raw === 'string' ? raw : raw === undefined || raw === null ? '' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
+            return { label: c.label, value, bad: !!c.bad, ...(value.trim() === '' ? { empty: true } : {}) }
+          })
+        /** Each value's outcome, all of them (the block's value: every measure of one run, nothing to run again for). */
+        const outcomes: MatrixOutcome[] = []
+        const outcome = (field: string, label: string, value: string, v: { state: string; result: string; detail: string; status?: number; found?: number }, o: { error?: string; returned?: unknown }, keys: { vk?: string; query?: string } = {}) =>
+          outcomes.push({
+            ...(opts.sig ? { sig: opts.sig } : {}),
+            ...(keys.vk ? { vk: keys.vk } : {}),
+            ...(keys.query ? { query: keys.query } : {}),
+            field,
+            label,
+            // (a long value — its start and its length: «а»×5000 is not kept whole)
+            value: value.length > VALUE_KEPT ? `${value.slice(0, 40)}… (${value.length} симв.)` : value,
+            state: v.state,
+            result: v.result,
+            detail: v.detail,
+            ...(v.status !== undefined ? { status: v.status } : {}),
+            ...(v.found !== undefined ? { found: v.found } : {}),
+            ...(o.error ? { error: o.error.slice(0, 500) } : {}),
+            ...(o.returned !== undefined ? { returned: keptSmall(o.returned) } : {}),
+          })
+        /**
+         * The tries of a field that saves nothing: each value typed, its request's answer judged (its status, how many
+         * found — from the answer), the scenario's own measures kept; the reference first (what the others compare with).
+         */
+        const queryTries = async (queryKey: string): Promise<MatrixOutcome[]> => {
+          const head = ['Поле', 'Вариант', 'Значение', 'Итог', 'Найдено', 'Подробно']
+          const rows: string[][] = []
+          const marks: QaMark[] = []
+          const tally = { ok: 0, warn: 0, fail: 0 }
+          let fresh = 0
+          /**
+           * A value judged: remembered (its inputs the same, not asked anew) — as it was; else run and judged now (a run
+           * that broke judged nothing: run again).
+           */
+          const judged = async (over: Record<string, string>, title: string, c: MatrixCase, field: string, vk: string) => {
+            const kept = asked(opts.recheck, c.label, c.value) ? undefined : memo.find((m) => m.vk === vk && !m.error)
+            if (kept) {
+              outcomes.push({ ...kept, reused: true })
+              return { state: kept.state as QaMark, result: kept.result, detail: kept.detail ? `${kept.detail} (прошлый прогон)` : '(прошлый прогон)', ...(kept.found !== undefined ? { found: kept.found } : {}) }
+            }
+            fresh++
+            const o = await once(over, title, undefined, queryKey)
+            const req = [...o.reqs].reverse().find((x) => x.ep === queryKey)
+            const v = judgeQuery(c, { ...(o.error ? { error: o.error } : {}), hints: o.hints, ...(req ? { req } : {}) })
+            outcome(field, c.label, c.value, v, o, { vk, query: queryKey })
+            return v
+          }
+          const refValue = ids.map((k) => recorded[k]).join(' · ')
+          const refV = await judged({}, 'Эталон: записанные значения', { label: 'эталон', value: refValue, bad: false }, '—', valueKey('—', refValue))
+          rows.push(['—', 'эталон', show(refValue), refV.result, refV.found === undefined ? '—' : String(refV.found), refV.detail])
+          marks.push(refV.state)
+          for (const k of ids) {
+            const cases = casesOf(k)
+            for (const [i, c] of cases.entries()) {
+              const v = await judged({ [k]: c.value }, `${fields[k].name}: ${c.label}`, c, fields[k].name, opts.keys?.[k]?.[i] ?? valueKey(fields[k].name, c.value))
+              tally[v.state]++
+              rows.push([fields[k].name, c.label, show(c.value), v.result, v.found === undefined ? '—' : String(v.found), v.detail])
+              marks.push(v.state)
+            }
+          }
+          const all = tally.ok + tally.warn + tally.fail
+          const kept = all + 1 - fresh
+          const summary = `вариантов ${all} (запрос ${queryKey})${tally.fail ? `, сбоев ${tally.fail}` : ''}${tally.warn ? `, стоит посмотреть ${tally.warn}` : ''}${kept > 0 ? `; прогнано сейчас ${fresh}, из прошлого прогона ${kept} (входы не менялись)` : ''} — результаты всех значений в значении блока`
+          opts.gathered?.(outcomes)
+          ctx.verdict({ kind: 'matrix', name, state: tally.fail ? 'fail' : tally.warn ? 'warn' : 'ok', summary, head, rows, marks, group: true })
+          return outcomes
+        }
+
+        // (a field that saves nothing, its request known from the run before: straight to its values)
+        if (knownQuery) return await queryTries(knownQuery)
         // 2. the reference: as recorded — the save goes; where each value is in its body
         const ref = await once({}, 'Эталон: записанные значения')
         // the reference must do what the scenario was recorded doing — a step that fails there fails every try
         if (ref.error) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `сценарий с записанными значениями не прошёл: ${ref.error} — матрице не на чем перебирать (локатор поля не находит его? перезапишите шаг)` })
         // the save: the change carrying the values typed — not whatever the page happened to send (its tracking, its
         // error reports, a token's refresh)
-        const saved = saveCarrying(ref.muts, ids.map((k) => recorded[k]))
+        const typedRef = ids.map((k) => recorded[k])
+        // (told it is a search: a page's POST carrying the text typed — its history, its tracking — is no save)
+        const saved = opts.mode === 'query' ? undefined : saveCarrying(ref.muts, typedRef)
         if (!saved) {
-          const seen = ref.muts.length ? `изменяющие запросы прогона: ${ref.muts.map((x) => x.line).join(', ')}` : 'изменяющих запросов не было'
-          return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `запрос сохранения с введёнными значениями не найден (${seen}) — сохранение не ушло${ref.hints.length ? `; на форме: ${ref.hints.join(' · ')}` : ''}` })
+          // a field that saves nothing (a search, a filter): the request its value goes in — the tries judged by its answers
+          // (a search's own request: one that is not a change, when there is one)
+          const carriers = ref.reqs.filter((x) => valuesIn(x.body, typedRef) > 0 || valuesIn(decoded(x.url), typedRef) > 0)
+          const carrier = [...carriers].reverse().find((x) => !MUT.test(x.method)) ?? carriers.at(-1)
+          if (!carrier && opts.mode === 'save') return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: 'запрос сохранения с введёнными значениями не найден — сохранение не ушло' })
+          if (carrier) return await queryTries(carrier.ep)
+          const seen = ref.reqs.length ? `запросы прогона: ${ref.reqs.slice(-6).map((x) => x.line).join(', ')}` : 'запросов не было'
+          return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `ни сохранения, ни запроса с введённым значением не найдено (${seen})${ref.hints.length ? `; на странице: ${ref.hints.join(' · ')}` : ''}` })
         }
         if (saved.status === undefined) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `сервер не ответил на сохранение за 30 с: ${saved.line}` })
         if (!good(saved)) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `с записанными значениями сохранение не прошло: ${saved.line}${saved.res ? ` — ${short(saved.res, 120)}` : ''}` })
@@ -170,11 +325,7 @@ export function fieldMatrixCheck(ctx: QaContext) {
         const tries: Array<Try | { k: string; skip: string }> = []
         for (const k of ids) {
           const f = info[k]
-          const own = (fields[k].cases ?? []).map((c): MatrixCase => {
-            const raw = typeof c.value === 'function' ? (c.value as () => unknown)() : c.value
-            const value = typeof raw === 'string' ? raw : raw === undefined || raw === null ? '' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
-            return { label: c.label, value, bad: !!c.bad, ...(value.trim() === '' ? { empty: true } : {}) }
-          })
+          const own = casesOf(k)
           // only the values one put down (the «Значения матрицы»): a field with none is not tried
           if (!own.length) {
             tries.push({ k, skip: f.select ? 'выбор из списка — значений не задано' : f.readonly ? 'поле только для чтения — значений не задано' : 'значений не задано' })
@@ -231,6 +382,7 @@ export function fieldMatrixCheck(ctx: QaContext) {
             ...(stored !== undefined ? { stored } : {}),
           })
           tally[v.state]++
+          outcome(fields[k].name, c.label, c.value, { ...v, ...(save?.status !== undefined ? { status: save.status } : {}) }, o)
           const wentText = !save ? '—' : !good(save) ? `${save.status ?? '…'}` : went ? short(JSON.stringify(went.value)) : refBody === undefined ? 'не JSON' : 'поля в теле нет'
           rows.push([fields[k].name, c.label, show(c.value), v.result, wentText, ...(edit ? [stored === undefined ? '—' : show(stored)] : []), v.detail])
           marks.push(v.state)
@@ -240,7 +392,9 @@ export function fieldMatrixCheck(ctx: QaContext) {
         const broke = rows.filter((r) => r[3] === 'Сценарий не прошёл').length
         const server = tally.fail - broke
         const summary = `вариантов ${all}${broke ? `, сценарий не прошёл в ${broke} — см. «Подробно»` : ''}${server ? `, ошибок сервера ${server}` : ''}${tally.warn ? `, стоит посмотреть ${tally.warn}` : ''} — по ${ids.length} ${plural(ids.length, 'полю', 'полям', 'полям')}; в конце записанные значения возвращены`
+        opts.gathered?.(outcomes)
         ctx.verdict({ kind: 'matrix', name, state: tally.fail ? 'fail' : tally.warn ? 'warn' : 'ok', summary, head, rows, marks, group: true })
+        return outcomes
       } finally {
         keepOff()
         page.setDefaultTimeout(30000)

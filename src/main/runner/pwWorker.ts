@@ -9,8 +9,12 @@ import { join } from 'node:path'
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import { expect } from 'playwright/test'
 import { makeQa } from './qaRuntime'
+import type { MatrixOpts, MatrixOutcome } from './qa/fieldMatrixCheck'
+import { readMatrix } from '../../shared/qaChecks'
+import { fingerprint, matrixScenarioSig } from '../../shared/qaMatrixQuery'
 import { Emitter } from './emitter'
 import type { QaCheck } from '../../shared/qaChecks'
+import type { PwBrowser } from '../../notebook/domain/blockInfo'
 
 /**
  * A notebook's Playwright block, run in a process of its own (one per run): the installed Edge / Chrome is
@@ -31,7 +35,9 @@ interface Job {
   /** The block's name and the note's — Allure's test and suite. */
   name: string
   suite: string
-  browser: 'msedge' | 'chrome' | 'chromium'
+  browser: PwBrowser
+  /** The app's own browser (browser=qvarch): the bridge to the page lent, and where that page is. */
+  own?: { url: string; label: string }
   headed: boolean
   trace: boolean
   ignoreHTTPSErrors: boolean
@@ -39,6 +45,22 @@ interface Job {
   cookies?: Array<Record<string, unknown>>
   /** Its sites' localStorage (Playwright's storageState origins) — their settings, as in the Браузер. */
   storage?: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>
+  /** What its run before gave (a matrix's outcomes — kept while their inputs are the same). */
+  memo?: unknown
+  /** Values to run anew though remembered (their labels or values). */
+  recheck?: string[]
+}
+
+/**
+ * How this run's matrix goes: the outcomes of the run before (the block's value then), what they depend on — the
+ * scenario without its values, each value's writing in the code (a generated one is new each run, its writing is
+ * not) — and the values asked to run anew.
+ */
+function matrixRunOf(job: Job): MatrixOpts {
+  const mx = readMatrix(job.code)
+  const keys = mx ? Object.fromEntries(mx.fields.map((f) => [f.id, f.cases.map((c) => fingerprint(`${f.id}\u0000${c.label}\u0000${c.expr}`))])) : undefined
+  const memo = Array.isArray(job.memo) ? (job.memo as MatrixOutcome[]) : undefined
+  return { sig: matrixScenarioSig(job.code), ...(keys ? { keys } : {}), ...(memo ? { memo } : {}), ...(job.recheck?.length ? { recheck: job.recheck } : {}) }
 }
 type Log = { level: 'log' | 'info' | 'warn' | 'error'; text: string }
 export interface PwStep {
@@ -134,30 +156,20 @@ async function run(job: Job): Promise<void> {
 
   let page: Page | undefined
   let value: unknown
+  /** What a ready check gathered (the field matrix: each value's outcome) — the block's value when it returns none. */
+  let checkValue: unknown
   let error: string | undefined
   let failed: 'failed' | 'broken' | undefined
   let stack: string | undefined
   try {
     mkdirSync(job.dir, { recursive: true })
-    await step(`Запуск ${job.browser === 'msedge' ? 'Edge' : job.browser === 'chrome' ? 'Chrome' : 'Chromium'}${job.headed ? ' (с окном)' : ''}`, async () => {
-      try {
-        browser = await chromium.launch({ channel: job.browser === 'chromium' ? undefined : job.browser, headless: !job.headed })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (/executable doesn't exist|is not found|not installed|Chromium distribution/i.test(msg))
-          throw new Error(job.browser === 'msedge' ? 'Не найден Microsoft Edge — укажите browser=chrome в строке блока' : job.browser === 'chrome' ? 'Не найден Google Chrome — уберите browser=chrome (будет Edge)' : 'Chromium не скачан — используйте Edge или Chrome')
-        throw err
-      }
-      context = await browser.newContext({ ignoreHTTPSErrors: job.ignoreHTTPSErrors, viewport: { width: 1280, height: 800 }, ...(job.storage?.length ? { storageState: { cookies: [], origins: job.storage } } : {}) })
-      if (job.storage?.length) logs.push({ level: 'info', text: `localStorage из Браузера: ${job.storage.map((o) => `${o.origin} (${o.localStorage.length})`).join(', ')}` })
-      if (job.cookies?.length) {
-        // one by one: a cookie Chromium refuses (an odd one) does not lose the rest
-        let ok = 0
-        for (const c of job.cookies) ok += await context.addCookies([c as never]).then(() => 1, () => 0)
-        logs.push({ level: 'info', text: `Вход из Браузера: ${ok} cookie` })
-      }
+    const own = job.own
+    await step(own ? own.label : `Запуск ${job.browser === 'msedge' ? 'Edge' : job.browser === 'chrome' ? 'Chrome' : 'Chromium'}${job.headed ? ' (с окном)' : ''}`, async () => {
+      const got = own ? await lentPage(own.url) : await installed(job, logs)
+      browser = got.browser
+      context = got.context
       if (job.trace) await context.tracing.start({ screenshots: true, snapshots: true, sources: false, title: job.name })
-      page = await context.newPage()
+      page = got.page ?? (await context.newPage())
       // a click that opens the system's file window (a «Загрузить» button) — the window is never shown: the files go by
       // setInputFiles / qa.dropFiles
       page.on('filechooser', () => undefined)
@@ -172,7 +184,7 @@ async function run(job: Job): Promise<void> {
       context,
       browser,
       expect,
-      qa: makeQa(page!, step, checks, job.dir, job.files ?? ''),
+      qa: makeQa(page!, step, checks, job.dir, job.files ?? '', (v) => (checkValue = v), matrixRunOf(job)),
       gen,
       devices,
       step,
@@ -202,7 +214,9 @@ async function run(job: Job): Promise<void> {
     value = await vm.runInContext(`${main}\n__block()`, sandbox, { filename: 'блок', lineOffset: -1 - libLines })
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err)
-    const msg = stopped ? 'Остановлено' : ansi(err instanceof Error && err.name !== 'Error' ? `${err.name}: ${raw}` : raw)
+    // the app's page gone from under the run (its note closed, its tab closed)
+    const lost = !!job.own && /has been closed|Target closed|Вкладка закрыта/i.test(raw)
+    const msg = stopped ? 'Остановлено' : lost ? `Страница, в которой шёл сценарий, закрыта (заметка или вкладка закрыты): ${ansi(raw).split('\n')[0]}` : ansi(err instanceof Error && err.name !== 'Error' ? `${err.name}: ${raw}` : raw)
     const at = err instanceof Error ? /блок:(\d+)/.exec(err.stack ?? '')?.[1] : undefined
     // (a ready check failing says what and where itself — its line in the runtime is not the scenario's)
     error = at && !stopped && !/^Проверка «/.test(msg) ? `${msg}\n(строка ${at})` : msg
@@ -212,6 +226,8 @@ async function run(job: Job): Promise<void> {
     for (const s of steps) if (s.state === 'run') ((s.state = 'error'), (s.ms = Date.now() - s.start))
   }
 
+  // (the scenario returns nothing of its own: what its check gathered is its value — every value of the matrix at once)
+  if (value === undefined && checkValue !== undefined) value = checkValue
   // what is left: the screenshot, the trace, the Allure results
   const files: string[] = []
   /** With the Браузер's sign-ins: the cookies as the run left them (a site may have renewed its session). */
@@ -248,6 +264,42 @@ async function run(job: Job): Promise<void> {
     type: 'done',
     result: { ok: !error, value: plain(value), hasValue: value !== undefined, sets: plain(sets), logs, steps, checks, error, ms: performance.now() - t0, files, browser: browser?.version(), emits, ...(outCookies ? { cookies: outCookies } : {}) },
   })
+}
+
+/** An installed Edge / Chrome (or the downloaded Chromium) started, a context of its own — with the Браузер's sign-ins if asked. */
+async function installed(job: Job, logs: Log[]): Promise<{ browser: Browser; context: BrowserContext; page?: Page }> {
+  let b: Browser
+  try {
+    b = await chromium.launch({ channel: job.browser === 'chromium' ? undefined : job.browser, headless: !job.headed })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/executable doesn't exist|is not found|not installed|Chromium distribution/i.test(msg))
+      throw new Error(job.browser === 'msedge' ? 'Не найден Microsoft Edge — укажите browser=chrome в строке блока' : job.browser === 'chrome' ? 'Не найден Google Chrome — уберите browser=chrome (будет Edge)' : 'Chromium не скачан — используйте Edge или Chrome')
+    throw err
+  }
+  // (known at once: a stop meanwhile closes it)
+  browser = b
+  const ctx = await b.newContext({ ignoreHTTPSErrors: job.ignoreHTTPSErrors, viewport: { width: 1280, height: 800 }, ...(job.storage?.length ? { storageState: { cookies: [], origins: job.storage } } : {}) })
+  if (job.storage?.length) logs.push({ level: 'info', text: `localStorage из Браузера: ${job.storage.map((o) => `${o.origin} (${o.localStorage.length})`).join(', ')}` })
+  if (job.cookies?.length) {
+    // one by one: a cookie Chromium refuses (an odd one) does not lose the rest
+    let ok = 0
+    for (const c of job.cookies) ok += await ctx.addCookies([c as never]).then(() => 1, () => 0)
+    logs.push({ level: 'info', text: `Вход из Браузера: ${ok} cookie` })
+  }
+  return { browser: b, context: ctx }
+}
+/**
+ * The app's own page, through the bridge the app opened for this run: its one context, its one page — as it is
+ * now (its size, its sign-ins). Closing the browser after only lets it go.
+ */
+async function lentPage(url: string): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
+  const b = await chromium.connectOverCDP(url, { isLocal: true, timeout: 30_000 })
+  browser = b
+  const ctx = b.contexts()[0]
+  const p = ctx?.pages()[0]
+  if (!p) throw new Error('Страница браузера Qvarch не досталась сценарию')
+  return { browser: b, context: ctx, page: p }
 }
 
 /** Allure 2 results (allure-results/<uuid>-result.json + attachments): `allure serve` / Allure TestOps take them. */

@@ -2,6 +2,7 @@ import { markRaw, reactive, toRaw } from 'vue'
 import type { ValueSource } from '../domain/blockInfo'
 import { jsonClone, type Values } from '../domain/values'
 import { runApi } from './runApi'
+import { runMoved } from './runKeys'
 import type { LoopRun, NoteRun } from './runTypes'
 
 /**
@@ -99,8 +100,10 @@ export function clearValue(path: string, name: string): void {
 /** A block's results moved to another key (it got an id of its own: they stay with it). */
 export function moveRun(path: string, from: string, to: string): void {
   const n = noteRun(path)
-  for (const o of [n.runs, n.loops] as Array<Record<string, unknown>>)
+  for (const o of [n.runs, n.loops] as Array<Record<string, { state?: string }>>)
     if (from in o && !(to in o)) {
+      // (a run going on: it follows — it writes there, it is stopped from there)
+      if (o[from]?.state === 'run') runMoved(path, from, to)
       o[to] = o[from]
       delete o[from]
     }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import { CHECK_KINDS, CHECK_SEVS, CHECK_STEPS, kindMeta, reqLine, type CheckKind, type CheckProblem, type CheckSev } from '@shared/check'
 import { bugFileName, bugNote, stepsFromPw } from '@shared/checkBug'
 import { checkSteps, pwRec, stopPwRec, watchPwRec } from '../lib/pwrec'
@@ -24,7 +25,7 @@ const SEV_LABEL: Record<CheckSev, string> = { high: 'Важные', mid: 'Сре
 const SEV = CHECK_SEVS.map((id) => ({ id, label: SEV_LABEL[id] }))
 const sev = ref<CheckSev | ''>('')
 const onlyTab = ref(false)
-const q = ref('')
+const q = useDraft('check:search')
 const base = computed(() => checkProblems.value.filter((p) => (!onlyTab.value || p.tabId === props.tabId) && (!q.value.trim() || `${p.title} ${p.detail ?? ''} ${p.page}`.toLowerCase().includes(q.value.trim().toLowerCase()))))
 const shown = computed(() => base.value.filter((p) => !sev.value || p.sev === sev.value))
 const countOf = (s: CheckSev) => base.value.filter((p) => p.sev === s).length

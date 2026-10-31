@@ -208,6 +208,10 @@ export class Vault {
     for (const i of pics) this.deleteImage(i)
   }
 
+  /** A note's / folder's full path on the computer. */
+  absPath(rel: string): string {
+    return this.files.abs(rel)
+  }
   reveal(rel: string): void {
     const file = this.files.abs(rel)
     if (rel) shell.showItemInFolder(file)
@@ -254,11 +258,12 @@ export class Vault {
       else if (hits.length < limit) hits.push({ path, name: basename(path, '.md'), inName: false, count: 0, lines: [], ...more })
     }
     for (const [path, via] of this.graph.search(q)) add(path, { via })
+    const own = this.meta.allDocAi()
     const walk = (ns: VaultNode[]): void =>
       ns.forEach((n) => {
         if (n.dir) return walk(n.children ?? [])
         if (n.board) return
-        const ai = n.doc ? this.sharedMeta(n.doc) : this.meta.docAiOf(n.path)
+        const ai = n.doc ? this.sharedMeta(n.doc) : (own.get(n.path) ?? NO_DOC_AI)
         const meta = ai.memory || ai.turns.length ? metaHits(ai, q) : []
         if (meta.length) add(n.path, { meta })
       })

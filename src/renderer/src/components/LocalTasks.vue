@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SuggestInput from './SuggestInput.vue'
 import { computed, onBeforeUnmount, ref, reactive } from 'vue'
+import { useDraft } from '../lib/drafts'
 import type { LocalTask } from '@shared/types'
 import Icon from './Icon.vue'
 import DatePick from './DatePick.vue'
@@ -45,7 +46,7 @@ const groups = computed(() => {
   return [...by.entries()].sort((a, b) => (a[0] === '' ? 1 : b[0] === '' ? -1 : a[0].localeCompare(b[0])))
 })
 
-const title = ref('')
+const title = useDraft('tasks:new')
 async function add(): Promise<void> {
   if (!title.value.trim()) return
   await window.qa.saveTask({ id: crypto.randomUUID(), title: title.value.trim(), status: 'todo', created: Date.now() })

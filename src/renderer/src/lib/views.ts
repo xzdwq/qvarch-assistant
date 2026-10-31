@@ -50,6 +50,28 @@ export function openPlace(id: string): void {
     view.value = 'tools'
   } else view.value = id as View
 }
+/** A section (or a tool) on the screen now — on the bar, or picked in «Инструменты». */
+export const isShown = (id: string) => view.value === id || (view.value === 'tools' && toolSel.value === id)
+
+/**
+ * Scenarios run in the Браузер's tab: the Браузер shown while any goes; the last one over — the window back where
+ * it was before the first (not if the person went elsewhere meanwhile, nor if it was the Браузер already).
+ */
+let runsShown = 0
+let runBack: string | undefined
+export function showForRun(run: 'start' | 'end'): void {
+  if (run === 'start') {
+    if (!runsShown++) runBack = isShown('browser') ? undefined : view.value === 'tools' ? toolSel.value : view.value
+    openPlace('browser')
+    return
+  }
+  runsShown = Math.max(0, runsShown - 1)
+  if (runsShown) return
+  const back = runBack
+  runBack = undefined
+  if (back && isShown('browser')) openPlace(back)
+}
+
 /** A request of the HTTP collection shown (a chain recorded in the browser, a Swagger import): picked there, HTTP opened. */
 export function openHttp(requestId: string): void {
   try {

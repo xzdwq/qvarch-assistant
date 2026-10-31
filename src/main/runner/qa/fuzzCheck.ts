@@ -29,10 +29,15 @@ const headerOf = (h: Record<string, string>, k: string) => Object.entries(h).fin
  */
 export function fuzzCheck(ctx: QaContext) {
   const { page, step, sent } = ctx
-  return (spec: FuzzSpec) =>
+  return (given: FuzzSpec) =>
     step('Проверка: перебор параметров запроса', async () => {
       const name = 'Перебор параметров запроса'
       const head = ['Параметр', 'Вариант', 'Статус', 'Время', 'Найдено', 'Итог']
+      // (the spec as written in the code by hand: a parameter not of its shape — said, not a script's error)
+      const raw: unknown[] = Array.isArray(given?.params) ? given.params : []
+      const params = raw.filter((p): p is FuzzSpec['params'][number] => !!p && typeof p === 'object' && typeof (p as { path?: unknown }).path === 'string' && Array.isArray((p as { cases?: unknown }).cases))
+      if (params.length < raw.length) return ctx.verdict({ kind: 'fuzz', name, state: 'warn', summary: 'параметры перебора записаны не так: каждый — { path, cases: [{ label, value }] } — поправьте в «Параметры перебора»' })
+      const spec: FuzzSpec = { ...given, request: String(given?.request ?? ''), params }
       if (!spec.request.trim()) return ctx.verdict({ kind: 'fuzz', name, state: 'warn', summary: 'запрос не выбран — выберите его в «Параметры перебора»' })
       if (!spec.params.some((p) => p.cases.length)) return ctx.verdict({ kind: 'fuzz', name, state: 'warn', summary: 'не задано ни одного варианта — добавьте параметры и их значения в «Параметры перебора»' })
       await ctx.quiet()

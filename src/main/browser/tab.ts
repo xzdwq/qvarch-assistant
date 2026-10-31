@@ -5,9 +5,9 @@ import type { TabCdp } from './tabCdp'
 
 /**
  * Who keeps a tab's DevTools protocol attached (the recording, the device mode, a hook's search, «Проверка», a
- * scenario; `chrome` — the page told it is Chrome, all its life).
+ * scenario's recording; `run` — a scenario run in the tab; `chrome` — the page told it is Chrome, all its life).
  */
-export type CdpOwner = 'rec' | 'device' | 'hook' | 'check' | 'pw' | 'chrome'
+export type CdpOwner = 'rec' | 'device' | 'hook' | 'check' | 'pw' | 'run' | 'chrome'
 
 /** A tab of the Браузер section as the main process keeps it: its page (a view of its own) and what is on it. */
 export interface Tab {

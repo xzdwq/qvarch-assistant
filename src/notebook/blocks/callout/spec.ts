@@ -1,15 +1,24 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 import { heightPerLine } from '../detectors'
-import { CALLOUT_START, CALLOUTS, calloutMd } from './model'
+import { findFenceClose } from '../../domain/fence'
+import { CALLOUT_FENCE, CALLOUT_START, CALLOUTS, calloutMd } from './model'
 
-/** A coloured callout: `> [!info] …` and the `>` lines after it. */
+/**
+ * A coloured callout: `> [!info] …` and the `>` lines after it; or a fence ```callout info … ``` (as other tools write
+ * it — looked at before the fences are, or it would be plain code). Changed here — written back as `>` lines.
+ */
 export const calloutSpec: BlockSpec<'callout'> = {
   kind: 'callout',
   title: 'Выноска',
   detect: {
     by: 'lines',
-    order: 60,
+    order: 20,
     match(lines, i) {
+      const fence = CALLOUT_FENCE.exec(lines[i])
+      if (fence) {
+        const close = findFenceClose(lines, i + 1, fence[1])
+        return close < lines.length ? close : undefined
+      }
       if (!CALLOUT_START.test(lines[i])) return undefined
       let j = i + 1
       while (j < lines.length && /^>/.test(lines[j])) j++

@@ -2,6 +2,8 @@ import { shallowRef } from 'vue'
 import { CHECK_STEPS } from '@shared/check'
 import type { PwRecState } from '@shared/browser'
 import { fencedBlocksOf } from '@nb/domain/noteBlocks'
+import { PW_OWN_BROWSER } from '@nb/domain/blockInfo'
+import { noteBrowserPage } from '@nb/engine/noteBrowsers'
 import { doc, openFile, save, setText } from './notebook'
 
 /**
@@ -25,8 +27,28 @@ let tail: { note: string; key: string; lines: string[] } | undefined
 export async function startPwRec(path: string, key: string, url: string, o: { screen?: { w: number; h: number }; tail?: string[] } = {}): Promise<void> {
   watchPwRec()
   tail = o.tail?.length ? { note: path, key, lines: o.tail } : undefined
+  recIn = undefined
   await window.qa.browser('pwRecStart', path, key, url, o.screen)
   showView('browser')
+}
+
+/** A recording in a browser of the note (its name): the block then runs there too (unless it names a browser itself). */
+let recIn: { note: string; key: string; name: string } | undefined
+/** Recording in the note's browser `name` (its tab shown): from the page it is at, the note stays on the screen. */
+export async function startPwRecIn(path: string, key: string, name: string): Promise<void> {
+  watchPwRec()
+  const wc = noteBrowserPage(path, name)
+  if (wc === undefined) throw new Error(`Браузер «${name}» этой заметки не на экране`)
+  tail = undefined
+  recIn = { note: path, key, name }
+  await window.qa.nbPwRec(wc, path, key, name)
+}
+/** The block's info line after a recording: the browser it was recorded with — the Браузер's sign-in, or the note's browser. */
+function recordedHead(head: string, r: { note: string; key: string }): string {
+  const inNote = recIn && recIn.note === r.note && recIn.key === r.key ? recIn.name : undefined
+  recIn = undefined
+  if (inNote && !/\bbrowser=/.test(head)) return `${head} browser=${PW_OWN_BROWSER} in=${inNote}`
+  return /\bsession\b/.test(head) || inNote ? head : `${head} session`
 }
 
 const SAMPLE = /^\s*(await page\.goto\('https:\/\/example\.com'\)[\s\S]*)?$/
@@ -56,8 +78,8 @@ export async function stopPwRec(cancel = false): Promise<string | undefined> {
     const body = lines.slice(b.line0, b.line1 - 1).join('\n')
     const stamp = new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     const next = SAMPLE.test(body) ? code : `${body.replace(/\n*$/, '')}\n// записано ${stamp}\n${code}`
-    // the recording was made with the Браузер's sign-in — the block runs with it too
-    const info = /\bsession\b/.test(head) ? head : `${head} session`
+    // the recording was made with the Браузер's sign-in (or in the note's browser) — the block runs with it too
+    const info = recordedHead(head, r)
     lines.splice(b.line0 - 1, b.line1 - b.line0 + 1, info, ...next.split('\n'), lines[b.line1 - 1])
     setText(r.note, lines.join('\n'))
   }

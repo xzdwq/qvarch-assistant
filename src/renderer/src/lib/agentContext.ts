@@ -13,7 +13,7 @@ import { docAiFor } from '@nb/workspace/docAiStore'
 import { sharedDocOf } from '@shared/transport/space'
 import { refCardOf } from '@nb/workspace/sharedRefs'
 import { dirOf, docs, files, loadTree, noteName } from './notebook'
-import { messagesOf, showRoom } from './chat'
+import { showRoom, talkOf } from './chat'
 import { eventOf, eventsNow, issueOf } from './noteEvents'
 import { useTransport } from './transport'
 import { agentIdOfProfile } from './agents'
@@ -25,7 +25,7 @@ import { agentIdOfProfile } from './agents'
  */
 
 /** The note a chat lives in: its block's note (open, else found on the disk), a comment's shared note. */
-async function noteOfRoom(room: ChatRoom): Promise<string | undefined> {
+export async function noteOfRoom(room: ChatRoom): Promise<string | undefined> {
   if (room.doc) return docPaths.get(room.doc)
   const mark = `room: ${room.id}`
   for (const [p, d] of docs) if (d.loaded && d.text.includes(mark)) return p
@@ -92,7 +92,8 @@ export async function turnRequestFor(o: { turn: string; room: ChatRoom; message:
   await showRoom(o.room.id).catch(() => undefined)
   const path = await noteOfRoom(o.room)
   const text = path ? await textOf(path).catch(() => undefined) : undefined
-  const loaded = messagesOf(o.room.id)
+  // (with the ones written with no server: they wait to go, the agent reads them)
+  const loaded = talkOf(o.room.id)
   const list = loaded.some((m) => m.id === o.message.id) ? loaded : [...loaded, o.message]
   const question = list.findIndex((m) => m.id === o.message.id)
   const linked = linksIn(`${text ?? ''}\n${o.message.text}`)

@@ -27,6 +27,7 @@ import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
 import { startChat } from '../lib/chat'
 import { startAgents } from '../lib/agentTurns'
+import { startHarnessDriver } from '../lib/harness/harnessDriver'
 import { startIslandChat } from '../lib/islandChat'
 import { chatPortLocal } from '../lib/chatPortLocal'
 import { provideChatPort } from '@nb/blocks/chat/chatPort'
@@ -45,6 +46,7 @@ startMcpBridge()
 startChat()
 // this person's AI agents answer in the chats when called
 startAgents()
+startHarnessDriver()
 startIslandChat()
 // the chats every chat block, the feed and the comments of this window work with; a run's text sent into one too
 provideChatPort(chatPortLocal)
@@ -56,7 +58,7 @@ startSharedFolders()
 startSharedRunResults()
 startSharedAttachments()
 
-import { openHttp, openPlace, orderedViews, setMenu, view, VIEWS, type View } from '../lib/views'
+import { openHttp, openPlace, orderedViews, setMenu, showForRun, view, VIEWS, type View } from '../lib/views'
 import { placeOf } from '@shared/places'
 /** A day (and a block on it) to show — Моя работа opens it. */
 const focus = ref<{ day: string; entryId?: string; n: number }>()
@@ -92,6 +94,7 @@ onBeforeUnmount(offSettings)
 const DAY_VIEW_ALIASES: ReadonlySet<string> = new Set(['day', 'log'])
 const off = window.qa.onNavigate((nav) => {
   navigated = true
+  if (nav.run) return showForRun(nav.run)
   const v = nav.view as string | undefined
   if (!v || DAY_VIEW_ALIASES.has(v)) {
     if (nav.day || nav.entryId) openDay(nav.day ?? todayKey.value, nav.entryId)
@@ -111,6 +114,9 @@ function run(cmd: AppCommand): void {
 /** The browser too: once opened it stays (its pages live in the main process; hidden in other sections). */
 const brOpened = ref(false)
 watch(view, (v) => v === 'browser' && (brOpened.value = true), { immediate: true })
+/** The notes too: once opened they stay — a note shown again is as it was left (its scroll, its blocks' pages). */
+const nbOpened = ref(false)
+watch(view, (v) => v === 'notebook' && (nbOpened.value = true), { immediate: true })
 /** «Инструменты» too: the browser moved there lives in it. */
 const toolsOpened = ref(false)
 watch(view, (v) => v === 'tools' && (toolsOpened.value = true), { immediate: true })
@@ -120,6 +126,7 @@ watch(
   (m) => {
     if (!m) return
     if (placeOf(m, 'browser') === 'tools') brOpened.value = false
+    if (placeOf(m, 'notebook') === 'tools') nbOpened.value = false
   },
 )
 /** The sections one may ask for from inside another (the scenario recording: to the Браузер and back to the note). */
@@ -224,7 +231,7 @@ function setAppZoom(z: number): void {
     <SeriesAsk />
     <main class="tw:flex-1 tw:overflow-auto tw:min-h-0 tw:[&:has(>_.tools)]:not-[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.termslot)]:overflow-hidden" v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
-        <NotebookView v-if="view === 'notebook'" />
+        <div v-if="view === 'notebook'" class="termslot tw:hidden"></div>
         <WorkView v-else-if="view === 'work'" :settings="settings" :focus="focus" @settings="view = 'settings'" />
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
@@ -235,6 +242,7 @@ function setAppZoom(z: number): void {
       </Transition>
       <!-- the terminal's section: the one terminal is moved in while shown here (else it is in the bottom panel) -->
       <TermSlot v-show="view === 'terminal'" :active="view === 'terminal'" class="termkeep tw:[&&]:h-full" />
+      <div v-if="nbOpened" v-show="view === 'notebook'" class="nbkeep tw:h-full"><NotebookView :active="view === 'notebook'" /></div>
       <BrowserView v-if="brOpened" v-show="view === 'browser'" class="termkeep tw:[&&]:h-full" :active="view === 'browser'" @open-http="openHttp" />
       <div v-if="toolsOpened" v-show="view === 'tools'" class="toolskeep tw:h-full"><ToolsView :menu="settings.ui.menu" /></div>
     </main>

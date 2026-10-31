@@ -70,6 +70,7 @@ const TOOL_TOUCHES: Record<string, (a: Args, doc: string) => Seen[]> = {
   data_set: (a) => note('write', s(a.path)),
   note_run: (a) => [{ kind: 'component', op: 'run', ref: s(a.block) ? `${notePath(s(a.path))}#${s(a.block)}` : notePath(s(a.path)), label: s(a.block) || `${noteName(s(a.path))}: всё` }],
   pw_check: (a) => [{ kind: 'component', op: 'write', ref: `${notePath(s(a.path))}#${s(a.block)}`, label: `${s(a.block)} · ${s(a.kind)}` }],
+  pw_check_values: (a) => [{ kind: 'component', op: 'write', ref: `${notePath(s(a.path))}#${s(a.block)}`, label: `${s(a.block)} · значения ${s(a.kind)}` }],
   jira_issue: (a) => (s(a.key) ? jiraKey(s(a.key)) : [{ kind: 'search', op: 'search', ref: s(a.query), label: `Jira «${cut(s(a.query), 30)}»` }]),
   task_folder: (a) => [...jiraKey(s(a.key)), { kind: 'folder', op: 'write', ref: s(a.key) || s(a.title), label: s(a.title) || s(a.key) }],
   work_track: (a) => [{ kind: 'work', op: 'write', ref: s(a.key), label: s(a.label) || s(a.key) || 'работа' }],

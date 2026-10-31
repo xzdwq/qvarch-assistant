@@ -6,9 +6,11 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import Icon from '@renderer/components/Icon.vue'
 import { groupMessages, mentionable, mergeRooms, replyOf, type ChatMessage, type ChatReply } from '@shared/transport/chat'
+import { waitingMessage } from '@shared/transport/chatOffline'
 import { useChatPort } from './chatPort'
 import ChatMessageItem from './ChatMessageItem.vue'
 import ChatComposer from './ChatComposer.vue'
+import ChatHarnessPanel from './ChatHarnessPanel.vue'
 
 /**
  * `readonly` — the messages only (one who may read, not write: a reader of a shared note); `also` — the branches
@@ -118,8 +120,12 @@ async function showMessage(room: string, seq: number): Promise<void> {
           @show="(seq) => showMessage(m.room, seq)"
         />
       </template>
-      <!-- on their way: one's own bubbles, their state beside them (waiting for the server, going, failed) -->
-      <div v-for="o in pending" :key="o.clientId" class="tw:flex tw:flex-row-reverse tw:items-end tw:gap-6 tw:mt-2">
+      <!-- on their way: one's agent's answers written with no server — as its messages, greyed -->
+      <template v-for="o in pending" :key="o.clientId">
+      <div v-if="o.agent" class="tw:opacity-70" title="Ответ ИИ ждёт связи с сервером — уйдёт следом за вопросом">
+        <ChatMessageItem :m="waitingMessage(o, { id: me, name: '' })" :me="me" :members="members" readonly first last />
+      </div>
+      <div v-else class="tw:flex tw:flex-row-reverse tw:items-end tw:gap-6 tw:mt-2">
         <div class="tw:min-w-0 tw:max-w-[78%] tw:py-6 tw:px-12 tw:rounded-[16px] tw:bg-accent/20" :class="o.failed ? 'tw:[box-shadow:inset_0_0_0_1px_var(--down)]' : 'tw:opacity-70'">
           <div v-if="o.reply" class="tw:mb-2 tw:pl-6 tw:border-l-2 tw:border-l-accent tw:text-muted tw:text-[12px] tw:truncate">{{ o.reply.author }}: {{ o.reply.text }}</div>
           <div class="tw:text-text tw:text-[13px] tw:leading-[1.45] tw:whitespace-pre-wrap tw:wrap-anywhere">{{ o.text }}</div>
@@ -134,11 +140,13 @@ async function showMessage(room: string, seq: number): Promise<void> {
           <span v-else class="tw:text-dim">отправляется…</span>
         </span>
       </div>
+      </template>
     </div>
     <div class="tw:flex tw:items-center tw:gap-6 tw:h-20 tw:my-4 tw:px-6 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap">
       <span class="tw:min-w-0 tw:truncate">{{ working ? `${working.name} работает…` : typing }}</span>
       <button v-if="working" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-3 tw:h-20 tw:py-0 tw:px-8 tw:rounded-full tw:text-[11px]" title="Остановить ИИ" @click="chat.stopAgent(room)"><Icon name="stop" :size="9" />Стоп</button>
     </div>
+    <ChatHarnessPanel v-if="!readonly && chat.harness?.runOf(room)" :room="room" />
     <ChatComposer v-if="!readonly" ref="composer" v-model:reply="reply" :room="room" @sent="nextTick(toBottom)" />
   </div>
 </template>

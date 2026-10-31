@@ -7,6 +7,7 @@
  * the tree; a table, a request… — searched for.
  */
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { useDraft } from '@renderer/lib/drafts'
 import { VIEW_NODE_KINDS, type NotebookGraph, type ViewNode, type ViewNodeKind } from '@shared/notebook/graph'
 import type { VaultNode } from '@shared/vault'
 import { around, visibleGraph } from '@nb/domain/graph/notebookGraph'
@@ -74,7 +75,7 @@ const shown = computed<NotebookGraph | undefined>(() => {
   if (!lonely.value) g = { ...g, nodes: g.nodes.filter((n) => n.degree > 0 || n.path === lastNote.value) }
   return g
 })
-const q = ref('')
+const q = useDraft('graph:search')
 const found = computed<ReadonlySet<string> | undefined>(() => {
   const w = q.value.trim().toLowerCase()
   return w && shown.value ? new Set(shown.value.nodes.filter((n) => n.label.toLowerCase().includes(w) || (n.path ?? '').toLowerCase().includes(w)).map((n) => n.id)) : undefined

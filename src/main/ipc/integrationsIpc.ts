@@ -6,6 +6,7 @@ import { cleanFileName } from '../../shared/transport/chat'
 import { docAiOf } from '../../shared/agent/docAi'
 import type { AppContext } from '../app/appContext'
 import { LocalChats } from '../transport/localChats'
+import { ChatCache } from '../transport/chatCache'
 import { ReactionStats } from '../transport/reactionStats'
 import { handle, listen } from './router'
 
@@ -37,6 +38,9 @@ export function registerIntegrationsIpc(app: AppContext): void {
   handle('localChats', () => local.list())
   handle('localChatSave', (_e, chat) => local.save(chat))
   handle('localChatDrop', (_e, id) => local.drop(String(id)))
+  const cache = new ChatCache(app.store.root)
+  handle('chatCache', () => cache.load())
+  handle('chatCacheSave', (_e, c) => cache.save(c))
   const reactions = new ReactionStats(app.store.root)
   handle('chatQuickReactions', () => reactions.quick())
   handle('chatReactionPut', (_e, emoji) => reactions.put(String(emoji)))

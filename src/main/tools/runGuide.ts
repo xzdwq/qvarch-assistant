@@ -74,7 +74,7 @@ await step('Создать', async () => {
 return { url: page.url() }
 \`\`\`
 - Доступно: page, context, browser, expect (из @playwright/test), devices, step(имя, fn) — шаги видны в отчёте и трассировке, set(), console, переменные заметки, runs.
-- Флаги: session — войти как пользователь во встроенном браузере Qvarch (его cookies, в том числе SSO/ADFS) — ставь для внутренних систем; headed — показать окно; notrace — без трассировки; browser=chrome; soft — ошибка ожидаема и не останавливает прогон; timeout=… (по умолчанию 120).
+- Флаги: session — войти как пользователь во встроенном браузере Qvarch (его cookies, в том числе SSO/ADFS) — ставь для внутренних систем; headed — показать окно; notrace — без трассировки; browser=chrome; browser=qvarch — прямо во встроенном браузере Qvarch (своя вкладка раздела «Браузер»; с in=<имя> — от браузера-блока этой заметки: отдельная страница с тем же входом, открытая там, где сейчас браузер, или по его url; заметка не обязана быть на экране, человек может работать дальше, его компонент показывает ход прогона; ввод обычный — fill, type, press; одна вкладка: newPage/newContext недоступны); soft — ошибка ожидаема и не останавливает прогон; timeout=… (по умолчанию 120).
 - Локаторы: предпочитай getByRole(роль, { name }) / getByLabel / getByPlaceholder / getByText / getByTestId. Меню и списки Quasar рисуются в <body>: page.locator('.q-menu .q-item', { hasText: '…' }). Иконочные кнопки Quasar: .q-btn с <i> где текст иконки ровно 'add'.
 - Ждать по признакам (expect(...).toBeVisible/toBeEnabled, page.waitForResponse), не таймерами.
 - Не сохраняй и не удаляй данные на стенде без прямой просьбы пользователя.

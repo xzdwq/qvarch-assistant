@@ -39,7 +39,7 @@ export const itemName = (x: RunItem) => (x.kind === 'loop' ? x.loop.info.name : 
 /** An item's error does not stop the run (soft). */
 export const itemIsSoft = (x: RunItem) => (x.kind === 'loop' ? !!x.loop.info.soft : !!x.info.soft)
 /** What went wrong with an item's last run in an env. */
-export const itemError = (x: RunItem, env: RunEnv) => (x.kind === 'loop' ? env.loops[x.key]?.error : env.runs[x.key]?.error) ?? 'Ошибка'
+export const itemError = (x: RunItem, env: RunEnv) => (x.kind === 'loop' ? env.loops[env.keyNow(x.key)]?.error : env.runs[env.keyNow(x.key)]?.error) ?? 'Ошибка'
 
 /** A Playwright block anywhere in a loop (in a loop inside it too): its files are the block's — passes one by one. */
 export function loopHasPw(text: string, loop: LoopRange): boolean {

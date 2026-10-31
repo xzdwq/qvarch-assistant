@@ -5,6 +5,7 @@
  * head and messages, answered right here. A comment — «В заметке» opens its note at its place.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useDraft } from '@renderer/lib/drafts'
 import { attachWord, authorName, feedSections, isComment, unreadOf, type ChatRoom } from '@shared/transport/chat'
 import { notifiesIn } from '@shared/transport/constants'
 import Icon from '@renderer/components/Icon.vue'
@@ -26,7 +27,7 @@ watch(
   (s) => (rows.value = rowsOf(s, FEED_ROWS)),
 )
 
-const q = ref('')
+const q = useDraft('chatfeed:search')
 const matches = (r: ChatRoom) => {
   const w = q.value.trim().toLowerCase()
   return !w || `${r.title} ${r.members.map((m) => m.name).join(' ')} ${r.last?.text ?? ''}`.toLowerCase().includes(w)

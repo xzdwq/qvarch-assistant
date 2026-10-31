@@ -30,7 +30,11 @@ export interface ChatReply {
   author: string
   text: string
 }
-/** A message on its way: shown greyed until the server keeps it; a failed one waits for «Повторить». */
+/**
+ * A message on its way: shown greyed until the server keeps it; a failed one waits for «Повторить». Written with no
+ * server (chatOffline): when, its number while it waits; an agent's answer — the agent, its chain step, its mentions,
+ * what goes with it.
+ */
 export interface Outgoing {
   room: string
   clientId: string
@@ -38,6 +42,12 @@ export interface Outgoing {
   /** The message it answers. */
   reply?: ChatReply
   failed?: string
+  at?: number
+  pseq?: number
+  agent?: { id: string; name: string }
+  chain?: number
+  mentions?: string[]
+  attach?: ChatAttach
 }
 /** The piece of an answered message kept with the answer, characters. */
 export const REPLY_TEXT_MAX = 160

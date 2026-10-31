@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import { labelWithoutKey, pickableTasks, plainTask } from '@shared/jira'
 import { plannedWithin } from '@shared/plan'
 import { formatDuration, formatHM } from '@shared/timeline'
@@ -28,8 +29,8 @@ const emit = defineEmits<{
 
 const jira = useJira()
 const minutes = ref(60)
-const custom = ref('')
-const q = ref('')
+const custom = useDraft('plan:custom')
+const q = useDraft('plan:search')
 
 const planKinds = computed(() => kinds.value.filter((k) => !k.hidden))
 const tasks = computed(() => {

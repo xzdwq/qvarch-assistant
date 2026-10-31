@@ -27,8 +27,8 @@ const { recorder, recInto, startRec, stopRec, transcribeInto } = voice
 const { toEvent } = events
 const { pickImages } = images
 const { say } = toast
-/** The editor's key: its pane and note (the editor is registered under it while shown). */
-const editorKey = () => NoteEditors.key(props.p)
+/** The editor's key: its pane and note (registered under it while made — the pane's other notes are kept made too). */
+const editorKey = () => NoteEditors.key(props.p, props.path)
 const setEditor = (el: unknown) => editors.set(editorKey(), el)
 
 /** The note's empty places (the margins, under the text, the path and dates lines' blank parts): the cursor stays in the note. */
@@ -77,7 +77,7 @@ async function onTitleKey(e: KeyboardEvent): Promise<void> {
       <span class="leaf tw:text-text-2"><NodeMark v-if="emojiOf(path) || colorOf(path)" :emoji="emojiOf(path)" :color="colorOf(path)" icon="note" :size="13" />{{ noteName(path) }}</span>
     </div>
     <input
-      :ref="(el) => el && editors.setTitle(p.id, el as HTMLInputElement)"
+      :ref="(el) => el && editors.setTitle(editorKey(), el as HTMLInputElement)"
       class="ntitle tw:last:flex-1 tw:box-border tw:w-full tw:max-w-(--note-max,820px) tw:mt-18 tw:mr-auto tw:mb-6 tw:ml-auto tw:pt-0 tw:pr-[calc(24px+var(--note-pad,0px))] tw:pb-0 tw:pl-[calc(52px+var(--note-pad,0px))] tw:border-0 tw:bg-transparent tw:text-text-hi tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[1.8em] tw:[&&]:font-bold tw:outline-none"
       :value="noteName(path)"
       spellcheck="false"

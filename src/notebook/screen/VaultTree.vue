@@ -4,6 +4,8 @@ import type { VaultNode } from '@shared/vault'
 import { treeRows } from '@shared/vaultTree'
 import Icon from '@renderer/components/Icon.vue'
 import NodeMark from '@renderer/components/NodeMark.vue'
+import AiSignalMark from '@renderer/components/AiSignalMark.vue'
+import { aiSignalOf } from '@renderer/lib/aiSignals'
 import { isDirty } from '@nb/workspace/noteDocs'
 import { curPane, layout, openFile } from '@nb/workspace/paneLayout'
 import { tree } from '@nb/workspace/vaultTreeStore'
@@ -90,6 +92,7 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
       <Icon v-if="r.node.dir" :name="isOpen(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev tw:[&&]:flex-none tw:text-muted" />
       <NodeMark v-if="r.node.dir && r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="folder" :size="14" class="fic tw:[&&]:flex-none tw:[&&]:text-accent-fg" />
       <Icon v-else-if="r.node.dir" :name="isOpen(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic tw:[&&]:flex-none tw:text-accent-fg" :style="r.node.color ? { color: r.node.color } : {}" />
+      <AiSignalMark v-else-if="aiSignalOf(r.node.path)" :signal="aiSignalOf(r.node.path)!" :size="13" class="tw:ml-17" />
       <NodeMark v-else-if="r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="note" :size="13" class="fic emo tw:[&&]:flex-none tw:[&&]:text-accent-fg tw:ml-14 tw:-mr-3" />
       <span v-else-if="r.node.color" class="fmark tw:flex-none tw:w-10 tw:h-10 tw:mt-0 tw:mr-2 tw:mb-0 tw:ml-19 tw:rounded-r2" :style="{ background: r.node.color }"></span>
       <Icon v-else :name="r.node.board ? 'presentation' : 'note'" :size="13" class="fic note tw:[&&]:flex-none tw:ml-17 tw:text-muted" />

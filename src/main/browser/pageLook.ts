@@ -28,19 +28,38 @@ function cleanLook(v: unknown): PageLook {
   return { url: str(l.url, 500), title: str(l.title, 200), headings: (Array.isArray(l.headings) ? l.headings : []).slice(0, 20).map((h) => str(h, 80)), ...(typeof l.dialog === 'string' ? { dialog: str(l.dialog, 80) } : {}), items, more: typeof l.more === 'number' ? l.more : 0 }
 }
 
-/** A tab's page loaded (or given up waiting), then a moment for its scripts to draw it. */
-function loaded(wc: WebContents, ms = 20_000): Promise<void> {
+/** A load quiet this long — the page settled (a redirect starts the next load sooner). */
+const SETTLE_MS = 2000
+/**
+ * A tab's page settled: loaded, and no new load for a moment — a sign-in goes through pages of its own (a login
+ * page that passes by itself, its redirects); the one they end at is the page. Given up after `ms`; then a moment for
+ * its scripts to draw it.
+ */
+function settled(wc: WebContents, ms = 30_000): Promise<void> {
   return new Promise((done) => {
-    const finish = () => (clearTimeout(timer), setTimeout(done, 800))
-    const timer = setTimeout(finish, ms)
-    if (!wc.isLoading()) return finish()
-    wc.once('did-stop-loading', finish)
+    let quiet: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      clearTimeout(limit)
+      clearTimeout(quiet)
+      wc.off('did-start-loading', busy)
+      wc.off('did-stop-loading', calm)
+      setTimeout(done, 800)
+    }
+    const busy = () => clearTimeout(quiet)
+    const calm = () => {
+      clearTimeout(quiet)
+      quiet = setTimeout(finish, SETTLE_MS)
+    }
+    const limit = setTimeout(finish, ms)
+    wc.on('did-start-loading', busy)
+    wc.on('did-stop-loading', calm)
+    if (!wc.isLoading()) calm()
   })
 }
 export async function lookAtTab(tab: Tab, waitLoad: boolean): Promise<PageLook> {
   listen()
   const wc = tab.view.webContents
-  if (waitLoad) await loaded(wc)
+  if (waitLoad) await settled(wc)
   return new Promise<PageLook>((ok, fail) => {
     const id = randomUUID()
     const timer = setTimeout(() => (pending.delete(id), fail(new Error('Страница не ответила — она ещё грузится или занята'))), 8000)

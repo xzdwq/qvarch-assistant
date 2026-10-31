@@ -1,4 +1,5 @@
 import { app as electronApp } from 'electron'
+import { join } from 'node:path'
 import { BROWSER_METHODS } from '../../shared/browser'
 import { SQL_METHODS } from '../../shared/sql'
 import { TEST_FILES_METHODS } from '../../shared/testFiles'
@@ -33,7 +34,13 @@ export function registerBrowserIpc(app: AppContext): void {
 
   // the notes' browser component
   const nbEmit = (host: Electron.WebContents, type: string, payload: unknown) => emit(host, 'onNoteBrowser', type, payload)
-  setupNoteBrowser(nbEmit, () => browser.uaOverride())
+  setupNoteBrowser(nbEmit, () => browser.uaOverride(), {
+    // the section's pages' own (a scenario's recorder; its other parts answer the section's tabs only)
+    preload: join(app.mainDir, '../preload/browser.js'),
+    navigated: (wc, url) => browser.scenario.onNavigated(wc, url),
+    domReady: (wc) => browser.scenario.onDomReady(wc),
+  })
   handle('nbNet', (e, id, on, preserve) => netListen(e.sender, Number(id), !!on, !!preserve, nbEmit))
   handle('nbNetClear', (e, id) => netClear(e.sender, Number(id)))
+  handle('nbPwRec', (e, id, note, key, name) => browser.scenario.startIn(e.sender, String(note), String(key), Number(id), String(name)))
 }

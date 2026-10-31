@@ -15,6 +15,8 @@ export interface BlockRunRequest {
   noteText: string
   /** A query: run it, or show its plan (with or without running it). */
   sqlMode?: SqlMode
+  /** Values of its check to run anew though remembered (a matrix's — by their labels or values). */
+  recheck?: string[]
 }
 
 export interface ReportContext {

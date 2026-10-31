@@ -22,6 +22,14 @@ const { startRename } = editing
 const { runOnNode, moreEmoji } = treeMenu
 const { panelRef, style } = usePopover(() => props.menu, { place: atPoint }, openWhile(treeMenu.treeMenu))
 const reveal = (p: string) => window.qa.vaultReveal(p)
+/** The full path on the computer put on the clipboard (said where it is). */
+async function copyPath(p: string): Promise<void> {
+  try {
+    toast.say(`Путь скопирован: ${await window.qa.vaultCopyPath(p)}`)
+  } catch (e) {
+    toast.say(remoteError(e))
+  }
+}
 /** A folder shared; the code is given by «Совместная работа» of any of its notes. */
 async function sharePath(dir: string): Promise<void> {
   try {
@@ -57,6 +65,7 @@ const markColors = Array.from({ length: 7 }, (_, i) => cssHex(`--note-mark-${i +
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => startRename(n!.path))"><Icon name="pencil" :size="13" />Переименовать</button>
       <button v-if="!menu.node.dir" class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" title="Копия рядом: «Копия - имя» (если такая есть — «Копия Копия - имя»…)" @click="runOnNode((n) => copyDoc(n!.path))"><Icon name="copy" :size="13" />Сделать копию</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" @click="runOnNode((n) => reveal(n!.path))"><Icon name="external" :size="13" />Показать в проводнике</button>
+      <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" title="Полный путь на компьютере — в буфер обмена" @click="runOnNode((n) => copyPath(n!.path))"><Icon name="clipboard" :size="13" />Скопировать путь</button>
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:[.zoom_&]:hover:text-text tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text tw:text-[12.5px] tw:text-left tw:hover:bg-accent/20" :title="menu.node.dir ? 'Вся папка одним файлом .qvdoc: подпапки, заметки, доски, картинки — откроется на другом компьютере' : 'Один файл .qvdoc: с картинками, аудио, досками — откроется на другом компьютере'" @click="runOnNode((n) => exportDoc(n!.path))"><Icon name="upload" :size="13" />{{ menu.node.dir ? 'Экспорт папки в файл…' : 'Экспорт в файл…' }}</button>
       <div class="csep tw:h-1 tw:my-4 tw:mx-6 tw:bg-white/8"></div>
       <div class="ccolors tw:flex tw:items-center tw:gap-6 tw:pt-4 tw:pr-10 tw:pb-6 tw:pl-10" title="Цветная метка">

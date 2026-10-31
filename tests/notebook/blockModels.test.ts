@@ -3,7 +3,7 @@ import { chartMd, chartTypeOf, parseChart, seriesColor } from '../../src/noteboo
 import { calloutMd, parseCallout } from '../../src/notebook/blocks/callout/model'
 import { parseTable, tableMd } from '../../src/notebook/blocks/table/model'
 import { parseWork, workMd } from '../../src/notebook/blocks/work/model'
-import { isCodeLang, parseInfo } from '../../src/notebook/domain/blockInfo'
+import { infoMd, isCodeLang, parseInfo } from '../../src/notebook/domain/blockInfo'
 import { LOOP_MAX, LOOP_PARALLEL_LIMIT, parseLoopInfo } from '../../src/notebook/domain/loop'
 import { resolvePath } from '../../src/notebook/domain/values'
 
@@ -22,6 +22,15 @@ describe('info line settings', () => {
     const bad = parseInfo('ts name=ctx out=all view=list timeout=-1 browser=opera constructor=x toString=1')
     expect(bad).toEqual({ lang: 'ts', run: false, lib: false })
     expect(isCodeLang('typescript') && isCodeLang('js') && !isCodeLang('python')).toBe(true)
+  })
+  it('a scenario in the app’s own browser: the note’s browser it names, written back only with it', () => {
+    const i = parseInfo('ts playwright name=s browser=qvarch in=site')
+    expect(i).toMatchObject({ pw: true, browser: 'qvarch', in: 'site' })
+    expect(infoMd(i)).toBe('ts playwright name=s browser=qvarch in=site')
+    expect(parseInfo('ts playwright in=a.b').in).toBeUndefined()
+    // another browser chosen: where in the note is forgotten
+    expect(infoMd({ ...i, browser: 'chrome' })).toBe('ts playwright name=s browser=chrome')
+    expect(infoMd({ ...i, in: undefined })).toBe('ts playwright name=s browser=qvarch')
   })
   it('a loop: capped counts, the defaults kept for bad ones', () => {
     expect(parseLoopInfo('name=rows parallel=99 max=0 timeout=abc soft')).toEqual({ name: 'rows', parallel: LOOP_PARALLEL_LIMIT, max: LOOP_MAX, timeout: 600, soft: true })

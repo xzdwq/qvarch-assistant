@@ -1,12 +1,15 @@
 import { rmSync } from 'node:fs'
 import type { WebContents } from 'electron'
 import type { EmitBatch } from '../../notebook/domain/emits'
-import type { QaApi, PwResult, PwStep } from '../../shared/api'
+import type { QaApi, PwResult, PwStep, PwTarget } from '../../shared/api'
 import { PW_BROWSERS } from '../../notebook/domain/blockInfo'
 import { LOOP_MAX, LOOP_MAX_LIMIT, LOOP_PARALLEL_LIMIT, type LoopResult } from '../../notebook/domain/loop'
 import type { AppContext } from '../app/appContext'
 import { ProcessSupervisor } from '../process/processSupervisor'
 import { browserCookies, cookiesBack, originsOf } from '../runner/pwSession'
+import { openCdpBridge, type OpenBridge } from '../runner/cdpBridgeServer'
+import { lendPage, type LentPage } from '../runner/lendPage'
+import { startAddressOf } from '../../shared/browser/scenarioAddress'
 import { sweepPwLeftovers } from '../runner/pwLeftovers'
 import { emit, handle, listen } from './router'
 
@@ -93,16 +96,57 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
     // (a new run's files go to the same folder: the old process must not write there any more)
     restart: 'kill',
   })
+  /** The runs' pages of the app's own browser being given back (a run restarted waits for its old one's). */
+  const giving = new Map<string, Promise<void>>()
   handle('runPw', async (e, runId, job) => {
     const id = str(runId)
     const browser = app.browser!
-    const cookies = job?.session ? await browserCookies().catch(() => []) : undefined
+    // the app's own browser: its profile is the Браузер's already (no sign-ins to hand over)
+    const own = job?.browser === 'qvarch'
+    const cookies = job?.session && !own ? await browserCookies().catch(() => []) : undefined
     // the sites the scenario opens: their localStorage from the Браузер (a site's settings — its layout — live there)
-    const origins = job?.session ? originsOf(str(job.code)) : []
+    const origins = job?.session && !own ? originsOf(str(job.code)) : []
     const storage = origins.length ? await browser.localStorageOf(origins).catch(() => []) : []
     const note = str(job?.note)
     const dir = app.vault.runDir(note, str(job?.key))
     if (pw.has(id)) pw.finish(id, { ok: false, error: 'Перезапущено', logs: [], ms: 0 })
+    await giving.get(id)
+    // a page of the app's own browser lent to the run, the bridge to it open
+    let lent: LentPage | undefined
+    let bridge: OpenBridge | undefined
+    // the section's tab drawn: the Браузер shown while the run goes (the window not brought forward), then back
+    let shown = false
+    const showRun = (run: 'start' | 'end') => {
+      const main = app.windows.main
+      if (main && !main.isDestroyed()) emit(main.webContents, 'onNavigate', run === 'start' ? { view: 'browser', run } : { run })
+    }
+    if (own) {
+      const t = job.target
+      const target: PwTarget =
+        t?.kind === 'note' ? { kind: 'note', note, name: str(t.name), ...(typeof t.url === 'string' && t.url ? { url: t.url } : {}), ...(Number.isInteger(t.wc) ? { wc: Number(t.wc) } : {}) } : { kind: 'section' }
+      // (a run started by hand shows the section's tab; one of the AI, the harness, a schedule leaves the screen be)
+      if (target.kind === 'section' && !job.quiet) {
+        shown = true
+        showRun('start')
+      }
+      try {
+        lent = await lendPage(browser, e.sender, target, `${note}#${str(job.key)}`, startAddressOf(str(job.code)), (f) => !e.sender.isDestroyed() && emit(e.sender, 'onNoteRunFrame', f))
+        bridge = await openCdpBridge(lent.source)
+      } catch (err) {
+        lent?.release()
+        if (shown) showRun('end')
+        throw err
+      }
+    }
+    // (known as being given back from now on: a restart of this run waits for it before lending the page again)
+    let givenBack!: () => void
+    if (lent) giving.set(id, new Promise<void>((ok) => (givenBack = ok)))
+    const giveBack = async () => {
+      await bridge?.close()
+      lent?.release()
+      if (shown) showRun('end')
+      givenBack()
+    }
     rmSync(dir, { recursive: true, force: true })
     const sec = Math.min(3600, Math.max(5, Number(job.timeoutSec) || 120))
     // (whatever this run ends with — the older leftovers taken away after it, in the background)
@@ -120,11 +164,14 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
           name: str(job.name) || 'Сценарий',
           suite: (note.split('/').pop() ?? note).replace(/\.md$/i, ''),
           browser: (PW_BROWSERS as readonly string[]).includes(job.browser) ? job.browser : 'msedge',
+          own: bridge ? { url: bridge.url, label: lent!.label } : undefined,
           headed: !!job.headed,
           trace: job.trace !== false,
           ignoreHTTPSErrors: browser.settings().acceptBadCerts,
           cookies,
           storage,
+          ...(Array.isArray(job.memo) ? { memo: job.memo } : {}),
+          ...(Array.isArray(job.recheck) ? { recheck: job.recheck.map(String).slice(0, 200) } : {}),
         },
       },
       timeoutSec: sec,
@@ -150,7 +197,13 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
         }
       },
       exitError: (c) => (c ? `Процесс Playwright завершился (код ${c})` : 'Процесс Playwright завершился'),
-    }).finally(() => void sweepPwLeftovers())
+    }).finally(() => {
+      void sweepPwLeftovers()
+      // the lent page given back: what the run set on it undone
+      if (!lent) return
+      const mine = giving.get(id)
+      void giveBack().finally(() => giving.get(id) === mine && giving.delete(id))
+    })
   })
   listen('runPwStop', (_e, runId) => pw.stop(str(runId), 'Остановлено'))
   // Playwright's temp folders runs killed before their browser closed left behind: at the start, and after a run

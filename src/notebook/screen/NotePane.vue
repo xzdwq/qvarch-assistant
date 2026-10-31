@@ -7,7 +7,7 @@ import NoteBody from './NoteBody.vue'
 import NotebookGraph from './graph/NotebookGraph.vue'
 import ErTab from '@nb/blocks/sql/er/ErTab.vue'
 import { viewKindOf, type ViewKind } from '@nb/workspace/viewTabs'
-import type { Component } from 'vue'
+import { reactive, watch, type Component } from 'vue'
 
 /** What each kind of view tab shows. */
 const VIEW_BODY: Record<ViewKind, Component> = { graph: NotebookGraph, er: ErTab }
@@ -16,12 +16,21 @@ const VIEW_BODY: Record<ViewKind, Component> = { graph: NotebookGraph, er: ErTab
  * One pane of the notes: its tab row, its open file (or what to do when there is none), and — while a tab is
  * dragged — the drop zones: at the edges a split, over the other pane a move there.
  */
-defineProps<{ p: Pane; pi: number }>()
+const props = defineProps<{ p: Pane; pi: number }>()
 const { actions, search, tabs } = useNotebookScreen()
 const { newNote, newBoard } = actions
 const { toggleSearch } = search
 const { tabDrag, zone, onZoneDrop } = tabs
 const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
+/** The notes of the pane shown at least once (made when first shown, not all at the start). */
+const shownOnce = reactive(new Set<string>())
+watch(
+  () => props.p.active,
+  (a) => a && !viewKindOf(a) && shownOnce.add(a),
+  { immediate: true },
+)
+/** The open notes kept made: shown once, still in a tab (a view tab — the graph, a scheme — is made each time). */
+const keptTabs = (p: Pane) => p.tabs.filter((t) => shownOnce.has(t.path) && !viewKindOf(t.path))
 </script>
 
 <template>
@@ -29,8 +38,9 @@ const tabOf = (p: Pane) => p.tabs.find((t) => t.path === p.active)
     <PaneTabs :p="p" :pi="pi" />
 
     <component :is="VIEW_BODY[viewKindOf(p.active)!]" v-if="tabOf(p) && viewKindOf(p.active)" :key="`${p.id}:${p.active}`" :pi="pi" :path="p.active!" />
-    <NoteBody v-else-if="tabOf(p) && p.active" :p="p" :pi="pi" :path="p.active" />
-    <div v-else class="pempty tw:flex-1 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-10 tw:text-muted">
+    <!-- each note shown once stays while its tab is open: back to it — as it was left (its scroll, its blocks) -->
+    <NoteBody v-for="t in keptTabs(p)" v-show="t.path === p.active" :key="t.path" :p="p" :pi="pi" :path="t.path" />
+    <div v-if="!tabOf(p)" class="pempty tw:flex-1 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-10 tw:text-muted">
       <Icon name="notebook" :size="34" />
       <p class="tw:m-0">Нет открытой заметки</p>
       <div class="erow tw:flex tw:gap-8">

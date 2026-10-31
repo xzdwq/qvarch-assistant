@@ -10,13 +10,13 @@ import { saveRunsSoon } from './runStore'
  * One thing run in its env: a block by its kind's runner, a loop with all its passes. What is thrown before a run
  * begins (a broken request text, no connections list…) becomes the item's error — a run never throws.
  */
-export async function runItem(item: RunItem, env: RunEnv, noteText: string, opts: { sqlMode?: SqlMode } = {}): Promise<boolean> {
+export async function runItem(item: RunItem, env: RunEnv, noteText: string, opts: { sqlMode?: SqlMode; recheck?: string[] } = {}): Promise<boolean> {
   try {
     switch (item.kind) {
       case 'loop':
         return await runLoop(item.loop, env, noteText, { runChild: runItem, stopChild: stopItem })
       default:
-        return await BLOCK_RUNNERS[item.kind].run({ env, item, noteText, sqlMode: opts.sqlMode })
+        return await BLOCK_RUNNERS[item.kind].run({ env, item, noteText, sqlMode: opts.sqlMode, ...(opts.recheck?.length ? { recheck: opts.recheck } : {}) })
     }
   } catch (e) {
     recordItemError(item, env, errorText(e))
@@ -36,7 +36,7 @@ export function stopItem(item: RunItem, env: RunEnv): void {
 function recordItemError(item: RunItem, env: RunEnv, error: string): void {
   switch (item.kind) {
     case 'loop':
-      Object.assign((env.loops[item.key] ??= { state: 'error', at: Date.now(), passes: [] }), { state: 'error', error })
+      Object.assign((env.loops[env.keyNow(item.key)] ??= { state: 'error', at: Date.now(), passes: [] }), { state: 'error', error })
       return
     default:
       env.recordRun(item.key, { state: 'error', at: Date.now(), error })

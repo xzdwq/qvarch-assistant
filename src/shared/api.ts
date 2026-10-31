@@ -5,6 +5,10 @@ import type { DocAi } from './agent/docAi'
 import type { CronJob, CronRun } from './cronJobs'
 import type { ValueFileApi } from './valueFiles'
 import type { LocalChat } from './transport/localChat'
+import type { ChatCacheData } from './transport/chatOffline'
+import type { HarnessSettings } from './agent/harness/constants'
+import type { HarnessRun } from './agent/harness/model'
+import type { HarnessGuide } from './agent/harness/guides'
 import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
 import type { Dock } from './island'
@@ -162,7 +166,11 @@ export interface QaApi {
   command(cmd: AppCommand): void
 
   onDayState(cb: (msg: DayStateMessage) => void): () => void
-  onNavigate(cb: (nav: { day?: string; entryId?: string; view?: 'day' | 'log' | 'settings' | 'browser' }) => void): () => void
+  /**
+   * A place to show; `run` — a scenario run in the Браузер's tab: `start` — shown for it, `end` — back to where the
+   * window was (if the person stayed there meanwhile).
+   */
+  onNavigate(cb: (nav: { day?: string; entryId?: string; view?: 'day' | 'log' | 'settings' | 'browser'; run?: 'start' | 'end' }) => void): () => void
   /** Global hotkey: expand the island and focus the label input. */
   onIslandHotkey(cb: () => void): () => void
   /** From main: a native drag has ended (`moved`), or the cursor went far away (`leave`, a safety net). */
@@ -204,6 +212,9 @@ export interface QaApi {
   localChatSave(chat: LocalChat): Promise<void>
   /** A local chat taken away (brought to the server). */
   localChatDrop(id: string): Promise<void>
+  /** The server's chats as last seen (none kept — null): shown when the app starts with no server. */
+  chatCache(): Promise<ChatCacheData | null>
+  chatCacheSave(cache: ChatCacheData): Promise<void>
   /** The reactions offered first (the ones this person puts most). */
   chatQuickReactions(): Promise<string[]>
   /** A reaction put (counted): the reactions offered first now. */
@@ -358,6 +369,8 @@ export interface QaApi {
   /** Stops a recording's transcription (running or waiting) — its recording was deleted. */
   vaultTranscribeCancel(key: string): void
   vaultReveal(path: string): void
+  /** A note's / folder's full path on the computer put on the clipboard (the path). */
+  vaultCopyPath(path: string): Promise<string>
   /** A colour mark of a note / folder (undefined — none). */
   vaultSetColor(path: string, color?: string): Promise<void>
   /** An emoji mark of a note / board / folder (undefined — none). */
@@ -385,6 +398,8 @@ export interface QaApi {
   runPwStop(runId: string): void
   /** The steps of a Playwright run going on. */
   onPwProgress(cb: (runId: string, steps: PwStep[]) => void): () => void
+  /** A note's browser's run going on apart from the screen: its page as it is now (its component shows it). */
+  onNoteRunFrame(cb: (f: NoteRunFrame) => void): () => void
   /** A run's emit() parts as they come (code, a scenario, a loop's head): numbered batches, in order. */
   onRunEmit(cb: (runId: string, batch: EmitBatch) => void): () => void
   /** A file of a block's last run (a screenshot). */
@@ -396,6 +411,8 @@ export interface QaApi {
   /** A note's browser tab (a webview, by its webContents id): its requests listened to, or no more. */
   nbNet(id: number, on: boolean, preserve?: boolean): Promise<void>
   nbNetClear(id: number): Promise<void>
+  /** A scenario recorded in a note's browser tab (a webview, by its webContents id; `name` — the browser block's). */
+  nbPwRec(id: number, note: string, key: string, name: string): Promise<void>
   /** A note's browser news: open (a page asked for a new window), net (a tab's requests). */
   onNoteBrowser(cb: (type: string, payload: unknown) => void): () => void
   /** A page opened in the Браузер section (shown). */
@@ -436,6 +453,17 @@ export interface QaApi {
   /** An agent's turn (a chat called it): its answer when done. */
   agentRun(req: TurnRequest): Promise<TurnAnswer>
   agentStop(turn: string): void
+  /** The harness: its settings (a new chat's), each room's own (set in its chat), each room's last run (kept after every step). */
+  harnessState(): Promise<{ settings: HarnessSettings; rooms: Record<string, HarnessSettings>; runs: HarnessRun[] }>
+  harnessSaveSettings(s: HarnessSettings): Promise<HarnessSettings>
+  harnessSaveRoomSettings(room: string, s: HarnessSettings): Promise<HarnessSettings>
+  harnessSaveRun(run: HarnessRun): Promise<void>
+  harnessDropRun(room: string): Promise<void>
+  /** The harness's instructions for kinds of tasks (the app's set and the person's): listed, saved, deleted, back to the app's text. */
+  harnessGuides(): Promise<HarnessGuide[]>
+  harnessGuideSave(g: HarnessGuide): Promise<HarnessGuide[]>
+  harnessGuideRemove(id: string): Promise<HarnessGuide[]>
+  harnessGuideReset(id: string): Promise<HarnessGuide[]>
   /** A tool an agent called during a turn. */
   onAgentTrace(cb: (turn: string, line: TraceLine) => void): () => void
   /** The document (with its pictures, boards, results if chosen) into one .qvdoc file; undefined — cancelled. */
@@ -477,6 +505,20 @@ export interface PwStep {
   state: 'run' | 'ok' | 'error'
   error?: string
 }
+/**
+ * The page of the app's own browser a scenario runs in: the block's own tab of the Браузер section, or a browser of
+ * a note (`name` — its block's): a page of its own, run apart from the screen, opened where the browser shows now
+ * (`wc` — its webview, when it is on the screen) or at its block's address (`url`).
+ */
+export type PwTarget = { kind: 'section' } | { kind: 'note'; note: string; name: string; url?: string; wc?: number }
+/** A note's browser's run going on, as its component shows it: a picture of the page now; ended — none. */
+export interface NoteRunFrame {
+  note: string
+  name: string
+  /** A JPEG data URL. */
+  frame?: string
+  ended?: boolean
+}
 export interface PwJob {
   code: string
   ts: boolean
@@ -491,6 +533,14 @@ export interface PwJob {
   key: string
   name: string
   browser: PwBrowser
+  /** The app's own browser (browser=qvarch): which page it runs in. */
+  target?: PwTarget
+  /** Started not by hand (the AI, the harness, a schedule): the screen is left as it is. */
+  quiet?: boolean
+  /** What its run before gave (its value — a matrix's outcomes: kept while their inputs are the same). */
+  memo?: unknown
+  /** Values to run anew though remembered (their labels or values). */
+  recheck?: string[]
   headed: boolean
   trace: boolean
   /** With the Браузер section's cookies (its sign-ins). */

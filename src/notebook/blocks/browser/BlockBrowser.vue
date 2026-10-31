@@ -6,6 +6,8 @@ import { publishValue } from '@nb/engine'
 import { addressOf, BROWSER_MIN_H, browserBody, parseBrowserBody, type NetItem, type NetPage } from '@shared/noteBrowser'
 import { isName } from '@nb/domain/blockInfo'
 import Icon from '@renderer/components/Icon.vue'
+import { holdNoteBrowser } from '@nb/engine/noteBrowsers'
+import { useDraft } from '@renderer/lib/drafts'
 
 /**
  * A browser in the note: tabs of real pages (the Браузер section's profile — its sign-ins), scrolling with the
@@ -82,6 +84,17 @@ watch(
   },
 )
 onBeforeUnmount(() => saveTimer && save(true))
+// (a Playwright block of the note runs / records in the tab shown — found by the block's name)
+let letGo: (() => void) | undefined
+watch(
+  () => info.value.name,
+  (name) => {
+    letGo?.()
+    letGo = name ? holdNoteBrowser(props.path, name, () => cur.value?.wc) : undefined
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => letGo?.())
 
 // ---------- the webviews ----------
 const views = new Map<number, WebView>()
@@ -150,6 +163,7 @@ async function go(i: number, url: string): Promise<void> {
 
 // ---------- the address, the tabs ----------
 const addr = ref('')
+const addrEl = ref<HTMLInputElement>()
 const editing = ref(false)
 watch(
   () => cur.value.url,
@@ -164,7 +178,8 @@ function newTab(url = 'about:blank', after = tabs.length - 1): void {
   tabs.splice(after + 1, 0, { key: ++seq, start: url, url, title: '', loading: false, back: false, fwd: false })
   active.value = after + 1
   save()
-  if (url === 'about:blank') void nextTick(() => document.querySelector<HTMLInputElement>(`[data-nbb="${props.line}"] .addr`)?.focus())
+  // (its own address field — another note kept open may have a browser at the same line)
+  if (url === 'about:blank') void nextTick(() => addrEl.value?.focus())
 }
 function closeTab(i: number): void {
   if (tabs.length === 1) {
@@ -204,6 +219,12 @@ const offOpen = window.qa.onNoteBrowser((type, p) => {
   if (Object.hasOwn(NOTE_BROWSER_EVENTS, type)) NOTE_BROWSER_EVENTS[type](p)
 })
 onBeforeUnmount(offOpen)
+// a scenario of the note running in this browser (in a page of its own, apart from the screen): its picture over the page
+const runFrame = ref('')
+const offFrame = window.qa.onNoteRunFrame((f) => {
+  if (f.note === props.path && f.name === info.value.name) runFrame.value = f.ended ? '' : (f.frame ?? runFrame.value)
+})
+onBeforeUnmount(offFrame)
 const label = (t: Tab) => t.title || (t.url === 'about:blank' ? 'Новая вкладка' : t.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))
 
 // ---------- the height ----------
@@ -228,7 +249,7 @@ const preserve = ref(false)
 const net = ref<NetItem[]>([])
 const page = ref<NetPage>({})
 const netErr = ref('')
-const filter = ref('')
+const filter = useDraft(() => `nb-browser:filter:${props.path}#${info.value.name ?? props.line}`)
 let netFor: number | undefined
 async function listen(t: Tab | undefined): Promise<void> {
   netErr.value = ''
@@ -297,7 +318,9 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
 </script>
 
 <template>
-  <div class="nbb tw:contain-[inline-size] tw:flex tw:flex-col tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-block-browser tw:rounded-[8px] tw:bg-panel tw:overflow-hidden" :data-nbb="line">
+  <div class="nbb tw:contain-[inline-size] tw:flex tw:flex-col tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-block-browser tw:rounded-[8px] tw:bg-panel tw:overflow-hidden">
+    <!-- its name: what a Playwright block of the note picks it by (in=…) -->
+    <div class="tw:min-w-0 tw:pt-4 tw:px-10 tw:text-muted tw:font-data tw:text-[11px] tw:leading-14 tw:truncate" :title="info.name ? `Имя браузера: тесты и запись этой заметки выбирают его как «${info.name}»` : 'У браузера нет имени — допишите name=… в его строку, чтобы тесты могли его выбрать'">{{ info.name ?? 'без имени' }}</div>
     <div class="tb-tabs tw:flex tw:items-end tw:gap-2 tw:min-w-0 tw:pt-6 tw:pr-8 tw:pb-0 tw:pl-8 tw:overflow-x-auto tw:scrollbar-none">
       <button v-for="(t, i) in tabs" :key="t.key" class="tab tw:group/tab tw:inline-flex tw:flex-[0_1_200px] tw:items-center tw:gap-6 tw:min-w-70 tw:h-28 tw:pt-0 tw:pr-6 tw:pb-0 tw:pl-10 tw:border tw:border-transparent tw:[&&]:border-b-0 tw:rounded-[6px_6px_0_0] tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&&]:[&.on]:border-border tw:[&.on]:bg-bg tw:[&.on]:text-text tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: i === active }" :title="t.url" @mousedown.prevent @click="pick(i)" @auxclick.prevent="$event.button === 1 && closeTab(i)">
         <i v-if="t.loading" class="spin tw:w-9 tw:h-9 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[BlockBrowser-spin_0.8s_linear_infinite]"></i><Icon v-else name="globe" :size="11" />
@@ -311,7 +334,7 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" :disabled="!cur.fwd" title="Вперёд" @mousedown.prevent @click="wv()?.goForward()"><Icon name="chevronRight" :size="14" /></button>
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" v-if="cur.loading" title="Остановить" @mousedown.prevent @click="wv()?.stop()"><Icon name="x" :size="13" /></button>
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" v-else title="Обновить" @mousedown.prevent @click="wv()?.reload()"><Icon name="refresh" :size="13" /></button>
-      <input v-model="addr" class="addr tw:flex-1 tw:min-w-0 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[14px] tw:bg-panel tw:text-text tw:text-[12.5px]" spellcheck="false" placeholder="Адрес или поиск" @focus="(editing = true), ($event.target as HTMLInputElement).select()" @blur="editing = false" @keydown.enter.prevent="submit" @keydown.esc.prevent="(addr = cur.url === 'about:blank' ? '' : cur.url), ($event.target as HTMLInputElement).blur()" />
+      <input ref="addrEl" v-model="addr" class="addr tw:flex-1 tw:min-w-0 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[14px] tw:bg-panel tw:text-text tw:text-[12.5px]" spellcheck="false" placeholder="Адрес или поиск" @focus="(editing = true), ($event.target as HTMLInputElement).select()" @blur="editing = false" @keydown.enter.prevent="submit" @keydown.esc.prevent="(addr = cur.url === 'about:blank' ? '' : cur.url), ($event.target as HTMLInputElement).blur()" />
       <button class="tx tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35 tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" :class="{ on: netOn }" title="Запросы страницы: время каждого, размер, водопад; DOMContentLoaded и load" @mousedown.prevent @click="netOn = !netOn"><Icon name="timeline" :size="13" />Запросы</button>
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" title="Инструменты разработчика" @mousedown.prevent @click="wv()?.openDevTools()"><Icon name="code" :size="13" /></button>
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" title="Открыть в разделе «Браузер»" @mousedown.prevent @click="openInBrowser"><Icon name="external" :size="13" /></button>
@@ -327,6 +350,8 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
         allowpopups
         webpreferences="contextIsolation=yes, sandbox=yes"
       ></webview>
+      <div v-if="runFrame" class="tw:absolute tw:inset-0 tw:bg-bg" title="Идёт сценарий: в отдельной странице этого браузера (тот же вход), экран и курсор ему не нужны">
+        <img :src="runFrame" alt="" class="tw:block tw:w-full tw:h-full tw:object-contain tw:object-top-left" />      </div>
       <div v-if="cur.error" class="err tw:absolute tw:inset-0 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-10 tw:p-20 tw:bg-bg tw:text-muted tw:text-[13px] tw:text-center"><Icon name="globe" :size="22" /><p>{{ cur.error }}</p><button class="tw:h-28 tw:py-0 tw:px-12 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text" @mousedown.prevent @click="wv()?.reload()">Повторить</button></div>
     </div>
     <div class="rz tw:h-6 tw:border-t tw:border-t-border tw:bg-bg tw:cursor-ns-resize tw:hover:bg-accent/35" title="Потяните — высота" @pointerdown.prevent="onResize"></div>

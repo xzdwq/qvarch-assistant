@@ -44,7 +44,10 @@ export const recSummary = (x: RecFull): RecItem => ({ id: x.id, seq: x.seq, tabI
 export interface PwRecState {
   note: string
   key: string
-  tabId: string
+  /** The Браузер's tab recorded in (none — a browser in a note). */
+  tabId?: string
+  /** A browser in a note recorded in: its block's name. */
+  in?: string
   count: number
   /** The last line written. */
   last?: string

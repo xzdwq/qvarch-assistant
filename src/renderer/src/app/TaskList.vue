@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { openUrl } from '../lib/links'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import { JIRA_DUE_FILTERS, JIRA_SORTS, type JiraDueFilter, type JiraIssue, type JiraListQuery, type JiraSort, type TaskRef } from '@shared/jira'
 import { jiraColumnsOf, type JiraColumn } from '@shared/jiraColumns'
 import Icon from '../components/Icon.vue'
@@ -20,7 +21,7 @@ import TaskFieldsMenu from './TaskFieldsMenu.vue'
  */
 const emit = defineEmits<{ settings: []; openDay: [day: string] }>()
 const jira = useJira()
-const q = ref('')
+const q = useDraft('jira:search')
 
 // ---------- filters and sort (several values of a filter — any of them); remembered ----------
 const QUERY_KEY = 'qa.jira.list'

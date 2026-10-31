@@ -19,7 +19,7 @@ export const saveRunner: BlockRunner = {
   async run({ env, item }) {
     const t0 = performance.now()
     const s = saveOf(item.body)
-    const last = env.runs[item.key]?.saved
+    const last = env.runs[env.keyNow(item.key)]?.saved
     const done = (saved: NonNullable<BlockRun['saved']>, error?: string) => {
       env.recordRun(item.key, { state: error ? 'error' : 'ok', at: Date.now(), ms: performance.now() - t0, saved, ...(error ? { error } : {}) })
       saveRunsSoon(env.notePath)

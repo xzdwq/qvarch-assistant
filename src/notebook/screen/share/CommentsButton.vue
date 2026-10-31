@@ -5,6 +5,7 @@
  * selected text («Комментировать» of the editor's menu). Opened from the text too (a comment's mark).
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useDraft } from '@renderer/lib/drafts'
 import { unreadOf } from '@shared/transport/chat'
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
@@ -42,7 +43,8 @@ watch(
 )
 onBeforeUnmount(() => watched && watchRoom(watched, false))
 
-const draft = ref('')
+// (a comment not posted yet — kept for the note)
+const draft = useDraft(() => `comment:${props.path}`, { keep: true })
 const busy = ref(false)
 const error = ref('')
 async function create(): Promise<void> {

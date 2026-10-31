@@ -23,7 +23,9 @@ export function chatMarkdown(text: string, members: readonly DeviceInfo[], me: s
         p.who
           ? `<span class="mention${p.who.id === me ? ' me' : ''}">${esc(p.text)}</span>`
           : linkParts(p.text)
-              .map((q) => (q.link ? `<a data-chat-link="${links.push(q.link) - 1}">${esc(q.text)}</a>` : q.text))
+              // (a tag written in a message is its text, not markup: «<script>…» shown as typed, the rest of it kept —
+              // the cleaning would take it away with all that follows)
+              .map((q) => (q.link ? `<a data-chat-link="${links.push(q.link) - 1}">${esc(q.text)}</a>` : q.text.replace(/</g, '&lt;')))
               .join(''),
       )
       .join('')

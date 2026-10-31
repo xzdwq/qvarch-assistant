@@ -24,21 +24,41 @@ interface Job {
   room: ChatRoom
   message: ChatMessage
   caller: Caller
+  /** A harness turn: what it is told besides; its answer goes back to the harness (not into the chat). */
+  harness?: { system: string; checks?: Array<{ path: string; block: string }>; done: (a: TurnAnswer) => void }
+}
+/**
+ * The harness running in a room takes the person's messages there (an answer to its question, a hint meanwhile): the
+ * agent it calls is not called by them as well (its id; none — nothing taken).
+ */
+let harnessTakes: ((m: ChatMessage, room: ChatRoom) => string | undefined) | undefined
+export const routeToHarness = (fn: typeof harnessTakes) => void (harnessTakes = fn)
+/**
+ * A harness turn of an agent: in line with its other turns (one at a time per agent), told what the harness says
+ * (`system`), asked by `message` (the harness's line); its answer comes back here, the chat gets nothing of it.
+ */
+export function harnessTurn(agent: string, room: ChatRoom, message: ChatMessage, caller: Caller, system: string, checks: Array<{ path: string; block: string }> = []): Promise<TurnAnswer> {
+  return new Promise((done) => enqueue(agent, { room, message, caller, harness: { system, checks, done } }))
 }
 /** The agents' turns going on now: room → the agent and its turn (one may be stopped). */
 export const agentWork = shallowRef(new Map<string, { agent: string; name: string; turn: string }>())
 const queues = new Map<string, { running: boolean; jobs: Job[] }>()
-/** Messages already looked at (a message comes as the answer to a send and as an event). */
+/**
+ * Messages already looked at, by the writer's own id (a message comes as the answer to a send and as an event; one
+ * written with no server — first as waiting, then as the server's).
+ */
 const seen = new Set<string>()
+const seenKey = (m: ChatMessage) => m.clientId ?? m.id
 const TYPING_EVERY = 2500
 
 function consider(m: ChatMessage): void {
-  if (seen.has(m.id)) return
-  seen.add(m.id)
+  if (seen.has(seenKey(m))) return
+  seen.add(seenKey(m))
   handle(m.room, m.seq)
   const room = roomOf(m.room)
   if (!room) return
-  for (const c of agentsCalled(m, room, chatMe.value)) enqueue(c.agent, { room, message: m, caller: c.caller })
+  const taken = harnessTakes?.(m, room)
+  for (const c of agentsCalled(m, room, chatMe.value)) if (c.agent !== taken) enqueue(c.agent, { room, message: m, caller: c.caller })
 }
 
 // ---------- the calls missed while the app was closed or offline ----------
@@ -78,8 +98,8 @@ async function catchUp(rooms: readonly ChatRoom[]): Promise<void> {
     await showRoom(r.id).catch(() => undefined)
     const late = new Map<string, Job>()
     for (const m of messagesOf(r.id)) {
-      if (m.seq <= from || seen.has(m.id) || Date.now() - m.at > LATE_MAX) continue
-      seen.add(m.id)
+      if (m.seq <= from || seen.has(seenKey(m)) || Date.now() - m.at > LATE_MAX) continue
+      seen.add(seenKey(m))
       for (const c of agentsCalled(m, r, chatMe.value)) late.set(c.agent, { room: r, message: m, caller: c.caller })
     }
     for (const [agent, job] of late) enqueue(agent, job)
@@ -94,7 +114,10 @@ function enqueue(agent: string, job: Job): void {
 async function drain(agent: string, q: { running: boolean; jobs: Job[] }): Promise<void> {
   q.running = true
   try {
-    for (let job = q.jobs.shift(); job; job = q.jobs.shift()) await runTurn(agent, job).catch(() => undefined)
+    for (let job = q.jobs.shift(); job; job = q.jobs.shift()) {
+      const j = job
+      await runTurn(agent, j).catch((e: unknown) => j.harness?.done({ text: '', trace: [], error: e instanceof Error ? e.message : String(e) }))
+    }
   } finally {
     q.running = false
   }
@@ -104,7 +127,7 @@ async function runTurn(agent: string, job: Job): Promise<void> {
   await loadAgents()
   const profile = profileOfAgentId(agent)
   // (the profile deleted in the settings: the agent stays in chats until taken out, it does not answer)
-  if (!profile) return
+  if (!profile) return job.harness?.done({ text: '', trace: [], error: 'Этого ИИ больше нет в настройках' })
   const room = roomOf(job.room.id) ?? job.room
   const turn = crypto.randomUUID()
   agentWork.value = new Map(agentWork.value).set(room.id, { agent, name: profile.name, turn })
@@ -117,7 +140,7 @@ async function runTurn(agent: string, job: Job): Promise<void> {
   try {
     const req = await turnRequestFor({ turn, room, message: job.message, profile, caller: job.caller })
     docPath = req.doc?.path
-    answer = await window.qa.agentRun(req)
+    answer = await window.qa.agentRun(job.harness ? { ...req, harness: { system: job.harness.system, ...(job.harness.checks?.length ? { checks: job.harness.checks } : {}) } } : req)
   } catch (e) {
     answer = { text: '', trace: [], error: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -134,6 +157,7 @@ async function runTurn(agent: string, job: Job): Promise<void> {
       docPath,
       docTurnOf({ id: turn, at: t0, ms: Date.now() - t0, agent: name, owner: chatMeName(), asker: authorName(job.message), question: job.message.text, trace: answer.trace, wrote: wrote.lines, error: answer.stopped ? undefined : answer.error, stopped: answer.stopped, memory: wrote.memory, touches: answer.touches, steps: answer.steps }),
     ).catch(() => undefined)
+  if (job.harness) return job.harness.done(answer)
   await post({ id: agent, name }, room, job.message, { ...answer, text: withPlaces(answer.text, placesOf(wrote.places)) })
 }
 /** This person's name (whose agents these are). */

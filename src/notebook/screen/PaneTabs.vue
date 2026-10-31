@@ -2,6 +2,8 @@
 import { isBoard } from '@shared/whiteboard'
 import Icon from '@renderer/components/Icon.vue'
 import NodeMark from '@renderer/components/NodeMark.vue'
+import AiSignalMark from '@renderer/components/AiSignalMark.vue'
+import { aiSignalOf } from '@renderer/lib/aiSignals'
 import { noteReport, noteRun, runAll, stopRunAll } from '@nb/engine'
 import { docs, isDirty } from '@nb/workspace/noteDocs'
 import { closeTab, layout, toggleSplit, type Pane } from '@nb/workspace/paneLayout'
@@ -54,7 +56,8 @@ async function copyNoteReport(path: string): Promise<void> {
         @drop.prevent="onTabDrop"
         @dragend="onTabDrop"
       >
-        <Icon v-if="isViewTab(t.path)" :name="viewIcon(t.path)" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />
+        <AiSignalMark v-if="!isViewTab(t.path) && aiSignalOf(t.path)" :signal="aiSignalOf(t.path)!" :size="12" />
+        <Icon v-else-if="isViewTab(t.path)" :name="viewIcon(t.path)" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />
         <NodeMark v-else-if="emojiOf(t.path)" :emoji="emojiOf(t.path)" :color="colorOf(t.path)" icon="note" :size="12" />
         <span v-else-if="colorOf(t.path)" class="fmark sm tw:flex-none tw:rounded-r2 tw:m-0 tw:w-9 tw:h-9" :style="{ background: colorOf(t.path) }"></span>
         <Icon v-else :name="isBoard(t.path) ? 'presentation' : 'note'" :size="12" class="tic tw:[&&]:flex-none tw:opacity-70" />

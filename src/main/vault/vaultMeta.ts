@@ -3,31 +3,39 @@ import { join } from 'node:path'
 import { BOARD_EXT } from '../../shared/whiteboard'
 import { isEmoji } from '../../shared/emoji'
 import type { AgentLines } from '../../shared/notebook/agentLines'
-import { docAiOf, type DocAi } from '../../shared/agent/docAi'
+import type { DocAi } from '../../shared/agent/docAi'
+import { AiStore } from './aiStore'
 import type { VaultFiles } from './vaultFiles'
 
 interface MetaData {
   colors: Record<string, string>
   pairs: Record<string, string>
   emojis: Record<string, string>
-  /** The lines AI agents wrote in each personal note (shared/notebook/agentLines). */
-  agentLines: Record<string, AgentLines>
-  /** The AI's memory and journal of each personal note (shared/agent/docAi; a shared note keeps its own in its document). */
-  docAi: Record<string, DocAi>
 }
 
 /**
- * The user's marks of notes / folders, in vault/.meta.json: a colour, an emoji, a note ↔ board link. They follow
- * a rename / move; a deleted thing loses them.
+ * The user's marks of notes / folders, in vault/.meta.json: a colour, an emoji, a note ↔ board link; and what the AI
+ * keeps of each personal note — its memory and journal, the lines agents wrote (a shared note keeps its own in its
+ * document) — in vault/.ai.db, a row per note (they grow with every turn: never the whole file rewritten for one).
+ * They follow a rename / move; a deleted thing loses them.
  */
 export class VaultMeta {
   private data: MetaData
+  private ai: AiStore
 
   constructor(private files: VaultFiles) {
+    let read: Partial<MetaData> & { docAi?: Record<string, unknown>; agentLines?: Record<string, AgentLines> } = {}
     try {
-      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, docAi: {}, ...JSON.parse(readFileSync(this.file, 'utf8')) }
+      read = JSON.parse(readFileSync(this.file, 'utf8')) as typeof read
     } catch {
-      this.data = { colors: {}, pairs: {}, emojis: {}, agentLines: {}, docAi: {} }
+      // none yet, or not readable — empty
+    }
+    this.data = { colors: read.colors ?? {}, pairs: read.pairs ?? {}, emojis: read.emojis ?? {} }
+    this.ai = new AiStore(join(this.files.root, '.ai.db'))
+    // (kept in the marks' file before: moved to the AI's store once, the file written without it)
+    if (read.docAi || read.agentLines) {
+      this.ai.takeOver(read)
+      this.save()
     }
   }
   private get file(): string {
@@ -42,24 +50,21 @@ export class VaultMeta {
   colorOf = (rel: string): string | undefined => this.data.colors[rel]
   emojiOf = (rel: string): string | undefined => this.data.emojis[rel]
   pairOf = (rel: string): string | undefined => this.data.pairs[rel]
-  agentLinesOf = (rel: string): AgentLines => this.data.agentLines[rel] ?? {}
+  agentLinesOf = (rel: string): AgentLines => this.ai.agentLines(rel)
 
-  docAiOf = (rel: string): DocAi => docAiOf(this.data.docAi[rel])
+  docAiOf = (rel: string): DocAi => this.ai.docAi(rel)
+  /** Every personal note's AI memory and journal (a search over them). */
+  allDocAi = (): Map<string, DocAi> => this.ai.allDocAi()
   /** A note's AI memory and journal (empty — none kept). */
   setDocAi(rel: string, ai: DocAi): void {
     this.files.abs(rel)
-    const clean = docAiOf(ai)
-    if (clean.memory || clean.turns.length) this.data.docAi[rel] = clean
-    else delete this.data.docAi[rel]
-    this.save()
+    this.ai.setDocAi(rel, ai)
   }
 
   /** The lines agents wrote in a note (empty — none kept). */
   setAgentLines(rel: string, lines: AgentLines): void {
     this.files.abs(rel)
-    if (Object.keys(lines).length) this.data.agentLines[rel] = lines
-    else delete this.data.agentLines[rel]
-    this.save()
+    this.ai.setAgentLines(rel, lines)
   }
 
   /** A colour mark (undefined — none). */
@@ -120,7 +125,8 @@ export class VaultMeta {
       if (nk && nv) pairs[nk] = nv
     }
     this.data.pairs = pairs
-    for (const map of [this.data.colors, this.data.emojis, this.data.agentLines, this.data.docAi] as Array<Record<string, unknown>>)
+    this.ai.remap(from, to)
+    for (const map of [this.data.colors, this.data.emojis] as Array<Record<string, unknown>>)
       for (const k of Object.keys(map)) {
         if (k !== from && !k.startsWith(from + '/')) continue
         const v = map[k]

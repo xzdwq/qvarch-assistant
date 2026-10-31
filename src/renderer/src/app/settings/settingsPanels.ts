@@ -6,6 +6,7 @@ import AttributesSection from './AttributesSection.vue'
 import BrowserSection from './BrowserSection.vue'
 import ChatSection from './ChatSection.vue'
 import GeneralSection from './GeneralSection.vue'
+import HarnessSection from './HarnessSection.vue'
 import InterfaceSection from './InterfaceSection.vue'
 import JiraSection from './JiraSection.vue'
 import KindsSection from './KindsSection.vue'
@@ -37,6 +38,7 @@ export const SETTINGS_PANELS: SettingsPanel[] = [
   { id: 'outlook', category: 'outlook', component: OutlookSection, mount: 'always' },
   { id: 'browser', category: 'browser', component: BrowserSection, mount: 'always' },
   { id: 'agents', category: 'ai', component: AgentsSection, mount: 'always' },
+  { id: 'harness', category: 'ai', component: HarnessSection, mount: 'always' },
   { id: 'ai', category: 'ai', component: AiSection, mount: 'always' },
   { id: 'jira', category: 'jira', component: JiraSection, mount: 'always' },
   { id: 'server', category: 'server', component: ServerSection, mount: 'always' },

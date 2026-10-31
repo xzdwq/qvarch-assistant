@@ -10,7 +10,9 @@ import { cleanChatText, callable, clockSec, type ChatReply } from '@shared/trans
 import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
 import { useEscLayer } from '@renderer/lib/usePopover'
+import { useDraft } from '@renderer/lib/drafts'
 import ChatAttachMenu from './ChatAttachMenu.vue'
+import HarnessRoomSettings from './HarnessRoomSettings.vue'
 import { useChatPort } from './chatPort'
 import { useChatDrafts } from './useChatDrafts'
 import { useMentionInput } from './useMentionInput'
@@ -23,7 +25,8 @@ const chat = useChatPort()
 const { me, online: chatOnline, prefs: chatPrefs } = chat
 
 const input = ref<HTMLTextAreaElement>()
-const text = ref('')
+// (not sent yet — kept for the room: back from another note or section, after a restart too)
+const text = useDraft(() => `chat:${props.room}`, { keep: true })
 // (the people, one's own agents and the others' ones open to all: mentioned by «@»)
 const members = computed(() => {
   const r = chat.roomOf(props.room)
@@ -87,8 +90,26 @@ function sendNotesNow(rel: string, withRuns: boolean): Promise<void> {
     text.value = ''
   })
 }
+// ---------- harness: the message is the goal of a run (the agent plans, works and checks until it is done) ----------
+const harness = chat.harness
+const harnessOn = ref(false)
+/** The harness may be started here: one's own agent is in the room, no run is going on. */
+const canHarness = computed(() => {
+  const run = harness?.runOf(props.room)
+  return !!harness?.canStart(props.room) && (!run || run.phase === 'done' || run.phase === 'stopped')
+})
+watch(canHarness, (can) => !can && (harnessOn.value = false))
+function startHarness(): void {
+  const why = harness?.start(props.room, text.value)
+  if (why) return void (sendError.value = why)
+  text.value = ''
+  harnessOn.value = false
+  sendError.value = ''
+  done()
+}
 function submit(): void {
   if (sending.value) return
+  if (harnessOn.value && canHarness.value) return startHarness()
   if (drafts.value.length) return void sendDrafts()
   if (chat.send(props.room, text.value, reply.value)) {
     text.value = ''
@@ -111,7 +132,7 @@ const onlyMentions = computed(() => !drafts.value.length && !members.value.reduc
 // (an answer picked: the input is where one writes it)
 watch(reply, (r) => r && void nextTick(() => input.value?.focus()))
 
-const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с сервером — отправится, когда появится' : chatPrefs.value.sendKey === 'enter' ? 'Сообщение · Enter — отправить' : 'Сообщение · Ctrl+Enter — отправить'))
+const placeholder = computed(() => (harnessOn.value ? 'Цель работы · ИИ составит план и будет работать до результата' : !chatOnline.value && !chat.isHeld(props.room) ? 'Нет связи с сервером — ИИ ответит, людям уйдёт, когда появится связь' : chatPrefs.value.sendKey === 'enter' ? 'Сообщение · Enter — отправить' : 'Сообщение · Ctrl+Enter — отправить'))
 </script>
 
 <template>
@@ -149,6 +170,18 @@ const placeholder = computed(() => (!chatOnline.value ? 'Нет связи с с
     <span v-if="sendError || refused || voice.error.value" class="tw:text-down-fg tw:text-[12px]">{{ sendError || refused || voice.error.value }}</span>
     <div class="tw:flex tw:items-end tw:gap-6">
       <ChatAttachMenu :disabled="sending || voice.recording.value" @files="addDrafts" @notes="sendNotesNow" />
+      <button
+        v-if="canHarness && !voice.recording.value"
+        class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:w-36 tw:h-36 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg"
+        :class="{ on: harnessOn }"
+        :title="harnessOn ? 'Режим harness: сообщение — цель работы (выключить)' : 'Режим harness: ИИ составит план с критериями и будет работать по шагам, сам проверяя результат'"
+        @click="harnessOn = !harnessOn"
+      >
+        <Icon name="repeat" :size="15" />
+      </button>
+      <!-- the work about to start: this chat's settings for it -->
+      <HarnessRoomSettings v-if="harnessOn && canHarness && !voice.recording.value" :room="room" :size="15" />
+
       <!-- recording: its time and level instead of the input -->
       <div v-if="voice.recording.value" class="tw:flex tw:flex-1 tw:items-center tw:gap-10 tw:min-w-0 tw:h-36 tw:px-14 tw:rounded-[18px] tw:bg-panel-3">
         <span class="tw:w-10 tw:h-10 tw:flex-none tw:rounded-full tw:bg-down tw:animate-pulse"></span>

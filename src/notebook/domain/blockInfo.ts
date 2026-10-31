@@ -4,7 +4,8 @@
  *   ```http name=login              a request (the .http format of JetBrains / VS Code REST Client)
  *   ```ts run name=total            code run apart from the app; its return value published as `total`
  *   ```ts lib                       shared functions put before every code block of the note
- *   ```ts playwright name=shot      a browser scenario (flags: headed, notrace, session, browser=chrome)
+ *   ```ts playwright name=shot      a browser scenario (flags: headed, notrace, session, browser=chrome;
+ *                                   browser=qvarch — the app's own, in=site — in the note's browser «site»)
  *   ```json name=items              data, published as soon as it parses
  *   ```json ref=login.body          a value of the note's context, shown live
  *   ```sql db=main name=rows        a read-only database query
@@ -22,9 +23,14 @@ export const TEXT_VALUE_SOURCES: ReadonlySet<ValueSource> = new Set<ValueSource>
 /** The value «Выполнить всё» gives of what started it (by hand, by the AI, by a schedule) — no block may take its name. */
 export const TRIGGER_NAME = 'trigger'
 
-/** The browsers a Playwright block can drive (installed ones; Chromium — if it was downloaded). */
-export const PW_BROWSERS = ['msedge', 'chrome', 'chromium'] as const
+/**
+ * The browsers a Playwright block can drive: installed ones (Chromium — if it was downloaded), or the app's own
+ * (qvarch: a tab of the Браузер section, or a browser in the note — `in=`).
+ */
+export const PW_BROWSERS = ['msedge', 'chrome', 'chromium', 'qvarch'] as const
 export type PwBrowser = (typeof PW_BROWSERS)[number]
+/** The app's own browser: its page is lent to the run (not a browser started for it). */
+export const PW_OWN_BROWSER = 'qvarch' satisfies PwBrowser
 
 /** How a block inside a loop shows its results: gathered into one (acc) or each pass apart (each). */
 export const LOOP_OUT_MODES = ['acc', 'each'] as const
@@ -53,6 +59,8 @@ export interface BlockInfo {
   notrace?: boolean
   /** Playwright: which browser (default msedge). */
   browser?: PwBrowser
+  /** Playwright in the app's own browser: the note's browser block (by its name) it runs in — none: the Браузер section. */
+  in?: string
   /** Its error does not stop «Выполнить всё» (a check expected to fail, a flaky one). */
   soft?: boolean
   /** Playwright: the Браузер section's sign-ins (its cookies) — a site entered there (SSO too) is entered here. */
@@ -120,6 +128,9 @@ const SETTINGS: Record<string, (out: BlockInfo, v: string) => void> = {
   browser: (out, v) => {
     if (oneOf(PW_BROWSERS, v)) out.browser = v
   },
+  in: (out, v) => {
+    if (isName(v)) out.in = v
+  },
   id: (out, v) => {
     if (BLOCK_ID.test(v)) out.id = v
   },
@@ -167,6 +178,7 @@ export function infoMd(i: BlockInfo): string {
     i.ref ? `ref=${i.ref}` : '',
     i.view ? `view=${i.view}` : '',
     i.pw && i.browser && i.browser !== 'msedge' ? `browser=${i.browser}` : '',
+    i.pw && i.browser === PW_OWN_BROWSER && i.in ? `in=${i.in}` : '',
     i.pw && i.headed ? 'headed' : '',
     i.pw && i.notrace ? 'notrace' : '',
     i.pw && i.session ? 'session' : '',

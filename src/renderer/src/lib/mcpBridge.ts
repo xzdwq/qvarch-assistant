@@ -1,40 +1,21 @@
 import { summary } from '@nb/domain/values'
-import { blockReport, loopReport, noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData, type RunItem } from '@nb/engine'
+import { noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData } from '@nb/engine'
 import { docLinkPath, shareLinkOf } from '@nb/workspace/docLinks'
-import { doc, docs, files, loadTree, openFile, save, setText } from './notebook'
+import { docs, files, loadTree, openFile, save, setText } from './notebook'
 import { MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
 import { agentByOf, agentWrote, agentWroteMemory } from './agentWrites'
 import { isHeld, postMessage, roomOf } from './chat'
+import { itemReport, noteRunsLoaded as runsLoaded, noteTextOf as textOf } from './noteRunAccess'
 import type { RunTrigger } from '@shared/cronJobs'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
  * them: the text as typed, the runs and their results shown as they go, saved as usual.
  */
-async function textOf(path: string): Promise<string> {
-  const d = doc(path)
-  for (let i = 0; i < 200 && !d.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-  if (d.error) throw new Error(`Заметка «${path}»: ${d.error}`)
-  return d.text
-}
-async function runsLoaded(path: string): Promise<void> {
-  const n = noteRun(path)
-  for (let i = 0; i < 200 && !n.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-}
 function vars(path: string): string {
   const ctx = noteRun(path).ctx
   const keys = Object.keys(ctx)
   return keys.length ? `Переменные: ${keys.map((k) => `${k} = ${summary(ctx[k].value)}`).join('; ')}` : ''
-}
-
-/** An item's last run as a report (a loop — its passes; in a loop's pass, its block — the pass shown). */
-function itemReport(path: string, item: RunItem): string {
-  switch (item.kind) {
-    case 'loop':
-      return loopReport(noteRun(path).loops[item.key], item.loop.info.name ?? item.key)
-    default:
-      return blockReport(path, item.key, item.kind, item.info, item.body)
-  }
 }
 
 const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
@@ -86,7 +67,7 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     // any runnable block (HTTP, code, Playwright, SQL, a template) or a loop — by its name or key, where it stands
     const item = runItemNamed(text, want)
     if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
-    await runItemWhereItStands(path, text, item)
+    await runItemWhereItStands(path, text, item, { by: 'ai', at: Date.now() })
     return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
   },
   /**

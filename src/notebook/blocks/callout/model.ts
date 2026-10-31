@@ -18,11 +18,19 @@ export interface CalloutModel {
 }
 /** The first line of a callout: `> [!type]`, folded marks (+/-) allowed. */
 export const CALLOUT_START = /^>\s*\[!\w+\][+-]?/
+/** A callout written as a fence (as other tools write it): ```callout <type> <title> … ``` — its first line. */
+export const CALLOUT_FENCE = /^(`{3,}|~{3,})\s*callout(?:\s+(\w+))?\s*(.*)$/i
+const typeOf = (raw: string): CalloutType => {
+  const t = raw.toLowerCase()
+  return isCalloutType(t) ? t : Object.hasOwn(CALLOUT_ALIAS, t) ? CALLOUT_ALIAS[t] : 'note'
+}
 export function parseCallout(src: string): CalloutModel {
-  const lines = src.split('\n').map((l) => l.replace(/^>\s?/, ''))
+  const all = src.split('\n')
+  const fence = CALLOUT_FENCE.exec(all[0] ?? '')
+  // the fence's form: its kind and title on the first line, the text up to the closing fence
+  if (fence) return { type: typeOf(fence[2] ?? 'note'), title: fence[3].trim(), body: all.slice(1, -1).join('\n') }
+  const lines = all.map((l) => l.replace(/^>\s?/, ''))
   const m = /^\[!(\w+)\][+-]?\s*(.*)$/.exec(lines[0] ?? '')
-  const raw = (m?.[1] ?? 'note').toLowerCase()
-  const type: CalloutType = isCalloutType(raw) ? raw : Object.hasOwn(CALLOUT_ALIAS, raw) ? CALLOUT_ALIAS[raw] : 'note'
-  return { type, title: m?.[2] ?? '', body: lines.slice(1).join('\n') }
+  return { type: typeOf(m?.[1] ?? 'note'), title: m?.[2] ?? '', body: lines.slice(1).join('\n') }
 }
 export const calloutMd = (c: CalloutModel) => [`> [!${c.type}]${c.title ? ` ${c.title}` : ''}`, ...(c.body ? c.body.split('\n') : ['']).map((l) => (l ? `> ${l}` : '>'))].join('\n')

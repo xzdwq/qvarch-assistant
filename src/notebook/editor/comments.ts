@@ -3,6 +3,7 @@ import { Decoration, EditorView, gutter, GutterMarker, type DecorationSet } from
 import { openComment } from '@nb/workspace/noteComments'
 import { editorHost } from './editorHost'
 import { ICON_COMMENT } from './icons'
+import { NO_GUTTER_SPACE } from './gutterSpacer'
 
 /**
  * The comments of a shared note in its text: each open one's place underlined, a sign on its first line's margin; a
@@ -72,11 +73,21 @@ const opening = EditorView.domEventHandlers({
   },
 })
 
+/** The column's spacer: its widest sign (the most comments on a line), none — no width. */
+function signSpacer(signs: RangeSet<GutterMarker>): GutterMarker {
+  let most = 0
+  for (const it = signs.iter(); it.value; it.next()) if (it.value instanceof CommentSign) most = Math.max(most, it.value.rooms.length)
+  return most ? new CommentSign(Array.from({ length: most }, (_, i) => String(i))) : NO_GUTTER_SPACE
+}
+
 export const commentMarks = [
   marksField,
   gutter({
     class: 'cm-comment-gutter',
     markers: (v) => v.state.field(marksField).signs,
+    // (as wide as its widest sign wherever the note is scrolled — when it has any)
+    initialSpacer: (v) => signSpacer(v.state.field(marksField).signs),
+    updateSpacer: (_s, u) => signSpacer(u.state.field(marksField).signs),
     domEventHandlers: {
       // a click on a sign: the first comment of its line opened
       mousedown(v, _line, e) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isBoard } from '@shared/whiteboard'
 import NotebookHelp from '../components/NotebookHelp.vue'
 import EventModal from '../components/EventModal.vue'
@@ -20,8 +20,15 @@ import TreeMenu from '@nb/screen/TreeMenu.vue'
 /**
  * Блокнот — Markdown notes like in Obsidian: sections (folders) on the left, tabs, two notes side by side,
  * search through everything, voice recordings right in a note (transcribed locally). Saved while typing.
- * The screen's state and actions: @nb/screen/notebookScreen; its parts: @nb/screen/*.vue.
+ * The screen's state and actions: @nb/screen/notebookScreen; its parts: @nb/screen/*.vue. Once opened it stays
+ * (hidden in other sections — the notes as they were left); `active` — on the screen now.
  */
+const props = defineProps<{ active?: boolean }>()
+// left for another section: what was typed goes to the disk now (as when the screen went away)
+watch(
+  () => props.active,
+  (on) => on === false && void saveAll(),
+)
 const { toast, actions, events, vars, menu, images, helpOpen } = provideNotebookScreen()
 const { msg } = toast
 const { eventText, onEventMade, evCard, refCard } = events

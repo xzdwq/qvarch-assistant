@@ -9,13 +9,14 @@ import { historyOf, roomOfLocal, type LocalChat, type LocalPost } from '@shared/
 import { changeLocal, dropLocal, isLocal, loadLocals, localChat, localChats, makeLocal, postToLocal } from './localChatRooms'
 import { countReaction } from './quickReactions'
 import { serverCall, serverOnline, useTransport } from './transport'
+import { nextWaitingSeq, replySeqFor, waitingMessage, type ChatCacheData } from '@shared/transport/chatOffline'
+import { startChatCache } from './chatCache'
+import { keepOutbox, readOutbox } from './chatOutbox'
 
 export type { Outgoing }
 /** «Печатает…» stays this long after the last sign. */
 const TYPING_MS = 3000
 
-/** Where the messages on their way are kept over a restart (this profile's window). */
-const OUTBOX_KEY = 'qa.chat.outbox'
 
 /**
  * The chats of the main window, one state for every chat block (two blocks of one room show the same): the rooms,
@@ -41,6 +42,13 @@ export const chatPrefs = ref<ChatPrefs>(DEFAULT_CHAT)
 export const roomOf = (id: string) => chatRooms.value.find((r) => r.id === id)
 export const messagesOf = (id: string) => messages.value.get(id) ?? []
 export const pendingOf = (id: string) => outbox.value.filter((o) => o.room === id)
+/** The room's talk as the agents read it: its messages, then the ones written with no server (waiting to go). */
+export const talkOf = (id: string): ChatMessage[] => [
+  ...messagesOf(id),
+  ...pendingOf(id)
+    .filter((o) => o.pseq !== undefined)
+    .map((o) => waitingMessage(o, meInfo())),
+]
 export const isComplete = (id: string) => complete.value.has(id)
 /** «Анна печатает…», «ИИ · Анна работает…» (none — '' ). */
 export function typingIn(id: string): string {
@@ -64,7 +72,7 @@ export function holdRoom(id: string, title: string): void {
   void makeLocal(id, title).then((c) => {
     showLocal(c)
     // (messages written to it before it was kept here — they wait no more)
-    for (const o of outbox.value) if (o.room === id) void deliver(o)
+    for (const o of outbox.value) if (o.room === id) deliverInLine(o)
   })
 }
 /** The chat is kept on this computer only (not on the server: one's own, a person never added). */
@@ -99,24 +107,49 @@ export const onRoomMessage = (fn: (m: ChatMessage) => void) => void listeners.ad
  * server for the others.
  */
 export async function postMessage(room: string, p: LocalPost): Promise<ChatMessage> {
-  const m = isLocal(room)
-    ? await postToLocal(room, meInfo(), p)
-    : await serverCall('chat.send', {
-        room,
-        text: p.text,
-        clientId: crypto.randomUUID(),
-        ...(p.agent ? { agent: p.agent.id } : {}),
-        ...(p.chain ? { chain: p.chain } : {}),
-        ...(p.mentions?.length ? { mentions: p.mentions } : {}),
-        ...(p.attach ? { attach: p.attach } : {}),
-        ...(p.reply ? { reply: p.reply.seq } : {}),
-      })
-  received(m)
+  if (isLocal(room)) {
+    const m = await postToLocal(room, meInfo(), p)
+    received(m)
+    return m
+  }
+  const clientId = crypto.randomUUID()
+  // no server: it waits in line (shown already; the agents read it), sent in order once the server is there; messages
+  // of the room waiting still — it goes after them (an answer never before its question)
+  if (!chatOnline.value || pendingOf(room).some((o) => o.pseq !== undefined)) return wait(room, clientId, p)
+  try {
+    const m = await serverCall('chat.send', {
+      room,
+      text: p.text,
+      clientId,
+      ...(p.agent ? { agent: p.agent.id } : {}),
+      ...(p.chain ? { chain: p.chain } : {}),
+      ...(p.mentions?.length ? { mentions: p.mentions } : {}),
+      ...(p.attach ? { attach: p.attach } : {}),
+      ...(p.reply ? { reply: replySeqFor(p.reply, sentSeqs) } : {}),
+    })
+    received(m)
+    return m
+  } catch (e) {
+    // (the server gone meanwhile: an agent's answer is never lost — it waits too)
+    if (!chatOnline.value) return wait(room, clientId, p)
+    throw e
+  }
+}
+/** A message written with no server put in line: numbered after the room's last one, the agents told of it. */
+function wait(room: string, clientId: string, p: LocalPost): ChatMessage {
+  const r = roomOf(room)
+  const o: Outgoing = { room, clientId, at: Date.now(), pseq: nextWaitingSeq(r ?? { lastSeq: 0 }, pendingOf(room)), ...p }
+  outbox.value = [...outbox.value, o]
+  const m = waitingMessage(o, meInfo())
+  for (const fn of listeners) fn(m)
+  if (chatOnline.value) deliverInLine(o)
   return m
 }
-/** One's agent working in a room: told to the room (a local one — shown here). */
+/** The waiting messages sent this run: the number each waited under → the server's (an answer to one goes with it). */
+const sentSeqs = new Map<number, number>()
+/** One's agent working in a room: told to the room (a local one, or no server — shown here). */
 export function tellAgentWorking(room: string, agent: { id: string; name: string }): void {
-  if (!isLocal(room)) return void serverCall('chat.typing', { room, agent: agent.id }).catch(() => undefined)
+  if (!isLocal(room) && chatOnline.value) return void serverCall('chat.typing', { room, agent: agent.id }).catch(() => undefined)
   typing.value = new Map(typing.value).set(room, { name: `${agent.name} работает…`, until: Date.now() + TYPING_MS })
 }
 /**
@@ -153,6 +186,16 @@ export async function openChat(room: string): Promise<void> {
 async function loadRooms(): Promise<void> {
   const rooms = await serverCall('chat.rooms', {})
   chatRooms.value = sortRooms([...rooms, ...chatRooms.value.filter((r) => isHeld(r.id) && !rooms.some((x) => x.id === r.id))])
+  serverRooms = true
+}
+/** The rooms came from the server this run (the kept copy is shown only before). */
+let serverRooms = false
+/** The server's chats as last seen, shown with no server (the ones here already stay as they are). */
+function showCached(c: ChatCacheData): void {
+  chatRooms.value = sortRooms([...chatRooms.value, ...c.rooms.filter((r) => !roomOf(r.id))])
+  const m = new Map(messages.value)
+  for (const [id, list] of Object.entries(c.messages)) if (!m.has(id)) m.set(id, list)
+  messages.value = m
 }
 /** The local chats shown (from the start, with or without a server). */
 async function showLocals(): Promise<void> {
@@ -211,30 +254,52 @@ export function watchRoom(id: string, on: boolean): void {
 /** A message sent — kept here for a local chat; to the server when there is one (else it waits: sent when it is there). */
 async function deliver(o: Outgoing): Promise<void> {
   if (!isHeld(o.room) && !chatOnline.value) return
+  // (gone meanwhile: sent already, or taken away)
+  if (!outbox.value.some((x) => x.clientId === o.clientId)) return
   try {
     const r = roomOf(o.room)
-    const mentions = r ? mentionsIn(o.text, mentionable(r)) : []
+    const mentions = o.mentions ?? (r ? mentionsIn(o.text, mentionable(r)) : [])
+    const reply = replySeqFor(o.reply, sentSeqs)
     const m = isHeld(o.room)
       ? await postToLocal(o.room, meInfo(), { text: o.text, ...(mentions.length ? { mentions } : {}), ...(o.reply ? { reply: o.reply } : {}) })
-      : await serverCall('chat.send', { room: o.room, text: o.text, clientId: o.clientId, ...(mentions.length ? { mentions } : {}), ...(o.reply ? { reply: o.reply.seq } : {}) })
+      : await serverCall('chat.send', {
+          room: o.room,
+          text: o.text,
+          clientId: o.clientId,
+          ...(o.agent ? { agent: o.agent.id } : {}),
+          ...(o.chain ? { chain: o.chain } : {}),
+          ...(mentions.length ? { mentions } : {}),
+          ...(o.attach ? { attach: o.attach } : {}),
+          ...(reply ? { reply } : {}),
+        })
+    if (o.pseq !== undefined) sentSeqs.set(o.pseq, m.seq)
     outbox.value = outbox.value.filter((x) => x.clientId !== o.clientId)
     received(m)
   } catch (e) {
     outbox.value = outbox.value.map((x) => (x.clientId === o.clientId ? { ...x, failed: remoteError(e) } : x))
   }
 }
-/** A message typed sent (empty or too long — not); `reply` — the message it answers. */
+/** The messages go one after another (an answer after its question — the server numbers them as they come). */
+let line: Promise<void> = Promise.resolve()
+const deliverInLine = (o: Outgoing) => void (line = line.then(() => deliver(o)))
+/** A message typed sent (empty or too long — not); `reply` — the message it answers. No server — it waits, the agents answer it. */
 export function sendMessage(room: string, text: string, reply?: ChatReply): boolean {
   const body = cleanChatText(text)
   if (body === null) return false
+  if (!isHeld(room) && !chatOnline.value) {
+    const r = roomOf(room)
+    const mentions = r ? mentionsIn(body, mentionable(r)) : []
+    wait(room, crypto.randomUUID(), { text: body, ...(mentions.length ? { mentions } : {}), ...(reply ? { reply } : {}) })
+    return true
+  }
   const o: Outgoing = { room, clientId: crypto.randomUUID(), text: body, ...(reply ? { reply } : {}) }
   outbox.value = [...outbox.value, o]
-  void deliver(o)
+  deliverInLine(o)
   return true
 }
 export function retryMessage(o: Outgoing): void {
   outbox.value = outbox.value.map((x) => (x.clientId === o.clientId ? { ...x, failed: undefined } : x))
-  void deliver(o)
+  deliverInLine(o)
 }
 export function discardMessage(o: Outgoing): void {
   outbox.value = outbox.value.filter((x) => x.clientId !== o.clientId)
@@ -302,7 +367,7 @@ async function resync(): Promise<void> {
     messages.value = new Map([...messages.value].filter(([id]) => isHeld(id)))
     for (const id of loaded) await loadLatest(id)
     for (const id of watched.keys()) void markRead(id)
-    for (const o of outbox.value) void deliver(o)
+    for (const o of outbox.value) deliverInLine(o)
   } catch {
     // the next connection tries again
   }
@@ -317,26 +382,9 @@ export function startChat(): void {
   window.qa.onSettings((s) => (chatPrefs.value = s.chat))
   onServerEvents(EVENTS)
   window.qa.onChatOpen((room) => void openChat(room).catch(() => undefined))
-  void showLocals().then(() => outbox.value.filter((o) => isHeld(o.room)).forEach((o) => void deliver(o)))
+  void showLocals().then(() => outbox.value.filter((o) => isHeld(o.room)).forEach(deliverInLine))
+  startChatCache({ rooms: chatRooms, messages, kept: (id) => !isHeld(id), fresh: () => serverRooms, show: showCached })
   watch(chatOnline, (on) => on && void resync(), { immediate: true })
   watch(outbox, keepOutbox)
   document.addEventListener('visibilitychange', () => watched.forEach((_n, id) => void markRead(id)))
-}
-
-/** The messages on their way as kept (none, or not readable — none). */
-function readOutbox(): Outgoing[] {
-  try {
-    const list: unknown = JSON.parse(localStorage.getItem(OUTBOX_KEY) ?? '[]')
-    return Array.isArray(list) ? list.filter((o): o is Outgoing => !!o && typeof o.room === 'string' && typeof o.clientId === 'string' && typeof o.text === 'string') : []
-  } catch {
-    return []
-  }
-}
-function keepOutbox(list: Outgoing[]): void {
-  try {
-    if (list.length) localStorage.setItem(OUTBOX_KEY, JSON.stringify(list))
-    else localStorage.removeItem(OUTBOX_KEY)
-  } catch {
-    // (kept for this run only)
-  }
 }

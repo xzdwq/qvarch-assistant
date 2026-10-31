@@ -1,15 +1,17 @@
-import { shell } from 'electron'
+import { shell, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import type { ApiEndpoint } from '../shared/apiMap'
 import type { Bookmark, BrowserApi, BrowserSettings, BrowserTab, CertInfo, DeviceMode, PasswordInfo, PwRecState, RecFull, RecItem, RecState, Visit } from '../shared/browser'
 import type { CheckProblem, CheckSettings, CheckState } from '../shared/check'
 import type { BrowserHook, HookHit, HookStatus } from '../shared/hooks'
 import { BrowserCore } from './browser/browserCore'
+import type { Tab } from './browser/tab'
 import { chooseMenu, folderMenu } from './browser/nativeMenus'
 import { clearSiteData, readLocalStorage } from './browser/pageTools'
 import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
 import { lookAtTab } from './browser/pageLook'
 import { pageLookText } from '../shared/browser/pageLook'
+import { sameAddress } from '../shared/browser/scenarioAddress'
 
 /**
  * The Браузер section's pages: each tab a WebContentsView of its own over the main window (the renderer reports
@@ -19,15 +21,54 @@ import { pageLookText } from '../shared/browser/pageLook'
  */
 export class Browser extends BrowserCore implements BrowserApi {
   // ---------- a page for an AI agent ----------
-  /** What a page offers to act on: the address given — opened in a new tab; none — the tab shown (or looked at) last. */
+  /** The tab the agent's looks open pages in (one, taken again — never a tab per look). */
+  private lookTab = ''
+  /**
+   * What a page offers to act on: the address given — a tab open at it, else the agent's own tab taken there (made
+   * once, never brought to the front); looked at when its loads settled (a sign-in passes through redirects of its
+   * own — the page they end at is the page); none — the tab shown (or looked at) last.
+   */
   async look(url?: string): Promise<string> {
     if (url) {
-      const t = this.tabs.get(this.open(url).id)!
-      return pageLookText(await lookAtTab(t, true))
+      const at = [...this.tabs.values()].find((x) => !x.asleep && sameAddress(x.view.webContents.getURL() || x.t.url, url))
+      const own = at ? undefined : this.tabs.get(this.lookTab)
+      const t = at ?? own ?? this.tabs.get(this.create(url).id)!
+      if (!at) this.lookTab = t.t.id
+      if (own) this.go(own.t.id, url)
+      return pageLookText(await lookAtTab(t, true), url)
     }
     const t = [...this.tabs.values()].filter((x) => !x.asleep && !/^about:blank$/.test(x.t.url)).sort((a, b) => Number(this.pages.isShown(b.t.id)) - Number(this.pages.isShown(a.t.id)) || b.seen - a.seen)[0]
     if (!t) throw new Error('Во встроенном браузере нет открытой страницы — дай адрес (url)')
     return pageLookText(await lookAtTab(t, t.t.loading))
+  }
+
+  // ---------- a scenario run in the Браузер ----------
+  /** Each note block's tab to run in (owner → tab id): kept for its next run. */
+  private runTabs = new Map<string, string>()
+  /**
+   * The tab a block's scenario runs in, awake and made the shown one (a hidden page draws no frames — Playwright
+   * waits for them before a click): a tab at the address the scenario starts at, if one is open; else the block's
+   * own tab of its last run, taken there; else a new one at that address (a blank one — the scenario names none).
+   */
+  runTab(owner: string, url?: string): Tab {
+    const at = url ? [...this.tabs.values()].find((x) => sameAddress(x.asleep ? x.t.url : x.view.webContents.getURL() || x.t.url, url)) : undefined
+    const own = at ? undefined : this.tabs.get(this.runTabs.get(owner) ?? '')
+    const t = at ?? own ?? this.tabs.get(this.create(url ?? 'about:blank').id)!
+    this.runTabs.set(owner, t.t.id)
+    this.wake(t)
+    if (own && url) this.go(t.t.id, url)
+    // (a blank tab is made without loading anything — its page would have no frame to drive)
+    else if (!url && !t.view.webContents.getURL()) void t.view.webContents.loadURL('about:blank').catch(() => undefined)
+    this.emit('activate', { id: t.t.id })
+    return t
+  }
+  /** A tab's device mode told to its page again (a run's window size undone over it). */
+  deviceAgain(t: Tab): void {
+    void this.devices.apply(t)
+  }
+  /** A scenario is being recorded in this page (a tab's or a note's browser's). */
+  recordingIn(wc: WebContents): boolean {
+    return this.scenario.recordsIn(wc)
   }
 
   // ---------- a tab's page ----------

@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { closeTab, curPane, layout, toggleSplit } from '@nb/workspace/paneLayout'
+import { isShown } from '@renderer/lib/views'
 
 /** One shortcut of the notes screen (with Ctrl / ⌘): when it applies and what it does. */
 interface Shortcut {
@@ -30,7 +31,8 @@ export function useNotebookKeys(actions: { newNote: () => unknown; openSearch: (
     },
   ]
   function onKey(e: KeyboardEvent): void {
-    if (!(e.ctrlKey || e.metaKey)) return
+    // (the notes stay when another section is shown — their keys do not)
+    if (!(e.ctrlKey || e.metaKey) || !isShown('notebook')) return
     const k = e.key.toLowerCase()
     const s = shortcuts.find((x) => x.when(k, e))
     if (!s) return

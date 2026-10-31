@@ -5,6 +5,7 @@
  * was closed), on / off, run now, its journal, deleted (asked again first).
  */
 import { computed, ref } from 'vue'
+import { useDraft } from '@renderer/lib/drafts'
 import { CRON_PRESETS } from '@shared/cron'
 import { cronCheck, jobTitle, nextDue, type CronJob, type CronRun } from '@shared/cronJobs'
 import { remoteError } from '@shared/remoteError'
@@ -20,7 +21,7 @@ const shown = computed(() => (props.all ? jobs.value : jobs.value.filter((j) => 
 
 // ---------- a new one ----------
 const expr = ref('0 9 * * 1-5')
-const title = ref('')
+const title = useDraft(() => `cron:title:${props.note}`)
 const said = ref('')
 const check = computed(() => cronCheck(expr.value))
 const presets = computed<MenuItem[]>(() => CRON_PRESETS.map((p) => ({ label: `${p.title} · ${p.expr}`, run: () => (expr.value = p.expr) })))

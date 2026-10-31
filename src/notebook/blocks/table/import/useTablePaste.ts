@@ -27,6 +27,8 @@ export function useTablePaste(t: Ref<TableModel>, save: (now?: boolean) => void,
   }
 
   function onPaste(e: ClipboardEvent): void {
+    // (a table out of sight — its note in a hidden tab, the notes in another section — takes no paste)
+    if (!root.value?.checkVisibility()) return
     const at = startCell(e)
     if (!at || !e.clipboardData) return
     const clip = { html: e.clipboardData.getData('text/html') || undefined, text: e.clipboardData.getData('text/plain') || undefined }

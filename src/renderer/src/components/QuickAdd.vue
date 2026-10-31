@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useDraft } from '../lib/drafts'
 import { dayStart, MINUTE, shiftDay } from '@shared/timeline'
 import { parseQuick, type Quick } from '@shared/quickadd'
 import type { TaskRef } from '@shared/jira'
@@ -33,7 +34,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ add: [d: QuickDraft]; record: [r: { kind: string; label: string }] }>()
 
-const text = ref('')
+// (the line not added yet — as left, back from another section)
+const text = useDraft('quickadd:line')
 const inp = ref<HTMLInputElement>()
 const focused = ref(false)
 const attached = ref<TaskRef>()

@@ -5,16 +5,17 @@ import { formatDuration } from '@shared/timeline'
 import { workDay } from '@shared/work'
 import { useDay } from '../lib/useDay'
 import { todayKey } from '../lib/today'
-import { useJira } from '../lib/jira'
-import { useOutlook } from '../lib/outlook'
 import { termLight, useTermSessions } from '../lib/terminal'
 import { dockOn, toggleDock } from '../lib/termDock'
 import { recItems, recState, startBrowser } from '../lib/browser'
 import { useTransport } from '../lib/transport'
+import { aiWaiting, aiWorking } from '../lib/aiSignals'
+import { noteTitle, openNote } from '../lib/mentions'
+import Icon from './Icon.vue'
 
 /**
- * The window's bottom line (a terminal's status bar): the call, the connections, the terminal (always: its light,
- * a click — its bottom panel), today's time, the clock.
+ * The window's bottom line (a terminal's status bar): the call, the terminal (always: its light, a click — its bottom
+ * panel), the AI at work / waiting, today's time, the clock. The connections (Jira, Outlook) — in the settings.
  */
 defineProps<{ section: string }>()
 const emit = defineEmits<{ browser: [] }>()
@@ -23,15 +24,7 @@ const terms = useTermSessions()
 /** The server's version, by the app's (the last known; none — never connected). */
 const transport = useTransport()
 const { data, live, now } = useDay(todayKey)
-const jira = useJira()
-const outlook = useOutlook()
 const today = computed(() => workDay(data.value).totals)
-type Light = 'on' | 'off' | 'busy' | 'err'
-const light = (s: { configured: boolean; connected: boolean; syncing: boolean; error?: string }): Light =>
-  !s.configured ? 'off' : s.syncing ? 'busy' : s.error ? 'err' : s.connected ? 'on' : 'err'
-const jl = computed(() => light(jira.value))
-const ol = computed(() => light(outlook.value))
-const TIP: Record<Light, string> = { on: 'подключено', off: 'не настроено', busy: 'синхронизация…', err: 'нет связи' }
 const clock = computed(() => new Date(now.value).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
 const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }))
 </script>
@@ -42,12 +35,20 @@ const date = computed(() => new Date(now.value).toLocaleDateString('ru-RU', { da
       <i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:group-[.live]/it:not-group-[.call]/it:bg-up tw:group-[.live]/it:not-group-[.call]/it:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:group-[.call]/it:bg-down tw:group-[.call]/it:[box-shadow:0_0_6px_color-mix(in_srgb,var(--down)_70%,transparent)] tw:group-[.call]/it:animate-[StatusBar-blink_1s_steps(2)_infinite]"></i>{{ live.inCall ? `CALL${live.callApp ? ` · ${live.callApp}` : ''}` : 'LIVE' }}
     </span>
     <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
-    <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Jira: ${TIP[jl]}${jira.error ? ` — ${jira.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="jl"></i>JIRA</span>
-    <span class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none" :title="`Outlook: ${TIP[ol]}${outlook.error ? ` — ${outlook.error}` : ''}`"><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="ol"></i>OUTLOOK</span>
     <button class="it term tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:hover:not-[&.err]:text-text tw:[&.err]:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3 tw:[&.open]:bg-accent/16 tw:[&.open]:not-[&.err]:text-text" :class="[termLight.kind, { open: dockOn }]" :title="`${terms.length ? termLight.title : 'Терминал'} · ${dockOn ? 'скрыть панель' : 'открыть панель внизу'}`" @click="toggleDock">
       <i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.on]:not-[&.busy]:not-[&.err]:bg-up tw:[&.on]:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)] tw:[&.busy]:not-[&.err]:bg-warn tw:[&.busy]:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down" :class="termLight.kind" :style="termLight.color ? { background: termLight.color, boxShadow: `0 0 8px ${termLight.color}` } : undefined"></i>TERMINAL<template v-if="termLight.label"> · {{ termLight.label }}</template>
     </button>
     <button v-if="recState.on" class="it term rec tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:text-down-fg tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Браузер записывает запросы — открыть" @click="emit('browser')"><i class="led err blinkrec tw:animate-[StatusBar-blink_1s_steps(2)_infinite] tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-down"></i>REC · {{ recItems.length }}</button>
+    <button
+      v-if="aiWaiting.length || aiWorking.length"
+      class="it tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:h-18 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:[font:inherit] tw:tracking-[inherit] tw:cursor-default tw:hover:bg-hover"
+      :class="aiWaiting.length ? 'tw:text-warn-fg' : 'tw:text-up-fg'"
+      :title="aiWaiting.length ? `ИИ ждёт вас: ${aiWaiting.map(noteTitle).join(', ')} — открыть` : `ИИ работает: ${aiWorking.map(noteTitle).join(', ')} — открыть`"
+      @click="openNote(aiWaiting[0] ?? aiWorking[0])"
+    >
+      <template v-if="aiWaiting.length"><Icon name="users" :size="11" class="tw:animate-[StatusBar-blink_1s_steps(2)_infinite]" />ИИ ЖДЁТ<template v-if="aiWaiting.length > 1"> · {{ aiWaiting.length }}</template></template>
+      <template v-else><i class="led tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-up tw:animate-pulse tw:[box-shadow:0_0_6px_color-mix(in_srgb,var(--up)_60%,transparent)]"></i>ИИ РАБОТАЕТ<template v-if="aiWorking.length > 1"> · {{ aiWorking.length }}</template></template>
+    </button>
     <span class="sep tw:flex-none tw:w-1 tw:h-12 tw:bg-border-2"></span>
     <span class="it n tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums">СЕГОДНЯ <b class="tw:text-text tw:font-semibold">{{ formatDuration(today.all) }}</b></span>
     <span class="it n opt tw:inline-flex tw:items-center tw:gap-6 tw:flex-none tw:tabular-nums tw:[&&]:@max-[760px]:hidden">ЗАДАЧИ <b class="tw:text-text tw:font-semibold">{{ formatDuration(today.tasks) }}</b></span>

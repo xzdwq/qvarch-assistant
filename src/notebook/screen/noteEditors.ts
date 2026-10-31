@@ -33,18 +33,19 @@ export class NoteEditors {
     return p?.active ? this.editors.get(NoteEditors.key(p)) : undefined
   }
 
-  setTitle(paneId: string, el: HTMLInputElement): void {
-    this.titles.set(paneId, el)
+  /** A note's title field in its pane (`key` — as the editor's). */
+  setTitle(key: string, el: HTMLInputElement): void {
+    this.titles.set(key, el)
   }
-  /** The pane's title field focused, its text chosen (a new note: its name typed first). */
-  selectTitle(paneId: string): void {
-    const el = this.titles.get(paneId)
+  /** The title field of the pane's active note focused, its text chosen (a new note: its name typed first). */
+  selectTitle(p: Pane): void {
+    const el = this.titles.get(NoteEditors.key(p))
     el?.focus()
     el?.select()
   }
   /** ↑ from the first line of the text — the cursor goes to the end of the title. */
   titleUp(p: Pane): void {
-    const el = this.titles.get(p.id)
+    const el = this.titles.get(NoteEditors.key(p))
     if (!el) return
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)

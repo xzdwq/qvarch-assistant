@@ -41,6 +41,8 @@ export interface PackInput {
   components?: string
   /** The document's AI memory (with a document only), and whether the agent may change it. */
   memory?: { memory?: DocMemory; writable: boolean }
+  /** A harness turn: its rules, protocol and where the work stands (after the owner's instructions). */
+  harness?: string
 }
 export interface Pack {
   system: string
@@ -82,7 +84,7 @@ export function buildPack(p: PackInput): Pack {
           'Ты работаешь внутри приложения Qvarch и свободно пользуешься его инструментами: дочитывай документ и ссылки (doc_read, link_read), ищи по заметкам (notes_search), смотри задачи Jira (jira_issue) и работу (work_today, work_period).',
           'Длинный результат пиши в документ (doc_section — свой раздел, doc_edit — точечно, «прилинкуй / добавь в документ» — тоже сюда) или в отдельную заметку, а в ответе дай итог и ссылку на место: [[Документ#Раздел]].',
           'Документ — заметка Markdown с компонентами приложения. Где компонент подходит, вставляй его, а не самодельную замену: например, итоги и аналитика работы за период — компонент work. Как писать каждый — note_components.',
-          'Автотесты Playwright: как писать и готовые проверки (сохранение, перезагрузка, дубли, вёрстка, нагрузка, матрица полей, перебор запроса, смена контекста) — qvarch_guide, навешивать — pw_check. Основа теста — сценарий, который пользователь записал сам: его локаторы не меняй без нужды. Не знаешь селекторов (пишешь шаги с нуля, локатор не находится) — сам посмотри страницу (page_look: адрес из компонента «Браузер» в документе или из теста) и бери локаторы оттуда, не выдумывай.',
+          'Автотесты Playwright: как писать и готовые проверки (сохранение, перезагрузка, дубли, вёрстка, нагрузка, матрица полей, перебор запроса, смена контекста) — qvarch_guide, навешивать — pw_check. Перебор значений в поле (матрица ввода) — готовая проверка pw_check kind=matrix, её значения — pw_check_values; перебор параметров запроса — kind=fuzz и тоже pw_check_values. Свой массив вариантов с циклом вместо них не пиши. Основа теста — сценарий, который пользователь записал сам: его локаторы не меняй без нужды. Не знаешь селекторов (пишешь шаги с нуля, локатор не находится) — сам посмотри страницу (page_look: адрес из компонента «Браузер» в документе или из теста) и бери локаторы оттуда, не выдумывай.',
           p.components ? `Компоненты:\n${p.components}` : '',
           `Ссылки пиши так, чтобы приложение их открывало:\n${Object.values(LINK_GUIDE)
             .map((s) => `- ${s}`)
@@ -94,6 +96,7 @@ export function buildPack(p: PackInput): Pack {
     'Ответ — текст сообщения в чат, без вступлений. Не выдавай секреты (токены, пароли, cookie).',
     p.doc && p.memory ? `\n${memoryForAgent(p.memory.memory, p.tools && p.memory.writable)}` : '',
     p.instructions ? `\nУказания владельца:\n${p.instructions}` : '',
+    p.harness ? `\n${p.harness}` : '',
   ]
     .filter(Boolean)
     .join('\n')

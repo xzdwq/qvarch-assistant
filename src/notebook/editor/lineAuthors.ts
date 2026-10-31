@@ -2,6 +2,7 @@ import { StateEffect, StateField } from '@codemirror/state'
 import { gutter, GutterMarker } from '@codemirror/view'
 import type { LineAuthor } from '@shared/transport/sharedText'
 import { peerSlotIn, peerSlotsField } from './peerCursors'
+import { NO_GUTTER_SPACE } from './gutterSpacer'
 
 /**
  * Who changed each line last: a thin bar on the left of the line numbers — a person's in their colour (the same as
@@ -39,6 +40,9 @@ const markOf = (slot: number, agent = '', first = false) => {
   return marks.get(key) ?? marks.set(key, new AuthorMark(slot, agent, first)).get(key)!
 }
 
+/** The column's spacer: a bar when any line has an author shown (an agent's first line too — its ✦ is outside the bar). */
+const spacerOf = (all: Map<number, LineAuthor>): GutterMarker => (all.size ? markOf(-1) : NO_GUTTER_SPACE)
+
 export const lineAuthors = [
   authorsField,
   gutter({
@@ -54,5 +58,8 @@ export const lineAuthors = [
       return markOf(slot, who.agent, prev?.agent !== who.agent || prev?.device !== who.device)
     },
     lineMarkerChange: (u) => u.startState.field(authorsField) !== u.state.field(authorsField) || u.startState.field(peerSlotsField, false) !== u.state.field(peerSlotsField, false),
+    // (as wide as a bar wherever the note is scrolled — when it has any)
+    initialSpacer: (view) => spacerOf(view.state.field(authorsField)),
+    updateSpacer: (_s, u) => spacerOf(u.state.field(authorsField)),
   }),
 ]

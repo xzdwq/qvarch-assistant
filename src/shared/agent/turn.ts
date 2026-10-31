@@ -4,6 +4,7 @@ import type { Touch } from './touches'
 import type { TrajStep } from './trajectory'
 import type { PackLink, PackMessage } from './contextPack'
 import type { Caller } from './trigger'
+import type { TurnHarness } from './harness/report'
 
 /**
  * An agent's turn as the window asks main for it (the window knows the chat and the note) and as main answers it
@@ -31,6 +32,11 @@ export interface TurnRequest {
   question: number
   /** The document's AI memory (docAi), and whether this turn may change it (one's own call, or a shared note). */
   memory?: { memory?: DocMemory; writable: boolean }
+  /**
+   * A harness turn: its rules, protocol and where the work stands (added to the agent's instructions); its tools given;
+   * the blocks its criteria are checked by (the harness runs them — the agent does not, mid-turn).
+   */
+  harness?: { system: string; checks?: Array<{ path: string; block: string }> }
 }
 export interface TurnAnswer {
   text: string
@@ -45,6 +51,8 @@ export interface TurnAnswer {
   touches?: Touch[]
   /** The turn step by step (the journal's trajectory). */
   steps?: TrajStep[]
+  /** A harness turn: the plan or the report it gave. */
+  harness?: TurnHarness
 }
 
 /**

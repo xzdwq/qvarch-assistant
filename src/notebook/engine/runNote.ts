@@ -75,9 +75,14 @@ export interface BlockAtLine {
 }
 const itemOf = (b: BlockAtLine): BlockItem => ({ kind: b.kind, info: b.info, body: b.body, key: blockRunKey(b.info.name, b.kind, b.line, b.info.id), line: b.line })
 
-/** A block run where it stands: the note's, or — in a loop — the pass shown again (its values, its result kept with it). */
+/**
+ * A block run by hand where it stands: the note's, or — in a loop — the pass shown again (its values, its result kept
+ * with it). Its `trigger` — by hand.
+ */
 export function runBlockAt(path: string, noteText: string, block: BlockAtLine, opts: { sqlMode?: SqlMode } = {}): Promise<boolean> {
-  return runItem(itemOf(block), envAtLine(path, block.line, noteText), noteText, opts)
+  const env = envAtLine(path, block.line, noteText)
+  env.publish(TRIGGER_NAME, { by: 'hand', at: Date.now() } satisfies RunTrigger, 'run', TRIGGER_NAME)
+  return runItem(itemOf(block), env, noteText, opts)
 }
 /** A block's run going on where it stands stopped (in a loop — the pass shown's). */
 export function stopBlockAt(path: string, noteText: string, block: Omit<BlockAtLine, 'body'>): void {
@@ -106,9 +111,11 @@ export function runItemNamed(text: string, want: string): RunItem | undefined {
   const items = [undefined, ...findLoops(text.split('\n'))].flatMap((l) => runItemsIn(text, l))
   return items.find((x) => x.key === want || itemName(x) === want)
 }
-/** An item of the note run where it stands (the AI tools: a block or a loop by its name). */
-export function runItemWhereItStands(path: string, noteText: string, item: RunItem): Promise<boolean> {
-  return runItem(item, envAtLine(path, item.line, noteText), noteText)
+/** An item of the note run where it stands (the AI tools, the harness's checks: a block or a loop by its name); what started it — its `trigger`. */
+export function runItemWhereItStands(path: string, noteText: string, item: RunItem, trigger: RunTrigger, recheck?: string[]): Promise<boolean> {
+  const env = envAtLine(path, item.line, noteText)
+  env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
+  return runItem(item, env, noteText, recheck?.length ? { recheck } : {})
 }
 
 // ---------- data and templates: published without a run ----------

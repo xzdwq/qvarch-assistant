@@ -2,6 +2,10 @@ import { inject, provide, type InjectionKey, type Ref } from 'vue'
 import type { ChatFile, ChatMessage, ChatReply, ChatRoom, Outgoing } from '@shared/transport/chat'
 import type { ChatPrefs } from '@shared/transport/constants'
 import type { NoteLinkRef } from '@shared/notebook/links'
+import type { HarnessRun } from '@shared/agent/harness/model'
+import type { HarnessSettings } from '@shared/agent/harness/constants'
+import type { HarnessGuide, PlanGuides } from '@shared/agent/harness/guides'
+import type { PlanDraft } from '@shared/agent/harness/planDraft'
 
 /**
  * What a chat's parts (its messages, what one writes, the files and the voices in it) need of the chats — one
@@ -46,6 +50,31 @@ export interface ChatPort {
   follow(link: NoteLinkRef): Promise<void>
   /** A received note / folder put into the notebook and opened: what was done, in words. */
   takeNotes(room: string, f: ChatFile): Promise<string>
+  /** The harness (the main window only: it leads the runs). */
+  readonly harness?: HarnessPort
+}
+/** A chat's harness: its run, started by a message (its goal), led by the buttons of its panel. */
+export interface HarnessPort {
+  runOf(room: string): HarnessRun | undefined
+  /** A turn or the checks going on now. */
+  busy(room: string): boolean
+  /** One's own agent is in the room (it would do the work). */
+  canStart(room: string): boolean
+  /** Started with the goal typed (can't — why). */
+  start(room: string, text: string): string | undefined
+  /** The plan taken (as the person edited it: `draft`). */
+  confirm(room: string, draft?: PlanDraft): void
+  /** The instructions to choose from (the plan's window). */
+  guides(): HarnessGuide[]
+  /** The plan taken with what the agent is to take in first (instructions, remarks); `go` — then to work at once. */
+  replan(room: string, edits: { guides?: PlanGuides; draft?: PlanDraft; remarks: string; go?: boolean }): void
+  stop(room: string): void
+  resume(room: string): void
+  /** A finished run taken off the chat. */
+  close(room: string): void
+  /** This chat's settings (who reviews at the end, the limits, the plan shown first) and setting them (its run holds to them at once). */
+  settingsOf(room: string): HarnessSettings
+  setSettings(room: string, s: HarnessSettings): Promise<void>
 }
 
 const CHAT_PORT: InjectionKey<ChatPort> = Symbol('chatPort')

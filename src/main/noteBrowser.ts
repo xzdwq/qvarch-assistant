@@ -4,8 +4,9 @@ import { tellIdentity, type ChromeOverride } from './browser/pageIdentity'
 
 /**
  * The browser component of the notes: a <webview> in the note (it scrolls with the text), on the Браузер
- * section's profile (its cookies, sign-ins, certificates). Every webview is held to that: no preload, no Node,
- * sandboxed, http(s) only. A page's new window becomes a tab of its component; the requests of a tab are
+ * section's profile (its cookies, sign-ins, certificates). Every webview is held to that: the app's own preload only
+ * (the Браузер's pages' one, isolated from the page: a scenario's recorder — what else it has answers the section's
+ * tabs only), no Node, sandboxed, http(s) only. A page's new window becomes a tab of its component; the requests of a tab are
  * listened to over the DevTools protocol while its «Запросы» panel is open.
  */
 export const NOTE_PARTITION = 'persist:qa-browser'
@@ -38,10 +39,18 @@ async function chromeLikeGuest(g: WebContents, chrome: () => ChromeOverride, url
   }
 }
 
-export function setupNoteBrowser(emit: (host: WebContents, type: string, payload: unknown) => void, chrome: () => ChromeOverride): void {
+/** What the notes' browsers give the app: the scenario recorder's preload, and their pages' navigations. */
+export interface NoteBrowserHooks {
+  /** The preload every webview gets — the app's own (a scenario's recorder), never one the window names. */
+  preload: string
+  navigated(wc: WebContents, url: string): void
+  domReady(wc: WebContents): void
+}
+
+export function setupNoteBrowser(emit: (host: WebContents, type: string, payload: unknown) => void, chrome: () => ChromeOverride, hooks: NoteBrowserHooks): void {
   const guard = (wc: WebContents) => {
     wc.on('will-attach-webview', (ev, prefs, params) => {
-      delete prefs.preload
+      prefs.preload = hooks.preload
       prefs.nodeIntegration = false
       prefs.nodeIntegrationInSubFrames = false
       prefs.contextIsolation = true
@@ -54,6 +63,10 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
       // told at every main-frame navigation's start (before a page has a document Chromium drops it) — and now
       guest.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void chromeLikeGuest(guest, chrome, d.url))
       void chromeLikeGuest(guest, chrome)
+      // a scenario recorded in it: each page records, the address changes are waited for
+      guest.on('dom-ready', () => hooks.domReady(guest))
+      guest.on('did-navigate', (_e, url) => hooks.navigated(guest, url))
+      guest.on('did-navigate-in-page', (_e, url, isMain) => isMain && hooks.navigated(guest, url))
     })
   }
   // the windows there already and every one made later

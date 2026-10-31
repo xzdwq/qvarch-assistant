@@ -7,6 +7,7 @@
  * a stretch pointed at — its step). The latest at the bottom, scrolled to.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useDraft } from '@renderer/lib/drafts'
 import type { DocTurn, TurnOutcome } from '@shared/agent/docAi'
 import { TRAJ_LANES, type TrajKind, type TrajLane, type TrajStep } from '@shared/agent/trajectory'
 import { timeBar, turnSteps } from '@shared/agent/trajectoryView'
@@ -47,7 +48,7 @@ const sum = computed(() => {
 })
 
 // ---------- a search over the steps ----------
-const q = ref('')
+const q = useDraft('docai:search')
 const hit = (s: TrajStep) => {
   const w = q.value.trim().toLowerCase()
   return !w || `${s.tool ?? ''} ${s.text} ${s.result ?? ''}`.toLowerCase().includes(w)
