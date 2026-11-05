@@ -110,11 +110,20 @@ export function useAddressLine(deps: { byId: (id?: string) => BrowserTab | undef
     if (newTabToo) void deps.newTab(pi, url)
     else submitUrl(pi, url)
   }
+  /** The focus went to a page: no address line keeps it (nor its selection); what was typed stays (as in any browser). */
+  function leaveLine(): void {
+    endSuggest()
+    for (const el of urlEls.values()) {
+      if (document.activeElement !== el) continue
+      el.setSelectionRange(el.value.length, el.value.length)
+      el.blur()
+    }
+  }
   async function focusUrl(pi: number): Promise<void> {
     await nextTick()
     const el = urlEls.get(bLayout.panes[pi]?.id ?? '')
     el?.focus()
     el?.select()
   }
-  return { urlEdit, urlEls, urlwEls, suggestFor, suggestions, sugIdx, bounced, partsFor, urlShown, onUrlInput, onUrlKey, submitUrl, endSuggest, openFromParts, focusUrl }
+  return { urlEdit, urlEls, urlwEls, suggestFor, suggestions, sugIdx, bounced, partsFor, urlShown, onUrlInput, onUrlKey, submitUrl, endSuggest, openFromParts, focusUrl, leaveLine }
 }

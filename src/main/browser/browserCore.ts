@@ -13,6 +13,7 @@ import { DeviceEmulation } from './deviceEmulation'
 import { DockedDevTools } from './dockedDevTools'
 import { HookSearch } from './hookSearch'
 import { PageLayout } from './pageLayout'
+import { wirePageLife } from './pageLife'
 import { PageRulers, savePageAs } from './pageTools'
 import { PasswordVault } from './passwordVault'
 import { RequestRecorder } from './requestRecorder'
@@ -83,11 +84,22 @@ export class BrowserCore implements TabEventsHost {
     // the tabs not looked at for a while fall asleep (each page is a process of its own: memory)
     setInterval(() => this.sleepIdle(), 60_000)
   }
+  /**
+   * The browser's User-Agent put everywhere a page's parts read it: the profile's session (its pages, its requests)
+   * and the process's own (`app.userAgentFallback` — a site's shared and service workers take theirs from it). One
+   * string in all of them: a check (Cloudflare's) that meets two in one page takes it for a fake and fails.
+   */
+  protected applyUserAgent(): string {
+    const ua = this.userAgent()
+    this.ses.setUserAgent(ua)
+    app.userAgentFallback = ua
+    return ua
+  }
   /** The profile's session: a browser's User-Agent, certificates, the source viewer, permissions, downloads. */
   private setupSession(): void {
     // a browser's User-Agent (not "Electron" / the app — some sites refuse those)
     this.uaDefault = this.ses.getUserAgent().replace(/\s+Electron\/\S+/i, '').replace(/\s+qvarch[-\w]*\/\S+/i, '')
-    this.ses.setUserAgent(this.userAgent())
+    this.applyUserAgent()
     // every request as Chrome's: its Client Hints say Chrome too (each page is also told so — chromeLike; this covers
     // what the protocol does not reach: workers, a page's very first request, the notes' browsers)
     this.ses.webRequest.onBeforeSendHeaders((d, cb) => {
@@ -195,8 +207,11 @@ export class BrowserCore implements TabEventsHost {
   layout(rects: Rect[]): void {
     this.pages.layout(rects)
   }
-  cover(on: boolean): Promise<Record<string, string>> {
-    return this.pages.cover(on)
+  shots(): Promise<Record<string, string>> {
+    return this.pages.shots()
+  }
+  cover(on: boolean): void {
+    this.pages.cover(on)
   }
 
   // ---------- tabs ----------
@@ -206,7 +221,13 @@ export class BrowserCore implements TabEventsHost {
   private makeView(): WebContentsView {
     // the preload only sees sign-in forms (to offer saving / filling a password) — the page cannot reach it
     const view = new WebContentsView({ webPreferences: { session: this.ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(__dirname, '../preload/browser.js') } })
-    view.setBackgroundColor('#ffffff')
+    // (the window's dark canvas while a page has nothing to draw yet; its document there — white under it, as browsers
+    // give a page that sets no background of its own)
+    const dark = this.win?.getBackgroundColor() ?? '#0a0d12'
+    view.setBackgroundColor(dark)
+    const wc = view.webContents
+    wc.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && !wc.isDestroyed() && view.setBackgroundColor(dark))
+    wc.on('dom-ready', () => !wc.isDestroyed() && view.setBackgroundColor('#ffffff'))
     view.setVisible(false)
     return view
   }
@@ -236,10 +257,13 @@ export class BrowserCore implements TabEventsHost {
     t.view = this.makeView()
     t.asleep = false
     t.t.asleep = false
+    // (a page whose process was gone or hung — a process of its own now)
+    if (t.t.error?.gone) t.t.error = undefined
     t.dbg = new Set()
     t.rec = false
     this.win?.contentView.addChildView(t.view)
     wireTab(this, t)
+    wirePageLife(this, t)
     this.keepChromeLike(t)
     if (this.recorder.recording) void this.recorder.attach(t)
     t.checkScript = undefined
@@ -249,6 +273,26 @@ export class BrowserCore implements TabEventsHost {
     if (ua) t.view.webContents.setUserAgent(ua)
     void t.view.webContents.loadURL(t.t.url).catch(() => undefined)
     this.changed()
+  }
+  /**
+   * A tab's page started again at its address — its process crashed or does not answer («Перезапустить»): the view
+   * closed (its process not answering keeps no one waiting) and made anew, as a tab waking up.
+   */
+  private restartPage(t: Tab): void {
+    if (t.asleep) return this.wake(t)
+    this.devTools.close(t)
+    try {
+      this.win?.contentView.removeChildView(t.view)
+      t.view.webContents.close()
+    } catch {
+      // gone already
+    }
+    t.asleep = true
+    t.t.error = undefined
+    t.t.loading = false
+    this.pages.forget(t.t.id)
+    this.wake(t)
+    this.pages.relayout()
   }
   /** A tab opened by the app itself (a recording, a link, a trace): made the shown one of its pane. */
   open(url: string): BrowserTab {
@@ -263,6 +307,7 @@ export class BrowserCore implements TabEventsHost {
     this.tabs.set(id, tab)
     this.win?.contentView.addChildView(view)
     wireTab(this, tab)
+    wirePageLife(this, tab)
     this.keepChromeLike(tab)
     if (this.recorder.recording) void this.recorder.attach(tab)
     this.hookSearch.sync(tab, url)
@@ -296,23 +341,31 @@ export class BrowserCore implements TabEventsHost {
     this.wake(t)
     // view-source: typed — our source viewer
     const url = url0.replace(/^view-source:/i, `${SOURCE_SCHEME}:`)
+    // (its process gone or not answering: made anew — at the address typed)
+    const gone = !!t.t.error?.gone
     t.t.error = undefined
     t.t.url = url
+    // (the address is the new page's from now on — the icon shown is the old one's: none known yet)
+    t.t.favicon = undefined
     // an address typed in the recording tab: a line of its own
     this.scenario.onAddressTyped(id, url)
-    void t.view.webContents.loadURL(url).catch(() => undefined)
+    if (gone) this.restartPage(t)
+    else void t.view.webContents.loadURL(url).catch(() => undefined)
     this.changed()
   }
   nav(id: string, action: 'back' | 'fwd' | 'reload' | 'hard' | 'stop' | 'devtools'): void {
     const t = this.tabs.get(id)
     if (!t) return
     this.wake(t)
+    // (its process gone or not answering: a reload is its start anew)
+    if ((action === 'reload' || action === 'hard') && t.t.error?.gone) return this.restartPage(t)
     const wc = t.view.webContents
+    const h = wc.navigationHistory
     const NAV: Record<typeof action, () => void> = {
-      back: () => wc.navigationHistory.canGoBack() && wc.navigationHistory.goBack(),
-      fwd: () => wc.navigationHistory.canGoForward() && wc.navigationHistory.goForward(),
+      back: () => h.canGoBack() && h.goBack(),
+      fwd: () => h.canGoForward() && h.goForward(),
       reload: () => ((t.t.error = undefined), wc.reload()),
-      hard: () => wc.reloadIgnoringCache(),
+      hard: () => ((t.t.error = undefined), wc.reloadIgnoringCache()),
       stop: () => wc.stop(),
       devtools: () => this.devTools.toggle(t),
     }

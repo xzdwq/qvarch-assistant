@@ -47,11 +47,12 @@ const evMax = computed(() => Math.max(1, ...events.value.map((e) => e.ms)))
       <div class="ch tw:flex tw:items-center tw:gap-8 tw:mb-8"><span class="ct tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">По видам</span></div>
       <Donut :parts="donut" @pick="(k) => (fKinds = [k])" />
     </section>
-    <section v-if="allDays.length > 1" class="card s2 tw:py-10 tw:px-12 tw:rounded-r3 tw:border tw:border-border tw:bg-panel tw:m-0 tw:min-w-0 tw:col-[span_2] tw:[&&]:@max-[980px]:col-auto">
+    <!-- (always there: a day with nothing — its zeros; the grid keeps its place) -->
+    <section class="card s2 tw:py-10 tw:px-12 tw:rounded-r3 tw:border tw:border-border tw:bg-panel tw:m-0 tw:min-w-0 tw:col-[span_2] tw:[&&]:@max-[980px]:col-auto">
       <div class="ch tw:flex tw:items-center tw:gap-8 tw:mb-8"><span class="ct tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Динамика по видам</span></div>
       <AreaStack :labels="areaLabels" :series="areaSeries" :rows="daily.rows" :height="210" />
     </section>
-    <section class="card tw:py-10 tw:px-12 tw:rounded-r3 tw:border tw:border-border tw:bg-panel tw:m-0 tw:min-w-0 tw:[&.s3]:col-span-full" :class="{ s3: allDays.length <= 1 }">
+    <section class="card tw:py-10 tw:px-12 tw:rounded-r3 tw:border tw:border-border tw:bg-panel tw:m-0 tw:min-w-0">
       <div class="ch tw:flex tw:items-center tw:gap-8 tw:mb-8"><span class="ct tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Когда я работаю</span></div>
       <Heatmap :matrix="heat" />
     </section>

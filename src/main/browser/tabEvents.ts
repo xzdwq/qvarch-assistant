@@ -47,6 +47,8 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     if (d.isMainFrame && !d.isSameDocument) t.error = undefined
   })
   wc.on('dom-ready', () => b.hooks.apply(wc))
+  // the page took the focus (a click on it): the window's address line lets go of its own
+  wc.on('focus', () => b.emit('pageFocus', { id: t.id }))
   // the page's HTML for a hook's search (no «loadingFinished» comes for it)
   wc.on('did-finish-load', () => b.hookSearch.pageLoaded(tab))
   // the recording tab: each page of it records (not only the one that asked), the address changes are waited for
@@ -55,7 +57,6 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     b.scenario.onNavigated(wc, url)
     b.hookSearch.sync(tab, url)
     t.url = url
-    t.favicon = undefined
     // its title comes later (the old one is the previous page's)
     b.store.visit(tab, url, '', true)
     sync()
@@ -79,21 +80,21 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     b.store.visit(tab, t.url, title, false)
     b.changed()
   })
-  // the window's rules allow no remote pictures: the icon comes over as data (small ones only)
+  // the icon is the page's own: a page starting — none known yet (never the one before it); the page's candidates
+  // tried in turn — the first picture is its icon, none of them a picture — it has none ('')
+  let page = 0
+  wc.on('did-start-navigation', (d) => {
+    if (!d.isMainFrame || d.isSameDocument) return
+    page++
+    t.favicon = undefined
+  })
   wc.on('page-favicon-updated', (_e, icons) => {
-    const src = icons[0]
-    if (!src) return
-    if (src.startsWith('data:')) return void ((t.favicon = src), b.changed())
-    void b.ses
-      .fetch(src)
-      .then(async (r) => {
-        if (!r.ok) return
-        const buf = Buffer.from(await r.arrayBuffer())
-        if (buf.length > 64 * 1024) return
-        t.favicon = `data:${r.headers.get('content-type') || 'image/x-icon'};base64,${buf.toString('base64')}`
-        b.changed()
-      })
-      .catch(() => undefined)
+    const mine = page
+    void pageIcon(b, icons).then((icon) => {
+      if (mine !== page) return
+      t.favicon = icon
+      b.changed()
+    })
   })
   wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
     // -3: a navigation cut off by another one — no error
@@ -122,6 +123,43 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     print: () => wc.print(),
   })
   wc.on('context-menu', (_e, p) => Menu.buildFromTemplate(pageMenu(b, tab, p)).popup({ window: b.window() }))
+}
+
+/** A picture's type by its first bytes (servers name icons anyhow): the kinds an icon comes as. */
+const PICTURES: Array<{ type: string; is: (b: Buffer) => boolean }> = [
+  { type: 'image/x-icon', is: (b) => b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0 },
+  { type: 'image/png', is: (b) => b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG' },
+  { type: 'image/gif', is: (b) => b.toString('latin1', 0, 3) === 'GIF' },
+  { type: 'image/jpeg', is: (b) => b[0] === 0xff && b[1] === 0xd8 },
+  { type: 'image/webp', is: (b) => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP' },
+  { type: 'image/svg+xml', is: (b) => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(b.toString('utf8', 0, 512)) },
+]
+/** What a fetched body is as a picture: its type, or '' (not a picture — a page sent in its place). */
+function pictureType(buf: Buffer, said: string): string {
+  if (!buf.length) return ''
+  const seen = PICTURES.find((p) => p.is(buf))?.type
+  return seen ?? (/^image\/(?!svg)/i.test(said) ? said : '')
+}
+/** An icon larger than this is not taken (the tab shows 14 px). */
+const ICON_MAX = 64 * 1024
+/**
+ * A page's icon from its candidates (the window's rules allow no remote pictures: it comes over as data) — the first
+ * that is a picture; none is (missing, a page sent instead of it) — '' (the page has none).
+ */
+async function pageIcon(b: TabEventsHost, icons: string[]): Promise<string> {
+  for (const src of icons) {
+    if (src.startsWith('data:image/')) return src
+    try {
+      const r = await b.ses.fetch(src)
+      if (!r.ok) continue
+      const buf = Buffer.from(await r.arrayBuffer())
+      const type = pictureType(buf, r.headers.get('content-type') ?? '')
+      if (type && buf.length <= ICON_MAX) return `data:${type};base64,${buf.toString('base64')}`
+    } catch {
+      // not reachable: the next one
+    }
+  }
+  return ''
 }
 
 /** A page's context menu: its link, its editing, its picture, then the page's own actions. */

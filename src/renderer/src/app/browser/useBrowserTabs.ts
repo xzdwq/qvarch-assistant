@@ -4,6 +4,8 @@ import { bLayout, placeTab, syncLayout, tabs, tabsLoaded } from '../../lib/brows
 /** The open pages are remembered (their addresses by pane) and opened again on the next start. */
 const SESSION = 'qa.browser.session'
 export const isBlank = (url?: string) => !url || url === 'about:blank'
+/** How many closed tabs Ctrl+Shift+T can bring back. */
+const CLOSED_KEPT = 25
 
 /**
  * The section's tabs in one or two panes (each pane its own tabs, like the terminal): made, closed, shown, the
@@ -30,8 +32,25 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
       making--
     }
   }
+  /** Tabs closed, the last one last: their address and place (Ctrl+Shift+T opens them again). */
+  const closed: Array<{ url: string; pi: number; index: number }> = []
   function closeTab(id: string): void {
+    const pi = paneOf(id)
+    const url = byId(id)?.url
+    if (url && !isBlank(url) && pi >= 0) closed.splice(0, Math.max(0, closed.length - CLOSED_KEPT + 1), { url, pi, index: bLayout.panes[pi].tabs.indexOf(id) })
     void window.qa.browser('close', id)
+  }
+  /** The tab closed last opened again where it was (its pane gone — in the current one). */
+  async function reopenTab(): Promise<void> {
+    const c = closed.pop()
+    if (!c) return
+    making++
+    try {
+      const t = await window.qa.browser('create', c.url)
+      placeTab(bLayout.panes[c.pi] ? c.pi : bLayout.cur, t.id, undefined, c.index)
+    } finally {
+      making--
+    }
   }
   let restored = false
   // no tab left (all closed) — a blank one
@@ -111,7 +130,7 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
   // keys of the section itself (the pages send theirs from the main process)
   /** Ctrl + a key: a new tab, the tab closed (when there is one), the address line. */
   const CTRL_KEYS: Record<string, (e: KeyboardEvent) => void> = {
-    t: (e) => (e.preventDefault(), void newTab()),
+    t: (e) => (e.preventDefault(), void (e.shiftKey ? reopenTab() : newTab())),
     w: (e) => {
       if (!curId.value) return
       e.preventDefault()
@@ -126,5 +145,5 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
   }
   onMounted(() => window.addEventListener('keydown', onKey))
   onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-  return { byId, isBlank, pageShown, curId, newTab, closeTab, show, toggleSplit, paneOf, openUrl }
+  return { byId, isBlank, pageShown, curId, newTab, closeTab, reopenTab, show, toggleSplit, paneOf, openUrl }
 }

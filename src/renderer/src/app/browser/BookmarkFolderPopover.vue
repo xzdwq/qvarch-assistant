@@ -17,7 +17,10 @@ const { panelRef, style } = usePopover(folderAnchor, { place: underChip }, open)
 
 <template>
   <div v-if="folderPop && popFolder" :ref="panelRef" class="bmpop tw:fixed tw:z-1400 tw:flex tw:flex-col tw:min-w-220 tw:max-w-360 tw:max-h-[60vh] tw:overflow-y-auto tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop" :style="style">
-    <div v-if="folderPop.trail.length" class="bmph tw:flex tw:items-center tw:gap-6 tw:pt-2 tw:pr-4 tw:pb-6 tw:pl-4 tw:border-b tw:border-b-border tw:mb-4 tw:text-text-2 tw:text-[12px]"><button class="tw:inline-flex tw:p-3 tw:border-0 tw:bg-transparent tw:text-muted" @click="folderBack"><Icon name="chevronLeft" :size="12" /></button>{{ popFolder.title }}</div>
+    <!-- deeper in: the whole head goes back a level -->
+    <button v-if="folderPop.trail.length" class="bmph tw:flex-none tw:flex tw:items-center tw:gap-6 tw:py-5 tw:px-6 tw:mb-4 tw:border-0 tw:border-b tw:border-b-border tw:rounded-none tw:rounded-t-r2 tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:text-left tw:hover:bg-hover tw:hover:text-text" title="Назад" @click="folderBack">
+      <Icon name="chevronLeft" :size="12" class="tw:flex-none tw:text-muted" /><span class="tw:min-w-0 tw:truncate">{{ popFolder.title }}</span>
+    </button>
     <button
       v-for="c in popFolder.children"
       :key="c.id"

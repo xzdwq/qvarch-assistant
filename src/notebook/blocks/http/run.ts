@@ -1,4 +1,5 @@
 import { kv, newRequest, type HttpMethod } from '../../../shared/http'
+import { statusHint } from '../../../shared/httpStatusHints'
 import { interpolate } from '../../domain/values'
 import { LatestRuns, type BlockRunner } from '../../engine/blockRunner'
 import { cutText, indentText, RUN_STATE_TEXT, tookText } from '../../engine/reportText'
@@ -62,6 +63,8 @@ export const httpRunner: BlockRunner = {
     const out = r.request ? [`${r.request.method} ${r.request.url}`] : []
     const res = r.response
     if (brief || !res) return out
+    const hint = statusHint(res.status)
+    if (hint) out.push(`Что значит ${res.status}: ${hint}`)
     const type = res.headers.find(([h]) => h.toLowerCase() === 'content-type')?.[1]?.split(';')[0]
     out.push(`Ответ: ${res.size < 1024 ? `${res.size} Б` : `${(res.size / 1024).toFixed(1)} КБ`}${type ? `, ${type}` : ''}`)
     if (res.body) out.push(`Тело (начало):\n${indentText(cutText(res.body, 600))}`)

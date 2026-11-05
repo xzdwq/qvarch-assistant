@@ -142,6 +142,7 @@ export const QA_ROUTES = {
   termWrite: send('qa:termWrite'),
   termResize: send('qa:termResize'),
   termKill: invoke('qa:termKill'),
+  termRestart: invoke('qa:termRestart'),
   termRename: invoke('qa:termRename'),
   termReplay: invoke('qa:termReplay'),
   termValues: invoke('qa:termValues'),

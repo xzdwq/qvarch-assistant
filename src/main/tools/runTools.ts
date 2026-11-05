@@ -42,7 +42,8 @@ export function runTools(c: ToolCtx): McpTool[] {
     {
       name: 'note_results',
       access: 'read',
-      description: 'Последние результаты заметки без запуска: отчёт по блокам и значения переменных.',
+      description:
+        'Последние результаты заметки без запуска: отчёт по блокам и значения переменных. Если по заметке идёт прогон — сначала дожидается его конца (до 5 мин), поэтому опрашивать по кругу не нужно; результат своего note_run бери из его ответа.',
       inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
       run: async (a) => c.ui<string>('report', { path: notePath(str(a.path, 'path', 1000)) }),
     },

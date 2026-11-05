@@ -225,6 +225,10 @@ function go(path: string): void {
   window.qa.termWrite(props.session.id, `\x1bcd ${arg}\r`)
   term?.focus()
 }
+/** The shell ended: started again here (its folder, the environment as it is now). */
+function restart(): void {
+  void window.qa.termRestart(props.session.id).then(() => term?.focus())
+}
 /** The folders inside a crumb (its ›): a list under it. */
 const menu = ref<{ path: string; dirs: string[] }>()
 const menuAnchor = ref<HTMLElement>()
@@ -270,7 +274,7 @@ const wantOk = computed(() => {
       <span v-if="info.node" class="seg node tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-up/12 tw:text-up-fg tw:[&.bad]:bg-down/16 tw:[&.bad]:text-down-fg" :class="{ bad: !wantOk }" :title="info.project?.nodeWanted ? `Проект просит node ${info.project.nodeWanted}` : 'Версия node в этой оболочке'">⬢ {{ info.node }}<template v-if="!wantOk"> ≠ {{ info.project?.nodeWanted }}</template></span>
       <span v-if="info.npm" class="seg npm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/12 tw:text-down-fg" title="npm">npm {{ info.npm }}</span>
       <span v-if="info.pnpm" class="seg pnpm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-warn/12 tw:text-warn-fg" title="pnpm">pnpm {{ info.pnpm }}</span>
-      <span v-if="session.exited !== undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg">завершён ({{ session.exited }})</span>
+      <button v-if="session.exited !== undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:border-0 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg tw:[font:inherit] tw:hover:bg-down/26" title="Оболочка завершилась — запустить её снова в этой вкладке (в той же папке, с переменными окружения, как они сейчас)" @click="restart"><Icon name="refresh" :size="11" />завершён ({{ session.exited }}) · перезапустить</button>
     </div>
     <div ref="box" class="xt tw:flex-1 tw:min-h-0 tw:pt-4 tw:pr-0 tw:pb-0 tw:pl-6" @wheel="onWheel"></div>
     <Popover v-model:open="menuOpen" :anchor="menuAnchor" :width="260" align-left :chrome="60" max-height="none" class="tdirs tw:flex tw:flex-col tw:max-h-340 tw:overflow-y-auto tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">

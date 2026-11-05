@@ -51,5 +51,13 @@ describe('the bookmarks tree', () => {
     expect(findBookmark(next!, (b) => b.id === 'c')?.icon).toBe('data:image/png;base64,AA')
     expect(findBookmark(next!, (b) => b.id === 'd')?.icon).toBeUndefined()
     expect(withTabIcons(tree(), [tab('https://d.test/')])).toBeUndefined()
+    // another page's icon given before — put right by the page's own; the same one — nothing new
+    const fixed = withTabIcons(next!, [tab('https://c.test/', 'data:image/png;base64,BB')])
+    expect(findBookmark(fixed!, (b) => b.id === 'c')?.icon).toBe('data:image/png;base64,BB')
+    expect(withTabIcons(fixed!, [tab('https://c.test/', 'data:image/png;base64,BB')])).toBeUndefined()
+    // the page has none: another's taken away; not known yet — left as it is
+    const none = withTabIcons(fixed!, [tab('https://c.test/', '')])
+    expect(findBookmark(none!, (b) => b.id === 'c')?.icon).toBeUndefined()
+    expect(withTabIcons(fixed!, [tab('https://c.test/')])).toBeUndefined()
   })
 })

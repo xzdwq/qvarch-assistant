@@ -29,6 +29,7 @@ function registerTerminal(app: AppContext): void {
   listen('termWrite', (_e, id, data) => term.write(String(id), String(data)))
   listen('termResize', (_e, id, cols, rows) => term.resize(String(id), Number(cols), Number(rows)))
   handle('termKill', (_e, id) => term.kill(String(id)))
+  handle('termRestart', (_e, id) => term.restart(String(id)))
   handle('termRename', (_e, id, title) => term.rename(String(id), String(title)))
   handle('termReplay', (_e, id) => term.replay(String(id)))
   handle('termValues', (_e, id) => term.values(typeof id === 'string' ? id : undefined))

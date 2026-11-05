@@ -115,11 +115,21 @@ export function syncLayout(list: BrowserTab[], adopt = true): void {
   }
 }
 /** A tab into a pane (next to its active one, or right after `after`), made active. */
-export function placeTab(pi: number, id: string, after?: string): void {
-  for (const p of bLayout.panes) p.tabs = p.tabs.filter((t) => t !== id)
+/**
+ * A tab shown in a pane: next to `after` (a page's link — by the tab that opened it), at `index`, else at the end (a
+ * new tab, as in any browser); one in that pane already keeps its place.
+ */
+export function placeTab(pi: number, id: string, after?: string, index?: number): void {
   const p = bLayout.panes[pi] ?? bLayout.panes[0]
-  const at = p.tabs.indexOf(after ?? p.active ?? '')
-  p.tabs.splice(at < 0 ? p.tabs.length : at + 1, 0, id)
+  if (after === undefined && index === undefined && p.tabs.includes(id)) {
+    p.active = id
+    bLayout.cur = bLayout.panes.indexOf(p)
+    return
+  }
+  for (const x of bLayout.panes) x.tabs = x.tabs.filter((t) => t !== id)
+  const next = after === undefined ? -1 : p.tabs.indexOf(after)
+  const at = next >= 0 ? next + 1 : index !== undefined ? Math.min(Math.max(0, index), p.tabs.length) : p.tabs.length
+  p.tabs.splice(at, 0, id)
   p.active = id
   bLayout.cur = bLayout.panes.indexOf(p)
 }
@@ -155,12 +165,19 @@ export function splitWith(from: number, id: string, side: 'left' | 'right'): voi
 }
 
 /**
+ * The mark of a panel that stays in <body> and is only shown or hidden (v-show — the terminal's): the pages make way
+ * when it shows. Anything else in <body> is looked at when it comes or goes.
+ */
+export const OVER_PAGES = 'data-over-pages'
+/**
  * Something of the app is open over the pages — a dialog or a menu teleported into <body>:
  * the native pages would hide it, so they make way meanwhile.
  */
 export function useOverlay(pages?: () => Element[]) {
   const on = ref(false)
   let mo: MutationObserver | undefined
+  /** The elements in <body> shown or hidden in place (their style / class). */
+  let shown: MutationObserver | undefined
   let raf = 0
   /** Over a page (its native view): only then the page is put under its picture — a menu beside it needs nothing. */
   const overPage = (el: HTMLElement) => {
@@ -178,7 +195,10 @@ export function useOverlay(pages?: () => Element[]) {
   const check = () => {
     raf = 0
     const app = document.getElementById('app')
-    const pops = [...document.body.children].filter((el): el is HTMLElement => el !== app && el instanceof HTMLElement && el.tagName !== 'SCRIPT' && el.getClientRects().length > 0 && !el.classList.contains('bv-ignore'))
+    const outside = [...document.body.children].filter((el): el is HTMLElement => el !== app && el instanceof HTMLElement && el.tagName !== 'SCRIPT')
+    // (a panel kept in <body> and only shown / hidden — it says so itself, OVER_PAGES — is watched for that too)
+    for (const el of outside) if (el.hasAttribute(OVER_PAGES)) shown?.observe(el, { attributes: true, attributeFilter: ['style', 'class'] })
+    const pops = outside.filter((el) => el.getClientRects().length > 0 && !el.classList.contains('bv-ignore'))
     // (the title bar's menu too: teleported into <body> like any other)
     on.value = pops.some(overPage)
     // (a popover placed a frame after it appears, moved with its button — looked at again while one is open)
@@ -188,10 +208,12 @@ export function useOverlay(pages?: () => Element[]) {
   onMounted(() => {
     mo = new MutationObserver(schedule)
     mo.observe(document.body, { childList: true })
+    shown = new MutationObserver(schedule)
     check()
   })
   onBeforeUnmount(() => {
     mo?.disconnect()
+    shown?.disconnect()
     if (raf) cancelAnimationFrame(raf)
   })
   return on

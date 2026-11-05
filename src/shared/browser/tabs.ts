@@ -8,6 +8,7 @@ export interface BrowserTab {
   id: string
   url: string
   title: string
+  /** The icon of the page now shown (data:): none — not known yet; '' — the page has none. */
   favicon?: string
   loading: boolean
   canBack: boolean
@@ -22,8 +23,16 @@ export interface BrowserTab {
   device?: DeviceMode
   /** Asleep: not looked at for a while, its page unloaded (it loads again when shown). */
   asleep?: boolean
-  /** The page did not open (no network, a bad certificate…). */
-  error?: { code: number; desc: string; url: string; cert?: boolean; host?: string }
+  /** The page did not open (no network, a bad certificate…), or its process is gone / hangs (`gone`). */
+  error?: { code: number; desc: string; url: string; cert?: boolean; host?: string; gone?: PageGone }
+}
+/** What became of a page's process: it ended (crashed, killed, out of memory) or it does not answer. */
+export const PAGE_GONE = ['crashed', 'hung'] as const
+export type PageGone = (typeof PAGE_GONE)[number]
+/** How each is told on the page's place («Перезапустить» starts its process again at the same address). */
+export const PAGE_GONE_TEXT: Record<PageGone, { title: string; hint: string }> = {
+  crashed: { title: 'Страница перестала работать', hint: 'Её процесс завершился (не хватило памяти или сбой). Перезапуск откроет её снова по тому же адресу.' },
+  hung: { title: 'Страница не отвечает', hint: 'Скрипт страницы занят и не отвечает. Можно подождать — сообщение уйдёт само, когда она ответит, — или перезапустить её.' },
 }
 export interface Bookmark {
   id: string

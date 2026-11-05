@@ -35,12 +35,23 @@ export function usePageLayout(deps: {
   /** The pages' pictures (JPEG, base64) by tab id (`id:dev` — its tools') while they make way. */
   const shots = ref<Record<string, string>>({})
   let coverSeq = 0
+  /** Two frames drawn: what was put on the screen is there. */
+  const drawn = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+  // covered: the pictures first, on the screen — then the pages hidden (no frame with neither: no flicker);
+  // uncovered: the pages back, then the pictures taken away
   watch(covering, async (on) => {
     const my = ++coverSeq
-    const s = await window.qa.browser('cover', on)
+    if (!on) {
+      await window.qa.browser('cover', false)
+      if (my === coverSeq) requestAnimationFrame(() => (shots.value = {}))
+      return
+    }
+    const s = await window.qa.browser('shots')
     if (my !== coverSeq) return
-    if (on) shots.value = s
-    else requestAnimationFrame(() => (shots.value = {}))
+    shots.value = s
+    await nextTick()
+    await drawn()
+    if (my === coverSeq) await window.qa.browser('cover', true)
   })
   let lastSent = ''
   function sendLayout(): void {

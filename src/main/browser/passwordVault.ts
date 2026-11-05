@@ -84,6 +84,20 @@ export class PasswordVault {
     }
     this.save()
   }
+  /** Logins brought from another browser: a site and name kept already — its password taken, else a new one. */
+  importLogins(list: ReadonlyArray<{ origin: string; username: string; password: string }>): { added: number; updated: number } {
+    let added = 0
+    let updated = 0
+    const now = Date.now()
+    for (const l of list) {
+      const has = this.pw.list.find((x) => x.origin === l.origin && x.username === l.username)
+      if (has?.password === l.password) continue
+      if (has) (Object.assign(has, { password: l.password, saved: now }), updated++)
+      else (this.pw.list.push({ id: browserId(), origin: l.origin, username: l.username, password: l.password, saved: now }), added++)
+    }
+    if (added || updated) this.save()
+    return { added, updated }
+  }
   reveal(id: string): string {
     return this.pw.list.find((x) => x.id === id)?.password ?? ''
   }

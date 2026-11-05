@@ -41,6 +41,7 @@ const iconBtn = 'tw:inline-flex tw:items-center tw:justify-center tw:w-20 tw:h-2
   <Teleport to="body" :disabled="termDock.pinned">
     <section
       v-show="dockOn"
+      data-over-pages
       class="tw:flex tw:flex-col tw:min-h-0 tw:bg-panel tw:[&.pop]:fixed tw:[&.pop]:left-0 tw:[&.pop]:right-0 tw:[&.pop]:bottom-24 tw:[&.pop]:z-1200 tw:[&.pop]:border tw:[&.pop]:border-border-2 tw:[&.pop]:border-b-0 tw:[&.pop]:rounded-t-[14px] tw:[&.pop]:[box-shadow:var(--shadow-pop-edge)] tw:[&.pop]:overflow-hidden tw:[&.pin]:relative tw:[&.pin]:flex-none tw:[&.pin]:border-t tw:[&.pin]:border-t-border-2"
       :class="termDock.pinned ? 'pin' : 'pop'"
       :style="{ height: `${height}px` }"

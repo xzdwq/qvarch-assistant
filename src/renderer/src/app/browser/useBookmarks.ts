@@ -29,7 +29,7 @@ export function useBookmarks(deps: { active: () => boolean; byId: (id?: string) 
     if (!t || isBlank(t.url)) return
     if (findBm((b) => b.url === t.url)) return saveBms(withoutBookmarks(bookmarks.value, (b) => b.url === t.url))
     const title = t.title || hostOf(t.url)
-    if (folders.value.length) bmEdit.value = { id: '', title, url: t.url, folder: '', isFolder: false, icon: t.favicon }
+    if (folders.value.length) bmEdit.value = { id: '', title, url: t.url, folder: '', isFolder: false, icon: t.favicon || undefined }
     else saveBms([...bookmarks.value, { id: browserId(), title, url: t.url, ...(t.favicon ? { icon: t.favicon } : {}) }])
   }
   // a bookmark without its icon gets it when its page shows one

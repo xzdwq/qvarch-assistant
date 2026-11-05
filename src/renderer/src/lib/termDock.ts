@@ -1,4 +1,4 @@
-import { computed, reactive, ref, shallowReactive, watch } from 'vue'
+import { computed, nextTick, reactive, ref, shallowReactive, watch } from 'vue'
 import { DOCK_H, dockShown, termPlaceOf, type TermDockState, type TermPlace } from '@shared/terminalDock'
 
 /**
@@ -46,6 +46,31 @@ watch([dockOn, () => termDock.sectionShown], ([d, s]) => (d || s) && (termEver.v
 export function toggleDock(): void {
   if (dockOn.value) termDock.open = false
   else Object.assign(termDock, { open: true, asked: 'dock' })
+}
+/** Ctrl+` — by the key's place (Ctrl+Ё in a Russian layout too), as in VS Code. */
+export const isTermKey = (e: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; code: string }): boolean => (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'Backquote'
+/** The panel shown or hidden by its key; shown — the typing goes into the terminal. */
+export function toggleDockByKey(): void {
+  toggleDock()
+  if (!dockOn.value) return
+  // (from a page of the Браузер the window's own document takes the focus back first)
+  void nextTick(() =>
+    requestAnimationFrame(() => {
+      window.focus()
+      termTarget.value?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+    }),
+  )
+}
+/** The key heard in the whole window, before anything in it (a shell, an editor) takes it. */
+export function listenTermKey(): () => void {
+  const onKey = (e: KeyboardEvent) => {
+    if (e.repeat || !isTermKey(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    toggleDockByKey()
+  }
+  window.addEventListener('keydown', onKey, true)
+  return () => window.removeEventListener('keydown', onKey, true)
 }
 /** The section shows the terminal again (it was in the panel). */
 export const showInSection = (): void => void (termDock.asked = 'section')

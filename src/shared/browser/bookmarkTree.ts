@@ -54,15 +54,23 @@ export function flatBookmarks(list: Bookmark[], max: number): Bookmark[] {
   walk(list)
   return out.slice(0, max)
 }
-/** A bookmark without its icon gets it from a tab showing its page: the new tree, or none when nothing changed. */
+/**
+ * A bookmark's icon as its page has it, by a tab showing that page whose icon is known: the page's icon (one missing
+ * given, another's put right), or none when the page has none ('' — another's taken away). The new tree, or none
+ * when nothing changed.
+ */
 export function withTabIcons(list: Bookmark[], tabs: BrowserTab[]): Bookmark[] | undefined {
   let changed = false
   const fill = (l: Bookmark[]): Bookmark[] =>
     l.map((b) => {
       if (b.children) return { ...b, children: fill(b.children) }
-      const t = !b.icon && b.url ? tabs.find((x) => x.url === b.url && x.favicon) : undefined
-      if (!t) return b
+      const t = b.url ? tabs.find((x) => x.url === b.url && x.favicon !== undefined) : undefined
+      if (!t || (t.favicon || undefined) === b.icon) return b
       changed = true
+      if (!t.favicon) {
+        const { icon: _gone, ...rest } = b
+        return rest
+      }
       return { ...b, icon: t.favicon }
     })
   const next = fill(list)

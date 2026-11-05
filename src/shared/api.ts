@@ -261,6 +261,8 @@ export interface QaApi {
   termWrite(id: string, data: string): void
   termResize(id: string, cols: number, rows: number): void
   termKill(id: string): Promise<void>
+  /** A shell that ended started again in its tab (its folder, the environment read anew). */
+  termRestart(id: string): Promise<void>
   termRename(id: string, title: string): Promise<void>
   /** A shell's output so far (a pane drawing it again). */
   termReplay(id: string): Promise<{ buf: string; upto: number }>

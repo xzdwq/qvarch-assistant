@@ -16,7 +16,7 @@ import HttpView from './HttpView.vue'
 import TerminalView from './TerminalView.vue'
 import TermDock from './terminal/TermDock.vue'
 import TermSlot from './terminal/TermSlot.vue'
-import { termEver, termTarget } from '../lib/termDock'
+import { listenTermKey, termEver, termTarget } from '../lib/termDock'
 import BrowserView from './BrowserView.vue'
 import SeriesAsk from '../components/SeriesAsk.vue'
 import StatusBar from '../components/StatusBar.vue'
@@ -144,6 +144,10 @@ const onOpenDay = (e: Event) => {
 }
 onMounted(() => window.addEventListener('qa:open-day', onOpenDay))
 onBeforeUnmount(() => window.removeEventListener('qa:open-day', onOpenDay))
+// Ctrl+` — the terminal's panel, from any section
+let stopTermKey: (() => void) | undefined
+onMounted(() => (stopTermKey = listenTermKey()))
+onBeforeUnmount(() => stopTermKey?.())
 const menu = computed(() => orderedViews(settings.value?.ui.menu).filter((v) => v.id === view.value || !settings.value?.ui.menu.hidden.includes(v.id)))
 
 const sectionName = computed(() => (view.value === 'settings' ? 'Настройки' : (VIEWS.find((v) => v.id === view.value)?.label ?? '')))

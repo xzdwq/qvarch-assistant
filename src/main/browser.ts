@@ -12,6 +12,8 @@ import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
 import { lookAtTab } from './browser/pageLook'
 import { pageLookText } from '../shared/browser/pageLook'
 import { sameAddress } from '../shared/browser/scenarioAddress'
+import { newBookmarksOnly, type ImportSource } from '../shared/browser/browserImport'
+import { importSources, pickPasswordsCsv, readImportBookmarks } from './browser/browserImport'
 
 /**
  * The Браузер section's pages: each tab a WebContentsView of its own over the main window (the renderer reports
@@ -132,8 +134,7 @@ export class Browser extends BrowserCore implements BrowserApi {
     if (typeof patch.sleepMin === 'number' && patch.sleepMin >= 0) s.sleepMin = Math.min(240, Math.round(patch.sleepMin))
     if (typeof patch.ua === 'string') {
       s.ua = patch.ua.replace(/[\r\n]+/g, ' ').trim().slice(0, 1000)
-      const ua = this.userAgent()
-      this.ses.setUserAgent(ua)
+      const ua = this.applyUserAgent()
       // the open tabs too (a device mode keeps its own)
       for (const t of this.tabs.values()) {
         if (t.asleep) continue
@@ -231,6 +232,25 @@ export class Browser extends BrowserCore implements BrowserApi {
   }
   neverRemove(origin: string): void {
     this.passwordVault.neverRemove(origin)
+  }
+
+  // ---------- moving in from another browser ----------
+  importSources(): ImportSource[] {
+    return importSources()
+  }
+  /** A profile's bookmarks added as a folder at the bar's end (the ones here already left out). */
+  importBookmarks(sourceId: string): { added: number; skipped: number } {
+    const f = readImportBookmarks(sourceId)
+    if (!f) return { added: 0, skipped: 0 }
+    const { folder, added, skipped } = newBookmarksOnly(f, this.store.bookmarks())
+    if (folder) this.store.setBookmarks([...this.store.bookmarks(), folder])
+    return { added, skipped }
+  }
+  /** A browser's exported passwords file picked and taken in (none picked — undefined). */
+  async importPasswords(): Promise<{ added: number; updated: number; skipped: number } | undefined> {
+    const r = await pickPasswordsCsv(this.window())
+    if (!r) return undefined
+    return { ...this.passwordVault.importLogins(r.logins), skipped: r.skipped }
   }
 
   // ---------- hooks ----------

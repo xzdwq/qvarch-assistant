@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { DEFAULT_BROWSER_SETTINGS, UA_PRESETS, type BrowserSettings } from '@shared/browser'
 import { onBrowserEvent } from '../../lib/browser'
+import BrowserImport from './BrowserImport.vue'
 
 const brSet = ref<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })
 const uaDefault = ref('')
@@ -86,5 +87,6 @@ function applyUa(): void {
         </label>
       </div>
       <p v-if="ownUaPicked" class="muted small tw:mt-0 tw:mr-0 tw:mb-12 tw:ml-0 tw:text-[12px]">Впишите строку и нажмите Enter (или щёлкните мимо). Пустая строка — встроенный User-Agent.</p>
+      <BrowserImport />
     </section>
 </template>

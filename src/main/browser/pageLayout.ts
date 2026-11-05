@@ -20,9 +20,13 @@ export class PageLayout {
   isShown(id: string): boolean {
     return this.shownIds.has(id)
   }
-  /** A tab closed. */
+  /** A tab closed (or its page made anew: shown again by the next layout). */
   forget(id: string): void {
     this.shownIds.delete(id)
+  }
+  /** The pages put where the renderer said last (a page made anew goes to its place at once). */
+  relayout(): void {
+    this.layout(this.lastRects)
   }
   /** The main window (made again after it was closed for good): every page goes into it. */
   attach(win: BrowserWindow): void {
@@ -42,7 +46,7 @@ export class PageLayout {
     this.lastRects = rects
     if (this.covered) return
     const want = new Set(rects.map((r) => r.id))
-    const put = (v: WebContentsView, b: Box) => v.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.w), height: Math.round(b.h) })
+    const put = (v: WebContentsView, b: Box) => v.setBounds(inside(b))
     for (const [id, t] of this.host.tabs) {
       const r = rects.find((x) => x.id === id)
       if (r && r.w > 1 && r.h > 1) {
@@ -66,40 +70,49 @@ export class PageLayout {
     this.shownIds = new Set([...want].filter((id) => this.host.tabs.has(id)))
   }
   /**
-   * Something of the app opens over the pages (a menu, a dialog): the pages hide — the renderer shows their
-   * pictures in their place meanwhile — and come back after.
+   * The shown pages' pictures (and their docked tools'), to stand in their place while something of the app is over
+   * them — taken first, the pages hidden only once the pictures are on the screen (no frame with neither).
    */
-  async cover(on: boolean): Promise<Record<string, string>> {
-    if (on === this.covered) return {}
+  async shots(): Promise<Record<string, string>> {
     const shots: Record<string, string> = {}
-    const tabs = this.host.tabs
-    if (on) {
-      for (const id of this.shownIds) {
-        const t = tabs.get(id)
-        if (!t) continue
-        try {
-          let img = await t.view.webContents.capturePage()
-          // the device mode: the picture is the device's whole size, the page drawn smaller in its corner
-          if (t.t.device && t.devScale && t.devScale < 1) {
-            const sz = img.getSize()
-            img = img.crop({ x: 0, y: 0, width: Math.max(1, Math.round(sz.width * t.devScale)), height: Math.max(1, Math.round(sz.height * t.devScale)) })
-          }
-          shots[id] = img.toJPEG(82).toString('base64')
-          if (t.dev?.getVisible()) shots[`${id}:dev`] = (await t.dev.webContents.capturePage()).toJPEG(82).toString('base64')
-        } catch {
-          // not drawn yet
+    for (const id of this.shownIds) {
+      const t = this.host.tabs.get(id)
+      if (!t || t.asleep) continue
+      try {
+        let img = await t.view.webContents.capturePage()
+        // the device mode: the picture is the device's whole size, the page drawn smaller in its corner
+        if (t.t.device && t.devScale && t.devScale < 1) {
+          const sz = img.getSize()
+          img = img.crop({ x: 0, y: 0, width: Math.max(1, Math.round(sz.width * t.devScale)), height: Math.max(1, Math.round(sz.height * t.devScale)) })
         }
+        shots[id] = img.toJPEG(82).toString('base64')
+        if (t.dev?.getVisible()) shots[`${id}:dev`] = (await t.dev.webContents.capturePage()).toJPEG(82).toString('base64')
+      } catch {
+        // not drawn yet
       }
-      this.covered = true
-      for (const id of this.shownIds) {
-        tabs.get(id)?.view.setVisible(false)
-        tabs.get(id)?.dev?.setVisible(false)
-      }
-    } else {
-      this.covered = false
-      for (const id of this.shownIds) tabs.get(id)?.view.setVisible(true)
-      this.layout(this.lastRects)
     }
     return shots
   }
+  /** Something of the app is over the pages (a menu, a dialog): the pages hide — their pictures in their place — and come back after. */
+  cover(on: boolean): void {
+    if (on === this.covered) return
+    this.covered = on
+    for (const id of this.shownIds) {
+      const t = this.host.tabs.get(id)
+      if (!t || t.asleep) continue
+      t.view.setVisible(!on)
+      if (on) t.dev?.setVisible(false)
+    }
+    if (!on) this.layout(this.lastRects)
+  }
+}
+
+/**
+ * A box from the window's (fractional) px to the view's whole ones, kept inside it: its start rounded up, its end
+ * down — the page never covers a line of the app's own around it (a border showing only while the page hides).
+ */
+function inside(b: Box): { x: number; y: number; width: number; height: number } {
+  const x = Math.ceil(b.x - 0.01)
+  const y = Math.ceil(b.y - 0.01)
+  return { x, y, width: Math.max(1, Math.floor(b.x + b.w + 0.01) - x), height: Math.max(1, Math.floor(b.y + b.h + 0.01) - y) }
 }

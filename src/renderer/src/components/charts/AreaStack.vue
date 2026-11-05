@@ -33,14 +33,17 @@ const yMax = computed(() => {
 })
 const x = (i: number) => PL + (props.rows.length > 1 ? (i / (props.rows.length - 1)) * plotW.value : plotW.value / 2)
 const y = (v: number) => PT + plotH.value - (v / yMax.value.top) * plotH.value
+/** Where a point of the areas is: one day only — drawn as a band over the whole width (a lone point shows nothing). */
+const xs = computed(() => (props.rows.length === 1 ? [PL, PL + plotW.value] : props.rows.map((_r, i) => x(i))))
 const layers = computed(() => {
-  const base = props.rows.map(() => 0)
+  const rows = props.rows.length === 1 ? [props.rows[0], props.rows[0]] : props.rows
+  const base = rows.map(() => 0)
   return props.series.map((s) => {
     const lo = [...base]
-    props.rows.forEach((r, i) => (base[i] += r[s.key] ?? 0))
+    rows.forEach((r, i) => (base[i] += r[s.key] ?? 0))
     const hi = [...base]
-    const top = hi.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-    const bottom = lo.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).reverse()
+    const top = hi.map((v, i) => `${xs.value[i].toFixed(1)},${y(v).toFixed(1)}`)
+    const bottom = lo.map((v, i) => `${xs.value[i].toFixed(1)},${y(v).toFixed(1)}`).reverse()
     return { ...s, area: [...top, ...bottom].join(' '), line: top.join(' ') }
   })
 })

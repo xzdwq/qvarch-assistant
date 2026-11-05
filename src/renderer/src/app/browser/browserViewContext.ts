@@ -1,6 +1,7 @@
 import { inject, provide, type InjectionKey } from 'vue'
 import type { BrowserSettings, PasswordInfo } from '@shared/browser'
 import { bLayout, onBrowserEvent, placeTab, startBrowser } from '../../lib/browser'
+import { toggleDockByKey } from '../../lib/termDock'
 import { useAddressLine } from './useAddressLine'
 import { useBookmarkDrag } from './useBookmarkDrag'
 import { useBookmarks } from './useBookmarks'
@@ -40,6 +41,8 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
   const PAGE_KEYS: Record<string, (id: string, pi: number) => void> = {
     newTab: (_id, pi) => void tabs.newTab(pi),
     closeTab: (id) => tabs.closeTab(id),
+    reopenTab: () => void tabs.reopenTab(),
+    terminal: () => toggleDockByKey(),
     focusUrl: (_id, pi) => void address.focusUrl(pi),
     bookmark: (id) => bookmarks.toggleStar(id),
     device: (id) => device.toggleDevice(id),
@@ -53,6 +56,8 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
       const pi = tabs.paneOf(opener)
       placeTab(pi < 0 ? bLayout.cur : pi, id, opener)
     },
+    // a page took the focus (a click on it): the address line let go — its selection with it
+    pageFocus: () => address.leaveLine(),
     key: (p) => {
       const { id, key } = p as { id: string; key: string }
       PAGE_KEYS[key]?.(id, Math.max(0, tabs.paneOf(id)))

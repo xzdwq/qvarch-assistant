@@ -3,6 +3,10 @@ import { ipcRenderer } from 'electron'
 // recording a Playwright scenario (off until the app starts it for this tab)
 import './pwRecorder'
 import { lookAtPage } from './recorder/pageLook'
+// no passkeys offered to pages (a hung Windows dialog would take the page's input with it)
+import './noPasskeys'
+// no page drags the app's window (a site's own app-region: drag)
+import './noWindowDrag'
 
 // the app asks what this page offers to act on (an AI agent looking at it — asked to by the person)
 ipcRenderer.on('qa:page-look', (_e, id: string) => ipcRenderer.send('qa:page-look-reply', id, lookAtPage()))

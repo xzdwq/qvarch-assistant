@@ -6,6 +6,7 @@ import { readProjectInfo, ToolVersions } from './projectInfo'
 import { renderPreset, variableValues, type VariableSource } from './presetVariables'
 import { commandFailure, COMMAND_ACCEPTED, isCtrlCExit, lastPromptMark, openMarkTail, PROMPT_MARK_START, shellArgs, shellEnv } from './shellIntegration'
 import { TermConfigFile } from './termConfigFile'
+import { windowsShellEnv } from './windowsEnv'
 import { newScanState, WatchScanner, type ScanState } from './watchScanner'
 
 /** The output kept for a pane drawn again (characters; trimmed back to it past a quarter more). */
@@ -13,6 +14,8 @@ const KEEP = 400_000
 /** The output goes to the window in batches (a flood of tiny messages would choke it). */
 const SEND_MS = 16
 const PWSH7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+/** A shell whose console did not connect in time is started again so many times. */
+const SPAWN_RETRIES = 2
 
 /** One shell: its public state, its pseudo-console and what is known of the command going on. */
 interface Session {
@@ -32,6 +35,9 @@ interface Session {
   running?: boolean
   out: string
   outTimer?: NodeJS.Timeout
+  /** The pane's size last told (a shell started again takes it). */
+  cols?: number
+  rows?: number
   /** How much output went to the window so far (a pane drawn again skips what its replay held). */
   sent: number
   scan: ScanState
@@ -86,27 +92,68 @@ export class Terminals {
     return { buf: ses.buf.slice(0, ses.buf.length - ses.out.length), upto: ses.sent }
   }
 
-  /** A new shell in a folder (else the last one used, else home), named «pwsh N» with the first free N. */
-  create(cwd?: string): TermSession {
-    const dir = [cwd, this.cfg.lastCwd, homedir()].find((d) => d && existsSync(d) && statSync(d).isDirectory())!
-    const id = presetId()
-    const p = pty.spawn(this.shell, shellArgs(this.cfg.profile), { name: 'xterm-256color', cols: 120, rows: 30, cwd: dir, env: shellEnv(process.env) })
+  /**
+   * A new shell in a folder (else the last one used, else home), named «pwsh N» with the first free N; its
+   * environment read anew (a tool installed meanwhile is there — as in a new tab of Windows Terminal).
+   */
+  async create(cwd?: string): Promise<TermSession> {
+    const dir = this.folderFor(cwd)
+    const env = await windowsShellEnv(shellEnv(process.env))
     const used = new Set(this.list().map((s) => s.title))
     let n = 1
     while (used.has(`pwsh ${n}`)) n++
-    const ses: Session = { s: { id, title: `pwsh ${n}`, busy: false, info: { cwd: dir } }, p, buf: '', carry: '', out: '', sent: 0, scan: newScanState() }
+    const id = presetId()
+    const ses = { s: { id, title: `pwsh ${n}`, busy: false, info: { cwd: dir } }, buf: '', carry: '', out: '', sent: 0, scan: newScanState() } as Session
     this.sessions.set(id, ses)
-    p.onData((d) => this.data(ses, d))
+    this.spawn(ses, dir, env, 0)
+    void this.refresh(ses, dir, [])
+    this.changed()
+    return ses.s
+  }
+  /** A shell that ended started again in its tab: in its folder, the environment read anew, its output so far kept. */
+  async restart(id: string): Promise<void> {
+    const ses = this.sessions.get(id)
+    if (!ses || ses.s.exited === undefined) return
+    const dir = this.folderFor(ses.s.info.cwd)
+    const env = await windowsShellEnv(shellEnv(process.env))
+    if (this.sessions.get(id) !== ses || ses.s.exited === undefined) return
+    Object.assign(ses.s, { exited: undefined, failed: undefined, busy: false })
+    Object.assign(ses, { carry: '', hid: undefined, hook: undefined, running: false, interrupted: false, startedAt: undefined })
+    this.data(ses, '\r\n\x1b[2m— оболочка перезапущена —\x1b[0m\r\n')
+    this.spawn(ses, dir, env, 0)
+    this.changed()
+  }
+  /** The folder a shell starts in: the one asked for, else the last one used, else home (one that is there). */
+  private folderFor(cwd?: string): string {
+    return [cwd, this.cfg.lastCwd, homedir()].find((d) => d && existsSync(d) && statSync(d).isDirectory())!
+  }
+  /**
+   * The shell's process in its pseudo-console. Its console not connected in time (the library's own 5 s; the app or
+   * the computer busy) ends it at once with -1 and no output — started again a couple of times before it is told.
+   */
+  private spawn(ses: Session, dir: string, env: Record<string, string>, attempt: number): void {
+    const p = pty.spawn(this.shell, shellArgs(this.cfg.profile), { name: 'xterm-256color', cols: ses.cols ?? 120, rows: ses.rows ?? 30, cwd: dir, env })
+    ses.p = p
+    let said = false
+    p.onData((d) => {
+      if (ses.p !== p) return
+      said = true
+      this.data(ses, d)
+    })
     p.onExit(({ exitCode }) => {
+      if (ses.p !== p) return
+      const mine = this.sessions.get(ses.s.id) === ses
+      if (mine && exitCode === -1 && !said && attempt < SPAWN_RETRIES) {
+        setTimeout(() => this.sessions.get(ses.s.id) === ses && ses.p === p && this.spawn(ses, dir, env, attempt + 1), 400 * (attempt + 1))
+        return
+      }
+      if (exitCode === -1 && !said) this.data(ses, '\x1b[31mОболочка не запустилась: консоль не подключилась вовремя (приложение или компьютер были заняты). «Перезапустить» — ещё раз.\x1b[0m\r\n')
       this.flush(ses)
       ses.s.exited = exitCode
       ses.s.busy = false
       if (exitCode !== 0 && !isCtrlCExit(exitCode)) ses.s.failed = exitCode
       this.changed()
     })
-    void this.refresh(ses, dir, [])
-    this.changed()
-    return ses.s
   }
 
   /** A chunk of the shell's output: kept, sent on in a batch, its marks read (a command accepted / ended). */
@@ -174,11 +221,24 @@ export class Terminals {
       ses.interrupted = false
       this.changed()
     }
-    ses.p.write(data)
+    try {
+      ses.p.write(data)
+    } catch {
+      // (its shell being started again: the typing waits for none)
+    }
   }
   resize(id: string, cols: number, rows: number): void {
     const ses = this.sessions.get(id)
-    if (ses && ses.s.exited === undefined && cols > 1 && rows > 1) ses.p.resize(Math.floor(cols), Math.floor(rows))
+    if (!ses || cols <= 1 || rows <= 1) return
+    // (kept: a shell started again takes the pane's size)
+    ses.cols = Math.floor(cols)
+    ses.rows = Math.floor(rows)
+    if (ses.s.exited !== undefined) return
+    try {
+      ses.p.resize(ses.cols, ses.rows)
+    } catch {
+      // (its console not connected yet, or gone meanwhile)
+    }
   }
   /** A shell ended (its process killed) and forgotten. */
   kill(id: string): void {

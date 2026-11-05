@@ -9,6 +9,8 @@ export interface PageKey {
   ctrl: boolean
   shift: boolean
   alt: boolean
+  /** The key's place, whatever the layout (Backquote — ` / Ё). */
+  code?: string
 }
 /** What a page's key may do: the tab's navigation and zoom, its tools, and the section's own keys (sent to the window). */
 export interface PageKeyActions {
@@ -16,7 +18,7 @@ export interface PageKeyActions {
   zoomBy(step: number): void
   zoomReset(): void
   /** A key the window handles (a new tab, the address line…). */
-  send(key: 'newTab' | 'closeTab' | 'focusUrl' | 'bookmark' | 'device' | 'history'): void
+  send(key: 'newTab' | 'reopenTab' | 'closeTab' | 'focusUrl' | 'bookmark' | 'device' | 'history' | 'terminal'): void
   save(): void
   viewSource(): void
   print(): void
@@ -31,6 +33,9 @@ const PAGE_KEYS: Array<{ when: (i: PageKey) => boolean; run: (a: PageKeyActions,
   { when: (i) => i.ctrl && (i.k === '=' || i.k === '+'), run: (a) => a.zoomBy(10) },
   { when: (i) => i.ctrl && i.k === '-', run: (a) => a.zoomBy(-10) },
   { when: (i) => i.ctrl && i.k === '0', run: (a) => a.zoomReset() },
+  // Ctrl+` — the terminal's panel (the app's key, from a page too)
+  { when: (i) => i.ctrl && !i.alt && i.code === 'Backquote', run: (a) => a.send('terminal') },
+  { when: (i) => i.ctrl && i.shift && i.k === 't', run: (a) => a.send('reopenTab') },
   { when: (i) => i.ctrl && i.k === 't', run: (a) => a.send('newTab') },
   { when: (i) => i.ctrl && i.k === 'w', run: (a) => a.send('closeTab') },
   { when: (i) => i.ctrl && i.k === 'l', run: (a) => a.send('focusUrl') },
@@ -52,9 +57,10 @@ export function pageKeyAction(i: PageKey): ((a: PageKeyActions) => void) | undef
 export function handlePageKeys(wc: WebContents, actions: PageKeyActions): void {
   wc.on('before-input-event', (e, input: Input) => {
     if (input.type !== 'keyDown') return
-    const run = pageKeyAction({ key: input.key, k: input.key.toLowerCase(), ctrl: input.control || input.meta, shift: input.shift, alt: input.alt })
+    const run = pageKeyAction({ key: input.key, k: input.key.toLowerCase(), ctrl: input.control || input.meta, shift: input.shift, alt: input.alt, code: input.code })
     if (!run) return
     e.preventDefault()
-    run(actions)
+    // (a key held: done once — a held Ctrl+W must not close tab after tab)
+    if (!input.isAutoRepeat) run(actions)
   })
 }

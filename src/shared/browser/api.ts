@@ -2,6 +2,7 @@ import type { ApiEndpoint } from '../apiMap'
 import type { CheckProblem, CheckSettings, CheckState } from '../check'
 import type { BrowserHook, HookHit, HookStatus } from '../hooks'
 import type { DeviceMode } from './devices'
+import type { ImportSource } from './browserImport'
 import type { PwRecState, RecFull, RecItem, RecState } from './recording'
 import type { Bookmark, BrowserSettings, BrowserTab, CertInfo, PasswordInfo, Visit } from './tabs'
 
@@ -29,7 +30,10 @@ export interface BrowserApi {
   zoom(id: string, percent: number): void
   trust(id: string, host: string): void
   loginReply(reqId: string, user?: string, pass?: string): void
-  cover(on: boolean): Promise<Record<string, string>>
+  /** The shown pages' pictures (by tab id; `id:dev` — its docked tools'), JPEG in base64. */
+  shots(): Promise<Record<string, string>>
+  /** The shown pages hidden while something of the app is over them (their pictures in their place), or back. */
+  cover(on: boolean): void
   bookmarks(): Bookmark[]
   setBookmarks(list: Bookmark[]): void
   suggest(q: string): Array<{ url: string; title: string; bookmark: boolean }>
@@ -60,6 +64,10 @@ export interface BrowserApi {
   pwReveal(id: string): string
   pwDelete(id: string): void
   pwFill(tabId: string, id: string): void
+  /** Moving in: the other browsers' profiles found here; one's bookmarks taken; an exported passwords file taken. */
+  importSources(): ImportSource[]
+  importBookmarks(sourceId: string): { added: number; skipped: number }
+  importPasswords(): Promise<{ added: number; updated: number; skipped: number } | undefined>
   neverList(): string[]
   neverRemove(origin: string): void
   certInfo(id: string): CertInfo | undefined
@@ -85,4 +93,4 @@ export interface BrowserApi {
   checkShow(tabId: string, sel: string): Promise<boolean>
   checkShot(tabId: string): Promise<Uint8Array | undefined>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']

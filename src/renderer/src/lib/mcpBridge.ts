@@ -1,5 +1,5 @@
 import { summary } from '@nb/domain/values'
-import { noteReport, noteRun, runAll, runItemNamed, runItemWhereItStands, syncNoteData } from '@nb/engine'
+import { noteReport, noteRun, noteRunsSettled, runAll, runItemNamed, runItemWhereItStands, syncNoteData } from '@nb/engine'
 import { docLinkPath, shareLinkOf } from '@nb/workspace/docLinks'
 import { docs, files, loadTree, openFile, save, setText } from './notebook'
 import { MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
@@ -12,6 +12,9 @@ import type { RunTrigger } from '@shared/cronJobs'
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
  * them: the text as typed, the runs and their results shown as they go, saved as usual.
  */
+/** How long the results asked for wait for a run of the note going on. */
+const RESULTS_WAIT_MS = 5 * 60_000
+
 function vars(path: string): string {
   const ctx = noteRun(path).ctx
   const keys = Object.keys(ctx)
@@ -115,11 +118,21 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     await postMessage(room, { text: String(a.text ?? ''), agent: { id: agent.id, name: agent.name }, attach: { kind: 'file', title: file.name, data: file } })
     return file.name
   },
+  /** The note's latest results — a run of it going on here waited for first (up to RESULTS_WAIT_MS). */
   async report(a) {
     const path = String(a.path)
-    const text = await textOf(path)
     await runsLoaded(path)
-    return `${noteReport(path, text)}\n\n${vars(path)}`.trim()
+    const t0 = Date.now()
+    const ended = await noteRunsSettled(path, RESULTS_WAIT_MS)
+    const waited = Date.now() - t0
+    const head = !ended
+      ? `Прогон ещё идёт (${Math.round(waited / 60_000)} мин) — результаты на сейчас; итог вернёт note_run, который его запустил`
+      : waited > 1000
+        ? `Дождался конца прогона (${Math.round(waited / 1000)} с)`
+        : ''
+    // (the text read after the wait: a run may have given a block its id)
+    const text = await textOf(path)
+    return [head, noteReport(path, text), vars(path)].filter(Boolean).join('\n\n').trim()
   },
 }
 

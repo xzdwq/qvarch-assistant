@@ -12,7 +12,8 @@ import { emit, handle, listen } from './router'
 import { WindowAsk } from './windowAsk'
 
 /** The window's work that may take long (a note's run: its tests, its loops) — waited for up to half an hour. */
-const LONG_OPS: ReadonlySet<string> = new Set(['run', 'cron'])
+// (`report` waits for a run of the note going on — a few minutes at most)
+const LONG_OPS: ReadonlySet<string> = new Set(['run', 'cron', 'report'])
 
 /** What the agents' runner takes from here: the server (turn tokens), what the tools are made of. */
 export interface McpHost {
