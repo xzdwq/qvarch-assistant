@@ -66,7 +66,7 @@ function onSplitResize(e: PointerEvent): void {
                     @dblclick="renaming = id"
                     @mousedown.middle.prevent="closeShell(id)"
                   >
-                    <i class="led tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.run]:not-[&.err]:bg-up tw:[&.run]:not-[&.alert]:animate-[TerminalView-tv-blink_1s_steps(2)_infinite] tw:[&.err]:bg-down tw:[&.alert]:animate-[TerminalView-tv-blink_0.36s_steps(2)_infinite]" :class="ledOf(id).cls" :style="ledOf(id).style"></i>
+                    <i class="led tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-dim tw:[&.run]:not-[&.err]:bg-up tw:[&.run]:not-[&.alert]:animate-[Shared-blink-25_1s_steps(2)_infinite] tw:[&.err]:bg-down tw:[&.alert]:animate-[Shared-blink-25_0.36s_steps(2)_infinite]" :class="ledOf(id).cls" :style="ledOf(id).style"></i>
                     <input v-if="renaming === id" v-focus class="ren tw:w-100 tw:h-20 tw:py-0 tw:px-4 tw:text-[11.5px]" :value="byId(id)?.title" @click.stop @keydown.enter="($event.target as HTMLInputElement).blur()" @blur="rename(id, ($event.target as HTMLInputElement).value)" />
                     <span v-else class="tname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ byId(id)?.title }}</span>
                     <button class="tx tw:flex-none tw:inline-flex tw:p-2 tw:border-0 tw:rounded-r2 tw:[background:none] tw:text-muted tw:opacity-0 tw:group-hover/tab:not-group-[.on]/tab:opacity-100 tw:group-[.on]/tab:opacity-100 tw:hover:bg-white/10 tw:hover:text-down-fg tw:hover:enabled:border-border-3" title="Закрыть оболочку (средняя кнопка мыши)" @click.stop="closeShell(id)"><Icon name="x" :size="11" /></button>

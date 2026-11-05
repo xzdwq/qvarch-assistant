@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { BlockInfo } from '@nb/domain/blockInfo'
 import { joinFence, splitFence, type FenceParts } from '@nb/domain/fence'
 
@@ -27,7 +27,9 @@ export function useFenceSource(props: { src: string; onChange?: (src: string) =>
   /** The block written into the note: in a moment, or at once. */
   function write(nextInfo?: BlockInfo, now = false): void {
     clearTimeout(timer)
+    timer = undefined
     const go = () => {
+      timer = undefined
       const p = splitFence(mine)
       const src = joinFence(p.fence, nextInfo ?? p.info, body.value)
       if (src === mine) return
@@ -44,5 +46,7 @@ export function useFenceSource(props: { src: string; onChange?: (src: string) =>
   const flush = () => write(undefined, true)
   /** The block as the component holds it now: its info line and the body being edited. */
   const current = (): FenceParts => ({ ...splitFence(mine), body: body.value })
-  return { parts, info, body, write, patchInfo, flush, current }
+  // the block closed right after typing (the tab, the note): the last keys are not lost
+  onBeforeUnmount(() => timer && flush())
+  return { parts, info, body, patchInfo, flush, current }
 }

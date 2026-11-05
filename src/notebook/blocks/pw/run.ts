@@ -1,4 +1,4 @@
-import type { PwTarget } from '../../../shared/api'
+import type { PwResult, PwTarget } from '../../../shared/api'
 import type { RunTrigger } from '../../../shared/cronJobs'
 import { parseBrowserBody } from '../../../shared/noteBrowser'
 import { isTsLang, PW_OWN_BROWSER, TRIGGER_NAME } from '../../domain/blockInfo'
@@ -6,15 +6,17 @@ import { fencedBlocksOf } from '../../domain/noteBlocks'
 import { noteBrowserPage } from '../../engine/noteBrowsers'
 import type { BlockRunner } from '../../engine/blockRunner'
 import { tookText } from '../../engine/reportText'
-import { errorText, runApi } from '../../engine/runApi'
+import { runApi } from '../../engine/runApi'
 import type { RunEnv } from '../../engine/runEnv'
-import { libsOf, runsSnapshot } from '../../engine/runItems'
-import { loadedNoteRun, saveRunsSoon } from '../../engine/runStore'
-import { followEmits } from '../../engine/runEmits'
+import { libsOf, runsSnapshot, type BlockItem } from '../../engine/runItems'
+import { loadedNoteRun } from '../../engine/runStore'
+import { LatestRuns, processRun, trackedRun } from '../../engine/trackedRun'
 import { checkLines, stepLines } from './modelReport'
 
 /** The Playwright runs going on: their run id → where their run is kept (the steps come by it). */
 const running = new Map<string, { env: RunEnv; key: string }>()
+/** The latest run of each block (run again before the first ended — the first one's answer is dropped). */
+const latest = new LatestRuns()
 let listening = false
 /** The steps of the runs going on, as the main process sends them, into their runs. */
 function listenToProgress(): void {
@@ -49,53 +51,22 @@ const quietRun = (env: RunEnv) => ((env.values()[TRIGGER_NAME] as RunTrigger | u
  * (One at a time per block — its files are the block's: a loop with one goes pass by pass.)
  */
 export const pwRunner: BlockRunner = {
-  async run({ env, item, noteText, recheck }) {
+  run({ env, item, noteText, recheck }) {
     listenToProgress()
-    const { info, body: code, key } = item
-    const runId = env.runSlot(key)
-    const own = { env, key }
+    const key = item.key
     // (what its run before gave — a matrix keeps the values whose inputs did not change)
     const before = env.runs[env.keyNow(key)]?.value
     const memo = Array.isArray(before) ? before : undefined
-    running.set(runId, own)
-    env.recordRun(key, { state: 'run', at: Date.now(), steps: [] })
-    const gather = followEmits(runId, env, 'pw', key, info.keep)
-    try {
-      const target = info.browser === PW_OWN_BROWSER ? ownTarget(env.notePath, noteText, info.in) : undefined
-      const r = await runApi().runPw(runId, {
-        code,
-        ts: isTsLang(info.lang),
-        libs: libsOf(noteText, code),
-        ctx: env.values(),
-        runs: runsSnapshot(env.notePath, noteText, key),
-        note: env.notePath,
-        key,
-        name: info.name ?? 'Сценарий',
-        browser: info.browser ?? 'msedge',
-        target,
-        quiet: quietRun(env),
-        headed: !!info.headed,
-        trace: !info.notrace,
-        session: !!info.session,
-        timeoutSec: info.timeout,
-        ...(memo ? { memo } : {}),
-        ...(recheck?.length ? { recheck } : {}),
-      })
-      const lost = await gather.end(r.emits, r.ok)
-      const ok = r.ok && !lost
-      env.recordRun(key, { state: ok ? 'ok' : 'error', at: Date.now(), ms: r.ms, logs: r.logs, error: r.error ?? lost, value: r.value, hasValue: r.hasValue, steps: r.steps, checks: r.checks, files: r.files, browser: r.browser })
-      if (ok && info.name && r.hasValue) env.publish(info.name, r.value, 'pw', key)
-      for (const [k, v] of Object.entries(r.sets ?? {})) env.publish(k, v, 'set', key)
-      saveRunsSoon(env.notePath)
-      return ok
-    } catch (e) {
-      await gather.end(undefined, false)
-      env.recordRun(key, { state: 'error', at: Date.now(), error: errorText(e) })
-      saveRunsSoon(env.notePath)
-      return false
-    } finally {
-      if (running.get(runId) === own) running.delete(runId)
-    }
+    // (the process is known by the block's slot: run again, the old one is stopped — «Перезапущено»)
+    return trackedRun(latest, env, key, { state: 'run', at: Date.now(), steps: [] }, async ({ slot }) => {
+      const own = { env, key }
+      running.set(slot, own)
+      try {
+        return await processRun(slot, env, item, 'pw', () => sendScenario(slot, env, item, noteText, memo, recheck), (r) => ({ steps: r.steps, checks: r.checks, files: r.files, browser: r.browser }))
+      } finally {
+        if (running.get(slot) === own) running.delete(slot)
+      }
+    })
   },
   stop: (env, key) => runApi().runPwStop(env.runSlot(key)),
   resultOf: (run) => (run.hasValue ? run.value : undefined),
@@ -108,4 +79,29 @@ export const pwRunner: BlockRunner = {
     const extra = [r.browser ? `браузер ${r.browser}` : '', r.files?.includes('trace.zip') ? 'трассировка есть' : '', r.files?.some((x) => x.endsWith('.png')) ? 'скриншот есть' : ''].filter(Boolean)
     return extra.length ? [`(${extra.join(' · ')})`] : []
   },
+}
+
+/** The scenario sent to its process (known by the block's slot); its result. */
+function sendScenario(slot: string, env: RunEnv, item: BlockItem, noteText: string, memo: unknown[] | undefined, recheck: string[] | undefined): Promise<PwResult> {
+  const { info, body: code, key } = item
+  const target = info.browser === PW_OWN_BROWSER ? ownTarget(env.notePath, noteText, info.in) : undefined
+  return runApi().runPw(slot, {
+    code,
+    ts: isTsLang(info.lang),
+    libs: libsOf(noteText, code),
+    ctx: env.values(),
+    runs: runsSnapshot(env.notePath, noteText, key),
+    note: env.notePath,
+    key,
+    name: info.name ?? 'Сценарий',
+    browser: info.browser ?? 'msedge',
+    target,
+    quiet: quietRun(env),
+    headed: !!info.headed,
+    trace: !info.notrace,
+    session: !!info.session,
+    timeoutSec: info.timeout,
+    ...(memo ? { memo } : {}),
+    ...(recheck?.length ? { recheck } : {}),
+  })
 }

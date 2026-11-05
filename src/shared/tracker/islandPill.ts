@@ -1,6 +1,6 @@
 import { visibleNotes } from '../notes'
 import { formatDuration, MINUTE } from '../timeline'
-import type { Entry, Ms, Note, PlanBlock } from '../types'
+import type { Entry, Ms, Note } from '../types'
 
 /**
  * The collapsed island pill without state: which chips fit, what they say, the day's totals, the date line,
@@ -21,12 +21,11 @@ export function pillWidthFor(contentPx: number): number {
   return Math.min(PILL_MAX, Math.max(PILL_MIN, Math.ceil((contentPx + PILL_CHROME) / 24) * 24))
 }
 
-/** One chip of the pill: a block, a note, the uncut tail, a planned block. */
+/** One chip of the pill: a block, a note, the uncut tail. */
 export type PillItem =
   | { type: 'entry'; t: Ms; e: Entry }
   | { type: 'note'; t: Ms; n: Note }
   | { type: 'uncut'; t: Ms; ms: Ms; live: boolean }
-  | { type: 'plan'; t: Ms; p: PlanBlock }
 
 /** A chip shows its share of the work day; on a day off (no base) — its duration. */
 export function chipText(ms: number, workMs: number): string {
@@ -44,23 +43,19 @@ export function pillItemWidth(it: PillItem, workMs: number): number {
       return chipW(it.e.end - it.e.start, workMs) + (it.e.task ? textW(it.e.task.key) + 4 : 0)
     case 'note':
       return NOTE_CHIP_W
-    case 'plan':
-      return chipW(it.p.end - it.p.start, workMs)
     case 'uncut':
       return chipW(it.ms, workMs) + 8
   }
 }
 
 /**
- * Blocks, notes and (if shown) what is still planned, in time order. Only the latest that fit are kept —
- * the pill never grows past its cap however busy the day is.
+ * Blocks and notes in time order. Only the latest that fit are kept — the pill never grows past its cap
+ * however busy the day is.
  */
-export function pillItems(o: { entries: Entry[]; notes: Note[] | undefined; plan: PlanBlock[] | undefined; showPlan: boolean; now: Ms; workMs: number }): PillItem[] {
+export function pillItems(o: { entries: Entry[]; notes: Note[] | undefined; workMs: number }): PillItem[] {
   const items: PillItem[] = [
     ...o.entries.map((e) => ({ type: 'entry' as const, t: e.start, e })),
     ...visibleNotes(o.notes).map((n) => ({ type: 'note' as const, t: n.at, n })),
-    // what is still planned for today (dashed)
-    ...(o.showPlan ? (o.plan ?? []).filter((p) => p.end > o.now).map((p) => ({ type: 'plan' as const, t: Math.max(p.start, o.now), p })) : []),
   ]
   items.sort((a, b) => a.t - b.t || (a.type === 'uncut' ? -1 : 1))
   const shown: PillItem[] = []
@@ -81,8 +76,6 @@ export function pillItemKey(it: PillItem): string {
       return it.e.id
     case 'note':
       return `n${it.n.id}`
-    case 'plan':
-      return `p${it.p.id}`
     case 'uncut':
       return `u${it.t}`
   }

@@ -41,10 +41,10 @@ export function useQuickSuggest(o: {
 }) {
   const jira = useJira()
   const own = useLocalTasks()
-  /** Every task that can be named: own (open) and mine / starred in Jira. */
+  /** Every task that can be named: own (open) and the open ones of Jira. */
   const allTasks = computed<Array<TaskRef & { own: boolean }>>(() => [
     ...own.value.filter((t) => t.key && t.status !== 'done').map((t) => ({ key: t.key!, summary: t.title, own: true })),
-    ...pickableTasks(jira.value).map((i) => ({ key: i.key, summary: i.summary, own: false })),
+    ...pickableTasks(jira.value.issues).map((i) => ({ key: i.key, summary: i.summary, own: false })),
   ])
   const summaryOf = (key: string) => allTasks.value.find((t) => t.key === key)?.summary ?? jira.value.issues.find((i) => i.key === key)?.summary ?? ''
 
@@ -122,5 +122,5 @@ export function useQuickSuggest(o: {
     return !!act
   }
 
-  return { allTasks, summaryOf, sug, active, sugOpen, updateSug, pickSug, onSugKey }
+  return { summaryOf, sug, active, sugOpen, updateSug, pickSug, onSugKey }
 }

@@ -65,9 +65,8 @@ export class RequestRecorder {
   async attach(tab: Tab): Promise<void> {
     if (tab.rec) return
     try {
-      const d = this.host.cdp.use(tab, 'rec')
       tab.rec = true
-      await d.sendCommand('Network.enable', { maxPostDataSize: 1024 * 1024 })
+      await this.host.cdp.networkOn(tab, 'rec', { maxPostDataSize: 1024 * 1024 })
     } catch (e) {
       tab.rec = false
       this.host.cdp.drop(tab, 'rec')
@@ -77,8 +76,7 @@ export class RequestRecorder {
   private detach(tab: Tab): void {
     if (!tab.rec) return
     tab.rec = false
-    // the device mode stays: only the network goes quiet
-    if (tab.dbg.size > 1 && !tab.dbg.has('hook') && !tab.dbg.has('check')) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
+    // (the network goes quiet only when no other part needs it)
     this.host.cdp.drop(tab, 'rec')
   }
   private onCdp(tab: Tab, method: string, p: Record<string, unknown>): void {
@@ -168,6 +166,8 @@ export class RequestRecorder {
     try {
       const r = (await d.sendCommand('Network.getResponseBody', { requestId: reqId })) as { body: string; base64Encoded: boolean }
       const text = r.base64Encoded ? Buffer.from(r.body, 'base64').toString('utf8') : r.body
+      // (cleared, or gone past the limit, while its body was being taken: not counted, not kept)
+      if (!this.items.includes(item)) return
       item.resBody = text.length > MAX_BODY ? text.slice(0, MAX_BODY) : text
       this.bodyBytes += item.resBody.length
       // too much kept: the oldest answers lose their texts

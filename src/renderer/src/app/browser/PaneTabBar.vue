@@ -25,7 +25,7 @@ const { tabDrag, onTabDown, onTabClick } = view.paneDrag
           @click="onTabClick(pi, id)"
           @mousedown.middle.prevent="closeTab(id)"
         >
-          <span v-if="byId(id)?.loading" class="spin tw:flex-none tw:w-12 tw:h-12 tw:border-2 tw:border-border-2 tw:[&&]:border-t-accent tw:rounded-[50%] tw:animate-[BrowserView-bv-spin_0.8s_linear_infinite]"></span>
+          <span v-if="byId(id)?.loading" class="spin tw:flex-none tw:w-12 tw:h-12 tw:border-2 tw:border-border-2 tw:[&&]:border-t-accent tw:rounded-[50%] tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>
           <img v-else-if="byId(id)?.favicon" class="fav tw:flex-none tw:w-14 tw:h-14 tw:group-[.asleep]/tab:opacity-[0.55]" :src="byId(id)!.favicon" alt="" />
           <Icon v-else name="globe" :size="12" class="fav0 tw:[&&]:flex-none tw:text-muted tw:group-[.asleep]/tab:opacity-[0.55]" />
           <span class="tname tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:group-[.asleep]/tab:opacity-[0.55]">{{ byId(id)?.title || 'Новая вкладка' }}</span>

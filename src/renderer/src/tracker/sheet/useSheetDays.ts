@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import type { RangeDay } from '@shared/report'
 import { kinds } from '../../lib/palette'
-import { readStored, storedRef } from './sheetStorage'
+import { readStored, storedRef } from '../../lib/storedRef'
 
 /**
  * The sheet's days: loaded for the columns (again on window focus), today's blocks come live (the island,

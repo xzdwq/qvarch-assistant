@@ -4,8 +4,7 @@ import { parseToggle, toggleMd, type ToggleModel } from './model'
 import Icon from '@renderer/components/Icon.vue'
 
 /** A fold: a title that opens / closes its text (as Notion's toggle; <details> in the file). */
-const props = defineProps<{ src: string; autofocus?: boolean }>()
-const emit = defineEmits<{ change: [src: string]; exit: [dir: 1 | -1] }>()
+const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
 const t = ref<ToggleModel>(parseToggle(props.src))
 let mine = props.src
 watch(
@@ -23,7 +22,7 @@ function save(now = false): void {
     const md = toggleMd(t.value)
     if (md === mine) return
     mine = md
-    emit('change', md)
+    props.onChange?.(md)
   }
   if (now) go()
   else timer = setTimeout(go, 250)
@@ -48,11 +47,11 @@ function onTitleKey(e: KeyboardEvent): void {
     case 'ArrowDown':
       e.preventDefault()
       if (t.value.open) enterBody()
-      else emit('exit', 1)
+      else props.onExit?.(1)
       break
     case 'ArrowUp':
       e.preventDefault()
-      emit('exit', -1)
+      props.onExit?.(-1)
       break
   }
 }
@@ -63,7 +62,7 @@ function onBodyKey(e: KeyboardEvent): void {
     case 'ArrowDown':
       if (el.value.slice(el.selectionEnd).includes('\n')) return
       e.preventDefault()
-      emit('exit', 1)
+      props.onExit?.(1)
       break
     case 'ArrowUp':
       if (el.value.slice(0, el.selectionStart).includes('\n')) return

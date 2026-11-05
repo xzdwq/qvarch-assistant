@@ -23,7 +23,7 @@ const props = defineProps<{
   full?: Note
   notes?: Note[]
 }>()
-const emit = defineEmits<{ close: []; saved: [] }>()
+const emit = defineEmits<{ close: [] }>()
 /** The host puts the date in (the calendar): then the time stands after it and the header is short. */
 const dated = computed(() => !!useSlots().date)
 
@@ -44,7 +44,6 @@ async function toggleRec(): Promise<void> {
   await saveRecording(props.day, { ...r, at: at.value }, { id: props.note.id, text: text.value })
   hasAudio.value = true
   mode.value = 'text'
-  emit('saved')
 }
 
 const text = ref(props.note.text)
@@ -97,7 +96,6 @@ async function toTask(): Promise<void> {
   await save()
   closed = true
   await window.qa.noteToTask(props.day, props.note.id)
-  emit('saved')
   emit('close')
 }
 

@@ -15,7 +15,7 @@ import { fmtDay as fmt, sheetToday as today, useSheetPeriod } from '../tracker/s
 import { useSheetColumns } from '../tracker/sheet/useSheetColumns'
 import { useSheetDays } from '../tracker/sheet/useSheetDays'
 import { useSheetHours } from '../tracker/sheet/useSheetHours'
-import { readStored, storedRef } from '../tracker/sheet/sheetStorage'
+import { readStored, storedRef } from '../lib/storedRef'
 
 /**
  * Заполнение — the week (or a day) as a table: a row per task (or kind + text), a column per day. Typing
@@ -24,12 +24,12 @@ import { readStored, storedRef } from '../tracker/sheet/sheetStorage'
  */
 /**
  * `widget` — on the dashboard (or a tab of the timeline): a day by default, tighter. `store` — its remembered
- * view apart from the others; `day` — the day it follows (the timeline's).
+ * view apart from the others.
  */
 /** `range` — embedded (Моя работа): these days, no bar of its own. */
-const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: string; day?: string; range?: { from: string; to: string } }>()
+const props = defineProps<{ settings: PublicSettings; widget?: boolean; store?: string; range?: { from: string; to: string } }>()
 const SUFFIX = props.store ? `.${props.store}` : props.widget ? '.widget' : ''
-const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
+const emit = defineEmits<{ go: [day: string, entryId?: string] }>()
 
 const { mode, cols, key: periodKey, pickerOpen, applyRange, setMode, goToday, shift, onWheel, label, isCurrent } = useSheetPeriod(props, SUFFIX)
 const plEl = ref<HTMLElement>()
@@ -118,7 +118,7 @@ async function copyPrev(withHours: boolean): Promise<void> {
       <DateRangePicker v-if="pickerOpen" :from="cols[0]" :to="cols[cols.length - 1]" :anchor="plEl" :max="62" @apply="applyRange" @close="pickerOpen = false" />
       <span class="sp tw:flex-1"></span>
       <FilterMenu v-model="kindFilter" label="Вид" icon="tag" :options="kindOpts" />
-      <span v-if="busy" class="busy tw:inline-flex tw:text-accent-fg tw:animate-[SheetView-spin_0.8s_linear_infinite]"><Icon name="refresh" :size="13" /></span>
+      <span v-if="busy" class="busy tw:inline-flex tw:text-accent-fg tw:animate-[Shared-spin_0.8s_linear_infinite]"><Icon name="refresh" :size="13" /></span>
       <div ref="addEl" class="pop tw:relative">
         <button class="btn tw:inline-flex tw:items-center tw:gap-5 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border tw:rounded-[4px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:not-[&.on]:bg-white/6 tw:[&.on]:bg-white/6 tw:group-[.widget]/sh:h-24 tw:group-[.widget]/sh:py-0 tw:group-[.widget]/sh:px-7 tw:hover:enabled:border-border-3" :class="{ on: adding }" title="Добавить строку" @click="adding = !adding"><Icon name="plus" :size="13" /><span class="bl">Строка</span></button>
         <Popover v-model:open="adding" :anchor="addEl" :width="320" :chrome="40" max-height="none" class="pd add tw:absolute tw:top-[calc(100%+4px)] tw:right-0 tw:z-40 tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)] tw:w-320 tw:flex tw:flex-col tw:gap-8 tw:p-10">
@@ -153,7 +153,7 @@ async function copyPrev(withHours: boolean): Promise<void> {
           <tr>
             <th class="rl tw:border-b tw:border-b-border tw:top-0 tw:whitespace-nowrap tw:text-muted tw:font-medium tw:text-[11.5px] tw:sticky tw:left-0 tw:[background:var(--bg,var(--bg))] tw:w-[34%] tw:min-w-220 tw:max-w-380 tw:pt-0 tw:pr-10 tw:pb-0 tw:pl-2 tw:text-left tw:z-4 tw:group-[.widget]/sh:min-w-140">Задача<span class="crz tw:absolute tw:top-4 tw:bottom-4 tw:-right-3 tw:z-5 tw:w-6 tw:cursor-col-resize tw:rounded-r2 tw:hover:bg-accent/55" title="Ширина" @pointerdown.prevent="startColResize($event, 'rl')"></span></th>
             <th v-for="d in cols" :key="d" class="dc tw:group/dc tw:border-b tw:border-b-border tw:sticky tw:top-0 tw:z-3 tw:[background:var(--bg,var(--bg))] tw:py-5 tw:px-0 tw:whitespace-nowrap tw:text-muted tw:font-medium tw:text-[11.5px] tw:w-76 tw:text-right" :class="{ off: isOff(d), today: d === today() }">
-              <button class="dh tw:@container tw:flex tw:justify-end tw:items-baseline tw:gap-4 tw:w-full tw:box-border tw:whitespace-nowrap tw:overflow-hidden tw:py-2 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-inherit tw:leading-[1.15] tw:hover:bg-white/5 tw:hover:not-group-[.today]/dc:text-text tw:group-[.today]/dc:text-accent-fg tw:hover:enabled:border-border-3" title="Открыть день" @click="emit('go', 'day', d)">
+              <button class="dh tw:@container tw:flex tw:justify-end tw:items-baseline tw:gap-4 tw:w-full tw:box-border tw:whitespace-nowrap tw:overflow-hidden tw:py-2 tw:px-10 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-inherit tw:leading-[1.15] tw:hover:bg-white/5 tw:hover:not-group-[.today]/dc:text-text tw:group-[.today]/dc:text-accent-fg tw:hover:enabled:border-border-3" title="Открыть день" @click="emit('go', d)">
                 <span class="dw tw:@max-[52px]:hidden">{{ fmt(d, { weekday: 'short' }) }}</span><b class="tw:text-[13px] tw:text-text-2 tw:group-[.today]/dc:text-accent-fg">{{ fmt(d, { day: 'numeric' }) }}</b>
               </button>
               <span class="crz tw:absolute tw:top-4 tw:bottom-4 tw:-right-3 tw:z-5 tw:w-6 tw:cursor-col-resize tw:rounded-r2 tw:hover:bg-accent/55" title="Ширина" @pointerdown.prevent="startColResize($event, 'dc')"></span>

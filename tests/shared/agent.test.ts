@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { runAgentLoop, type ModelSession, type ModelStep } from '../../src/shared/agent/agentLoop'
 import { buildPack, noteForAgent, type PackInput } from '../../src/shared/agent/contextPack'
 import { readOpenAiReply, toolsRefused } from '../../src/shared/agent/openaiWire'
-import { agentIdOf, cleanProfile, defaultAgentName, inFolders, ownerOfAgent, profileOfAgent } from '../../src/shared/agent/profiles'
+import { agentIdOf, cleanProfile, defaultAgentName, inFolders } from '../../src/shared/agent/profiles'
 import { agentsCalled, CHAIN_MAX } from '../../src/shared/agent/trigger'
 import { mayUse } from '../../src/shared/agent/turn'
 import { attachForAgent } from '../../src/shared/agent/attachLine'
@@ -161,10 +161,6 @@ describe('agent profiles', () => {
     expect(p).toMatchObject({ provider: 'claude-code', name: defaultAgentName('Виктор'), folders: ['Работа'] })
     expect(inFolders(p, 'Работа/Задача.md')).toBe(true)
     expect(inFolders(p, 'Личное/x.md')).toBe(false)
-  })
-  it("an agent's id: its owner and its profile", () => {
-    expect(ownerOfAgent(MY_AGENT)).toBe(ME)
-    expect(profileOfAgent(MY_AGENT)).toBe('p1')
   })
   it('an attachment said to an agent; its own steps — nothing', () => {
     expect(attachForAgent({ kind: 'sql', title: 'rows', data: { sql: 'select 1', columns: ['a'], rows: [[1]], total: 1 } })).toContain('select 1')

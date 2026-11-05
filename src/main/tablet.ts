@@ -1,8 +1,7 @@
 import { app, powerMonitor, screen } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline'
+import { PsHelper } from './psHelper'
 import { clampPrefs, comboToVk, type TabletMonitor, type TabletMsg, type TabletPrefs, type TabletSample, type TabletState, type TabletStatus } from '../shared/tablet'
 
 function scriptPath(): string {
@@ -16,7 +15,6 @@ function scriptPath(): string {
  * the dongle is not enough — the wireless tablet has its own battery) — the user is told.
  */
 export class TabletService {
-  private child?: ChildProcess
   private prefs: TabletPrefs
   private status: TabletStatus = { state: 'off' }
   private monitors: TabletMonitor[] = []
@@ -24,8 +22,17 @@ export class TabletService {
   private liveWanted = 0
   /** The active board's visible area (physical px from the window's client corner). */
   private canvasRect?: { x: number; y: number; w: number; h: number }
-  private restartDelay = 2000
   private stopping = false
+  private readonly helper = new PsHelper({
+    name: 'tablet',
+    // the script is too long for a command line: a short bootstrap reads and runs it (no execution-policy issue)
+    command: () => `& ([scriptblock]::Create([IO.File]::ReadAllText('${scriptPath().replace(/'/g, "''")}', [Text.Encoding]::UTF8)))`,
+    stdin: true,
+    onLine: (m) => this.onHelper(m as HelperLine),
+    shouldRestart: () => !this.stopping && this.prefs.enabled,
+    onRestarting: () => this.setStatus({ state: 'error', message: 'Помощник планшета перезапускается' }),
+    onStart: () => this.configure(),
+  })
 
   constructor(
     private readonly dataDir: string,
@@ -42,11 +49,7 @@ export class TabletService {
 
   private file = () => join(this.dataDir, 'tablet.json')
   private read(): Partial<TabletPrefs> {
-    try {
-      return existsSync(this.file()) ? (JSON.parse(readFileSync(this.file(), 'utf8')) as Partial<TabletPrefs>) : {}
-    } catch {
-      return {}
-    }
+    return readJsonFile<Partial<TabletPrefs>>(this.file()) ?? {}
   }
 
   state(): TabletState {
@@ -69,7 +72,7 @@ export class TabletService {
   set(patch: Partial<TabletPrefs>): TabletState {
     const was = this.prefs.enabled
     this.prefs = clampPrefs({ ...this.prefs, ...patch })
-    writeFileSync(this.file(), JSON.stringify(this.prefs, null, 2))
+    writeJsonAtomic(this.file(), this.prefs, 2)
     if (this.prefs.enabled && !was) this.spawn()
     else if (!this.prefs.enabled && was) this.stop()
     else this.configure()
@@ -90,10 +93,8 @@ export class TabletService {
 
   stop(): void {
     this.stopping = true
-    this.child?.stdin?.end()
-    const c = this.child
-    setTimeout(() => c?.kill(), 500)
-    this.child = undefined
+    // (a moment for the helper to give the tablet its own mode back)
+    this.helper.stop(500)
     this.setStatus({ state: 'off' })
   }
 
@@ -106,7 +107,7 @@ export class TabletService {
   }
 
   private cmd(o: Record<string, unknown>): void {
-    if (this.child?.stdin?.writable) this.child.stdin.write(JSON.stringify(o) + '\n')
+    this.helper.send(o)
   }
 
   private configure(): void {
@@ -130,35 +131,10 @@ export class TabletService {
   }
 
   private spawn(): void {
-    if (this.child) return
+    if (this.helper.running) return
     this.stopping = false
     this.setStatus({ state: 'starting' })
-    // the script is too long for a command line: a short bootstrap reads and runs it (no execution-policy issue)
-    const path = scriptPath().replace(/'/g, "''")
-    const encoded = Buffer.from(`& ([scriptblock]::Create([IO.File]::ReadAllText('${path}', [Text.Encoding]::UTF8)))`, 'utf16le').toString('base64')
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    this.child = child
-    const rl = createInterface({ input: child.stdout! })
-    rl.on('line', (line) => {
-      if (!line.startsWith('{')) return
-      try {
-        this.onHelper(JSON.parse(line) as HelperLine)
-      } catch {
-        // a broken line — skip
-      }
-    })
-    child.stderr?.on('data', (d) => console.warn('[tablet]', String(d).trim()))
-    child.on('exit', () => {
-      if (this.child === child) this.child = undefined
-      if (this.stopping || !this.prefs.enabled) return
-      this.setStatus({ state: 'error', message: 'Помощник планшета перезапускается' })
-      setTimeout(() => this.prefs.enabled && !this.child && this.spawn(), this.restartDelay)
-      this.restartDelay = Math.min(this.restartDelay * 2, 60_000)
-    })
-    this.configure()
+    this.helper.start()
   }
 
   /** What each line type of the helper does. */
@@ -181,7 +157,7 @@ export class TabletService {
   private onHelperStatus(m: HelperLine): void {
     switch (m.state) {
       case 'connected':
-        this.restartDelay = 2000
+        this.helper.healthy()
         return this.setStatus({ state: 'connected', device: String(m.device ?? 'Планшет') })
       case 'searching':
         return this.setStatus({ state: 'searching' })

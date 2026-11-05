@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildUrl, parseUrl, type UrlParam, type UrlParts } from '@shared/urlParts'
 import { usePopover } from '../lib/usePopover'
+import { useFlash } from '../lib/useFlash'
 import Icon from './Icon.vue'
 
 /**
@@ -34,11 +35,10 @@ const changed = computed(() => text.value.trim() !== props.url)
 const reset = () => onText(props.url)
 const add = (list: UrlParam[]) => list.push({ key: '', value: '', on: true })
 const open = (newTab = false) => text.value.trim() && emit('open', text.value.trim(), newTab)
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1200)
 async function copy(): Promise<void> {
   await navigator.clipboard.writeText(text.value.trim())
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1200)
+  flash(true)
 }
 
 // ---------- placed under the address line (a popover of the window — over the page) ----------

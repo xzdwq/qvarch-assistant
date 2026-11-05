@@ -1,5 +1,5 @@
 import { toRaw } from 'vue'
-import { isRunnableKind, type RunnableKind } from '../blocks/specs'
+import { isRunnableKind, runnableSpec, type RunnableKind } from '../blocks/specs'
 import { isTsLang, type BlockInfo } from '../domain/blockInfo'
 import { findLoops, loopAt, type LoopRange } from '../domain/loop'
 import { fencedBlocksOf } from '../domain/noteBlocks'
@@ -41,10 +41,10 @@ export const itemIsSoft = (x: RunItem) => (x.kind === 'loop' ? !!x.loop.info.sof
 /** What went wrong with an item's last run in an env. */
 export const itemError = (x: RunItem, env: RunEnv) => (x.kind === 'loop' ? env.loops[env.keyNow(x.key)]?.error : env.runs[env.keyNow(x.key)]?.error) ?? 'Ошибка'
 
-/** A Playwright block anywhere in a loop (in a loop inside it too): its files are the block's — passes one by one. */
-export function loopHasPw(text: string, loop: LoopRange): boolean {
+/** A block anywhere in a loop (in a loop inside it too) whose runs share its files (serialInLoop): passes one by one. */
+export function loopGoesSerial(text: string, loop: LoopRange): boolean {
   if (loop.end === undefined) return false
-  return findBlocks(text.split('\n')).some((b) => b.kind === 'pw' && b.line0 > loop.headEnd && b.line1 < loop.end!)
+  return findBlocks(text.split('\n')).some((b) => isRunnableKind(b.kind) && runnableSpec(b.kind).serialInLoop && b.line0 > loop.headEnd && b.line1 < loop.end!)
 }
 
 /** The note's shared functions (its «lib» code blocks) but the code given. */

@@ -1,3 +1,4 @@
+import { remoteError } from '../../../shared/remoteError';
 import { formatReleaseBranch, readProjects, saveProjects, type ReleaseContext } from '../config';
 import { applyAll } from '../core/executor';
 import { getBranchCommits } from '../core/planner';
@@ -43,9 +44,9 @@ export class ReleaseSession implements ReleasePanelHost {
     this.s.projectId = projectContext?.projectId;
   }
 
-  /** Opens the repository of the project (a saved profile, or the default config). */
-  private async openRepository(overrideConfig: ReleaseConfig | undefined): Promise<void> {
-    await this.s.openRepository(overrideConfig);
+  /** Opens the repository of the project (its saved profile). */
+  private async openRepository(config: ReleaseConfig): Promise<void> {
+    await this.s.openRepository(config);
     this.ready = true;
     await this.s.git.pruneWorktrees();
   }
@@ -55,10 +56,10 @@ export class ReleaseSession implements ReleasePanelHost {
    * only when the CURRENT branch is a release branch (any release — they get more commits later); being on
    * dev means the user is not on the release right now.
    */
-  async start(overrideConfig?: ReleaseConfig, projectContext?: PanelContext): Promise<void> {
+  async start(config: ReleaseConfig, projectContext?: PanelContext): Promise<void> {
     this.showSection(projectContext);
     try {
-      await this.openRepository(overrideConfig);
+      await this.openRepository(config);
       await this.postCurrentBranch();
       const shouldFinishPlan = await this.restore.adoptReleaseBranch(await this.s.git.currentBranch());
       await this.branches.refresh();
@@ -67,16 +68,16 @@ export class ReleaseSession implements ReleasePanelHost {
         await this.restore.finish();
       }
       await this.warnIfCherryPickInProgress();
-    } catch (err: any) {
-      if (this.s.isActive()) this.s.panel.postError(err?.message ?? String(err));
+    } catch (err) {
+      if (this.s.isActive()) this.s.panel.postError(remoteError(err));
     }
   }
 
   /** Continues the saved build (an explicit command) whatever branch the repository is on now. */
-  async resume(overrideConfig?: ReleaseConfig, projectContext?: PanelContext): Promise<void> {
+  async resume(config: ReleaseConfig, projectContext?: PanelContext): Promise<void> {
     this.showSection(projectContext);
     try {
-      await this.openRepository(overrideConfig);
+      await this.openRepository(config);
       const state = await this.s.findUsablePersistedState();
       if (!state) {
         throw new Error('Нет сохранённой сборки релиза для этого репозитория (или её ветка больше не существует) — начните новую.');
@@ -86,8 +87,8 @@ export class ReleaseSession implements ReleasePanelHost {
       await this.branches.refresh();
       await this.restore.finish();
       await this.warnIfCherryPickInProgress();
-    } catch (err: any) {
-      if (this.s.isActive()) this.s.panel.postError(err?.message ?? String(err));
+    } catch (err) {
+      if (this.s.isActive()) this.s.panel.postError(remoteError(err));
     }
   }
 
@@ -95,7 +96,7 @@ export class ReleaseSession implements ReleasePanelHost {
     if ((await this.s.git.isCherryPickInProgress()) && this.s.isActive()) {
       this.s.panel.postError(
         'В репозитории обнаружен незавершённый cherry-pick (вероятно, от прошлой сессии). ' +
-          'Это может мешать переключению веток через интерфейс VS Code. ' +
+          'Это может мешать переключению веток. ' +
           'Разрешите конфликт и нажмите "Начать сборку" ещё раз — она продолжит с того же места, либо нажмите "Отменить сборку (cherry-pick --abort)" ниже.'
       );
     }
@@ -180,10 +181,10 @@ export class ReleaseSession implements ReleasePanelHost {
       for (const commit of commits) Object.assign(commit, s.links.of(branch.name, commit.subject, commit.sha, null));
       if (!s.isActive()) return;
       s.panel.postBranchCommits(ref, commits, truncated, forkedFrom ?? null);
-    } catch (err: any) {
+    } catch (err) {
       if (!s.isActive()) return;
       s.panel.postBranchCommits(ref, [], false);
-      s.panel.postError(`Не удалось получить коммиты ветки ${branch.name}: ${err?.message ?? err}`);
+      s.panel.postError(`Не удалось получить коммиты ветки ${branch.name}: ${remoteError(err)}`);
     }
   }
 

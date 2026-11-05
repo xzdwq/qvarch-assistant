@@ -60,7 +60,7 @@ export function removeEntry(app: AppContext, day: string, id: string): void {
   d.entries = d.entries.filter((e) => e.id !== id)
   app.store.markDirty(day)
 }
-/** A new block on the first free lane of its day (made from a note, a plan…). */
+/** A new block on the first free lane of its day (made from a note, a recording…). */
 export function addEntryOnFreeLane(app: AppContext, day: string, entry: Entry): Entry {
   const d = app.store.day(day)
   entry.lane = firstFreeLane(d.entries, entry.start, entry.end, entry.id)

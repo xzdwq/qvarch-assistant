@@ -39,11 +39,6 @@ export function evalCase(expr: string, orig: unknown, gen: unknown): unknown {
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   return new Function('orig', 'size', 'drop', 'gen', `return (${expr.trim() || "''"})`)(orig, size, DROP, gen)
 }
-/** The array's size a case gives (size(21) → 21) — for the border and «больше значений». */
-export const sizeOfCase = (expr: string): number | undefined => {
-  const m = /^\s*size\(\s*(\d+)\s*[,)]/.exec(expr)
-  return m ? Number(m[1]) : undefined
-}
 
 /** Typical sets (the editor adds them as rows; nothing is tried by itself). */
 export const FUZZ_SETS: Array<{ id: string; title: string; kinds: ParamKind[]; cases: FuzzCase[]; monotonic?: boolean }> = [

@@ -6,6 +6,8 @@ export interface ServerConfig {
   /** A code the apps must know to connect ('' — any app of the network may). */
   accessCode: string
   version: string
+  /** The key of the HTTP passes (several servers share it; '' — a random one each start: the apps ask again). */
+  mediaSecret: string
 }
 
 /** The settings read; a missing database is the one thing that stops the start. */
@@ -18,5 +20,6 @@ export function readConfig(env: Record<string, string | undefined>, version: str
     databaseUrl,
     accessCode: (env.QA_ACCESS_CODE ?? '').trim(),
     version,
+    mediaSecret: env.QA_MEDIA_SECRET ?? '',
   }
 }

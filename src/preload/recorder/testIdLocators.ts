@@ -3,7 +3,7 @@ import { HIDDEN, q, reSrc, textOf, visible } from './domText'
 
 /** Locators by what the app's authors gave an element to be found by (its test id), and by the record it is in. */
 
-export const TEST_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa']
+const TEST_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa']
 /** Controls a test id's holder may hold besides the element (more than one — the id is a block's, not the element's). */
 const CONTROLS = 'input:not([type="hidden"]), textarea, select, button, a[href], [role="button"], [role="combobox"]'
 /**

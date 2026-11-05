@@ -5,7 +5,7 @@ import { BOARD_EXT, serializeBoard } from '@shared/whiteboard'
 import { freshBoard } from '@renderer/lib/boardPrefs'
 import { remoteError } from '../../shared/remoteError'
 import { forgetRuns, moveRuns } from '@nb/engine'
-import { docs } from '@nb/workspace/noteDocs'
+import { docs, forgetUnder, saveUnder } from '@nb/workspace/noteDocs'
 import { closeEverywhere, curPane, layout, openFile, swapTab } from '@nb/workspace/paneLayout'
 import { remap } from '@nb/workspace/noteSync'
 import { relinkAfterMove } from '@nb/workspace/wikiRelink'
@@ -63,6 +63,8 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
     if (!clean || clean === old) return
     await attempt(async () => {
       const before = files.value
+      // pending typing written to the old file first (a late save would bring it back)
+      await saveUnder(path)
       const to = await window.qa.vaultMove(path, dirOf(path), clean)
       remap(path, to)
       moveRuns(path, to)
@@ -82,6 +84,7 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
     if (dirOf(path) === dir || path === dir) return
     await attempt(async () => {
       const before = files.value
+      await saveUnder(path)
       const to = await window.qa.vaultMove(path, dir)
       remap(path, to)
       moveRuns(path, to)
@@ -95,8 +98,9 @@ export function useVaultActions(say: (t: string) => void, editing: TreeEditing, 
     if (!confirm(n.dir ? `Удалить папку «${n.name}» со всеми заметками? (в корзину)` : `Удалить заметку «${n.name}»? (в корзину)`)) return
     await attempt(async () => {
       closeEverywhere(n.path)
+      // nothing pending may write the deleted notes back
+      forgetUnder(n.path)
       await window.qa.vaultDelete(n.path)
-      for (const k of [...docs.keys()]) if (k === n.path || k.startsWith(n.path + '/')) docs.delete(k)
       // its runs too (a new note of that name must not show them)
       forgetRuns(n.path)
       focusGone(n.path)

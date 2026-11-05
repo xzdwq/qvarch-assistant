@@ -34,7 +34,7 @@ function flip(): void {
       </template>
     </div>
     <div v-if="open" class="cfbody tw:@container">
-      <div v-if="s.analysisPending" class="mut tw:text-muted tw:text-[12px]"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>Загружаем причину конфликта…</div>
+      <div v-if="s.analysisPending" class="mut tw:text-muted tw:text-[12px]"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>Загружаем причину конфликта…</div>
       <template v-else>
         <template v-for="(h, hi) in s.hunks" :key="hi">
           <div class="hunk tw:flex tw:flex-wrap tw:gap-8 tw:pt-2 tw:pr-0 tw:pb-2 tw:pl-8 tw:@max-[420px]:[.hunk+&]:mt-6 tw:@max-[420px]:[.hunk+&]:pt-6 tw:@max-[420px]:[.hunk+&]:border-t tw:@max-[420px]:[.hunk+&]:[border-top-style:dashed] tw:@max-[420px]:[.hunk+&]:border-t-border">

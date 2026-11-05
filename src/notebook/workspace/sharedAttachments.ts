@@ -5,7 +5,8 @@ import { toB64 } from '@shared/transport/sharedText'
 import { docTitleOf, ROLE_RIGHTS } from '@shared/transport/space'
 import { serverCall, serverOnline } from '@renderer/lib/transport'
 import { docs, setText } from './noteDocs'
-import { adopt, docPaths, fetchText, sharedOfPath, spaces, track } from './sharedDocs'
+import { adopt, docPaths, sharedOfPath, spaces, track } from './sharedDocs'
+import { fetchText } from './sharedJoin'
 import { loadTree, tree } from './vaultTreeStore'
 
 /**

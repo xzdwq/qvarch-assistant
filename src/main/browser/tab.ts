@@ -1,5 +1,5 @@
 import type { BrowserWindow, Session, WebContents, WebContentsView } from 'electron'
-import type { BrowserTab, Visit } from '../../shared/browser'
+import type { BrowserEmit, BrowserTab, Visit } from '../../shared/browser'
 import type { UaMetadata } from '../../shared/browser/chromeIdentity'
 import type { TabCdp } from './tabCdp'
 
@@ -7,7 +7,10 @@ import type { TabCdp } from './tabCdp'
  * Who keeps a tab's DevTools protocol attached (the recording, the device mode, a hook's search, «Проверка», a
  * scenario's recording; `run` — a scenario run in the tab; `chrome` — the page told it is Chrome, all its life).
  */
-export type CdpOwner = 'rec' | 'device' | 'hook' | 'check' | 'pw' | 'run' | 'chrome'
+export const CDP_OWNERS = ['rec', 'device', 'hook', 'check', 'pw', 'run', 'chrome'] as const
+export type CdpOwner = (typeof CDP_OWNERS)[number]
+/** The work that keeps a tab awake while it is not shown (its page closed would lose it). */
+export const KEEPS_AWAKE: readonly CdpOwner[] = ['rec', 'pw', 'run', 'device']
 
 /** A tab of the Браузер section as the main process keeps it: its page (a view of its own) and what is on it. */
 export interface Tab {
@@ -49,7 +52,8 @@ export interface BrowserHost {
   readonly cdp: TabCdp
   /** The main window (none before the first one is made). */
   window(): BrowserWindow | undefined
-  emit(type: string, payload: unknown): void
+  /** The browser's news to the window (BrowserEvents). */
+  readonly emit: BrowserEmit
   /** The tabs' list told to the renderer. */
   changed(): void
   /** The tab whose page sent an IPC message (an asleep one has none). */

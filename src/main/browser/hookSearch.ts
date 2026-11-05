@@ -17,21 +17,21 @@ export class HookSearch {
     for (const t of this.host.tabs.values()) this.sync(t)
   }
   /** The protocol on a page while some hook of its site looks into its answers; off otherwise. */
-  sync(tab: Tab, url = tab.view.webContents.getURL()): void {
+  sync(tab: Tab, url?: string): void {
+    // (an asleep tab's page is closed: its address is not asked for)
     if (tab.asleep) return
-    const want = this.hooks.searching(url)
+    const want = this.hooks.searching(url ?? tab.view.webContents.getURL())
     const has = tab.dbg.has('hook')
     if (want && !has) {
       try {
-        const d = this.host.cdp.use(tab, 'hook')
         tab.hookReq = new Map()
-        void d.sendCommand('Network.enable', { maxTotalBufferSize: 200 * 1024 * 1024, maxResourceBufferSize: 100 * 1024 * 1024 }).catch(() => undefined)
+        void this.host.cdp.networkOn(tab, 'hook', { maxTotalBufferSize: 200 * 1024 * 1024, maxResourceBufferSize: 100 * 1024 * 1024 }).catch(() => undefined)
       } catch {
         // DevTools of the page are open in another way — no search there
+        tab.hookReq = undefined
       }
     } else if (!want && has) {
       tab.hookReq = undefined
-      if (!tab.rec && !tab.dbg.has('check') && tab.dbg.size > 1) void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
       this.host.cdp.drop(tab, 'hook')
     }
   }

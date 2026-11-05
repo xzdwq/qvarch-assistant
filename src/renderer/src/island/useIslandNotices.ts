@@ -43,4 +43,3 @@ export function useIslandNotices(hooks: { busy: () => boolean; closeOthers: () =
   }
   return { list, open, show, close, hold, openInApp }
 }
-export type IslandNotices = ReturnType<typeof useIslandNotices>

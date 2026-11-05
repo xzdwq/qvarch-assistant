@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isCallApp } from '../src/shared/apps'
-import { atTime, cutCursor, formatDuration, overlapPairs, placeEntry, splitByDay, subtractRanges } from '../src/shared/timeline'
+import { atTime, cutCursor, formatDuration, overlapPairs, placeEntry, subtractRanges } from '../src/shared/timeline'
 import type { Entry } from '../src/shared/types'
 
 const DAY = '2026-10-12' // Monday
@@ -78,11 +78,6 @@ describe('placeEntry', () => {
 })
 
 describe('time helpers', () => {
-  it('splits at local midnight', () => {
-    const parts = splitByDay(atTime(DAY, '23:30'), atTime('2026-10-13', '00:20'))
-    expect(parts.map((p) => p[0])).toEqual([DAY, '2026-10-13'])
-    expect(parts[0][2]).toBe(atTime('2026-10-13', '00:00'))
-  })
 
   it('subtracts ranges', () => {
     expect(subtractRanges(t('09:00'), t('12:00'), [{ start: t('10:00'), end: t('11:00') }])).toEqual([
@@ -195,10 +190,8 @@ describe('pinLanes', () => {
 })
 
 describe('productivity', () => {
-  it('excludes breaks and lunch, counts parallel time once', async () => {
-    const { DEFAULT_KINDS, productiveMs, workDayMs } = await import('../src/shared/kinds')
-    const list = [entry('09:00', '10:00'), entry('09:30', '10:30'), entry('12:00', '13:00', { kind: 'lunch' }), entry('15:00', '15:15', { kind: 'break' })]
-    expect(productiveMs(list, DEFAULT_KINDS)).toBe(90 * 60_000)
+  it('the work day without lunch', async () => {
+    const { workDayMs } = await import('../src/shared/kinds')
     expect(workDayMs(DAY, { start: '09:00', end: '18:00', lunchStart: '13:00', lunchEnd: '14:00', workDays: [1] }, 1)).toBe(8 * 3600_000)
   })
 
@@ -212,12 +205,11 @@ describe('productivity', () => {
 
 describe('productive split', () => {
   it('counts only work hours without lunch; the rest is over time', async () => {
-    const { DEFAULT_KINDS, productiveSplit, unlabelledMs } = await import('../src/shared/kinds')
+    const { DEFAULT_KINDS, productiveSplit } = await import('../src/shared/kinds')
     const list = [entry('08:00', '10:00'), entry('12:30', '13:30'), entry('18:00', '19:00')]
     const r = productiveSplit(list, DEFAULT_KINDS, [t('09:00'), t('18:00')], [t('13:00'), t('14:00')])
     expect(r.within).toBe(90 * 60_000) // 09–10 + 12:30–13
     expect(r.over).toBe(r.total - r.within)
     expect(productiveSplit(list, DEFAULT_KINDS).over).toBe(r.total) // day off
-    expect(unlabelledMs([entry('09:00', '10:00')], [{ start: t('09:00'), end: t('11:00') }])).toBe(60 * 60_000)
   })
 })

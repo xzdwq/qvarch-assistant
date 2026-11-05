@@ -10,6 +10,8 @@ export const saveSpec: RunnableBlockSpec<'save'> = {
   estimateHeight: fixedHeight(110),
   runnable: true,
   chip: 'file',
+  serialInLoop: false,
+  test: false,
   rawEditable: true,
   commands: [
     {

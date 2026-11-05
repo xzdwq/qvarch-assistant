@@ -9,8 +9,8 @@ import { erKey, erLabel, erLinks, erTypeKind, type ErLine, type ErSchema, type E
  * worker of its own (a big database never holds the window; stopped — the worker ended). Then the cards and the lines
  * as Vue Flow takes them; a card added later is put beside the one it was asked from (nothing else moves).
  */
-export const ROW_H = 22
-export const HEAD_H = 32
+const ROW_H = 22
+const HEAD_H = 32
 const CHAR_W = 7.2
 const MIN_W = 190
 const MAX_W = 460

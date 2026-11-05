@@ -168,17 +168,6 @@ export function pressureCurve(raw: number, p: Pick<TabletPrefs, 'pmin' | 'pmax' 
   return Math.pow(t, Math.pow(2, p.curve * 1.5))
 }
 
-/** The raw (unrotated) tablet point 0…1 seen through the rotation. */
-export function rotate(u: number, v: number, rot: TabletRotation): [number, number] {
-  return ROTATE[rot](u, v)
-}
-const ROTATE: Record<TabletRotation, (u: number, v: number) => [number, number]> = {
-  0: (u, v) => [u, v],
-  90: (u, v) => [1 - v, u],
-  180: (u, v) => [1 - u, 1 - v],
-  270: (u, v) => [v, 1 - u],
-}
-
 /** The used part of the (rotated) tablet: all of it, or cropped to the target's proportions, centred. [x0, y0, x1, y1] */
 export function activeArea(rot: TabletRotation, keepAspect: boolean, targetW: number, targetH: number): [number, number, number, number] {
   if (!keepAspect || targetW <= 0 || targetH <= 0) return [0, 0, 1, 1]
@@ -190,15 +179,6 @@ export function activeArea(rot: TabletRotation, keepAspect: boolean, targetW: nu
   }
   const f = tab / scr
   return [0, (1 - f) / 2, 1, (1 + f) / 2]
-}
-
-/** A raw tablet point → a screen point in the target rectangle (physical pixels). */
-export function mapToScreen(u: number, v: number, prefs: Pick<TabletPrefs, 'rotation' | 'keepAspect'>, target: { x: number; y: number; w: number; h: number }): [number, number] {
-  const [ru, rv] = rotate(u, v, prefs.rotation)
-  const [x0, y0, x1, y1] = activeArea(prefs.rotation, prefs.keepAspect, target.w, target.h)
-  const cu = Math.min(1, Math.max(0, (ru - x0) / (x1 - x0)))
-  const cv = Math.min(1, Math.max(0, (rv - y0) / (y1 - y0)))
-  return [target.x + cu * (target.w - 1), target.y + cv * (target.h - 1)]
 }
 
 /** The union of the monitors (the "all monitors" target). */

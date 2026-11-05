@@ -1,12 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { RESULTS_MAX, RESULTS_PATH, TICKET_HEADER, type ResultsPage, type ResultsPut, type ResultsPutReply, type SharedResult } from '../../../../src/shared/transport/protocol'
 import { isResultKey } from '../../../../src/shared/transport/results'
-import type { Sql } from '../../db'
+import { isUuid } from '../../../../src/shared/transport/ids'
 import { ROLE_RIGHTS } from '../../../../src/shared/transport/space'
+import type { Sql } from '../../db'
 import { readBody, reply, replyJson } from '../../httpUtil'
 import type { ModuleFactory } from '../../module'
-import { passOf } from '../../tickets'
-import { SpaceStore } from '../space/spaceStore'
 
 const RESULTS_MIGRATIONS = [
   `create sequence doc_results_seq;
@@ -24,7 +23,6 @@ const RESULTS_MIGRATIONS = [
   // the order is the server's (revisions, its clock): a device's clock decides nothing
   'alter table doc_results drop column ran_at;',
 ]
-const UUID = /^[0-9a-f-]{36}$/
 /** A result row as the others get it. */
 interface ResultRow {
   key: string
@@ -46,16 +44,16 @@ const asResult = (r: ResultRow): SharedResult => ({ value: r.data === null ? nul
  * Over HTTP — results may be large.
  */
 export const resultsModule: ModuleFactory = (ctx) => {
-  const spaces = new SpaceStore(ctx.db)
+  const spaces = () => ctx.ports.get('spaces')
 
   async function http(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     if (!req.url?.startsWith(RESULTS_PATH)) return false
     const url = new URL(req.url, 'http://x')
     const [space, doc] = url.pathname.slice(RESULTS_PATH.length).split('/')
-    if (!UUID.test(space ?? '') || !UUID.test(doc ?? '')) return reply(res, 400, 'неверный путь')
-    const device = passOf(req.headers[TICKET_HEADER] as string | undefined, space)
-    const role = device && (await spaces.roleOf(space, device))
-    if (!device || !role || (await spaces.docSpace(doc)) !== space) return reply(res, 403, 'нет доступа')
+    if (!isUuid(space) || !isUuid(doc)) return reply(res, 400, 'неверный путь')
+    const device = ctx.tickets.deviceOf(req.headers[TICKET_HEADER] as string | undefined, space)
+    const role = device && (await spaces().roleOf(space, device))
+    if (!device || !role || (await spaces().docSpace(doc)) !== space) return reply(res, 403, 'нет доступа')
     if (req.method === 'GET') {
       const since = Number(url.searchParams.get('since')) || 0
       const rows = await ctx.db.rows<ResultRow>(`select ${RESULT_COLS} from doc_results r join qa_devices d on d.id = r.device where r.doc = $1 and r.seq > $2 order by r.seq`, [doc, since])
@@ -83,7 +81,7 @@ export const resultsModule: ModuleFactory = (ctx) => {
         }
       })
       const seq = Math.max(0, ...Object.values(answer.accepted))
-      if (seq) ctx.delivery.send(await spaces.members(space), { e: 'doc.results', p: { doc, seq, by: device } })
+      if (seq) ctx.delivery.send(await spaces().members(space), { e: 'doc.results', p: { doc, seq, by: device } })
       return replyJson(res, answer)
     }
     return reply(res, 405)

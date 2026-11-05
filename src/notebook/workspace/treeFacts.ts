@@ -31,7 +31,7 @@ function liveOf(path: string): { runs: string[]; chats: string[]; tags: string[]
 }
 
 /** The rooms one's notes show (none — the tree not read yet: nothing is known). */
-export const chatHomes = computed((): ReadonlySet<string> | undefined => {
+const chatHomes = computed((): ReadonlySet<string> | undefined => {
   if (!tree.value.length) return undefined
   const out = new Set<string>()
   const walk = (ns: readonly VaultNode[]) => ns.forEach((n) => (n.dir ? walk(n.children ?? []) : (liveOf(n.path)?.chats ?? n.chats ?? []).forEach((r) => out.add(r))))

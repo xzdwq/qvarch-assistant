@@ -1,4 +1,5 @@
 import type { RunnableBlockSpec } from '../../domain/blockSpec'
+import { interpolate } from '../../domain/values'
 import { heightPerLine } from '../detectors'
 
 /** A text by a template (```md template name=…): Markdown with {{ values }}, published filled. */
@@ -10,7 +11,18 @@ export const tplSpec: RunnableBlockSpec<'tpl'> = {
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
   chip: 'tpl',
+  serialInLoop: false,
+  test: false,
   rawEditable: true,
+  // (published whenever it can be filled — a text with holes in it never is)
+  publishWithoutRun: {
+    source: 'tpl',
+    usesValues: true,
+    valueOf(body, _info, values) {
+      const r = interpolate(body, values)
+      return r.missing.length ? undefined : { value: r.text }
+    },
+  },
   commands: [
     {
       id: 'tpl',

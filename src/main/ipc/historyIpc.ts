@@ -34,7 +34,7 @@ export function registerHistoryIpc(app: AppContext, activity: Activity): void {
       .filter((d) => d >= from && d <= to)
       .map((day) => {
         const d = store.day(day)
-        return { day, entries: d.entries, notes: d.notes, plan: d.plan ?? [], dayTasks: d.dayTasks ?? [] }
+        return { day, entries: d.entries, notes: d.notes, dayTasks: d.dayTasks ?? [] }
       }),
   )
   /** A day as far as it happened: today's planned (future) blocks are not time spent yet. */
@@ -49,7 +49,6 @@ export function registerHistoryIpc(app: AppContext, activity: Activity): void {
     for (const day of store.listDays()) for (const e of store.day(day).entries) if (e.task?.key) (out[e.task.key] ??= []).push({ day, id: e.id, start: e.start, end: e.end })
     return out
   })
-  handle('search', (_e, q) => store.search(String(q ?? '')))
   handle('getCombo', () => activity.currentCombo())
   handle('getPulse', () => activity.recentPulse())
 }

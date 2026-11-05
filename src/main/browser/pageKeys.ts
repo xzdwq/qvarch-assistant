@@ -1,4 +1,5 @@
 import type { Input, WebContents } from 'electron'
+import type { NavAction, PageKeyCommand } from '../../shared/browser/constants'
 
 /** A key pressed in a page, as the rules read it. */
 export interface PageKey {
@@ -14,11 +15,11 @@ export interface PageKey {
 }
 /** What a page's key may do: the tab's navigation and zoom, its tools, and the section's own keys (sent to the window). */
 export interface PageKeyActions {
-  nav(action: 'back' | 'fwd' | 'reload' | 'hard' | 'devtools'): void
+  nav(action: NavAction): void
   zoomBy(step: number): void
   zoomReset(): void
   /** A key the window handles (a new tab, the address line…). */
-  send(key: 'newTab' | 'reopenTab' | 'closeTab' | 'focusUrl' | 'bookmark' | 'device' | 'history' | 'terminal'): void
+  send(key: PageKeyCommand): void
   save(): void
   viewSource(): void
   print(): void

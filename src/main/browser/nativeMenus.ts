@@ -4,7 +4,7 @@ import type { Bookmark } from '../../shared/browser'
 /** Native menus of the section — they open over the pages (the app's own menus would hide under them). */
 
 /** A bookmark folder's contents as a native menu; a pick → `open` (Ctrl — in a new tab). */
-export function folderMenu(bookmarks: Bookmark[], id: string, x: number, y: number, win: BrowserWindow | undefined, open: (url: string | undefined, newTab: boolean) => void): void {
+export function folderMenu(bookmarks: Bookmark[], id: string, x: number, y: number, win: BrowserWindow | undefined, open: (url: string, newTab: boolean) => void): void {
   const find = (list: Bookmark[]): Bookmark | undefined => {
     for (const b of list) {
       if (b.id === id) return b
@@ -17,7 +17,7 @@ export function folderMenu(bookmarks: Bookmark[], id: string, x: number, y: numb
   if (!folder?.children) return
   const toItems = (list: Bookmark[]): MenuItemConstructorOptions[] =>
     list.length
-      ? list.map((b) => (b.children ? { label: b.title, submenu: toItems(b.children) } : { label: b.title || b.url!, click: (_m, _w, ev) => open(b.url, !!(ev.ctrlKey || ev.metaKey)) }))
+      ? list.map((b) => (b.children ? { label: b.title, submenu: toItems(b.children) } : { label: b.title || b.url!, click: (_m, _w, ev) => b.url && open(b.url, !!(ev.ctrlKey || ev.metaKey)) }))
       : [{ label: '(пусто)', enabled: false }]
   Menu.buildFromTemplate(toItems(folder.children)).popup({ window: win, x: Math.round(x), y: Math.round(y) })
 }

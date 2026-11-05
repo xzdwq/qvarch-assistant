@@ -1,6 +1,8 @@
 import { safeStorage, shell } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { readJsonFile, writeAtomic } from './fsAtomic'
+import { withTimeout } from './netLimits'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -39,10 +41,6 @@ interface Cache {
 }
 
 const b64url = (b: Buffer) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-function writeAtomic(file: string, data: string | Buffer): void {
-  writeFileSync(`${file}.tmp`, data)
-  renameSync(`${file}.tmp`, file)
-}
 
 export class Outlook {
   private cache: Cache
@@ -200,11 +198,14 @@ export class Outlook {
   }
 
   private async token(body: Record<string, string>): Promise<void> {
-    const res = await fetch(`${this.authority()}/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: this.config().clientId ?? '', scope: SCOPES, ...body }),
-    })
+    const res = await fetch(
+      `${this.authority()}/token`,
+      withTimeout({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: this.config().clientId ?? '', scope: SCOPES, ...body }),
+      }),
+    )
     const data = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error_description?: string; error?: string }
     if (!res.ok || !data.access_token) {
       if (data.error === 'invalid_grant') this.secrets = {} // refresh token revoked / expired → sign in again
@@ -224,9 +225,7 @@ export class Outlook {
   }
 
   private async api<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
-    const res = await fetch(url.startsWith('http') ? url : `${GRAPH}${url}`, {
-      headers: { Authorization: `Bearer ${await this.accessToken()}`, Accept: 'application/json', ...headers },
-    })
+    const res = await fetch(url.startsWith('http') ? url : `${GRAPH}${url}`, withTimeout({ headers: { Authorization: `Bearer ${await this.accessToken()}`, Accept: 'application/json', ...headers } }))
     if (res.status === 401) {
       this.secrets.accessToken = undefined
       throw new Error('Microsoft: доступ отклонён — войдите заново')
@@ -334,13 +333,7 @@ export class Outlook {
   // ---------- storage ----------
 
   private readJson<T>(name: string): T | undefined {
-    const file = join(this.root, name)
-    if (!existsSync(file)) return undefined
-    try {
-      return JSON.parse(readFileSync(file, 'utf8')) as T
-    } catch {
-      return undefined
-    }
+    return readJsonFile<T>(join(this.root, name))
   }
   private writeCache(): void {
     writeAtomic(join(this.root, 'outlook.json'), JSON.stringify(this.cache))

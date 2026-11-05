@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { noteRun, publishData } from '@nb/engine'
+import { noteRun, publishUnrun } from '@nb/engine'
 import { summary } from '@nb/domain/values'
 import { formatCode } from '@shared/codeformat'
 import CodeArea from '@renderer/components/CodeArea.vue'
@@ -24,7 +24,7 @@ watch(
     clearTimeout(publishTimer)
     publishTimer = setTimeout(() => {
       const i = parts.value.info
-      if (i.name) error.value = publishData(props.path, i.name, i.lang, text.value)
+      if (i.name) error.value = publishUnrun(props.path, 'data', i, text.value)
     }, 300)
   },
   { immediate: true },

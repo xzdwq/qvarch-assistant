@@ -7,7 +7,9 @@ import type { ServerConfig } from './config'
 import type { Db } from './db'
 import { migrate } from './migrate'
 import { Bus, RpcFail, type Delivery, type Method, type ModuleFactory, type ServerContext, type ServerModule, type Session } from './module'
-import { DbFlags, Devices } from './modules/core'
+import { Devices } from './modules/core'
+import { PortRegistry } from './ports'
+import { Tickets } from './tickets'
 
 /** Limits of one connection: the frame size, the time to sign in, silence before it is dropped, requests a second. */
 const AUTH_MS = 10_000
@@ -63,7 +65,7 @@ export async function startTransport(config: ServerConfig, db: Db, factories: re
       for (const d of devices) for (const c of online.get(d) ?? []) c.send(frame)
     },
   }
-  const ctx: ServerContext = { config, db, bus: new Bus(), delivery, flags: new DbFlags(db), spaceRules: { mayChat: async () => true } }
+  const ctx: ServerContext = { config, db, bus: new Bus(), delivery, tickets: new Tickets(config.mediaSecret), ports: new PortRegistry() }
   const modules = factories.map((f) => f(ctx))
   const methods = methodTable(modules)
   const applied = await migrate(db, modules)
@@ -74,13 +76,14 @@ export async function startTransport(config: ServerConfig, db: Db, factories: re
     if (f.v !== PROTOCOL_VERSION) return c.fail('version')
     if (!checkSignature(f.key, c.nonce, f.sig)) return c.fail('auth')
     if (!checkProof(config.accessCode, c.nonce, f.proof)) return c.fail('code')
-    const session: Session = { device: await devices.signIn(deviceIdOf(f.key), f.key, f.name) }
+    const session: Session = { device: await devices.signIn(deviceIdOf(f.key), f.name) }
+    // closed while signing in: its 'close' saw no session — it must not stay "online" for ever
+    if (c.ws.readyState !== c.ws.OPEN) return
     c.session = session
     let set = online.get(session.device.id)
     if (!set) online.set(session.device.id, (set = new Set()))
     set.add(c)
     c.send({ t: 'ready', device: session.device, now: Date.now() })
-    for (const m of modules) if (m.onReady) m.onReady(session).catch((e: Error) => console.error(`${m.name}.onReady:`, e.message))
   }
 
   async function answer(c: Conn, s: Session, f: Extract<ClientFrame, { t: 'req' }>): Promise<void> {

@@ -28,7 +28,6 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('vaultSearch', (_e, q) => vault.search(str(q)))
   handle('vaultNotesWith', (_e, needle) => (str(needle) ? vault.notesWith(str(needle), 20) : []))
   handle('eventMentions', () => vault.eventMentions())
-  handle('vaultBacklinks', (_e, p) => vault.backlinks(str(p)))
   handle('vaultRelated', (_e, p) => vault.related(str(p)))
   handle('vaultTags', () => vault.tags())
   handle('vaultTagged', (_e, tag) => vault.tagged(str(tag)))

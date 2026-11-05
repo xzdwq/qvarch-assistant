@@ -176,7 +176,7 @@ export class AgentRunner {
     private readonly guides: () => HarnessGuide[],
   ) {}
 
-  async run(req: TurnRequest, onTrace: (t: TraceLine) => void): Promise<TurnAnswer> {
+  async run(req: TurnRequest): Promise<TurnAnswer> {
     const profile = this.store.profile(req.profile)
     if (!profile) return { text: '', trace: [], error: 'Этого ИИ больше нет в настройках' }
     const runner = RUNNERS[AGENT_PROVIDERS[profile.provider].protocol]
@@ -214,7 +214,7 @@ export class AgentRunner {
       const tools = touchedBy(touches, req.doc?.path ?? '', traj.timed([...(req.harness?.checks?.length ? harnessGuarded(own, req.harness.checks) : own), ...(harness?.tools() ?? [])]))
       const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: !runner.ownTools, components: componentsBrief(), ...(req.memory ? { memory: req.memory } : {}), ...(req.harness ? { harness: req.harness.system } : {}) })
       traj.given(pack, Date.now() - t0, req.messages[req.question]?.text ?? '', { memory: !!req.memory?.memory, links: req.links.length, messages: req.messages.length })
-      const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => (trace.push(t), onTrace(t)), onModel: (m) => traj.model(m), onRemoteTool: (t) => traj.remote(t), session: `qvarch-${req.room}-${profile.id}` }, this.host)
+      const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => void trace.push(t), onModel: (m) => traj.model(m), onRemoteTool: (t) => traj.remote(t), session: `qvarch-${req.room}-${profile.id}` }, this.host)
       const said = harness ? harness.ended(out.text) : { text: out.text }
       return answer({ text: said.text, ...(out.note ? { note: out.note } : {}), ...(said.harness ? { harness: said.harness } : {}) })
     } catch (e) {

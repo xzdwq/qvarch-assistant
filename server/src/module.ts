@@ -1,13 +1,16 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ChatMessage } from '../../src/shared/transport/chat'
-import type { DeviceInfo, RpcError, TransportEvent } from '../../src/shared/transport/protocol'
+import * as Y from 'yjs'
+import { isUuid } from '../../src/shared/transport/ids'
+import type { DeviceInfo, RpcErrorCode, TransportEvent } from '../../src/shared/transport/protocol'
 import type { ServerConfig } from './config'
 import type { Db } from './db'
+import type { PortRegistry } from './ports'
+import type { Tickets } from './tickets'
 
 /**
- * A module of the server: its own tables (migrations), its own methods (a namespace — `chat.*`), what it does when a
- * device signs in, what it listens to on the bus. The server is the modules of the registry (modules/index.ts):
+ * A module of the server: its own tables (migrations), its own methods (a namespace — `chat.*`), what it listens to
+ * on the bus, the ports it answers for the others. The server is the modules of the registry (modules/index.ts):
  * presence, shared documents, analytics, tasks given to others — each a new module, nothing else changes.
  */
 export interface ServerModule {
@@ -16,8 +19,6 @@ export interface ServerModule {
   /** The schema step by step: the n-th applied once, as version n. A released step is never edited — a change is a new one. */
   migrations: readonly string[]
   methods?: Record<string, Method>
-  /** A device has signed in (its session is live: events reach it). */
-  onReady?(s: Session): Promise<void>
   /** A device's last connection closed. */
   onClose?(s: Session): void
   /** An HTTP request (files too big for the socket): answered — true; not its own — false. */
@@ -35,7 +36,7 @@ export type Method = (p: Record<string, unknown>, s: Session) => Promise<unknown
 /** A refusal a method answers with (anything else thrown is an internal error, its text not shown). */
 export class RpcFail extends Error {
   constructor(
-    readonly code: RpcError['code'],
+    readonly code: RpcErrorCode,
     message: string,
   ) {
     super(message)
@@ -44,7 +45,6 @@ export class RpcFail extends Error {
 
 /** What happens inside the server, for other modules (not sent anywhere by itself). */
 export interface BusEvents {
-  'chat.posted': ChatMessage
   /** A device is no longer a member of a space (left, removed, the space deleted). */
   'space.left': { space: string; device: string }
 }
@@ -64,30 +64,16 @@ export interface Delivery {
   send(devices: readonly string[], ev: TransportEvent): void
 }
 
-/** A switch kept in the database (the admin command changes it while the server runs). */
-export interface Flags {
-  get(key: string, dflt: boolean): Promise<boolean>
-  set(key: string, on: boolean): Promise<void>
-}
-
-/**
- * What the chat asks about the rooms of a shared space (the space module answers by the member's role; until it
- * does — any member may).
- */
-export interface SpaceRules {
-  /** May this member of the space write in its chats and comments (a reader may only read). */
-  mayChat(space: string, device: string): Promise<boolean>
-}
-
 /** What a module gets. */
 export interface ServerContext {
   config: ServerConfig
   db: Db
   bus: Bus
   delivery: Delivery
-  flags: Flags
-  /** The shared spaces' rules for their chats (set by the space module). */
-  spaceRules: SpaceRules
+  /** The passes for files over HTTP (one key for every module: a space's pass serves its media and results). */
+  tickets: Tickets
+  /** What the modules ask of each other (each answered by the module owning the tables). */
+  ports: PortRegistry
 }
 
 /** The parameter checks of a method: a wrong one — a refusal «bad». */
@@ -101,9 +87,20 @@ export function int(p: Record<string, unknown>, key: string, dflt?: number): num
   if (!Number.isSafeInteger(v)) throw new RpcFail('bad', `${key}: нужно целое число`)
   return v as number
 }
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export function uuid(p: Record<string, unknown>, key: string): string {
   const v = text(p, key)
-  if (!UUID.test(v)) throw new RpcFail('bad', `${key}: нужен идентификатор`)
+  if (!isUuid(v)) throw new RpcFail('bad', `${key}: нужен идентификатор`)
   return v.toLowerCase()
+}
+/** A Yjs update from the wire (base64) — one that does not apply is refused. */
+export function yjsUpdate(p: Record<string, unknown>, key: string): Uint8Array {
+  const b64 = p[key]
+  if (typeof b64 !== 'string' || !b64) throw new RpcFail('bad', `${key}: нужны данные документа`)
+  const u = Buffer.from(b64, 'base64')
+  try {
+    Y.applyUpdate(new Y.Doc(), u)
+  } catch {
+    throw new RpcFail('bad', `${key}: это не данные документа`)
+  }
+  return u
 }

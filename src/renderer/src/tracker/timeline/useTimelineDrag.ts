@@ -52,7 +52,6 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
   const { vp, from, to, canvas, width, rawTimeAt, timeAt, snapPoints, makeSel, selEnd } = scale
   const drag = ref<Drag>()
   const hoverT = ref<Ms>()
-  const hoverX = ref(0)
   /** Ctrl+click multi-selection. */
   const multi = ref<Set<string>>(new Set())
   /** The time divider placed by a click. */
@@ -157,7 +156,6 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     if (e.clientX < r.left || e.clientX > r.right) return void (hoverT.value = undefined)
     if ((e.target as HTMLElement | null)?.closest?.('.fanzone, [data-note]')) return void (hoverT.value = undefined)
     hoverT.value = rawTimeAt(e.clientX)
-    hoverX.value = e.clientX - r.left
   }
 
   /** A moved block: snapped start, and the lane under the pointer (incl. the empty one) if that slot is free. */
@@ -305,5 +303,5 @@ export function useTimelineDrag(props: TimelineDragProps, scale: TimelineScale, 
     else emit('selection', makeSel(s.start, Math.min(Math.max(selEnd.value + delta, s.start + MINUTE), props.bounds[1])), true)
   }
 
-  return { drag, hoverT, hoverX, multi, pinT, preview, wide, lanes, shownEntries, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey }
+  return { drag, hoverT, multi, pinT, preview, wide, lanes, shownEntries, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey }
 }

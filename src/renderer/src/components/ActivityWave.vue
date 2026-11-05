@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { pulseScore, smoothPath, type PulsePoint, type PulseRow } from '@shared/pulse'
 import type { Ms } from '@shared/types'
+import { useNow } from '../lib/useDay'
 
 /**
  * Activity wave: key presses + mouse travel + window switches as one glowing line.
@@ -15,8 +16,8 @@ const props = withDefaults(
 
 const H = 20
 const bins = ref(new Map<number, PulsePoint>())
-const clock = ref(Date.now())
-let tick: ReturnType<typeof setInterval> | undefined
+// live: the wave keeps scrolling even when nothing happens (it settles down to a calm line)
+const clock = props.mode === 'live' ? useNow(500) : ref(Date.now())
 let off: (() => void) | undefined
 
 function merge(list: PulsePoint[]): void {
@@ -32,13 +33,8 @@ onMounted(() => {
   if (props.mode !== 'live') return
   void window.qa.getPulse().then(merge)
   off = window.qa.onPulse(merge)
-  // the wave keeps scrolling even when nothing happens (it settles down to a calm line)
-  tick = setInterval(() => (clock.value = Date.now()), 500)
 })
-onBeforeUnmount(() => {
-  off?.()
-  clearInterval(tick)
-})
+onBeforeUnmount(() => off?.())
 
 /** Scores per point, oldest → newest. */
 const scores = computed<number[]>(() => {

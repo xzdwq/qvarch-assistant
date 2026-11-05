@@ -1,10 +1,12 @@
 import { isTsLang } from '../../domain/blockInfo'
 import type { BlockRunner } from '../../engine/blockRunner'
 import { cutText, tookText } from '../../engine/reportText'
-import { errorText, runApi } from '../../engine/runApi'
+import { runApi } from '../../engine/runApi'
 import { libsOf, runsSnapshot } from '../../engine/runItems'
-import { saveRunsSoon } from '../../engine/runStore'
-import { followEmits } from '../../engine/runEmits'
+import { LatestRuns, processRun, trackedRun } from '../../engine/trackedRun'
+
+/** Code runs going on (run again before the first ended — the first one's answer is dropped). */
+const latest = new LatestRuns()
 
 /**
  * A code block run apart from the app (the note's «lib» blocks first): what it returns — published under its name,
@@ -12,25 +14,13 @@ import { followEmits } from '../../engine/runEmits'
  * time limit.
  */
 export const codeRunner: BlockRunner = {
-  async run({ env, item, noteText }) {
-    const runId = env.runSlot(item.key)
-    env.recordRun(item.key, { state: 'run', at: Date.now() })
-    const gather = followEmits(runId, env, 'code', item.key, item.info.keep)
-    try {
-      const r = await runApi().runCode(runId, { code: item.body, ts: isTsLang(item.info.lang), libs: libsOf(noteText, item.body), ctx: env.values(), runs: runsSnapshot(env.notePath, noteText, item.key), timeoutSec: item.info.timeout })
-      const lost = await gather.end(r.emits, r.ok)
-      const ok = r.ok && !lost
-      env.recordRun(item.key, { state: ok ? 'ok' : 'error', at: Date.now(), ms: r.ms, logs: r.logs, error: r.error ?? lost, value: r.value, hasValue: r.hasValue })
-      if (ok && item.info.name && r.hasValue) env.publish(item.info.name, r.value, 'code', item.key)
-      for (const [k, v] of Object.entries(r.sets ?? {})) env.publish(k, v, 'set', item.key)
-      saveRunsSoon(env.notePath)
-      return ok
-    } catch (e) {
-      await gather.end(undefined, false)
-      env.recordRun(item.key, { state: 'error', at: Date.now(), error: errorText(e) })
-      saveRunsSoon(env.notePath)
-      return false
-    }
+  run({ env, item, noteText }) {
+    // (the process is known by the block's slot: run again, the old one is killed)
+    return trackedRun(latest, env, item.key, { state: 'run', at: Date.now() }, ({ slot }) =>
+      processRun(slot, env, item, 'code', () =>
+        runApi().runCode(slot, { code: item.body, ts: isTsLang(item.info.lang), libs: libsOf(noteText, item.body), ctx: env.values(), runs: runsSnapshot(env.notePath, noteText, item.key), timeoutSec: item.info.timeout }),
+      ),
+    )
   },
   stop: (env, key) => runApi().runCodeStop(env.runSlot(key)),
   resultOf: (run) => (run.hasValue ? run.value : undefined),

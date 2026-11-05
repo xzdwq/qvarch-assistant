@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 import Icon from '@renderer/components/Icon.vue'
 import NodeMark from '@renderer/components/NodeMark.vue'
 import MdEditor from '@renderer/components/MdEditor.vue'
-import { docs, setText } from '@nb/workspace/noteDocs'
+import { docs, reloadDoc, setText } from '@nb/workspace/noteDocs'
 import { layout, type Pane } from '@nb/workspace/paneLayout'
 import { dropAudio } from '@nb/workspace/noteSync'
 import { readonlyPath } from '@nb/workspace/sharedDocs'
@@ -58,7 +58,7 @@ async function onTitleKey(e: KeyboardEvent): Promise<void> {
       if (p.active && el.value !== noteName(p.active)) await rename(p.active, el.value)
       await nextTick()
       const ed = editors.of(p)
-      if (e.key === 'ArrowDown' && ed && 'focusStart' in ed) (ed as { focusStart: () => void }).focusStart()
+      if (e.key === 'ArrowDown') ed?.focusStart()
       else ed?.focus()
       break
     }
@@ -88,7 +88,11 @@ async function onTitleKey(e: KeyboardEvent): Promise<void> {
     <div class="nmeta tw:last:flex-1 tw:box-border tw:w-full tw:max-w-(--note-max,820px) tw:-mt-2 tw:mr-auto tw:mb-8 tw:ml-auto tw:pt-0 tw:pr-[calc(24px+var(--note-pad,0px))] tw:pb-0 tw:pl-[calc(52px+var(--note-pad,0px))] tw:text-muted tw:text-[11.5px]">
       <span class="tw:inline-flex tw:items-center tw:gap-5" v-if="createdOf(path)" title="Дата создания файла"><Icon name="clock" :size="11" />Создано {{ createdOf(path) }}</span>
     </div>
-    <template class="tw:last:flex-1" v-if="docs.get(path)?.loaded">
+    <div v-if="!docs.get(path)?.loaded && docs.get(path)?.error" class="tw:box-border tw:w-full tw:max-w-(--note-max,820px) tw:mx-auto tw:pl-[calc(52px+var(--note-pad,0px))] tw:flex tw:items-center tw:gap-8 tw:text-down-fg tw:text-[13px]">
+      Не удалось прочитать заметку: {{ docs.get(path)!.error }}
+      <button class="ghost tw:h-26 tw:px-10" @click="reloadDoc(path)">Повторить</button>
+    </div>
+    <template v-else-if="docs.get(path)?.loaded">
       <MdEditor class="tw:last:flex-1"
         :key="editorKey()"
         :ref="setEditor"

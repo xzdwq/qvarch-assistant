@@ -2,9 +2,9 @@ import { toRaw } from 'vue'
 import type { ValueSource } from '../domain/blockInfo'
 import { findLoops, loopAt, type LoopRange } from '../domain/loop'
 import { jsonClone, type Values } from '../domain/values'
-import { noteRun, noteValues, publishToNote } from './runStore'
+import { noteRun, pathOfRun, publishIntoRun, valuesOfRun } from './runStore'
 import { keyNow, keyStarted, runSettled } from './runKeys'
-import type { BlockRun, LoopRun, PassRun } from './runTypes'
+import type { BlockRun, LoopRun, NoteRun, PassRun } from './runTypes'
 
 /**
  * Where a block runs: the values it sees, where what it publishes goes, where its run is kept, and the id its run
@@ -12,7 +12,14 @@ import type { BlockRun, LoopRun, PassRun } from './runTypes'
  * pass's values over the note's (or the outer pass's), what it publishes kept with the pass.
  */
 export abstract class RunEnv {
-  constructor(readonly notePath: string) {}
+  constructor(
+    /** The note's path when this env was made (a run's process ids are made of it). */
+    protected readonly startPath: string,
+  ) {}
+  /** The note's runs (the object: it follows a rename of the note). */
+  abstract readonly note: NoteRun
+  /** The note's path now (renamed while a run goes — the new one). */
+  abstract readonly notePath: string
   /** '' — the note's; `@<loop>#<n>…` — a pass's (nested passes add up). */
   abstract readonly id: string
   /** The blocks' runs kept here. */
@@ -25,12 +32,16 @@ export abstract class RunEnv {
   abstract publish(name: string, value: unknown, from: ValueSource, block: string): void
   /** The run it is part of: the note's env it started in (a pass's — its loop's). What emit() gathers lives as long. */
   abstract readonly root: RunEnv
+  /** The number of the pass it is (the innermost loop's); none — the note's own. */
+  abstract readonly passNumber: number | undefined
+  /** A value seen here was gathered by a run that did not end well (stopped, failed) — what came is all there is. */
+  abstract isPartial(name: string): boolean
   /**
    * The id a block's (or a loop's) run goes by in the main process — the key it started with (its results moved
    * meanwhile: stopped from where they are now).
    */
   runSlot(key: string): string {
-    return `${this.notePath}#${this.id ? key : keyStarted(this.notePath, key)}${this.id}`
+    return `${this.startPath}#${this.id ? key : keyStarted(this.notePath, key)}${this.id}`
   }
   /** Where a run started under `key` keeps its results now (the note's own runs may move: a block given its id). */
   keyNow(key: string): string {
@@ -51,20 +62,32 @@ export abstract class RunEnv {
 /** The note itself: its context, its blocks' runs. */
 export class NoteEnv extends RunEnv {
   readonly id = ''
+  readonly note: NoteRun
+  constructor(path: string) {
+    super(path)
+    this.note = noteRun(path)
+  }
+  get notePath(): string {
+    return pathOfRun(this.note, this.startPath)
+  }
   get root(): RunEnv {
     return this
   }
   get runs(): Record<string, BlockRun> {
-    return noteRun(this.notePath).runs
+    return this.note.runs
   }
   get loops(): Record<string, LoopRun> {
-    return noteRun(this.notePath).loops
+    return this.note.loops
   }
+  readonly passNumber = undefined
   values(): Values {
-    return noteValues(this.notePath)
+    return valuesOfRun(this.note)
+  }
+  isPartial(name: string): boolean {
+    return !!this.note.ctx[name]?.partial
   }
   publish(name: string, value: unknown, from: ValueSource, block: string): void {
-    publishToNote(this.notePath, name, value, from, block)
+    publishIntoRun(this.note, this.notePath, name, value, from, block)
   }
 }
 
@@ -83,6 +106,12 @@ export class PassEnv extends RunEnv {
     super(outer.notePath)
     this.id = `${outer.id}@${loopKey}#${pass.n}`
   }
+  get note(): NoteRun {
+    return this.outer.note
+  }
+  get notePath(): string {
+    return this.outer.notePath
+  }
   get root(): RunEnv {
     return this.outer.root
   }
@@ -98,6 +127,13 @@ export class PassEnv extends RunEnv {
     for (const k in this.pass.values) void this.pass.values[k]
     return { ...this.outer.values(), ...(jsonClone(this.pass.vars) as object), loop: { n: this.pass.n, index: this.pass.n - 1 }, ...toRaw(this.pass.values) }
   }
+  get passNumber(): number {
+    return this.pass.n
+  }
+  isPartial(name: string): boolean {
+    // (the pass's own values and the ones it was given are whole)
+    return name in this.pass.values || name in this.pass.vars ? false : this.outer.isPartial(name)
+  }
   publish(name: string, value: unknown, from: ValueSource, block: string): void {
     this.pass.values[name] = jsonClone(value)
     if (from === 'set' && this.serial) this.outer.publish(name, value, from, block)
@@ -108,7 +144,7 @@ export class PassEnv extends RunEnv {
     return toRaw(lr.passes[lr.sel ?? lr.passes.length - 1]) === toRaw(this.pass)
   }
   protected onRunRecorded(key: string, run: BlockRun): void {
-    if (this.isShown()) noteRun(this.notePath).runs[key] = run
+    if (this.isShown()) this.note.runs[key] = run
   }
 }
 

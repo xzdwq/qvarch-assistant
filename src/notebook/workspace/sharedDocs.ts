@@ -1,12 +1,12 @@
-import { reactive, watch, watchEffect } from 'vue'
+import { reactive, toRaw, watch, watchEffect } from 'vue'
 import type { DeviceInfo } from '@shared/transport/protocol'
 import { formatOf, sharedDocOfFile, type SharedFormat } from '@shared/transport/sharedFormats'
 import { fromB64, isEmptyUpdate, mergeUpdates, SharedText, toB64, type SharedModel, type UpdateOrigin } from '@shared/transport/sharedText'
-import { NO_MEDIA, ROLE_RIGHTS, sharedMark, type MediaReport, type Space, type SpaceRole } from '@shared/transport/space'
+import { NO_MEDIA, ROLE_RIGHTS, type MediaReport, type Space, type SpaceRole } from '@shared/transport/space'
 import { serverCall, serverNow, serverOnline, useTransport } from '@renderer/lib/transport'
 import { retryDelay } from '@shared/transport/constants'
-import type { DocAi } from '@shared/agent/docAi'
 import { onServerEvents, type ServerEventHandlers } from '@renderer/lib/serverEvents'
+import { jsonClone } from '../domain/values'
 import { docs, onSaveAll, setText } from './noteDocs'
 import { mediaAsked, mediaExpected, mediaReported } from './mediaFollow'
 
@@ -129,7 +129,7 @@ function keepNow(doc: string, l: Live): Promise<void> {
   clearTimeout(l.saveTimer)
   l.saveTimer = undefined
   // a note's metadata kept beside (the notes' search reads it without the document)
-  const ai = l.st instanceof SharedText ? (JSON.parse(JSON.stringify(l.st.aiNow())) as DocAi) : undefined
+  const ai = l.st instanceof SharedText ? jsonClone(toRaw(l.st.aiNow())) : undefined
   return window.qa.sharedSave(doc, { state: toB64(l.st.state()), text: l.st.value, ...(ai ? { ai } : {}) }).catch(() => undefined)
 }
 /** Every state waiting to be kept — kept now (the notes are being saved: the window closes, reloads). */
@@ -229,6 +229,8 @@ async function sync(doc: string, l: Live): Promise<void> {
   }
   const missing = l.st.missingFor(fromB64(r.sv))
   if (!isEmptyUpdate(missing)) await serverCall('doc.update', { doc, update: toB64(missing) })
+  // what was typed offline is in `missing` already — not sent a second time
+  l.queue.length = 0
   // in step now: the pictures it shows too (nothing may have changed — no update would ask for them)
   mediaSoon(doc, l)
 }
@@ -349,19 +351,6 @@ export async function adopt(doc: string, space: string, st: SharedModel, path: s
   await sync(doc, l)
   return st.value
 }
-/** A note shared: a space of its own, its text the document's first state. */
-export async function shareNote(path: string, title: string): Promise<Space> {
-  const d = docs.get(path)
-  const fmt = formatOf(path)
-  if (!d?.loaded || !fmt) throw new Error('Заметка ещё не открыта')
-  const st = fmt.model()
-  st.setLocal(d.text)
-  const r = await serverCall('space.share', { title, update: toB64(st.state()) })
-  if (!r.doc) throw new Error('Сервер не создал документ')
-  spaces.set(r.space.id, r.space)
-  await adopt(r.doc, r.space.id, st, path)
-  return r.space
-}
 
 /** A shared folder's document kept in step though not open: its file and its text as read now. */
 export function track(doc: string, path: string, text: string): void {
@@ -413,22 +402,5 @@ export function editableTexts(): SharedText[] {
 }
 /** Every shared note held here (its snapshots of tasks and events are read by the chips). */
 export const heldTexts = (): SharedText[] => [...lives.values()].flatMap((l) => (l.ready && l.st instanceof SharedText ? [l.st] : []))
-/** A document's text fetched from the server as a new file of this kind: its text, and its state kept here. */
-export async function fetchText(doc: string, fmt: SharedFormat): Promise<string> {
-  const st = fmt.model()
-  const r = await serverCall('doc.open', { doc, sv: toB64(st.stateVector()) })
-  st.apply(fromB64(r.update), 'remote')
-  await window.qa.sharedSave(doc, { state: toB64(st.state()), text: st.value })
-  return st.value
-}
-
-/** A shared note joined: its note made in «Общие» (or the one already here). Its path. */
-export async function joinDoc(sp: Space): Promise<string> {
-  const doc = sp.docs.find((d) => !d.deleted)
-  if (!doc) throw new Error('В пространстве нет документов')
-  const hits = await window.qa.vaultSearch(sharedMark(doc.id))
-  const had = hits.find((h) => h.path.endsWith('.md'))?.path
-  if (had) return had
-  const fmt = formatOf(doc.path) ?? formatOf('.md')!
-  return window.qa.vaultCreate(SHARED_FOLDER, fmt.kind, doc.title, await fetchText(doc.id, fmt))
-}
+/** The document is held here (open in an editor, or of a shared folder). */
+export const isHeld = (doc: string): boolean => lives.has(doc)

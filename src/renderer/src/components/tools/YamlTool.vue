@@ -4,6 +4,7 @@ import { load as yamlLoad, dump as yamlDump } from 'js-yaml'
 import { sortDeep } from '../../lib/codeLang'
 import CodeArea from '../CodeArea.vue'
 import Icon from '../Icon.vue'
+import { useFlash } from '../../lib/useFlash'
 
 /**
  * JSON ↔ YAML: both sides editable — what is typed on one side is written on the other at once (while it
@@ -114,11 +115,10 @@ function formatBoth(): void {
     from.err.value = where(e)
   }
 }
-const copiedSide = ref('')
+const { shown: copiedSide, flash } = useFlash<Side>(1200)
 async function copy(side: Side): Promise<void> {
   await navigator.clipboard.writeText(SIDES[side].text.value)
-  copiedSide.value = side
-  setTimeout(() => copiedSide.value === side && (copiedSide.value = ''), 1200)
+  flash(side)
 }
 async function paste(side: Side): Promise<void> {
   SIDES[side].text.value = await navigator.clipboard.readText()

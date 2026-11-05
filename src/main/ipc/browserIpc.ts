@@ -1,12 +1,13 @@
 import { app as electronApp } from 'electron'
 import { join } from 'node:path'
-import { BROWSER_METHODS } from '../../shared/browser'
+import { BROWSER_METHODS, type BrowserEventArgs } from '../../shared/browser'
 import { SQL_METHODS } from '../../shared/sql'
 import { TEST_FILES_METHODS } from '../../shared/testFiles'
 import type { AppContext } from '../app/appContext'
 import { Browser } from '../browser'
 import { netClear, netListen, setupNoteBrowser } from '../noteBrowser'
 import { SqlStore } from '../sql/store'
+import { registerBrowserPageIpc } from './browserPageIpc'
 import { emit, handle, handleDispatch, listen } from './router'
 
 /**
@@ -14,8 +15,11 @@ import { emit, handle, handleDispatch, listen } from './router'
  * service the window calls by method name — and the notes' browser component (a page's requests listened to).
  */
 export function registerBrowserIpc(app: AppContext): void {
-  const browser = new Browser(app.store.root, (type, payload) => app.emitToMain('onBrowser', type, payload))
+  // the pages' preload: the section's tabs and the notes' browsers (a scenario's recorder) — one file
+  const preload = join(app.mainDir, '../preload/browser.js')
+  const browser = new Browser(app.store.root, { preload, hookWorker: app.script('hookWorker.js') }, (type, payload) => app.emitToMain('onBrowser', ...([type, payload] as BrowserEventArgs)))
   app.browser = browser
+  registerBrowserPageIpc(browser)
   if (app.windows.main && !app.windows.main.isDestroyed()) browser.attach(app.windows.main)
   electronApp.on('will-quit', () => browser.hooks.stop())
   // a file picked while recording: into the notebook's «Записанные»
@@ -36,7 +40,7 @@ export function registerBrowserIpc(app: AppContext): void {
   const nbEmit = (host: Electron.WebContents, type: string, payload: unknown) => emit(host, 'onNoteBrowser', type, payload)
   setupNoteBrowser(nbEmit, () => browser.uaOverride(), {
     // the section's pages' own (a scenario's recorder; its other parts answer the section's tabs only)
-    preload: join(app.mainDir, '../preload/browser.js'),
+    preload,
     navigated: (wc, url) => browser.scenario.onNavigated(wc, url),
     domReady: (wc) => browser.scenario.onDomReady(wc),
   })

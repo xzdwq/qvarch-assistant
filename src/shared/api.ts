@@ -1,6 +1,5 @@
 import type { AgentProfile, AgentProfileView } from './agent/profiles'
 import type { TurnAnswer, TurnRequest } from './agent/turn'
-import type { TraceLine } from './agent/agentLoop'
 import type { DocAi } from './agent/docAi'
 import type { CronJob, CronRun } from './cronJobs'
 import type { ValueFileApi } from './valueFiles'
@@ -9,15 +8,15 @@ import type { ChatCacheData } from './transport/chatOffline'
 import type { HarnessSettings } from './agent/harness/constants'
 import type { HarnessRun } from './agent/harness/model'
 import type { HarnessGuide } from './agent/harness/guides'
-import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, PlanBlock, SearchHit, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
+import type { DayData, DayStateMessage, Entry, LiveStatus, LocalTask, Note, VoiceState, PublicSettings, Selection, SettingsPatch } from './types'
 import type { RangeDay } from './report'
 import type { Dock } from './island'
 import type { ProjectProfile } from './release'
 import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
-import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from './jira'
+import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
-import type { BrowserApi } from './browser'
+import type { BrowserApi, BrowserEventArgs } from './browser'
 import type { TestFilesApi } from './testFiles'
 import type { SqlApi } from './sql'
 import type { TableFileApi } from './tableData'
@@ -123,12 +122,9 @@ export interface QaApi {
   /** 16 kHz mono WAV of the note's audio → transcript (stored on the note). */
   transcribeNote(day: string, noteId: string, wav: Uint8Array): Promise<string>
   readAudio(file: string): Promise<Uint8Array>
-  /** Full-text search over the whole history. */
-  search(q: string): Promise<SearchHit[]>
   /** Own tasks (besides Jira). */
   tasks(): Promise<LocalTask[]>
   saveTask(t: LocalTask): Promise<LocalTask>
-  deleteTask(id: string): Promise<void>
   onTasks(cb: (tasks: LocalTask[]) => void): () => void
   /** A note becomes an own task (the note stays, linked to it). */
   noteToTask(day: string, noteId: string): Promise<Entry>
@@ -136,11 +132,6 @@ export interface QaApi {
   setDayTasks(day: string, tasks: Array<{ key: string; summary: string }>): Promise<void>
   /** A block (an Outlook meeting / a call too) given to a task — or taken from it (null). */
   setEntryTask(day: string, id: string, task: { key: string; summary: string } | null): Promise<void>
-  /** Create or update a planned block. */
-  savePlan(day: string, block: PlanBlock): Promise<PlanBlock>
-  deletePlan(day: string, id: string): Promise<void>
-  /** "Сделано по плану": a real block from the plan block — only once (the same block if it already exists). */
-  planDone(day: string, id: string): Promise<Entry | undefined>
 
   /** Cut marker shared by all windows. */
   getSelection(): Promise<Selection | null>
@@ -244,11 +235,9 @@ export interface QaApi {
   jiraLogout(): Promise<void>
   jiraSync(): Promise<void>
   jiraSetSecret(secret: string): Promise<void>
-  jiraStar(key: string, on: boolean): Promise<void>
-  jiraSetMyStatus(key: string, status: MyTaskStatus | null): Promise<void>
   /** Time tracked in the app per task key (all days), ms. */
   /** Blocks, links and notes of the stored days in [from, to] (the task calendar). */
-  calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'notes' | 'plan' | 'dayTasks'>>>
+  calendarRange(from: string, to: string): Promise<Array<Pick<DayData, 'day' | 'entries' | 'notes' | 'dayTasks'>>>
   /** Time per task key (Jira or own) over every day. */
   jiraTracked(): Promise<Record<string, number>>
   /** Per task key: its blocks on the timeline (any day, the planned ones too). */
@@ -314,8 +303,8 @@ export interface QaApi {
   valueFile<K extends keyof ValueFileApi>(m: K, ...a: Parameters<ValueFileApi[K]>): Promise<Awaited<ReturnType<ValueFileApi[K]>>>
   /** Where the visible pages go (sent often — no answer). */
   browserLayout(rects: Array<{ id: string; x: number; y: number; w: number; h: number; dev?: { x: number; y: number; w: number; h: number }; scale?: number }>): void
-  /** The browser's news: tabs, rec, opened, key, login, open, download, bookmarks, recError. */
-  onBrowser(cb: (type: string, payload: unknown) => void): () => void
+  /** The browser's news by name (BrowserEvents): tabs, rec, opened, key, login, open, download, bookmarks… */
+  onBrowser(cb: (...e: BrowserEventArgs) => void): () => void
   /** A page of the Jira releases of the projects (unreleased first). */
   jiraVersions(q: string, offset: number, limit: number): Promise<{ items: JiraVersion[]; total: number; unreleased: number }>
   /** The task keys of a Jira release. */
@@ -345,8 +334,6 @@ export interface QaApi {
   vaultSearch(q: string): Promise<VaultHit[]>
   /** The notes that have this text as it is (a block's mark: a chat's room, a feed). */
   vaultNotesWith(needle: string): Promise<string[]>
-  /** The notes that link to this one (`[[…]]`). */
-  vaultBacklinks(path: string): Promise<string[]>
   /** «Связи»: the notes linking to this one, and the related ones with why (the notebook's graph). */
   vaultRelated(path: string): Promise<{ backlinks: string[]; related: RelatedNote[] }>
   /** Every tag of the notes with how many have it. */
@@ -466,8 +453,6 @@ export interface QaApi {
   harnessGuideSave(g: HarnessGuide): Promise<HarnessGuide[]>
   harnessGuideRemove(id: string): Promise<HarnessGuide[]>
   harnessGuideReset(id: string): Promise<HarnessGuide[]>
-  /** A tool an agent called during a turn. */
-  onAgentTrace(cb: (turn: string, line: TraceLine) => void): () => void
   /** The document (with its pictures, boards, results if chosen) into one .qvdoc file; undefined — cancelled. */
   docExport(path: string): Promise<{ file: string; docs: number; files: number; missing: string[] } | undefined>
   /** A .qvdoc file unpacked into a folder of the vault; undefined — cancelled. */

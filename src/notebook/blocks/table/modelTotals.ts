@@ -43,7 +43,7 @@ export interface ColumnCells {
   filled: number
   skipped: number
 }
-export function columnCells(t: TableModel, c: number): ColumnCells {
+function columnCells(t: TableModel, c: number): ColumnCells {
   const out: ColumnCells = { numbers: [], digits: 0, cells: 0, filled: 0, skipped: 0 }
   t.rows.forEach((row, r) => {
     const m = coveredBy(t, r, c)
@@ -63,7 +63,7 @@ export function columnCells(t: TableModel, c: number): ColumnCells {
 
 // ---------- the totals ----------
 /** A number as people write it: «1 234,5» (`digits` — after the point at most). */
-export const fmtNumber = (v: number, digits = 10) => v.toLocaleString('ru-RU', { maximumFractionDigits: Math.min(10, digits) })
+const fmtNumber = (v: number, digits = 10) => v.toLocaleString('ru-RU', { maximumFractionDigits: Math.min(10, digits) })
 /** 0.1 + 0.2 — not 0.30000000000000004. */
 const exact = (v: number, digits: number) => Number(v.toFixed(Math.min(10, digits)))
 

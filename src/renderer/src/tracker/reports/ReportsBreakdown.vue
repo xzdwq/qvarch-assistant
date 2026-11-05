@@ -13,7 +13,7 @@ import { groupHead } from '@shared/tracker/reportStats'
 import { KIND_LOOK, useReports } from './useReportsState'
 
 /** The report's breakdown: groups by kind / task / day / week / an attribute, two levels deep, down to the blocks. */
-const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
+const emit = defineEmits<{ go: [day: string, entryId?: string] }>()
 const { st, loading, all, items } = useReports()
 
 /** The groupings: the fixed ones, then one per attribute (its letters; its name in the tooltip). */
@@ -78,7 +78,7 @@ const pct = (ms: number) => (groupSum.value ? Math.round((ms / groupSum.value) *
               <span class="gp tw:flex-none tw:w-36 tw:text-muted tw:text-[11px] tw:text-right tw:tabular-nums tw:font-data">{{ pct(s.ms) }}%</span>
             </button>
             <template v-if="openKeys.has(`${g.key}/${s.key}`)">
-              <button v-for="i in [...s.items].sort((a, b) => a.e.start - b.e.start)" :key="i.e.id" class="er tw:flex tw:items-center tw:gap-8 tw:pt-4 tw:pr-6 tw:pb-4 tw:pl-50 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:text-left tw:hover:bg-white/4 tw:hover:enabled:border-border-3" @click="emit('go', 'day', i.day, i.e.id)">
+              <button v-for="i in [...s.items].sort((a, b) => a.e.start - b.e.start)" :key="i.e.id" class="er tw:flex tw:items-center tw:gap-8 tw:pt-4 tw:pr-6 tw:pb-4 tw:pl-50 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:text-left tw:hover:bg-white/4 tw:hover:enabled:border-border-3" @click="emit('go', i.day, i.e.id)">
                 <span class="eic tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-16 tw:h-16 tw:rounded-r2 tw:text-text-hi" :style="{ background: kindColor(i.e.kind) }"><Icon :name="entryIcon(i.e)" :size="10" :stroke="2.4" /></span>
                 <span class="ed tw:flex-none tw:text-muted tw:tabular-nums tw:font-data tw:w-48">{{ fmt(i.day, { day: 'numeric', month: 'short' }) }}</span>
                 <span class="et tw:flex-none tw:text-muted tw:tabular-nums tw:font-data">{{ formatHM(i.e.start) }}–{{ formatHM(i.e.end) }}</span>

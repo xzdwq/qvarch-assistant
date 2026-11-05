@@ -9,7 +9,7 @@ import { cellAt, coveredBy } from './modelMerges'
  * The rows' keys, a column each: its head (under a merged head — the merge's); an empty one — «Столбец N»; met
  * again — with a number («Имя 2»), a key never lost to another column.
  */
-export function tableKeys(t: TableModel): string[] {
+function tableKeys(t: TableModel): string[] {
   const seen = new Set<string>()
   return t.head.map((_, c) => {
     const m = coveredBy(t, -1, c)

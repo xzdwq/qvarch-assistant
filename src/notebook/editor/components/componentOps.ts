@@ -137,7 +137,8 @@ export const componentTail = ViewPlugin.fromClass(
 function ensureLineAfterLastComponent(v: EditorView): void {
   const doc = v.state.doc
   const last = doc.line(doc.lines)
-  if (!last.length || v.composing) return
+  // a read-only note is never changed (a shared one would send the line back and forth)
+  if (!last.length || v.composing || v.state.readOnly) return
   if (!componentRanges(v.state).some((r) => r.to >= last.from)) return
   v.dispatch({ changes: { from: doc.length, insert: '\n' }, annotations: [Transaction.addToHistory.of(false), Transaction.userEvent.of(COMPONENT_INPUT)] })
 }

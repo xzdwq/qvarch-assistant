@@ -89,8 +89,8 @@ describe('calendar side list and totals', () => {
   it('counts a day: done once for parallel blocks, planned after now', () => {
     const now = T0 + 2 * HOUR
     const list = [ev('a', T0, T0 + HOUR, { task: { key: 'X-1', summary: '' } }), ev('b', T0 + 30 * MINUTE, T0 + HOUR, { kind: 'call' }), ev('c', T0 + HOUR, T0 + 3 * HOUR, { kind: 'break' })]
-    const s = dayStats(list, [{ start: T0, end: T0 + 4 * HOUR }], 2, now, DEFAULT_KINDS)
-    expect(s).toEqual({ done: 2 * HOUR, productive: HOUR, planned: HOUR, plan: 4 * HOUR, count: 3, tasks: 1, meetings: 1, notes: 2 })
+    const s = dayStats(list, 2, now, DEFAULT_KINDS)
+    expect(s).toEqual({ done: 2 * HOUR, productive: HOUR, planned: HOUR, count: 3, tasks: 1, meetings: 1, notes: 2 })
   })
 })
 

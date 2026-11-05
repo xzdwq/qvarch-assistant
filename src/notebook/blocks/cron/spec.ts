@@ -2,7 +2,7 @@ import type { BlockSpec } from '../../domain/blockSpec'
 import { fenceOfLang, heightPerLine } from '../detectors'
 
 /** An empty ```cron fence: the schedules of the notes. */
-export const CRON_MD = '```cron\n```'
+const CRON_MD = '```cron\n```'
 
 /** The notes' schedules: one made for this note, every one listed with its last run. */
 export const cronSpec: BlockSpec<'cron'> = {

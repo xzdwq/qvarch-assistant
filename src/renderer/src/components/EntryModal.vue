@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import type { DayData, Entry } from '@shared/types'
-import { recentLabels } from '../lib/recent'
 import EntryEditor from './EntryEditor.vue'
 import { refreshMentions } from '../lib/mentions'
 
@@ -30,11 +29,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           v-if="data"
           :day="day"
           :entry="entry"
-          :recent="recentLabels(data.entries)"
           :entries="data.entries"
           :notes="data.notes"
           :now="Date.now()"
-          textarea
           manual
           @saved="(emit('changed'), emit('close'))"
           @deleted="(emit('changed'), emit('close'))"

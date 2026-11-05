@@ -18,7 +18,7 @@ const dismiss = (id?: string) => void window.qa.termDismiss(id)
           <button class="alink tw:flex-none tw:py-1 tw:px-6 tw:border tw:border-border-2 tw:rounded-r1 tw:bg-panel-2 tw:text-text tw:font-data tw:text-[11px] tw:hover:border-accent tw:hover:text-accent-fg tw:hover:enabled:bg-hover" @click="sideTab = 'watch'">Реакции</button>
         </div>
         <div v-for="a in alerts" :key="a.id" class="al tw:flex tw:items-center tw:gap-8 tw:h-26 tw:pt-0 tw:pr-4 tw:pb-0 tw:pl-0 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c,var(--down))_12%,transparent)] tw:text-[12px] tw:whitespace-nowrap" :style="{ '--c': a.color }" :title="a.line">
-          <i class="abar tw:flex-none tw:self-stretch tw:w-4 tw:rounded-[var(--r2)_0_0_var(--r2)] tw:[background:var(--c)] tw:animate-[TerminalView-tv-blink_0.36s_steps(2)_infinite]"></i>
+          <i class="abar tw:flex-none tw:self-stretch tw:w-4 tw:rounded-[var(--r2)_0_0_var(--r2)] tw:[background:var(--c)] tw:animate-[Shared-blink-25_0.36s_steps(2)_infinite]"></i>
           <span class="atime tw:flex-none tw:text-text-2 tw:font-data tw:tabular-nums">{{ hms(a.at) }}</span>
           <button class="aterm tw:flex-none tw:py-1 tw:px-6 tw:border tw:border-border-2 tw:rounded-r1 tw:bg-panel-2 tw:text-text tw:font-data tw:text-[11px] tw:hover:border-accent tw:hover:text-accent-fg tw:hover:enabled:bg-hover" title="Показать эту оболочку" @click="reveal(a.sid)">{{ a.title }}</button>
           <b class="aname tw:flex-none tw:text-(--c) tw:font-semibold">{{ a.name }}</b>

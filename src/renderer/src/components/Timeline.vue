@@ -24,14 +24,13 @@ import { useTimelineScale } from '../tracker/timeline/useTimelineScale'
 import { useTimelineFollow } from '../tracker/timeline/useTimelineFollow'
 import { COPY_ID, useTimelineDrag } from '../tracker/timeline/useTimelineDrag'
 import { LANE_GAP } from '../tracker/timeline/useTimelineLanes'
-import { PLAN_ROW, useTimelinePlanLane } from '../tracker/timeline/useTimelinePlanLane'
 import { useTimelineMenu } from '../tracker/timeline/useTimelineMenu'
 import { useTimelineNotePins } from '../tracker/timeline/useTimelineNotePins'
 
 /**
- * One day as a horizontal timeline: the axis, the schedule with note pins, the plan lane, the «Работа» lanes
- * (blocks drag, resize, multi-select), the activity wave and calls; a selection band and the click divider.
- * The pieces live in tracker/timeline: scale, following the time, pointer, plan lane, menu, note pins.
+ * One day as a horizontal timeline: the axis, the schedule with note pins, the «Работа» lanes (blocks drag,
+ * resize, multi-select), the activity wave and calls; a selection band and the click divider.
+ * The pieces live in tracker/timeline: scale, following the time, pointer, menu, note pins.
  */
 const props = defineProps<{
   data: DayData
@@ -45,11 +44,6 @@ const props = defineProps<{
   selectedId?: string
   /** The note open in the editor (its pin is outlined). */
   activeNoteId?: string
-  /** Planning: the plan lane is shown and accepts drops. */
-  planMode?: boolean
-  selectedPlanId?: string
-  /** a palette item is being dragged (the plan lane lights up) */
-  planDragging?: boolean
   /** Following the time (the main window): see UiPrefs.timeline. */
   follow?: UiPrefs['timeline']
   /** The window (position, scale) is remembered under this key — switching sections keeps it. */
@@ -57,8 +51,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** a plan block was done / deleted from its menu */
-  planChanged: []
   /** the follow-the-time switch */
   follow: [on: boolean]
   select: [id: string]
@@ -86,9 +78,6 @@ const emit = defineEmits<{
   note: [note: Note]
   /** the moment clicked on the timeline (a new note takes it) */
   pin: [t: Ms | undefined]
-  planSelect: [id: string | undefined]
-  /** a plan block moved / resized */
-  planChange: [change: { id: string; start: Ms; end: Ms }]
 }>()
 
 const scale = useTimelineScale(props)
@@ -96,10 +85,9 @@ const { vp, from, to, canvas, width, box, pct, selEnd } = scale
 const { markManual, toggleFollow } = useTimelineFollow(props, scale, (on) => emit('follow', on))
 const { drag, hoverT, multi, pinT, preview, wide, lanes, shownEntries, onLaneDown, onPinDown, onSelHandle, onResizeDown, onMiddleDown, onAxisDown, onMove, onUp, onKey } = useTimelineDrag(props, scale, emit, markManual)
 const { laneH, shownLanes, mainH, mainInnerH, laneScroll, hiddenBelow, hiddenAbove, laneStyle } = lanes
-const { plan, showPlan, planDrag, planShown, planRowOf, planH, onPlanDown, planTimeAt } = useTimelinePlanLane(props, scale.rawTimeAt, emit)
-const { menu, planDoneIds, openPlanMenu, planMenu, onContext, onMenuDelete, onMenuMerge, onMenuPick } = useTimelineMenu(props, scale, multi, emit)
+const { menu, onContext, onMenuDelete, onMenuMerge, onMenuPick } = useTimelineMenu(props, scale, multi, emit)
 const { notePins, fan, pinPlaces, fanZone, noteTitle } = useTimelineNotePins(props, scale)
-defineExpose({ reset: vp.reset, planTimeAt, toggleFollow })
+defineExpose({ reset: vp.reset, toggleFollow })
 
 /** The wheel zooms (Ctrl over «Работа» with more lanes than fit — scrolls them). */
 function userWheel(e: WheelEvent): void {
@@ -175,7 +163,6 @@ const calls = computed(() => visible(props.data.calls, from.value, to.value))
     <div class="labels tw:flex-none tw:w-104 tw:border-r tw:border-r-border tw:text-[11px] tw:text-muted">
       <div class="l-axis tw:flex tw:items-center tw:py-0 tw:px-12 tw:h-30"></div>
       <div class="l-sched tw:flex tw:items-center tw:py-0 tw:px-12 tw:h-18">График</div>
-      <div v-if="showPlan" class="l-plan tw:flex tw:items-center tw:py-0 tw:px-12" :style="{ height: `${planH}px` }">План</div>
       <div class="l-main tw:flex tw:items-center tw:py-0 tw:px-12 tw:h-46 tw:[transition:height_0.25s_cubic-bezier(0.32,0.72,0,1)] tw:text-text tw:font-semibold" :style="{ height: `${mainH}px` }">Работа</div>
       <div class="l-pulse tw:flex tw:items-center tw:py-0 tw:px-12 tw:h-30" title="Клавиши">Активность</div>
       <div class="l-calls tw:flex tw:items-center tw:py-0 tw:px-12 tw:h-24">Созвоны</div>
@@ -240,32 +227,6 @@ const calls = computed(() => visible(props.data.calls, from.value, to.value))
           ><Icon :name="noteIcon(n)":size="11" :stroke="2.2" /></span>
         </div>
 
-        <!-- day plan -->
-        <div
-          v-if="showPlan"
-          ref="planLane"
-          class="lane planl tw:border-t tw:[border-top-style:dashed] tw:border-t-white/6 tw:[transition:background_0.15s] tw:[&.active]:not-[&.dropping]:bg-accent/5 tw:[&.dropping]:bg-accent/16 tw:[&.dropping]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.6)] tw:relative"
-          :class="{ dropping: planDragging, active: planMode }"
-          :style="{ height: `${planH}px` }"
-        >
-          <span v-if="planMode && !plan.length" class="phint tw:left-12 tw:top-8 tw:text-[11px] tw:text-accent-fg tw:pointer-events-none tw:absolute">Перетащите сюда вид занятости или задачу из панели «План дня»</span>
-          <div
-            v-for="p in planShown"
-            :key="p.id"
-            class="pseg tw:h-20 tw:flex tw:items-center tw:gap-4 tw:py-0 tw:px-6 tw:box-border tw:rounded-r2 tw:border-1.5 tw:border-dashed tw:border-(--c) tw:bg-[color-mix(in_srgb,var(--c)_22%,transparent)] tw:text-text tw:text-[11px] tw:overflow-hidden tw:whitespace-nowrap tw:cursor-grab tw:z-3 tw:[&.sel]:[box-shadow:0_0_0_2px_var(--text-hi)] tw:[&.moving]:opacity-85 tw:[&.moving]:cursor-grabbing tw:absolute tw:before:content-[''] tw:before:absolute tw:before:top-0 tw:before:bottom-0 tw:before:w-6 tw:before:cursor-ew-resize tw:before:left-0 tw:after:content-[''] tw:after:absolute tw:after:top-0 tw:after:bottom-0 tw:after:w-6 tw:after:cursor-ew-resize tw:after:right-0"
-            :class="{ sel: p.id === selectedPlanId, moving: planDrag?.id === p.id && planDrag.moved }"
-            :style="{ ...box(p.start, p.end), top: `${4 + (planRowOf.get(p.id) ?? 0) * PLAN_ROW}px`, '--c': kindColor(p.kind) }"
-            :title="`План: ${p.task ? p.task.key + ' ' : ''}${p.label} · ${formatHM(p.start)}–${formatHM(p.end)} · ${formatDuration(p.end - p.start)}`"
-            :data-plan="p.id"
-            @pointerdown.stop="$event.button === 0 && onPlanDown($event, p)"
-            @contextmenu.prevent.stop="openPlanMenu($event, p)"
-          >
-            <Icon v-if="planDoneIds.has(p.id)" name="check" :size="11" :stroke="3" class="pdone tw:[&&]:flex-none tw:text-up" />
-            <Icon :name="entryIcon(p)" :size="12" :stroke="2.2" class="sic tw:ml-2 tw:opacity-95" />
-            <span class="txt tw:overflow-hidden tw:text-ellipsis tw:flex-1 tw:min-w-0 tw:py-0 tw:px-8 tw:whitespace-nowrap tw:[&&]:pl-4!"><b v-if="p.task" class="pkey tw:mr-4 tw:font-semibold">{{ p.task.key }}</b>{{ p.task ? labelWithoutKey(p.label, p.task.key) : p.label }}</span>
-          </div>
-        </div>
-
         <!-- main line -->
         <div ref="mainLane" class="lane mainl tw:h-46 tw:[transition:height_0.25s_cubic-bezier(0.32,0.72,0,1)] tw:overflow-hidden tw:relative" :style="{ height: `${mainH}px` }" @pointerdown="onLaneDown($event)" @scroll="laneScroll = ($event.target as HTMLElement).scrollTop">
           <span v-if="hiddenBelow" class="lmore dn tw:right-6 tw:z-6 tw:py-0 tw:px-7 tw:rounded-[9px] tw:[background:var(--pop)] tw:[box-shadow:0_0_0_1px_var(--border-2)] tw:text-muted tw:text-[10.5px] tw:leading-[17px] tw:pointer-events-none tw:absolute" :style="{ top: `${laneScroll + mainH - 20}px` }" title="Ctrl + колесо мыши — прокрутить дорожки">ещё {{ hiddenBelow }} ↓ · Ctrl+колесо</span>
@@ -328,12 +289,8 @@ const calls = computed(() => visible(props.data.calls, from.value, to.value))
     </div>
   </div>
 
-  <KindMenu v-if="menu" :x="menu.x" :y="menu.y" :title="menu.title" :current="menu.current" :no-kinds="menu.outlook || !!menu.planId" @pick="onMenuPick" @close="menu = undefined">
-    <template v-if="menu.planId">
-      <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" :disabled="planDoneIds.has(menu.planId)" @click="planMenu('done')"><Icon name="check" :size="14" />{{ planDoneIds.has(menu.planId) ? 'Уже сделано по плану' : 'Сделано по плану' }}</button>
-      <button class="mdel tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:text-down-fg tw:hover:bg-down/15 tw:hover:enabled:border-border-3" @click="planMenu('delete')"><Icon name="trash" :size="14" />Удалить из плана</button>
-    </template>
-    <template v-else-if="menu.outlook">
+  <KindMenu v-if="menu" :x="menu.x" :y="menu.y" :title="menu.title" :current="menu.current" :no-kinds="menu.outlook" @pick="onMenuPick" @close="menu = undefined">
+    <template v-if="menu.outlook">
       <p class="mnote tw:max-w-230 tw:mt-0 tw:mr-6 tw:mb-6 tw:ml-6 tw:text-muted tw:text-[11.5px] tw:leading-[1.4]">Время, название и вид меняет только Outlook. Напоминание — в карточке события.</p>
       <button class="mact tw:flex tw:items-center tw:gap-8 tw:border-0 tw:bg-transparent tw:text-left tw:py-6 tw:px-8 tw:rounded-r2 tw:text-[13px] tw:hover:bg-hover tw:hover:enabled:border-border-3" @click="(emit('select', menu.entryId!), (menu = undefined))"><Icon name="pencil" :size="14" />Открыть карточку</button>
     </template>

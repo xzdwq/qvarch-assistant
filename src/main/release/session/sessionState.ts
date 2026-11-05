@@ -1,4 +1,4 @@
-import { readConfig, resolveRepositoryPath, type ReleaseContext } from '../config';
+import { resolveRepositoryPath, type ReleaseContext } from '../config';
 import { BranchRef, ReleaseConfig, ReleasePlan } from '../core/types';
 import { GitService } from '../git/gitService';
 import type { ReleasePanel, ReleasePanelHost } from '../panel';
@@ -43,9 +43,9 @@ export class SessionState {
     private readonly host: ReleasePanelHost
   ) {}
 
-  /** Reads the project's settings and opens its repository (a saved profile is a superset of the config). */
-  async openRepository(overrideConfig?: ReleaseConfig): Promise<void> {
-    this.config = overrideConfig ?? readConfig();
+  /** Opens the project's repository by its settings (a saved profile is a superset of the config). */
+  async openRepository(config: ReleaseConfig): Promise<void> {
+    this.config = config;
     this.repoPath = resolveRepositoryPath(this.config);
     this.git = new GitService(this.repoPath);
     this.rules = new BranchRules(this.config);

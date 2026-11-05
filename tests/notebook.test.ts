@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatOffset, parseOffset, stepOffset } from '../src/shared/offset'
-import { filesOf, remapPath, resolveWiki, splitAudio } from '../src/shared/vault'
+import { filesOf, remapPath, resolveWiki } from '../src/shared/vault'
 
 describe('± minutes', () => {
   it('formats both ways', () => {
@@ -41,10 +41,6 @@ describe('notebook helpers', () => {
     expect(resolveWiki('план', files)).toBe('Проект/План.md')
     expect(resolveWiki('Проект/План|текст', files)).toBe('Проект/План.md')
     expect(resolveWiki('Нет такой', files)).toBeUndefined()
-  })
-  it('cuts recordings out of the text', () => {
-    const parts = splitAudio('# A\ntext\n![[.audio/2026-10-11-abc.webm]]\nafter')
-    expect(parts).toEqual([{ md: '# A\ntext' }, { audio: '.audio/2026-10-11-abc.webm', line: 2 }, { md: 'after' }])
   })
   it('follows a rename of a folder', () => {
     expect(remapPath('Проект/План.md', 'Проект', 'Работа')).toBe('Работа/План.md')

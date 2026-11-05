@@ -5,7 +5,7 @@ import type { FenceParts } from '@nb/domain/fence'
 import { blockRunKey } from '@nb/domain/noteBlocks'
 import { blockReport, envAtLine, noteRun, runBlockAt, stopBlockAt, type BlockRun } from '@nb/engine'
 import type { SqlMode } from '@shared/sql'
-import { doc } from '@renderer/lib/notebook'
+import { doc } from '@nb/workspace/noteDocs'
 
 /**
  * A runnable block's run as its component sees it: its key, its last run (in a loop — the pass shown), run / stop

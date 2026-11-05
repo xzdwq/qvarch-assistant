@@ -1,18 +1,31 @@
-import { utilityProcess, type UtilityProcess, type WebContents } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import type { WebContents } from 'electron'
 import { join } from 'node:path'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
+import { LaterWrite } from './laterWrite'
 import { randomUUID } from 'node:crypto'
+import type { BrowserEmit } from '../shared/browser'
 import { isTextual, newHook, resType, siteMatch, type BrowserHook, type HookHit, type HookResType, type HookStatus } from '../shared/hooks'
+import { ProcessSupervisor, type RunControl } from './process/processSupervisor'
 
 /**
  * The Браузер's hooks: kept in data/browser-hooks.json (the hooks and what they found). A page of a hook's site
  * gets its CSS and its JS; with the search on, the page's answers of the chosen types are taken (as they come)
- * and looked into by a process of its own, one at a time — the queue, the current one, «Пропустить», «Стоп».
+ * and looked into by a process of its own (one per answer, under the ProcessSupervisor), one at a time — the queue,
+ * the current one, «Пропустить», «Стоп».
  */
 const MAX_HITS = 500
 const MAX_QUEUE_BYTES = 300 * 1024 * 1024
 /** One answer longer than this is given up (a catastrophic regular expression). */
 const ITEM_SEC = 30
+/** «Пропустить»: how long the process may take to stop between pieces before it is killed. */
+const SKIP_GRACE_MS = 1000
+
+type Match = { line: number; col: number; snippet: string; mAt: number; mLen: number }
+/** What the search's process says (runner/hookWorker.ts). */
+type WorkerMsg = { type: 'progress'; id: string; done?: number } | { type: 'done'; id: string; hits?: Match[]; skipped?: boolean; error?: string }
+/** How one answer's search ended: its matches; skipped — stopped before the end (why — `error`). */
+type SearchOutcome = { ok: boolean; hits: Match[]; skipped: boolean; error?: string }
+const searchFailed = (error: string): SearchOutcome => ({ ok: false, hits: [], skipped: true, error })
 
 interface Item {
   id: string
@@ -24,37 +37,40 @@ interface Item {
   size: number
   body: string
 }
+/** The answer being looked into, and how far. */
+type Current = Item & { done: number }
 
 export class Hooks {
   private file: string
   private data: { hooks: BrowserHook[]; hits: Record<string, HookHit[]> }
   private queue: Item[] = []
   private queuedBytes = 0
-  private cur?: Item & { done: number; timer?: NodeJS.Timeout; skipTimer?: NodeJS.Timeout }
-  private worker?: UtilityProcess
+  private cur?: Current
+  private readonly searches: ProcessSupervisor<SearchOutcome>
   private st = { paused: false, scanned: 0, skipped: 0, hits: 0, note: undefined as string | undefined }
-  private saveTimer?: NodeJS.Timeout
+  private readonly saving = new LaterWrite(() => writeJsonAtomic(this.file, this.data), 500)
   private statusTimer?: NodeJS.Timeout
 
   constructor(
     root: string,
-    private workerPath: string,
-    private emit: (type: string, payload: unknown) => void,
+    workerPath: string,
+    private emit: BrowserEmit,
   ) {
+    this.searches = new ProcessSupervisor<SearchOutcome>({
+      script: () => workerPath,
+      serviceName: 'Qvarch Hooks',
+      memoryMb: 1024,
+      failure: (error) => searchFailed(error),
+      stop: { kind: 'ask', message: { type: 'skip' }, graceMs: SKIP_GRACE_MS },
+      restart: 'kill',
+    })
     this.file = join(root, 'browser-hooks.json')
-    try {
-      const d = existsSync(this.file) ? (JSON.parse(readFileSync(this.file, 'utf8')) as Partial<typeof this.data>) : {}
-      this.data = { hooks: Array.isArray(d.hooks) ? d.hooks : [], hits: d.hits && typeof d.hits === 'object' ? d.hits : {} }
-    } catch {
-      this.data = { hooks: [], hits: {} }
-    }
+    // (a broken file is set aside: the hooks in it are not overwritten by the first save)
+    const d = readJsonFile<Partial<typeof this.data>>(this.file) ?? {}
+    this.data = { hooks: Array.isArray(d.hooks) ? d.hooks : [], hits: d.hits && typeof d.hits === 'object' ? d.hits : {} }
   }
   private save(): void {
-    clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      writeFileSync(`${this.file}.tmp`, JSON.stringify(this.data))
-      renameSync(`${this.file}.tmp`, this.file)
-    }, 500)
+    this.saving.soon()
   }
 
   // ---------- the hooks ----------
@@ -145,31 +161,19 @@ export class Hooks {
     this.status()
     this.next()
   }
-  private ensureWorker(): UtilityProcess {
-    if (this.worker) return this.worker
-    const w = utilityProcess.fork(this.workerPath, [], { serviceName: 'Qvarch Hooks', execArgv: ['--max-old-space-size=1024'] })
-    w.on('message', (m: { type: 'progress' | 'done'; id: string; done?: number; hits?: Array<{ line: number; col: number; snippet: string; mAt: number; mLen: number }>; skipped?: boolean; error?: string }) => {
-      const c = this.cur
-      if (!c || m.id !== c.id) return
-      switch (m.type) {
-        case 'progress':
-          c.done = m.done ?? c.done
-          this.status()
-          break
-        case 'done':
-          this.finish(m.hits ?? [], m.skipped, m.error)
-          break
-      }
-    })
-    w.on('exit', () => {
-      // an old one killed (skipped / stopped) — the new one stays
-      if (this.worker !== w) return
-      this.worker = undefined
-      // it died on this one (memory): that one is skipped, the rest go on
-      if (this.cur) this.finish([], true, 'процесс поиска перезапущен')
-    })
-    this.worker = w
-    return w
+  /** A message of the search's process: its progress, its answer (`done` ends the run). */
+  private onWorker(itemId: string, raw: unknown, run: RunControl<SearchOutcome>): void {
+    const m = raw as WorkerMsg | undefined
+    const c = this.cur
+    if (!c || c.id !== itemId || m?.id !== itemId) return
+    switch (m.type) {
+      case 'progress':
+        c.done = m.done ?? c.done
+        return this.status()
+      case 'done':
+        // (skipped on request: not ok — the supervisor gives it the stop's reason; the matches so far are kept)
+        return run.finish({ ok: !m.skipped && !m.error, hits: m.hits ?? [], skipped: !!m.skipped, ...(m.error ? { error: m.error } : {}) })
+    }
   }
   private next(): void {
     if (this.cur || this.st.paused) return
@@ -178,19 +182,22 @@ export class Hooks {
     this.queuedBytes -= it.size
     const h = this.data.hooks.find((x) => x.id === it.hookId)
     if (!h) return this.next()
-    this.cur = { ...it, done: 0 }
-    this.cur.timer = setTimeout(() => this.kill(`дольше ${ITEM_SEC} с — выражение слишком сложное или ответ огромный`), ITEM_SEC * 1000)
-    this.ensureWorker().postMessage({ type: 'search', id: it.id, body: it.body, search: h.search, maxHits: 200 })
-    // the body now lives in the worker
-    this.cur.body = ''
+    const c: Current = { ...it, done: 0 }
+    this.cur = c
+    const job = { type: 'search', id: it.id, body: it.body, search: h.search, maxHits: 200 }
+    void this.searches
+      .start(it.id, { job, timeoutSec: ITEM_SEC, timeoutError: `дольше ${ITEM_SEC} с — выражение слишком сложное или ответ огромный`, onMessage: (m, run) => this.onWorker(it.id, m, run), exitError: () => 'процесс поиска завершился' })
+      .then((r) => this.finish(c, r))
+    // the body now lives in the process (sent as the run started): not kept here too
+    job.body = ''
+    c.body = ''
     this.status()
   }
-  private finish(found: Array<{ line: number; col: number; snippet: string; mAt: number; mLen: number }>, skipped?: boolean, error?: string): void {
-    const c = this.cur
-    if (!c) return
-    clearTimeout(c.timer)
-    clearTimeout(c.skipTimer)
+  private finish(c: Current, r: SearchOutcome): void {
+    if (this.cur !== c) return
     this.cur = undefined
+    // (stopped / timed out / its process gone: skipped, with why; a bad expression: looked at, with the error)
+    const { hits: found, skipped, error } = r
     if (skipped) {
       this.st.skipped++
       this.st.note = `Пропущен${error ? ` (${error})` : ''}: ${c.url}`
@@ -216,24 +223,18 @@ export class Hooks {
     this.status()
     this.next()
   }
-  private kill(why: string): void {
-    const w = this.worker
-    this.worker = undefined
+  /** The one being looked into ended now: its process killed, the answer skipped (`why`). */
+  private drop(why: string): void {
     const c = this.cur
-    if (c) this.finish([], true, why)
-    try {
-      w?.kill()
-    } catch {
-      // gone
-    }
+    if (c) this.searches.finish(c.id, searchFailed(why))
   }
-  /** «Пропустить»: the one being looked into is left. */
+  /**
+   * «Пропустить»: the one being looked into is left — the process asked (it stops between pieces, with what it
+   * found); no answer at once (a long regular expression is one step) — killed, the next one gets a new process.
+   */
   skip(): void {
     const c = this.cur
-    if (!c || !this.worker) return
-    this.worker.postMessage({ type: 'skip', id: c.id })
-    // no answer at once (a long regular expression is one step) — the process goes, a new one takes the rest
-    c.skipTimer ??= setTimeout(() => this.kill('пропущен'), 1000)
+    if (c) this.searches.stop(c.id, 'пропущен')
   }
   /** «Стоп»: the queue dropped, the current one too; nothing is taken until «Продолжить». */
   pause(on: boolean): void {
@@ -241,7 +242,7 @@ export class Hooks {
     if (on) {
       this.queue = []
       this.queuedBytes = 0
-      if (this.cur) this.kill('остановлено')
+      this.drop('остановлено')
     } else this.next()
     this.status()
   }
@@ -266,6 +267,9 @@ export class Hooks {
     }, 150)
   }
   stop(): void {
-    this.kill('выход')
+    this.queue = []
+    this.queuedBytes = 0
+    this.st.paused = true
+    this.drop('выход')
   }
 }

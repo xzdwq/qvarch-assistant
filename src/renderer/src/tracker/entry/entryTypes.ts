@@ -1,12 +1,10 @@
-import type { Recent } from '../../components/LabelInput.vue'
 import type { Entry, Ms, Note } from '@shared/types'
 
 /** followsNow — the end is "now" (N minutes back); startsNow — the start is "now" (N minutes ahead). */
 export type EntryDraft = Omit<Entry, 'id'> & { id?: string; followsNow?: boolean; startsNow?: boolean }
 
-/** How a new block without a picked range is placed: from now / the cursor, forward or back, N minutes. */
+/** How a new block without a picked range is placed: from now, forward or back, N minutes. */
 export interface AddPlacement {
-  from: 'now' | 'cursor'
   back: boolean
   min: number
 }
@@ -15,16 +13,11 @@ export interface AddPlacement {
 export interface EntryEditorProps {
   day: string
   entry: EntryDraft
-  recent: Recent[]
   now?: Ms
   entries: Entry[]
   notes: Note[]
   /** Shown for a new block without a range picked on the timeline. */
   add?: AddPlacement
-  /** A moment was clicked on the timeline ("от курсора" is possible). */
-  hasCursor?: boolean
-  /** A plain multi-line field (Enter — a new line, the height can be pulled) instead of the one-line input. */
-  textarea?: boolean
   /** Saved only by the button (a modal form) — no autosave. */
   manual?: boolean
 }

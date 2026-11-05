@@ -9,11 +9,8 @@ import type { Ms } from '@shared/types'
  * Nothing blocks: a moved start takes the end along (the length kept); an end moved before the start pulls the
  * start back (the length kept). `liveStart` / `liveEnd` — «сейчас» (follows the clock) until changed.
  */
-const props = withDefaults(
-  defineProps<{ start: Ms; end: Ms; liveStart?: boolean; liveEnd?: boolean; dur?: boolean; boxed?: boolean; disabled?: boolean }>(),
-  { dur: true },
-)
-const emit = defineEmits<{ 'update:start': [t: Ms]; 'update:end': [t: Ms]; change: [r: { start: Ms; end: Ms }] }>()
+const props = defineProps<{ start: Ms; end: Ms; liveStart?: boolean; liveEnd?: boolean; boxed?: boolean }>()
+const emit = defineEmits<{ change: [r: { start: Ms; end: Ms }] }>()
 
 /** Which of the two times. */
 type Part = 'start' | 'end'
@@ -24,8 +21,6 @@ const base = computed(() => dayStart(dayKey(props.start)))
 const clampDay = (t: Ms) => Math.max(base.value, Math.min(base.value + 24 * 3_600_000, t))
 
 function apply(start: Ms, end: Ms): void {
-  if (end !== props.end) emit('update:end', end)
-  if (start !== props.start) emit('update:start', start)
   emit('change', { start, end })
 }
 /** A new start: the end goes along — the length is kept (a range is filled from its start). */
@@ -48,7 +43,6 @@ function nudge(part: Part, minutes: number): void {
   else setEnd(round(props.end, step) + minutes * MINUTE)
 }
 function onWheel(part: Part, e: WheelEvent): void {
-  if (props.disabled) return
   e.preventDefault()
   // up — later, down — earlier
   const up = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0
@@ -91,13 +85,11 @@ const shown = (part: Part) =>
 </script>
 
 <template>
-  <span class="tr tw:group/tr tw:inline-flex tw:items-center tw:gap-1 tw:flex-none tw:whitespace-nowrap tw:font-data tw:tabular-nums tw:text-text tw:[&.boxed]:h-30 tw:[&.boxed]:pt-0 tw:[&.boxed]:pr-10 tw:[&.boxed]:pb-0 tw:[&.boxed]:pl-6 tw:[&.boxed]:border tw:[&.boxed]:border-border-2 tw:[&.boxed]:rounded-r2 tw:[&.boxed]:bg-field tw:[&.boxed]:text-[13px] tw:[&.boxed]:focus-within:border-accent" :class="{ boxed, disabled }">
+  <span class="tr tw:group/tr tw:inline-flex tw:items-center tw:gap-1 tw:flex-none tw:whitespace-nowrap tw:font-data tw:tabular-nums tw:text-text tw:[&.boxed]:h-30 tw:[&.boxed]:pt-0 tw:[&.boxed]:pr-10 tw:[&.boxed]:pb-0 tw:[&.boxed]:pl-6 tw:[&.boxed]:border tw:[&.boxed]:border-border-2 tw:[&.boxed]:rounded-r2 tw:[&.boxed]:bg-field tw:[&.boxed]:text-[13px] tw:[&.boxed]:focus-within:border-accent" :class="{ boxed }">
     <input
-      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)] tw:disabled:cursor-default"
+      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)]"
       :class="{ live: liveStart && editing !== 'start' }"
-      :value="shown('start')"
-      :disabled="disabled"
-      title="Начало: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
+      :value="shown('start')"      title="Начало: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
       spellcheck="false"
       @wheel="onWheel('start', $event)"
       @keydown="onKey('start', $event)"
@@ -105,11 +97,9 @@ const shown = (part: Part) =>
       @change="typed('start', ($event.target as HTMLInputElement).value)"
       @blur="editing = undefined"
     />–<input
-      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)] tw:disabled:cursor-default"
+      class="tp tw:w-[5.2ch] tw:h-20 tw:p-0 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-inherit tw:[font:inherit] tw:text-center tw:cursor-ns-resize tw:group-[.boxed]/tr:h-22 tw:[&.live]:w-[7ch] tw:[&.live]:text-up-fg tw:hover:enabled:bg-hover tw:focus:bg-hover tw:hover:enabled:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)]"
       :class="{ live: liveEnd && editing !== 'end' }"
-      :value="shown('end')"
-      :disabled="disabled"
-      title="Конец: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
+      :value="shown('end')"      title="Конец: колесо или ↑↓ — по 5 мин (Shift — по 1), можно ввести"
       spellcheck="false"
       @wheel="onWheel('end', $event)"
       @keydown="onKey('end', $event)"
@@ -117,7 +107,6 @@ const shown = (part: Part) =>
       @change="typed('end', ($event.target as HTMLInputElement).value)"
       @blur="editing = undefined"
     />
-    <template v-if="dur"> · {{ formatDuration(end - start) }}</template>
-    <slot />
+ · {{ formatDuration(end - start) }}<slot />
   </span>
 </template>

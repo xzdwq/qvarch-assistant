@@ -4,7 +4,9 @@ import type { PwRecState } from '@shared/browser'
 import { fencedBlocksOf } from '@nb/domain/noteBlocks'
 import { PW_OWN_BROWSER } from '@nb/domain/blockInfo'
 import { noteBrowserPage } from '@nb/engine/noteBrowsers'
-import { doc, openFile, save, setText } from './notebook'
+import { openFile, save, setText } from './notebook'
+import { openPlace } from './views'
+import { loadedDoc } from '@nb/workspace/noteDocs'
 
 /**
  * Recording a Playwright scenario: a block's «Записать» opens its address in the Браузер, the clicks and typing
@@ -19,9 +21,6 @@ export function watchPwRec(): void {
   void window.qa.browser('pwRecState').then((s) => (pwRec.value = s))
   window.qa.onBrowser((type, p) => type === 'pwrec' && (pwRec.value = p as PwRecState | undefined))
 }
-/** A section of the window shown (App listens). */
-export const showView = (view: string) => window.dispatchEvent(new CustomEvent('qa:view', { detail: view }))
-
 /** Lines to add after a recording (a block's own check: the layout of the screen it was recorded for). */
 let tail: { note: string; key: string; lines: string[] } | undefined
 export async function startPwRec(path: string, key: string, url: string, o: { screen?: { w: number; h: number }; tail?: string[] } = {}): Promise<void> {
@@ -29,7 +28,7 @@ export async function startPwRec(path: string, key: string, url: string, o: { sc
   tail = o.tail?.length ? { note: path, key, lines: o.tail } : undefined
   recIn = undefined
   await window.qa.browser('pwRecStart', path, key, url, o.screen)
-  showView('browser')
+  openPlace('browser')
 }
 
 /** A recording in a browser of the note (its name): the block then runs there too (unless it names a browser itself). */
@@ -63,8 +62,8 @@ export async function stopPwRec(cancel = false): Promise<string | undefined> {
     checkSteps.value = { url: r.url, lines: r.lines }
     return undefined
   }
-  const d = doc(r.note)
-  for (let i = 0; i < 100 && !d.loaded; i++) await new Promise((res) => setTimeout(res, 30))
+  // (a note that cannot be read is not written into: the recording would replace its text)
+  const d = await loadedDoc(r.note)
   const lines = d.text.split('\n')
   const b = fencedBlocksOf(d.text).find((x) => x.kind === 'pw' && x.key === r.key)
   const after = tail && tail.note === r.note && tail.key === r.key ? tail.lines : []
@@ -85,6 +84,6 @@ export async function stopPwRec(cancel = false): Promise<string | undefined> {
   }
   await save(r.note)
   openFile(r.note)
-  showView('notebook')
+  openPlace('notebook')
   return r.note
 }

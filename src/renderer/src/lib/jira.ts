@@ -1,7 +1,7 @@
 import { shallowRef } from 'vue'
 import type { JiraState } from '@shared/jira'
 
-const empty: JiraState = { configured: false, hasSecret: false, connected: false, syncing: false, issues: [], starred: [], myStatus: {} }
+const empty: JiraState = { configured: false, hasSecret: false, connected: false, syncing: false, issues: [] }
 const state = shallowRef<JiraState>(empty)
 let started = false
 

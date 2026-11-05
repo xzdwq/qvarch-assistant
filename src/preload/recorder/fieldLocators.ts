@@ -1,30 +1,30 @@
-import { fieldsIn, hasExact, ownText, q, textOf, visible, xq } from './domText'
+import { selectorOf, UI, xpathTest } from '../../shared/browser/uiKits'
+import { FIELDS, fieldsIn, hasExact, ownText, q, textOf, visible, xq } from './domText'
 
 /** Locators by what a person sees around an element: a field's label, its row's label, a table row, a dialog, a menu. */
 
+/** The dialog an element is in and its title's words (none — ''). */
+export function dialogOf(el: Element): { root: Element; title: string } | undefined {
+  const root = el.closest(UI.dialog)
+  if (!root) return undefined
+  const title = root.querySelector(UI.dialogTitle)
+  return { root, title: title ? textOf(title, 60) : '' }
+}
 /** The dialog an element is in, by its title: a locator to look inside it, and its element. */
 export function dialogScope(el: Element): { code: string; root: Element } | undefined {
-  const dlg = el.closest('.q-dialog, [role="dialog"], dialog')
-  const title = dlg?.querySelector('.q-card__section .text-h6, .v-card-title, [class*="title"], h1, h2, h3')
-  const t = title ? textOf(title, 60) : ''
-  return dlg && t ? { code: `page.locator('.q-dialog, [role="dialog"], dialog').filter({ hasText: ${q(t)} })`, root: dlg } : undefined
+  const d = dialogOf(el)
+  return d?.title ? { code: `page.locator(${q(selectorOf(d.root, 'dialog'))}).filter({ hasText: ${q(d.title)} })`, root: d.root } : undefined
 }
 /** What a scope around the element could be (a dialog, a menu), as a locator and its root. */
 export function scopeOf(el: Element): { code: string; root: Element } | undefined {
-  const menu = el.closest('.q-menu, [role="menu"], [role="listbox"]')
-  if (menu && document.querySelectorAll('.q-menu, [role="menu"], [role="listbox"]').length >= 1) return { code: `page.locator(${q(menu.matches('.q-menu') ? '.q-menu' : `[role="${menu.getAttribute('role')}"]`)})`, root: menu }
-  const dlg = el.closest('.q-dialog, [role="dialog"], dialog')
-  if (dlg) {
-    const title = dlg.querySelector('.q-card__section .text-h6, .v-card-title, [class*="title"], h1, h2, h3')
-    const t = title ? textOf(title, 60) : ''
-    if (t) return { code: `page.locator('.q-dialog, [role="dialog"]').filter({ hasText: ${q(t)} })`, root: dlg }
-  }
-  return undefined
+  const menu = el.closest(UI.menu)
+  if (menu) return { code: `page.locator(${q(selectorOf(menu, 'menu'))})`, root: menu }
+  return dialogScope(el)
 }
-/** A Quasar field (q-input / q-select): by its label — its value changes, its label does not. */
+/** A kit's field (an input, a select in its wrapper): by its label — its value changes, its label does not. */
 export function fieldLocator(el: Element): string | undefined {
-  const fld = el.closest('.q-field')
-  const lab = fld?.querySelector('.q-field__label')
+  const fld = el.closest(UI.field)
+  const lab = fld?.querySelector(UI.fieldLabel)
   // the label's own words (a badge in it — «Изменено», a star — is not the label)
   const t = lab ? ownText(lab) || textOf(lab, 60) : ''
   if (!fld || !t) return undefined
@@ -32,18 +32,17 @@ export function fieldLocator(el: Element): string | undefined {
   // (the field's dialog its scope — the fields of the page under it are not counted)
   const d = dialogScope(el)
   const at = d?.code ?? 'page'
-  const labels = [...(d?.root ?? document).querySelectorAll('.q-field')].filter(visible).map((x) => {
-    const l = x.querySelector('.q-field__label')
+  const labels = [...(d?.root ?? document).querySelectorAll(UI.field)].filter(visible).map((x) => {
+    const l = x.querySelector(UI.fieldLabel)
     return { x, t: l ? textOf(l, 80) : '' }
   })
   // «Статус …» — the label starting with it (a badge after it later changes nothing), unless another field's starts so too
   const starts = labels.filter((l) => l.t === t || l.t.startsWith(`${t} `))
   const re = starts.length <= 1 ? `/^\\s*${esc}(\\s|$)/` : `/^\\s*${esc}\\s*$/`
-  if (starts.length <= 1) return `${at}.locator('.q-field', { has: page.locator('.q-field__label', { hasText: ${re} }) })`
+  if (starts.length <= 1) return `${at}.locator(${q(UI.field)}, { has: page.locator(${q(UI.fieldLabel)}, { hasText: ${re} }) })`
   // another label starts so too («Статус оплаты»): the label's own first words exactly (a badge after them is no matter)
-  const cls = (c: string) => `contains(concat(' ', normalize-space(@class), ' '), ' ${c} ')`
-  const xp = `${d ? './/' : '//'}*[${cls('q-field')}][.//*[${cls('q-field__label')}][normalize-space(text()[1])=${xq(t)}]]`
-  const same = labels.filter((l) => l.t === t || l.t.startsWith(`${t} `)).map((l) => l.x).filter((x) => ownText(x.querySelector('.q-field__label')!) === t)
+  const xp = `${d ? './/' : '//'}*[${xpathTest(UI.field)}][.//*[${xpathTest(UI.fieldLabel)}][normalize-space(text()[1])=${xq(t)}]]`
+  const same = labels.filter((l) => l.t === t || l.t.startsWith(`${t} `)).map((l) => l.x).filter((x) => ownText(x.querySelector(UI.fieldLabel)!) === t)
   const base = `${at}.locator(${q(`xpath=${xp}`)})`
   return same.length > 1 ? `${base}.nth(${Math.max(0, same.indexOf(fld))})` : base
 }
@@ -52,12 +51,12 @@ export function fieldLocator(el: Element): string | undefined {
  * text before the field within its row, a few levels up; a row holding another field is not its row.
  */
 export function rowLabelOf(el: Element): { text: string; raw: string; row: Element } | undefined {
-  let branch: Element = el.closest('.q-field') ?? el
+  let branch: Element = el.closest(UI.field) ?? el
   for (let up = 0; up < 4 && branch.parentElement && branch.parentElement !== document.body; up++) {
     const row = branch.parentElement
-    if (row.matches('form, .q-dialog, [role="dialog"], table, tbody, thead')) return undefined
+    if (row.matches(`form, table, tbody, thead, ${UI.dialog}`)) return undefined
     for (let p = branch.previousElementSibling; p; p = p.previousElementSibling) {
-      if (p.matches('.q-field, input, textarea, select') || p.querySelector('.q-field, input, textarea, select')) return undefined
+      if (p.matches(FIELDS) || p.querySelector(FIELDS)) return undefined
       const t = textOf(p, 60)
       if (t && t.length >= 2) return { text: t.replace(/[:*]\s*$/, '').trim(), raw: t, row }
     }
@@ -75,16 +74,16 @@ export function rowFieldLocator(el: Element): string | undefined {
   if (!r) return undefined
   const cls = [...r.row.classList].filter((c) => /^[a-z][\w-]*$/i.test(c) && !/\d{2,}|active|focus|hover/.test(c)).slice(0, 3)
   const sel = r.row.tagName.toLowerCase() + cls.map((c) => `.${c}`).join('')
-  const FIELDS = '.q-field, input, textarea, select'
   // looked for where the field is: its dialog (by the dialog's title) — not over the whole page, where a table under
   // the dialog may have the same words in its header and a number counted at recording means nothing at a replay
   const d = dialogScope(el)
   const rows = [...(d?.root ?? document).querySelectorAll(sel)].filter((x) => visible(x) && hasExact(x, r.raw) && x.querySelector(FIELDS))
   const k = rows.indexOf(r.row)
   if (k < 0) return undefined
-  const inner = el.closest('.q-field') ? '.q-field' : 'input, textarea, select'
+  const wrap = el.closest(UI.field)
+  const inner = wrap ? UI.field : 'input, textarea, select'
   const fields = [...r.row.querySelectorAll(inner)]
-  const i = Math.max(0, fields.indexOf(el.closest('.q-field') ?? el))
+  const i = Math.max(0, fields.indexOf(wrap ?? el))
   return `${d?.code ?? 'page'}.locator(${q(sel)}).filter({ has: page.getByText(${q(r.raw)}, { exact: true }) })${rows.length > 1 ? `.nth(${k})` : ''}.locator(${q(inner)})${fields.length > 1 ? `.nth(${i})` : ''}`
 }
 /** A row of a table: by its most telling cell (unique among the rows), else by its number. */

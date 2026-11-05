@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gen } from '../src/shared/gen'
 import { checksIn, unwrapCheck, wrapCheck } from '../src/shared/qaChecks'
-import { decodeRequest, DROP, encodeRequest, evalCase, foundIn, fuzzLines, judgeFuzz, paramsOf, parsePath, pathOf, readFuzz, setPath, sizeOfCase, writeFuzz, type FuzzResult } from '../src/shared/fuzz'
+import { decodeRequest, DROP, encodeRequest, evalCase, foundIn, fuzzLines, judgeFuzz, paramsOf, parsePath, pathOf, readFuzz, setPath, writeFuzz, type FuzzResult } from '../src/shared/fuzz'
 
 const apply = (r: { method: string; url: string; contentType?: string; body?: string }, path: string, expr: string) => {
   const d = decodeRequest(r)
@@ -50,11 +50,6 @@ describe('a request taken apart and written back', () => {
     expect(pathOf(segs)).toBe('body["a.b"][0].c')
     expect(parsePath(pathOf(segs))).toEqual(segs)
     expect(setPath({ a: [1, 2] }, ['a', 0], DROP)).toEqual({ a: [2] })
-  })
-  it('a case\'s size', () => {
-    expect(sizeOfCase('size(21)')).toBe(21)
-    expect(sizeOfCase('size(5, (i) => i)')).toBe(5)
-    expect(sizeOfCase('null')).toBeUndefined()
   })
 })
 

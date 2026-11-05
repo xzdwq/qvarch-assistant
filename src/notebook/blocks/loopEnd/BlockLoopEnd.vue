@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { findLoops } from '@nb/domain/loop'
-import { doc } from '@renderer/lib/notebook'
+import { doc } from '@nb/workspace/noteDocs'
 import Icon from '@renderer/components/Icon.vue'
 
 /** A loop's end: a line closing its band (the loop it ends — by its name). */

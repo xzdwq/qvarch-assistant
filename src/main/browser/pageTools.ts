@@ -1,11 +1,14 @@
-import { app, BrowserWindow as Win, dialog, ipcMain, type BrowserWindow, type Session, type WebContents } from 'electron'
+import { app, BrowserWindow as Win, dialog, type BrowserWindow, type Session, type WebContents } from 'electron'
 import { basename, extname, join } from 'node:path'
+import type { BrowserEmit } from '../../shared/browser'
+import type { PageRuler } from '../../shared/browser/pageChannels'
+import { toPage } from '../ipc/browserPageIpc'
 import { originOf, type BrowserHost, type Tab } from './tab'
 
 /** A page's own tools: saved to disk, its site's data dropped, its localStorage read, its rulers. */
 
 /** «Сохранить как…»: the page with its files (or one .mhtml), where the user says. */
-export async function savePageAs(win: BrowserWindow, wc: WebContents, emit: (type: string, payload: unknown) => void): Promise<void> {
+export async function savePageAs(win: BrowserWindow, wc: WebContents, emit: BrowserEmit): Promise<void> {
   const name = (wc.getTitle() || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 100) || 'page'
   const r = await dialog.showSaveDialog(win, {
     title: 'Сохранить страницу',
@@ -67,16 +70,20 @@ export async function readLocalStorage(ses: Session, tabs: Map<string, Tab>, ori
 
 /** Rulers over the page: drawn by the page's preload, kept here across its navigations. */
 export class PageRulers {
-  constructor(private host: BrowserHost) {
-    ipcMain.handle('qa:ruler-get', (e) => this.host.byContents(e.sender)?.ruler ?? null)
-    ipcMain.on('qa:ruler-set', (e, g: { v?: number[]; h?: number[]; on?: boolean }) => {
-      const t = this.host.byContents(e.sender)
-      if (!t) return
-      const clean = (a: unknown) => (Array.isArray(a) ? a.map(Number).filter((n) => Number.isFinite(n)).slice(0, 100) : [])
-      t.ruler = { on: g.on ?? t.ruler.on, v: clean(g.v), h: clean(g.h) }
-      t.t.ruler = t.ruler.on
-      this.host.changed()
-    })
+  constructor(private host: BrowserHost) {}
+  /** A tab's page asks for its rulers (a new page of it draws them again). */
+  of(wc: WebContents): PageRuler | null {
+    return this.host.byContents(wc)?.ruler ?? null
+  }
+  /** The page moved a guide / closed the rulers (the page's word: checked). */
+  onPageSet(wc: WebContents, raw: unknown): void {
+    const t = this.host.byContents(wc)
+    const g = raw as { v?: unknown; h?: unknown; on?: unknown } | undefined
+    if (!t || !g) return
+    const clean = (a: unknown) => (Array.isArray(a) ? a.map(Number).filter((n) => Number.isFinite(n)).slice(0, 100) : [])
+    t.ruler = { on: typeof g.on === 'boolean' ? g.on : t.ruler.on, v: clean(g.v), h: clean(g.h) }
+    t.t.ruler = t.ruler.on
+    this.host.changed()
   }
   set(id: string, on: boolean): void {
     const t = this.host.tabs.get(id)
@@ -84,7 +91,7 @@ export class PageRulers {
     this.host.wake(t)
     t.ruler = { ...t.ruler, on }
     t.t.ruler = on
-    t.view.webContents.send('qa:ruler', t.ruler)
+    toPage(t.view.webContents, 'ruler', t.ruler)
     this.host.changed()
   }
 }

@@ -35,7 +35,7 @@ function createNotebookScreen() {
   const actions = useVaultActions(toast.say, editing, editors)
   const transfer = useDocTransfer(toast.say, editing.focus)
   const voice = useNoteVoice(toast.say, editors)
-  const search = useVaultSearch(editors)
+  const search = useVaultSearch()
   const tabs = useTabDrag()
   const events = useNoteEvents(editors)
   const vars = useVarsPanel()

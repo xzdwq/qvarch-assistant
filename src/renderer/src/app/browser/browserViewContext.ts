@@ -1,5 +1,5 @@
 import { inject, provide, type InjectionKey } from 'vue'
-import type { BrowserSettings, PasswordInfo } from '@shared/browser'
+import { dispatchBrowserEvent, type BrowserEventTable, type PageKeyCommand } from '@shared/browser'
 import { bLayout, onBrowserEvent, placeTab, startBrowser } from '../../lib/browser'
 import { toggleDockByKey } from '../../lib/termDock'
 import { useAddressLine } from './useAddressLine'
@@ -15,6 +15,9 @@ import { useRecordingPanel } from './useRecordingPanel'
 import { useSidePanel } from './useSidePanel'
 import { useSiteTools } from './useSiteTools'
 import { useSwaggerSearch } from './useSwaggerSearch'
+
+/** The browser's news the section itself handles (each one has its handler below — the compiler checks). */
+type SectionEvent = 'opened' | 'pageFocus' | 'key' | 'open' | 'login' | 'download' | 'recError' | 'deviceError' | 'pwAsk' | 'passwords' | 'history' | 'settings'
 
 /**
  * Everything the Браузер section's parts share — its tabs and panes, the address lines, where the pages go, the
@@ -38,7 +41,7 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
   const passwords = usePasswords(tabs)
 
   /** A key pressed in a page that is the section's (by its name): what it does there. */
-  const PAGE_KEYS: Record<string, (id: string, pi: number) => void> = {
+  const PAGE_KEYS: Record<PageKeyCommand, (id: string, pi: number) => void> = {
     newTab: (_id, pi) => void tabs.newTab(pi),
     closeTab: (id) => tabs.closeTab(id),
     reopenTab: () => void tabs.reopenTab(),
@@ -48,33 +51,28 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
     device: (id) => device.toggleDevice(id),
     history: () => history.openHistory(),
   }
-  /** The browser's news by its type (the tabs, the recording, bookmarks — lib/browser keeps those). */
-  const EVENTS: Record<string, (p: unknown) => void> = {
+  /** The browser's news the section handles, by name (the tabs, the recording, bookmarks — lib/browser keeps those). */
+  const EVENTS: BrowserEventTable<SectionEvent> = {
     // a page opened one (target=_blank): next to it, in its pane
-    opened: (p) => {
-      const { id, opener } = p as { id: string; opener: string }
+    opened: ({ id, opener }) => {
       const pi = tabs.paneOf(opener)
       placeTab(pi < 0 ? bLayout.cur : pi, id, opener)
     },
     // a page took the focus (a click on it): the address line let go — its selection with it
     pageFocus: () => address.leaveLine(),
-    key: (p) => {
-      const { id, key } = p as { id: string; key: string }
-      PAGE_KEYS[key]?.(id, Math.max(0, tabs.paneOf(id)))
-    },
-    open: (p) => {
-      const { url, newTab } = p as { url: string; newTab: boolean }
-      tabs.openUrl(url, newTab)
-    },
-    login: (p) => (site.login.value = { ...(p as { reqId: string; tabId: string; host: string; realm: string }), user: '', pass: '' }),
-    download: (p) => (site.download.value = p as { name: string; path: string; state: string }),
-    recError: (p) => (recording.recError.value = String(p)),
-    pwAsk: (p) => (passwords.pwAsk.value = p as { askId: string; origin: string; username: string; update: boolean }),
-    passwords: (p) => (passwords.passwords.value = p as PasswordInfo[]),
+    key: ({ id, key }) => PAGE_KEYS[key]?.(id, Math.max(0, tabs.paneOf(id))),
+    open: ({ url, newTab }) => tabs.openUrl(url, newTab),
+    login: (p) => (site.login.value = { ...p, user: '', pass: '' }),
+    download: (p) => (site.download.value = p),
+    recError: (p) => (recording.recError.value = p),
+    // (a device mode that did not come on: told where the recording's errors are)
+    deviceError: (p) => (recording.recError.value = p),
+    pwAsk: (p) => (passwords.pwAsk.value = p),
+    passwords: (p) => (passwords.passwords.value = p),
     history: () => history.histOpen.value && void history.loadHistory(),
-    settings: (p) => (history.bSettings.value = p as BrowserSettings),
+    settings: (p) => (history.bSettings.value = p),
   }
-  onBrowserEvent((type, p) => EVENTS[type]?.(p))
+  onBrowserEvent((...e) => dispatchBrowserEvent(EVENTS, ...e))
   return { tabs, address, paneDrag, side, layout, device, bookmarks, bookmarkDrag, site, recording, swagger, history, passwords }
 }
 export type BrowserView = ReturnType<typeof createBrowserView>

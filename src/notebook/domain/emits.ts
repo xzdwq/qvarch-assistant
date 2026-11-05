@@ -28,7 +28,7 @@ export const EMIT_BATCH_SIZE = 64 * 1024
 /** A variable gathers at most this much (characters as JSON) in one run — more is an error, never cut silently. */
 export const EMIT_VAR_MAX = 16 * 1024 * 1024
 /** keep=N — at most. */
-export const EMIT_KEEP_MAX = 100_000
+const EMIT_KEEP_MAX = 100_000
 /** keep=N read: a positive whole number, capped; anything else — none. */
 export const keepOf = (v: string): number | undefined => {
   const n = Math.floor(Number(v))

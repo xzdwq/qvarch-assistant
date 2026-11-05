@@ -1,21 +1,24 @@
-import { q } from './domText'
+import { GENERATED_ID_PREFIXES, UNSTEADY_CLASS_PREFIXES } from '../../shared/browser/uiKits'
+import { q, reSrc } from './domText'
 import { dialogScope } from './fieldLocators'
 
 /** Locators by the page's structure: steady classes, the path down from a container — the last resort. */
 
-/** Classes that tell a state or are generated — never part of a path. */
-const UNSTABLE_CLASS = /^(q-(focus|hover|ripple|transition)|active|focus|hover|selected|v-|ng-|router-link)/
+/** Classes that tell a state or are generated (by the kits' adapters) — never part of a path. */
+const UNSTABLE_CLASS = new RegExp(`^(${UNSTEADY_CLASS_PREFIXES.map(reSrc).join('|')})`)
+/** Ids that are generated: long numbers, the kits' own prefixes. */
+const GENERATED_ID = new RegExp(`\\d{3,}|^(${GENERATED_ID_PREFIXES.map(reSrc).join('|')})`, 'i')
 const stableClass = (c: string) => !UNSTABLE_CLASS.test(c) && !/\d{2,}/.test(c)
 /** A field one types into (an input / a textarea that takes typing now). */
 export const typable = (el: Element) => (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && !el.readOnly && !el.disabled
 export const EDITABLE = ':not([readonly]):not([disabled])'
 
 /** A CSS path a person could still read (stable classes; no generated ids). */
-export function cssOf(el: Element, root: ParentNode & Node = document): string {
+function cssOf(el: Element, root: ParentNode & Node = document): string {
   const parts: string[] = []
   let e: Element | null = el
   while (e && e !== document.body && e !== root && parts.length < 5) {
-    if (e.id && !/\d{3,}|^(f_|q-|uid|v-)/i.test(e.id)) {
+    if (e.id && !GENERATED_ID.test(e.id)) {
       parts.unshift(`#${CSS.escape(e.id)}`)
       break
     }

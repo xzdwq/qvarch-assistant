@@ -40,7 +40,7 @@ export const FENCE_PICK: Array<{ name: string; title: string }> = [
 ]
 export const FORMATTABLE = new Set(['javascript', 'typescript', 'json', 'sql', 'html', 'css', 'bash'])
 
-export { formatCode, formatShell } from '@shared/codeformat'
+export { formatCode } from '@shared/codeformat'
 
 /**
  * Folding by indentation for code whose parser gives no blocks (SQL, shell): a line folds the deeper-indented

@@ -7,6 +7,7 @@ import { agentByOf, agentWrote, agentWroteMemory } from './agentWrites'
 import { isHeld, postMessage, roomOf } from './chat'
 import { itemReport, noteRunsLoaded as runsLoaded, noteTextOf as textOf } from './noteRunAccess'
 import type { RunTrigger } from '@shared/cronJobs'
+import { serveOps } from './serveOps'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
@@ -140,12 +141,5 @@ let on = false
 export function startMcpBridge(): void {
   if (on) return
   on = true
-  window.qa.onMcpCall((id, op, args) => {
-    const fn = OPS[op]
-    if (!fn) return window.qa.mcpReply(id, false, `Неизвестная операция ${op}`)
-    fn(args ?? {}).then(
-      (v) => window.qa.mcpReply(id, true, v),
-      (e: unknown) => window.qa.mcpReply(id, false, e instanceof Error ? e.message : String(e)),
-    )
-  })
+  window.qa.onMcpCall(serveOps(OPS, (id, ok, v) => window.qa.mcpReply(id, ok, v)))
 }

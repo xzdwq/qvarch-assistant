@@ -54,6 +54,8 @@ export class Traffic {
     page.on('requestfinished', (r) => {
       const x = this.of.get(r)
       if (!x) return
+      // a finished request is not looked up again (a long run must not hold every Request it made)
+      this.of.delete(r)
       x.done = true
       void r.response().then(
         async (res) => {
@@ -72,6 +74,7 @@ export class Traffic {
     })
     page.on('requestfailed', (r) => {
       const x = this.of.get(r)
+      this.of.delete(r)
       if (x) ((x.done = true), (x.status = 0))
     })
   }

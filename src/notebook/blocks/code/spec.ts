@@ -10,6 +10,8 @@ export const codeSpec: RunnableBlockSpec<'code'> = {
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
   chip: 'js/ts',
+  serialInLoop: false,
+  test: false,
   rawEditable: true,
   commands: [
     {

@@ -14,6 +14,8 @@ export type CdpListener = (tab: Tab, method: string, params: Record<string, any>
  */
 export class TabCdp {
   private listeners: Array<{ owner: CdpOwner; fn: CdpListener; sessions: boolean }> = []
+  /** The parts that need the page's network events on each tab (the domain is shared: off only when none does). */
+  private network = new WeakMap<Tab, Set<CdpOwner>>()
 
   constructor(private onDetach: (tab: Tab) => void) {}
 
@@ -41,8 +43,25 @@ export class TabCdp {
     tab.dbg.add(who)
     return d
   }
-  /** `who` needs the protocol no more; the last one gone — detached. */
+  /**
+   * The page's network events on for `who` (the protocol taken for it first). Each part asks with its own buffer
+   * sizes; the domain stays on while any part holds it.
+   */
+  networkOn(tab: Tab, who: CdpOwner, params: Record<string, unknown> = {}): Promise<unknown> {
+    const d = this.use(tab, who)
+    const holders = this.network.get(tab) ?? new Set()
+    this.network.set(tab, holders.add(who))
+    return d.sendCommand('Network.enable', params)
+  }
+  /** `who` lets the network go: off when no part holds it — and no scenario runs there (Playwright enabled it itself). */
+  private networkOff(tab: Tab, who: CdpOwner): void {
+    const holders = this.network.get(tab)
+    if (!holders?.delete(who) || holders.size || tab.dbg.has('run') || tab.view.webContents.isDestroyed()) return
+    void tab.view.webContents.debugger.sendCommand('Network.disable').catch(() => undefined)
+  }
+  /** `who` needs the protocol no more (its network events too); the last one gone — detached. */
   drop(tab: Tab, who: CdpOwner): void {
+    this.networkOff(tab, who)
     tab.dbg.delete(who)
     if (tab.dbg.size) return
     const d = tab.view.webContents.debugger

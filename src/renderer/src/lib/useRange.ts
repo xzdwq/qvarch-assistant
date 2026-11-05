@@ -2,7 +2,7 @@ import { onBeforeUnmount, shallowRef, watch, type Ref } from 'vue'
 import { shiftDay } from '@shared/timeline'
 import type { DayData } from '@shared/types'
 
-export type RangeDay = Pick<DayData, 'day' | 'entries' | 'notes'> & { plan: NonNullable<DayData['plan']>; dayTasks: NonNullable<DayData['dayTasks']> }
+export type RangeDay = Pick<DayData, 'day' | 'entries' | 'notes'> & { dayTasks: NonNullable<DayData['dayTasks']> }
 
 /** Monday of a day's week. */
 export function mondayOf(day: string): string {
@@ -25,7 +25,7 @@ export function useRange(from: Ref<string>, to: Ref<string>) {
     const out: RangeDay[] = []
     for (let d = a; d <= b; d = shiftDay(d, 1)) {
       const x = got.get(d)
-      out.push({ day: d, entries: x?.entries ?? [], notes: x?.notes ?? [], plan: x?.plan ?? [], dayTasks: x?.dayTasks ?? [] })
+      out.push({ day: d, entries: x?.entries ?? [], notes: x?.notes ?? [], dayTasks: x?.dayTasks ?? [] })
     }
     days.value = out
   }
@@ -34,7 +34,7 @@ export function useRange(from: Ref<string>, to: Ref<string>) {
     const i = days.value.findIndex((d) => d.day === msg.day.day)
     if (i < 0) return
     const next = [...days.value]
-    next[i] = { day: msg.day.day, entries: msg.day.entries, notes: msg.day.notes, plan: msg.day.plan ?? [], dayTasks: msg.day.dayTasks ?? [] }
+    next[i] = { day: msg.day.day, entries: msg.day.entries, notes: msg.day.notes, dayTasks: msg.day.dayTasks ?? [] }
     days.value = next
   })
   onBeforeUnmount(off)

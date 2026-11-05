@@ -2,11 +2,13 @@ import type { Locator } from 'playwright-core'
 import { findPaths, getAt, judge, type FieldInfo, type MatrixCase } from '../../../shared/qaMatrix'
 import { saveOf as saveCarrying, valuesIn } from '../outcome'
 import { asked, judgeQuery, valueKey, type MatrixMode } from '../../../shared/qaMatrixQuery'
-import { MUT, type Exchange } from '../traffic'
+import { MUT } from '../traffic'
+import { matrixRunner, type MatrixRun } from './fieldMatrixRun'
 import { fieldProbe } from './pageProbes'
 import type { QaContext } from './qaContext'
-import { line, pathOf, plural, short, stepError } from './qaText'
+import { plural, short, stepError } from './qaText'
 import type { QaMark } from '../../../shared/browser/constants'
+import { UI } from '../../../shared/browser/uiKits'
 
 /** A field of the matrix: its name, the value recorded, how it is found, the values to try. */
 export type MatrixField = {
@@ -27,9 +29,6 @@ const json = (s?: string) => {
 }
 /** A value as the table shows it: empty, spaces, long — said so. */
 const show = (s: string) => (s === '' ? '(пусто)' : s.trim() === '' ? `(${s.length} пробела)` : s.length > 32 ? `«${s.slice(0, 24)}…» (${s.length} симв.)` : `«${s}»`)
-const saveOf = (x: Exchange) => `${x.method} ${pathOf(x.url)}`
-/** A change as a try keeps it (no live request, no bytes). */
-const keptChange = (x: Exchange) => ({ status: x.status, res: x.res, line: line(x), ep: saveOf(x), body: x.body })
 const good = (x?: { status?: number }) => !!x?.status && x.status >= 200 && x.status < 300
 /** An address as text (its query decoded — a value typed is looked for in it). */
 const decoded = (url: string) => {
@@ -97,7 +96,7 @@ export interface MatrixOpts {
  * told, what the field shows, what went in the body at the field's place.
  */
 export function fieldMatrixCheck(ctx: QaContext) {
-  const { page, step, sent, traffic } = ctx
+  const { page, step, traffic } = ctx
   /** `opts.mode` — how the field is judged: by its save (a form), by its request (a search, a filter); none — found out. */
   return (fields: Record<string, MatrixField>, run: (v: Record<string, string>) => Promise<unknown>, opts: MatrixOpts = {}) =>
     step('Проверка: матрица значений полей', async () => {
@@ -109,7 +108,6 @@ export function fieldMatrixCheck(ctx: QaContext) {
       const recorded = Object.fromEntries(ids.map((k) => [k, fields[k].value]))
       // (a step's failure said as the other checks say it: what was not found)
       const msg = (e: unknown) => stepError(e, 6)
-      const valuesOf = (over: Record<string, string>) => new Proxy({} as Record<string, string>, { get: (_t, k: string) => over[k] ?? recorded[k] })
       // a form that will not save waits its button out: seconds, not the half minute (pages still load as long as they need)
       page.setDefaultNavigationTimeout(30000)
       page.setDefaultTimeout(6000)
@@ -128,63 +126,13 @@ export function fieldMatrixCheck(ctx: QaContext) {
           } catch (e) {
             if (e !== STOP) return ctx.verdict({ kind: 'matrix', name, state: 'fail', summary: `сценарий не дошёл до первого поля: ${msg(e)}` })
           }
-          for (const k of ids) info[k] = ((await fields[k].field().first().evaluate(fieldProbe, undefined, { timeout: 3000 }).catch(() => undefined)) as Partial<FieldInfo> | undefined) ?? {}
+          for (const k of ids) info[k] = ((await fields[k].field().first().evaluate(fieldProbe, UI, { timeout: 3000 }).catch(() => undefined)) as Partial<FieldInfo> | undefined) ?? {}
         }
 
         /** The endpoints whose answers hold the fields' stored values (known after the first try's run). */
         let storeEps: Set<string> | undefined
-        /**
-         * One run of the scenario. Before it — only a change still on its way (the try before's late save) is waited
-         * for, not the page's quiet (its polling, its live connections never let it be quiet). After it — the save
-         * itself (it may go a moment after the click: a form validating on the server, a debounce), or the form's
-         * word, or the run's stop. The data the page loaded before saving is kept: the stored values of the try before.
-         */
-        const once = async (over: Record<string, string>, title: string, saveKey?: string, queryKey?: string) => {
-          for (let t = Date.now(); Date.now() - t < 5000 && sent.some((x) => !x.done && MUT.test(x.method) && ctx.api(x)); ) await page.waitForTimeout(100)
-          const from = sent.length
-          let error: string | undefined
-          /** What the scenario gave back for this value (its own measures: what it found, what it saw). */
-          let returned: unknown
-          await step(title, async () => {
-            try {
-              returned = await run(valuesOf(over))
-            } catch (e) {
-              error = msg(e)
-            }
-          })
-          // a field that saves nothing: its request (the one carrying the value) answered — waited for, up to 30 s
-          if (queryKey) for (let t = Date.now(); Date.now() - t < 30000 && sent.slice(from).some((x) => saveOf(x) === queryKey && !x.done); ) await page.waitForTimeout(150)
-          // the save: the try's own endpoint once known; before — the change carrying the values typed (not whatever
-          // else the page sent on the way: a dialog's OK, a list's search)
-          const typed = ids.map((k) => over[k] ?? recorded[k])
-          const isSave = (x: Exchange) => (saveKey ? saveOf(x) === saveKey : valuesIn(x.body, typed) > 0)
-          for (let t = Date.now(); !error && Date.now() - t < 5000; ) {
-            const s = ctx.mutations(from).filter(isSave)
-            if (s.some((x) => x.done && x.status !== undefined)) break
-            // gone and not answered yet: its answer is the outcome — waited for below, not cut off here
-            if (s.length) break
-            if ((await ctx.hints()).length) break
-            await page.waitForTimeout(200)
-          }
-          // a change on its way is no outcome: its answer waited for (a slow server — up to half a minute)
-          for (let t = Date.now(); Date.now() - t < 30000 && ctx.mutations(from).some((x) => !x.done || x.status === undefined); ) await page.waitForTimeout(150)
-          // the save answered: a moment for the form to show its word (no quiet — the data loaded before the save is
-          // all there is to read; the page's polling would only hold it)
-          await page.waitForTimeout(300)
-          const part = sent.slice(from)
-          const at = part.findIndex((x) => MUT.test(x.method) && ctx.api(x) && (!saveKey || saveOf(x) === saveKey))
-          // what the try needs, copied: its changes (the save's body and answer), the data loaded before its save
-          // (only the endpoints the stored values are in, once they are known) — the run's bodies then let go
-          const gets = part
-            .slice(0, at < 0 ? part.length : at)
-            .filter((x) => x.method === 'GET' && x.res !== undefined && (!storeEps || storeEps.has(saveOf(x))))
-            .map((x) => ({ ep: saveOf(x), res: x.res! }))
-          // the page's requests of the try (their answers — only the request the value goes in: the rest let go)
-          const reqs = part.filter((x) => ctx.api(x)).map((x) => ({ ep: saveOf(x), method: x.method, url: x.url, body: x.body, status: x.done ? x.status : undefined, line: line(x), ...(queryKey && saveOf(x) === queryKey && x.res !== undefined ? { res: x.res } : {}) }))
-          const out = { error, muts: ctx.mutations(from).map(keptChange), hints: await ctx.hints(), gets, reqs, returned }
-          traffic.release(traffic.mark())
-          return out
-        }
+        /** One run of the scenario (the values `over` in place of the recorded), as the try needs it. */
+        const once = matrixRunner(ctx, { ids, recorded, run, msg, storeEps: () => storeEps })
         const valueOf = (k: string) =>
           fields[k]
             .field()
@@ -304,7 +252,7 @@ export function fieldMatrixCheck(ctx: QaContext) {
         }
         // 3. the tries — run first, judged after: what a try stored is seen in the next run's data (the page,
         // opened again, loads the record from the server before anything is typed)
-        type Try = { k: string; c: MatrixCase; o: Awaited<ReturnType<typeof once>>; shown?: string }
+        type Try = { k: string; c: MatrixCase; o: MatrixRun; shown?: string }
         /**
          * Where each field's stored value is in the data a page loads (from the run that loaded the record as the
          * reference saved it): every place the recorded value is (a few); the one that moves with the field is it.

@@ -4,7 +4,7 @@ import { resolvePath } from '../../domain/values'
 import type { BlockRunner } from '../../engine/blockRunner'
 import { tookText } from '../../engine/reportText'
 import { errorText, runApi } from '../../engine/runApi'
-import { noteRun, saveRunsSoon } from '../../engine/runStore'
+import { saveRunsSoon } from '../../engine/runStore'
 import type { BlockRun } from '../../engine/runTypes'
 import { refRoot, saveOf } from './model'
 
@@ -32,13 +32,13 @@ export const saveRunner: BlockRunner = {
     const res = resolvePath(env.values(), s.ref)
     if (!res.ok) return done(kept, `Нет значения {{${s.ref}}} — выполните блок, который его даёт (этот блок ставьте после него)`)
     if (isEmptyValue(res.value)) return done({ ...kept, skipped: 'пусто — файл не записан' })
-    const partial = !!noteRun(env.notePath).ctx[refRoot(s.ref)]?.partial
+    const partial = env.isPartial(refRoot(s.ref))
     if (partial && s.partial === 'skip') return done({ ...kept, skipped: 'данные неполные (прогон прерван) — файл не записан' })
-    const pass = /#(\d+)$/.exec(env.id)?.[1]
+    const pass = env.passNumber
     try {
       const r = await runApi().valueFile('save', {
         note: noteName(env.notePath),
-        name: pass ? `${s.ref} №${pass}` : s.ref,
+        name: pass !== undefined ? `${s.ref} №${pass}` : s.ref,
         value: res.value,
         format: formatFor(res.value, s.format),
         ...(s.dir ? { dir: s.dir } : {}),

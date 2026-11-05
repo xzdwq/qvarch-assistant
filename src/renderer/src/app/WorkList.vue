@@ -4,8 +4,8 @@ import { isCall, isMeeting } from '@shared/work'
 import NoteLinks from '../components/NoteLinks.vue'
 import AttrChips from '../components/AttrChips.vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { formatDuration, formatHM, shiftDay } from '@shared/timeline'
-import type { Entry, Note, PlanBlock } from '@shared/types'
+import { dayKey, formatDuration, formatHM, shiftDay } from '@shared/timeline'
+import type { Entry, Note } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import FilterMenu from '../components/FilterMenu.vue'
 import EntryModal from '../components/EntryModal.vue'
@@ -16,13 +16,21 @@ import { mondayOf, useRange } from '../lib/useRange'
 import { useNow } from '../lib/useDay'
 
 /**
- * «Моя работа» · Список: everything of a period as one list — blocks, meetings, calls, notes, the day plans —
- * filtered by type, kind, task and text, grouped by day with the day's time. A row opens its day.
+ * «Моя работа» · Список: everything of a period as one list — blocks, meetings, calls, notes — filtered by
+ * type, kind, task and text, grouped by day with the day's time. A row opens its day.
  */
 const emit = defineEmits<{ openDay: [day: string, entryId?: string] }>()
 
 type Period = 'today' | 'week' | 'month' | 'd30' | 'custom'
-type Kind = 'event' | 'meeting' | 'call' | 'note' | 'plan'
+/** What a row is, for the «Тип» filter. */
+const TYPES = [
+  { id: 'event', label: 'События' },
+  { id: 'meeting', label: 'Встречи' },
+  { id: 'call', label: 'Созвоны' },
+  { id: 'note', label: 'Заметки' },
+] as const
+type Kind = (typeof TYPES)[number]['id']
+const isType = (v: unknown): v is Kind => TYPES.some((t) => t.id === v)
 const KEY = 'qa.work.list'
 /** The list's filters (kept between visits); `task` — any block, only with a task, only without. */
 const DEFAULT_FILTER = { period: 'week' as Period, from: '', to: '', types: [] as Kind[], kinds: [] as string[], task: 'any' as 'any' | 'with' | 'without', q: '', desc: true, onlyProd: true }
@@ -35,7 +43,9 @@ const TASK_FILTERS: Record<ListFilter['task'], (task?: { key: string }) => boole
 const st = reactive(read())
 function read(): ListFilter {
   try {
-    return { ...DEFAULT_FILTER, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<ListFilter>) }
+    const v = { ...DEFAULT_FILTER, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<ListFilter>) }
+    // types of removed rows drop out of the kept filter
+    return { ...v, types: Array.isArray(v.types) ? v.types.filter(isType) : [] }
   } catch {
     return { ...DEFAULT_FILTER }
   }
@@ -78,7 +88,7 @@ function shift(dir: 1 | -1): void {
   if (wholeMonth()) {
     const d = new Date(`${st.from}T12:00:00`)
     d.setMonth(d.getMonth() + dir)
-    const a = d.toLocaleDateString('sv-SE').slice(0, 7) + '-01'
+    const a = dayKey(d.getTime()).slice(0, 7) + '-01'
     st.from = a
     st.to = monthEnd(a)
     return
@@ -109,13 +119,6 @@ const { days, reload } = useRange(from, to)
 const editing = ref<{ day: string; entry: Entry }>()
 const now = useNow(5_000)
 const isLive = (e: Entry) => e.start <= now.value && e.end >= now.value - 90_000 && (e.source === 'detected' || e.end > now.value)
-const TYPES = [
-  { id: 'event', label: 'События' },
-  { id: 'meeting', label: 'Встречи' },
-  { id: 'call', label: 'Созвоны' },
-  { id: 'note', label: 'Заметки' },
-  { id: 'plan', label: 'План дня' },
-]
 const kindOpts = computed(() => kinds.value.map((k) => ({ id: k.id, label: k.label, color: k.color })))
 const rangeOpen = ref(false)
 const rangeEl = ref<HTMLElement>()
@@ -127,7 +130,6 @@ const rangeText = computed(() => {
 type Item =
   | { t: 'entry'; type: Kind; day: string; id: string; at: number; e: Entry }
   | { t: 'note'; type: 'note'; day: string; id: string; at: number; n: Note }
-  | { t: 'plan'; type: 'plan'; day: string; id: string; at: number; p: PlanBlock }
 const typeOf = (e: Entry): Kind => (isMeeting(e) ? 'meeting' : isCall(e) ? 'call' : 'event')
 const items = computed<Item[]>(() => {
   const s = st.q.trim().toLowerCase()
@@ -140,9 +142,7 @@ const items = computed<Item[]>(() => {
     for (const e of d.entries)
       if (typeOk(typeOf(e)) && kindOk(e.kind) && taskOk(e.task) && textOk(e.label, e.description, e.task?.key, e.task?.summary, kindLabel(e.kind)))
         out.push({ t: 'entry', type: typeOf(e), day: d.day, id: e.id, at: e.start, e })
-    if (typeOk('note') && !st.kinds.length && st.task !== 'with') for (const n of d.notes) if (textOk(n.text)) out.push({ t: 'note', type: 'note', day: d.day, id: n.id, at: n.at, n })
-    if (typeOk('plan')) for (const p of d.plan) if (!p.doneEntryId && kindOk(p.kind) && taskOk(p.task) && textOk(p.label, p.task?.key, p.task?.summary)) out.push({ t: 'plan', type: 'plan', day: d.day, id: p.id, at: p.start, p })
-  }
+    if (typeOk('note') && !st.kinds.length && st.task !== 'with') for (const n of d.notes) if (textOk(n.text)) out.push({ t: 'note', type: 'note', day: d.day, id: n.id, at: n.at, n })  }
   return out.sort((a, b) => (st.desc ? b.at - a.at : a.at - b.at))
 })
 /** Union length (parallel blocks counted once). */
@@ -190,8 +190,8 @@ function exportCsv(): void {
   for (const it of [...items.value].sort((a, b) => a.at - b.at)) {
     if (it.t === 'note') rows.push([it.day, formatHM(it.n.at), '', '', 'Заметка', '', '', q(it.n.text.split('\n')[0]), q(it.n.text)].join(';'))
     else {
-      const x = it.t === 'entry' ? it.e : it.p
-      rows.push([it.day, formatHM(x.start), formatHM(x.end), String(Math.round((x.end - x.start) / 60_000)), TYPES.find((t) => t.id === it.type)?.label ?? '', q(kindLabel(x.kind)), x.task?.key ?? '', q(x.label), q(it.t === 'entry' ? (it.e.description ?? '') : '')].join(';'))
+      const x = it.e
+      rows.push([it.day, formatHM(x.start), formatHM(x.end), String(Math.round((x.end - x.start) / 60_000)), TYPES.find((t) => t.id === it.type)?.label ?? '', q(kindLabel(x.kind)), x.task?.key ?? '', q(x.label), q(x.description ?? '')].join(';'))
     }
   }
   const url = URL.createObjectURL(new Blob([`﻿${rows.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }))
@@ -247,22 +247,14 @@ function exportCsv(): void {
             <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.n.text.split('\n')[0] || 'Заметка' }}</span><span v-if="it.n.text.includes('\n')" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ it.n.text.split('\n').slice(1).join(' ') }}</span></span>
             <span class="badge nt tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:text-[10.5px] tw:bg-warn/14 tw:text-warn-fg">заметка</span>
           </div>
-          <div v-else-if="it.t === 'plan'" class="row plan tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:bg-hover tw:[&&]:[border-left-style:dashed]" :style="{ '--c': kindColor(it.p.kind) }" @click="emit('openDay', it.day)">
-            <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(it.p.start) }}–{{ formatHM(it.p.end) }}</span>
-            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c)"><Icon :name="entryIcon(it.p)" :size="13" /></span>
-            <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.p.label || kindLabel(it.p.kind) }}</span></span>
-            <span v-if="it.p.task" class="tchip tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]">{{ it.p.task.key }}</span>
-            <span class="badge pl tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:text-[10.5px] tw:bg-accent-soft tw:text-accent-fg">план</span>
-            <span class="du num tw:font-data tw:tabular-nums tw:flex-none tw:min-w-52 tw:text-right tw:text-text-2 tw:text-[12px]">{{ formatDuration(it.p.end - it.p.start) }}</span>
-          </div>
-          <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:not-[&.live]:bg-hover tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[WorkList-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" title="Открыть событие" @click="editing = { day: it.day, entry: it.e }">
+          <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-36 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:last:border-b-0 tw:hover:not-[&.live]:bg-hover tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[Shared-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ live: isLive(it.e) }" :style="{ '--c': kindColor(it.e.kind) }" title="Открыть событие" @click="editing = { day: it.day, entry: it.e }">
             <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(it.e.start) }}–{{ formatHM(it.e.end) }}</span>
-            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[WorkList-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(it.e.kind)"><Icon :name="entryIcon(it.e)" :size="13" /></span>
+            <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[Shared-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(it.e.kind)"><Icon :name="entryIcon(it.e)" :size="13" /></span>
             <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col">
               <span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ it.e.label || kindLabel(it.e.kind) }}</span>
               <span v-if="it.e.description" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ it.e.description.split('\n')[0] }}</span>
             </span>
-            <span v-if="isLive(it.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[WorkList-live-blink_1s_steps(2)_infinite]"></i>идёт</span>
+            <span v-if="isLive(it.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[Shared-blink-30_1s_steps(2)_infinite]"></i>идёт</span>
             <span v-if="it.e.task" class="tchip tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]" :title="it.e.task.summary">{{ it.e.task.key }}</span>
             <AttrChips :attrs="it.e.attrs" />
             <NoteLinks :id="it.e.id" />

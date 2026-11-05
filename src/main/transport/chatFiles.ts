@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CHAT_FILE_MAX, cleanFileName, type ChatFile } from '../../shared/transport/chat'
-import { CHAT_FILES_PATH, FILE_NAME_HEADER, TICKET_HEADER } from '../../shared/transport/protocol'
+import { CHAT_FILES_PATH, TICKET_HEADER } from '../../shared/transport/protocol'
+import { isUuid } from '../../shared/transport/ids'
 import type { SpacePasses } from './spacePasses'
-
-const ID = /^[0-9a-f-]{36}$/
+import { TRANSFER_TIMEOUT_MS, withTimeout } from '../netLimits'
 
 /**
  * The files of the chats on this computer: one sent goes to the server (with the room's pass) and is kept here; one
@@ -24,11 +24,11 @@ export class ChatFiles {
   private url(room: string, id: string): string {
     const base = this.base()
     if (!base) throw new Error('Сервер не подключён')
-    if (!ID.test(room) || !ID.test(id)) throw new Error('Неверный файл')
+    if (!isUuid(room) || !isUuid(id)) throw new Error('Неверный файл')
     return `${base}${CHAT_FILES_PATH}${room}/${id}`
   }
   private kept(id: string): string {
-    if (!ID.test(id)) throw new Error('Неверный файл')
+    if (!isUuid(id)) throw new Error('Неверный файл')
     return join(this.dir, id)
   }
   private keep(id: string, bytes: Uint8Array): void {
@@ -43,7 +43,7 @@ export class ChatFiles {
     const file: ChatFile = { id, name: cleanFileName(name), size: bytes.byteLength, mime: mime || 'application/octet-stream' }
     const url = this.url(room, id)
     const r = await this.passes.request(room, (pass) =>
-      fetch(url, { method: 'PUT', body: Buffer.from(bytes), headers: { [TICKET_HEADER]: pass, 'content-type': file.mime, [FILE_NAME_HEADER]: encodeURIComponent(file.name) } }),
+      fetch(url, withTimeout({ method: 'PUT', body: Buffer.from(bytes), headers: { [TICKET_HEADER]: pass, 'content-type': file.mime } }, TRANSFER_TIMEOUT_MS)),
     )
     if (!r.ok) throw new Error(`Файл не отправлен: ${r.status} ${(await r.text().catch(() => '')).slice(0, 120)}`)
     this.keep(id, bytes)
@@ -54,7 +54,7 @@ export class ChatFiles {
     const here = this.kept(id)
     if (existsSync(here)) return new Uint8Array(readFileSync(here))
     const url = this.url(room, id)
-    const r = await this.passes.request(room, (pass) => fetch(url, { headers: { [TICKET_HEADER]: pass } }))
+    const r = await this.passes.request(room, (pass) => fetch(url, withTimeout({ headers: { [TICKET_HEADER]: pass } }, TRANSFER_TIMEOUT_MS)))
     if (!r.ok) throw new Error(r.status === 404 ? 'Файла нет на сервере' : `Файл не получен: ${r.status}`)
     const bytes = new Uint8Array(await r.arrayBuffer())
     this.keep(id, bytes)

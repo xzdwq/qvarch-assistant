@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import { shiftBy, type RepeatRule } from '../../shared/repeat'
 import { dayEnd, dayKey, firstFreeLane, pinLanes, putEntry, shiftDay } from '../../shared/timeline'
@@ -19,15 +19,10 @@ export class Series {
     return join(this.app.store.root, 'series.json')
   }
   private read(): SeriesIndex {
-    try {
-      return JSON.parse(readFileSync(this.file, 'utf8')) as SeriesIndex
-    } catch {
-      return {}
-    }
+    return readJsonFile<SeriesIndex>(this.file) ?? {}
   }
   private write(ix: SeriesIndex): void {
-    writeFileSync(`${this.file}.tmp`, JSON.stringify(ix))
-    renameSync(`${this.file}.tmp`, this.file)
+    writeJsonAtomic(this.file, ix)
   }
   /** The blocks of a series that still exist (a block moved to another day by hand is found there too). */
   private items(sid: string): Array<{ day: string; e: Entry }> {

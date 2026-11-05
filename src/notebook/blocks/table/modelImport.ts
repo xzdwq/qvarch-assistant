@@ -10,7 +10,7 @@ import { totalsFitted } from './modelTotals'
 const columnName = (i: number) => `Столбец ${i + 1}`
 
 /** The table as a grid: the head — its first row, the merges by rows of the grid. */
-export function tableGrid(t: TableModel): CellGrid {
+function tableGrid(t: TableModel): CellGrid {
   return { rows: [t.head, ...t.rows].map((r) => [...r]), merges: (t.merges ?? []).map((m) => ({ ...m, r: m.r + 1 })) }
 }
 
@@ -18,7 +18,7 @@ export function tableGrid(t: TableModel): CellGrid {
  * A grid laid over another from cell (r, c): the cells it covers take its text, the merges it touches go (theirs
  * now), its merges come; the grid grows to hold it.
  */
-export function overlayGrid(base: CellGrid, top: CellGrid, at: { r: number; c: number }): CellGrid {
+function overlayGrid(base: CellGrid, top: CellGrid, at: { r: number; c: number }): CellGrid {
   const height = top.rows.length
   const width = top.rows[0]?.length ?? 0
   const rows = base.rows.map((r) => [...r])

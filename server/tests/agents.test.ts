@@ -26,7 +26,7 @@ let server: Transport
 beforeAll(async () => {
   pg = await startPg()
   db = new Db(pg.url)
-  server = await startTransport({ port: 0, databaseUrl: pg.url, accessCode: '', version: 'test' }, db, MODULES)
+  server = await startTransport({ port: 0, databaseUrl: pg.url, accessCode: '', version: 'test', mediaSecret: '' }, db, MODULES)
 }, 120_000)
 afterAll(async () => {
   await server?.close()

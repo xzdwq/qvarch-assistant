@@ -1,5 +1,5 @@
 import { ref, shallowRef } from 'vue'
-import type { BrowserTab, CertInfo } from '@shared/browser'
+import type { BrowserEvents, BrowserTab, CertInfo, NavAction } from '@shared/browser'
 import { bLayout, hostOf } from '../../lib/browser'
 
 /**
@@ -8,7 +8,7 @@ import { bLayout, hostOf } from '../../lib/browser'
  */
 export function useSiteTools(deps: { byId: (id?: string) => BrowserTab | undefined; newTab: (pi?: number, url?: string) => Promise<string> }) {
   const { byId } = deps
-  const nav = (id: string, a: 'back' | 'fwd' | 'reload' | 'stop' | 'devtools') => void window.qa.browser('nav', id, a)
+  const nav = (id: string, a: NavAction) => void window.qa.browser('nav', id, a)
   const zoom = (id: string, z: number) => void window.qa.browser('zoom', id, z)
   /** A bad certificate accepted: the page opened anyway. */
   const trust = (id: string, host: string) => void window.qa.browser('trust', id, host)
@@ -43,7 +43,7 @@ export function useSiteTools(deps: { byId: (id?: string) => BrowserTab | undefin
     login.value = undefined
     if (l) window.qa.browser('loginReply', l.reqId, ok ? l.user : undefined, ok ? l.pass : undefined)
   }
-  const download = ref<{ name: string; path: string; state: string }>()
+  const download = ref<BrowserEvents['download']>()
 
   // ---------- files dropped on the section: each in a tab of its own ----------
   function onDragOver(e: DragEvent): void {

@@ -12,6 +12,7 @@ import NotebookView from './NotebookView.vue'
 import ReleaseView from './ReleaseView.vue'
 import BrowserView from './BrowserView.vue'
 import HttpView from './HttpView.vue'
+import { sectionLook } from '../lib/views'
 
 /** An item of «Инструменты»: what it is called, its screen; `alive` — once opened it stays (hidden when another is shown). */
 export interface ToolItem {
@@ -22,7 +23,7 @@ export interface ToolItem {
   alive?: boolean
 }
 /** «Инструменты»'s own tools. */
-export const TOOL_ITEMS: Record<ToolId, ToolItem> = {
+const TOOL_ITEMS: Record<ToolId, ToolItem> = {
   diff: { icon: 'diff', label: 'Сравнение текстов', hint: 'Два текста или JSON: что изменилось', view: DiffTool },
   codec: { icon: 'binary', label: 'Кодировки', hint: 'JWT, UUID, Base64 (и изображения), хэши MD5 / SHA', view: CodecTool },
   yaml: { icon: 'braces', label: 'JSON ↔ YAML', hint: 'Перевод в обе стороны и форматирование', view: YamlTool },
@@ -32,9 +33,10 @@ export const TOOL_ITEMS: Record<ToolId, ToolItem> = {
   clip: { icon: 'clipboard', label: 'Буфер обмена', hint: 'Всё, что вы копировали', view: ClipTool },
   pdf: { icon: 'signature', label: 'Подпись PDF', hint: 'Подписать PDF-документ', view: PdfSignView },}
 /** The sections as items of «Инструменты» (when moved there). The browser and the notes stay once opened. */
-export const SECTION_ITEMS: Record<MovableSection, ToolItem> = {
-  notebook: { icon: 'notebook', label: 'Блокнот', hint: 'Заметки, исполняемые блоки, доски', view: NotebookView, alive: true },
-  release: { icon: 'branch', label: 'Релиз', hint: 'Сборка релиза из веток', view: ReleaseView },
-  browser: { icon: 'globe', label: 'Браузер', hint: 'Встроенный браузер: проверки, запись, карта API', view: BrowserView, alive: true },
-  http: { icon: 'api', label: 'HTTP', hint: 'Коллекция запросов', view: HttpView },}
+const SECTION_ITEMS: Record<MovableSection, ToolItem> = {
+  notebook: { ...sectionLook('notebook'), hint: 'Заметки, исполняемые блоки, доски', view: NotebookView, alive: true },
+  release: { ...sectionLook('release'), hint: 'Сборка релиза из веток', view: ReleaseView },
+  browser: { ...sectionLook('browser'), hint: 'Встроенный браузер: проверки, запись, карта API', view: BrowserView, alive: true },
+  http: { ...sectionLook('http'), hint: 'Коллекция запросов', view: HttpView },
+}
 export const toolItem = (id: string): ToolItem | undefined => (id in TOOL_ITEMS ? TOOL_ITEMS[id as ToolId] : id in SECTION_ITEMS ? SECTION_ITEMS[id as MovableSection] : undefined)

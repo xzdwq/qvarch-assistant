@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import Icon from '../../components/Icon.vue'
 import EventStream from '../../components/EventStream.vue'
-import { recentLabels } from '../../lib/recent'
 import { useWorkBoard } from './useWorkBoard'
 
 /** The board's side: the period's events as a stream (the open block edited there), its order and follow switches. */
-const { settings, days, reload, now, weekTitle, feedOrder, streamLinked, streamFollow, openId, hoverId } = useWorkBoard()
-const recent = computed(() => recentLabels(...days.value.map((d) => d.entries)))
-</script>
+const { settings, days, reload, now, weekTitle, feedOrder, streamLinked, streamFollow, openId, hoverId } = useWorkBoard()</script>
 
 <template>
   <aside class="side tw:flex tw:flex-col tw:min-h-0 tw:overflow-hidden tw:min-w-0 tw:border tw:border-border tw:rounded-r3 tw:bg-panel tw:pb-6">
@@ -24,6 +20,6 @@ const recent = computed(() => recentLabels(...days.value.map((d) => d.entries)))
           @click="streamFollow = streamFollow === 'on' ? 'off' : 'on'"
         ><Icon name="eye" :size="13" /></button>
       </span></div>
-    <EventStream class="stream tw:flex-1 tw:min-h-0" :days="days" :schedule="settings.schedule" :recent="recent" :now="now" :focus-id="streamFollow === 'on' ? hoverId : undefined" :open-id="openId" :order="streamLinked === 'on' ? feedOrder : 'asc'" @open="(id) => (openId = id)" @changed="reload" />
+    <EventStream class="stream tw:flex-1 tw:min-h-0" :days="days" :schedule="settings.schedule" :now="now" :focus-id="streamFollow === 'on' ? hoverId : undefined" :open-id="openId" :order="streamLinked === 'on' ? feedOrder : 'asc'" @open="(id) => (openId = id)" @changed="reload" />
   </aside>
 </template>

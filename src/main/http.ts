@@ -1,5 +1,6 @@
 import { safeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
 import { join } from 'node:path'
 import vm from 'node:vm'
 import { importInto } from '../shared/httpCollection'
@@ -21,31 +22,28 @@ export class HttpClient {
       this.save(doc)
       return doc
     }
-    try {
-      const d = JSON.parse(readFileSync(this.file, 'utf8')) as HttpDoc
-      // secret variables are kept encrypted
-      const vars = (Array.isArray(d.vars) ? d.vars : []).map((v: HttpKV & { enc?: string }) => {
-        if (!v.enc) return v
-        const { enc, ...rest } = v
-        try {
-          return { ...rest, value: safeStorage.decryptString(Buffer.from(enc, 'base64')) }
-        } catch {
-          return { ...rest, value: '' }
-        }
-      })
-      return { v: 1, items: Array.isArray(d.items) ? d.items : [], vars, settings: { ...DEFAULT_HTTP_SETTINGS, ...d.settings } }
-    } catch {
-      return { v: 1, items: [], vars: [] }
-    }
+    // a broken file is set aside (not overwritten by the next save)
+    const d = readJsonFile<HttpDoc>(this.file)
+    if (!d) return emptyHttpDoc()
+    // secret variables are kept encrypted
+    const vars = (Array.isArray(d.vars) ? d.vars : []).map((v: HttpKV & { enc?: string }) => {
+      if (!v.enc) return v
+      const { enc, ...rest } = v
+      try {
+        return { ...rest, value: safeStorage.decryptString(Buffer.from(enc, 'base64')) }
+      } catch {
+        // not readable now (another Windows user, DPAPI failed): shown empty, kept encrypted until typed anew
+        return { ...rest, value: '', enc }
+      }
+    })
+    return { v: 1, items: Array.isArray(d.items) ? d.items : [], vars, settings: { ...DEFAULT_HTTP_SETTINGS, ...d.settings } }
   }
 
   save(doc: HttpDoc): void {
-    const tmp = `${this.file}.tmp`
     // a secret variable's value goes to disk encrypted (Windows DPAPI) — never as plain text
     const crypt = safeStorage.isEncryptionAvailable()
     const vars = doc.vars.map((v) => (v.secret && v.value && crypt ? { ...v, value: '', enc: safeStorage.encryptString(v.value).toString('base64') } : v))
-    writeFileSync(tmp, JSON.stringify({ ...doc, vars }, null, 2))
-    renameSync(tmp, this.file)
+    writeJsonAtomic(this.file, { ...doc, vars }, 2)
   }
 
   /**
@@ -71,13 +69,9 @@ export class HttpClient {
     if (runId) this.aborts.set(runId, ctl)
     try {
       const out = await this.exec(req, doc, vars, ctl.signal)
-      // the variables set by the scripts stay in the collection
-      for (const [k, v] of Object.entries(vars)) {
-        const row = doc.vars.find((x) => x.key === k)
-        if (row) row.value = v
-        else doc.vars.push({ on: true, key: k, value: v })
-      }
-      this.save(doc)
+      // the variables set by the scripts stay in the collection — merged into the file as it is now (the window's
+      // copy of the whole collection, sent at the start, would undo what a chain running meanwhile wrote)
+      this.mergeVars(vars)
       return out
     } finally {
       if (runId) this.aborts.delete(runId)

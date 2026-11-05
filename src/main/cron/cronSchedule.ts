@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import { cleanJob, dueBetween, jobTitle, nextDue, withRun, type CronJob, type CronRun, type RunTrigger } from '../../shared/cronJobs'
 
@@ -27,15 +27,10 @@ export class CronSchedule {
 
   constructor(root: string) {
     this.file = join(root, 'crons.json')
-    try {
-      if (existsSync(this.file)) {
-        const d = JSON.parse(readFileSync(this.file, 'utf8')) as { jobs?: unknown[]; lookedAt?: number }
-        this.jobs = (d.jobs ?? []).flatMap((x) => cleanJob(x) ?? [])
-        if (typeof d.lookedAt === 'number') this.lookedAt = d.lookedAt
-      }
-    } catch {
-      // a broken file — no jobs (it is written anew on the first change)
-    }
+    // a broken file is set aside — no jobs, and the first change does not destroy it
+    const d = readJsonFile<{ jobs?: unknown[]; lookedAt?: number }>(this.file)
+    this.jobs = (Array.isArray(d?.jobs) ? d.jobs : []).flatMap((x) => cleanJob(x) ?? [])
+    if (typeof d?.lookedAt === 'number') this.lookedAt = d.lookedAt
   }
 
   /** The schedule started: what fell due while the app was closed — told; then each job at its time. */
@@ -160,8 +155,7 @@ export class CronSchedule {
   /** Written whole (a temp file + rename: never half a file). */
   private saveFile(): void {
     try {
-      writeFileSync(`${this.file}.tmp`, JSON.stringify({ lookedAt: this.lookedAt, jobs: this.jobs }, null, 1))
-      renameSync(`${this.file}.tmp`, this.file)
+      writeJsonAtomic(this.file, { lookedAt: this.lookedAt, jobs: this.jobs }, 1)
     } catch {
       // not kept this time — the next change writes it
     }

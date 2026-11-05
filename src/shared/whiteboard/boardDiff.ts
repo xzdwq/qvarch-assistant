@@ -28,7 +28,6 @@ export function diffItems(a: readonly BoardItem[], b: readonly BoardItem[]): Omi
 export function diffBoards(a: Board, b: Board): BoardDiff {
   return { ...diffItems(a.items, b.items), ...(same(a.bg, b.bg) ? {} : { bg: b.bg }) }
 }
-export const isEmptyDiff = (d: BoardDiff) => !d.put.length && !d.del.length && !d.bg
 
 /** The items with a difference applied: a changed one in its place, a new one after the item it followed (gone — on top). */
 export function applyItems(items: readonly BoardItem[], d: Omit<BoardDiff, 'bg'>): BoardItem[] {

@@ -1,4 +1,4 @@
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import type { TermConfig } from '../../shared/terminal'
 
@@ -12,26 +12,24 @@ export class TermConfigFile {
 
   /** The settings as kept (missing lists — the examples); the first start writes the examples. */
   read(): TermConfig {
-    try {
-      const c = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<TermConfig>
-      return {
-        presets: Array.isArray(c.presets) ? c.presets : [],
-        vars: Array.isArray(c.vars) ? c.vars : [],
-        watches: Array.isArray(c.watches) ? c.watches : [],
-        lastCwd: c.lastCwd,
-        profile: c.profile ?? true,
-      }
-    } catch {
+    // (a broken file is set aside first — the new one never replaces the presets it had)
+    const c = readJsonFile<Partial<TermConfig>>(this.file)
+    if (!c) {
       // the first start: the examples
-      const c: TermConfig = { presets: [], vars: [], watches: [], profile: true }
-      this.write(c)
-      return c
+      const fresh: TermConfig = { presets: [], vars: [], watches: [], profile: true }
+      this.write(fresh)
+      return fresh
+    }
+    return {
+      presets: Array.isArray(c.presets) ? c.presets : [],
+      vars: Array.isArray(c.vars) ? c.vars : [],
+      watches: Array.isArray(c.watches) ? c.watches : [],
+      lastCwd: c.lastCwd,
+      profile: c.profile ?? true,
     }
   }
-  /** Written to a side file first, then renamed over (never half a file). */
+  /** Written whole or not at all. */
   write(c: TermConfig): void {
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(c, null, 2))
-    renameSync(tmp, this.file)
+    writeJsonAtomic(this.file, c, 2)
   }
 }

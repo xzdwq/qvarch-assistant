@@ -13,7 +13,6 @@ export const IMPORT_BROWSERS = [
   { id: 'vivaldi', name: 'Vivaldi', dir: 'Vivaldi\\User Data' },
   { id: 'yandex', name: 'Яндекс Браузер', dir: 'Yandex\\YandexBrowser\\User Data' },
 ] as const
-export type ImportBrowserId = (typeof IMPORT_BROWSERS)[number]['id']
 /** A profile of such a browser found on this computer. */
 export interface ImportSource {
   /** `<browser>|<profile folder>`. */

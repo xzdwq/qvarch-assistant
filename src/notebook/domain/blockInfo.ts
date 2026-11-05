@@ -36,7 +36,7 @@ export const PW_OWN_BROWSER = 'qvarch' satisfies PwBrowser
 export const LOOP_OUT_MODES = ['acc', 'each'] as const
 export type LoopOutMode = (typeof LOOP_OUT_MODES)[number]
 /** How a data value may be shown other than as JSON. */
-export const DATA_VIEWS = ['table'] as const
+const DATA_VIEWS = ['table'] as const
 export type DataView = (typeof DATA_VIEWS)[number]
 
 /** One of a set of names (a guard for a value read from text). */
@@ -88,7 +88,7 @@ export interface BlockInfo {
 export const BLOCK_H = { min: 200, max: 2400 } as const
 
 /** A block's own id: eight small letters and digits. */
-export const BLOCK_ID = /^[a-z0-9]{8}$/
+const BLOCK_ID = /^[a-z0-9]{8}$/
 
 /** The flags an info line may carry (a word without `=`), each setting its field to true. */
 const FLAGS = new Map<string, keyof BlockInfo>([

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { isRecord, readStored, writeStored } from '../../lib/storedRef'
+import { useFlash } from '../../lib/useFlash'
+import { useNow } from '../../lib/useDay'
 import { convertCron, CRON_DIALECTS, CRON_FORMATS, CRON_PRESETS, describeCron, fitsFormat, fromCrontab, guessFormat, nextRuns, type CronFormat } from '@shared/cron'
 import CronBuilder from './CronBuilder.vue'
 import Icon from '../Icon.vue'
@@ -10,23 +13,11 @@ import Icon from '../Icon.vue'
  * @vue-js-cron/core. Unix / Spring / Quartz; a pasted expression switches to its dialect.
  */
 const KEY = 'qa.tools.cron'
-const saved = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '{}') as { expr?: string; format?: CronFormat }
-  } catch {
-    return {}
-  }
-})()
-const format = ref<CronFormat>(saved.format && Object.hasOwn(CRON_DIALECTS, saved.format) ? saved.format : 'crontab')
+const saved = readStored<{ expr?: unknown; format?: unknown }>(KEY, {}, isRecord)
+const format = ref<CronFormat>(typeof saved.format === 'string' && Object.hasOwn(CRON_DIALECTS, saved.format) ? (saved.format as CronFormat) : 'crontab')
 const dialect = computed(() => CRON_DIALECTS[format.value])
-const expr = ref(saved.expr ?? '0 12 * * 1-6')
-watch([expr, format], () => {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ expr: expr.value, format: format.value }))
-  } catch {
-    // fine
-  }
-})
+const expr = ref(typeof saved.expr === 'string' ? saved.expr : '0 12 * * 1-6')
+watch([expr, format], () => writeStored(KEY, { expr: expr.value, format: format.value }))
 /** Another dialect picked: the expression goes along. */
 function setFormat(f: CronFormat): void {
   if (f === format.value) return
@@ -54,9 +45,7 @@ const result = computed(() => {
 })
 const cleanErr = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error:\s*/, '')
 // the next runs move with the clock
-const now = ref(Date.now())
-const tick = setInterval(() => (now.value = Date.now()), 30_000)
-onBeforeUnmount(() => clearInterval(tick))
+const now = useNow(30_000)
 const utc = ref(false)
 const runs = computed<{ list: Date[]; error: string }>(() => {
   if (!expr.value.trim() || result.value.error) return { list: [], error: '' }
@@ -83,11 +72,10 @@ function rel(d: Date): string {
   return `через ${parts.join(' ')}`
 }
 const presets = computed(() => CRON_PRESETS.map((p) => ({ ...p, expr: fromCrontab(p.expr, format.value) })))
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1200)
 async function copy(): Promise<void> {
   await navigator.clipboard.writeText(expr.value.trim())
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1200)
+  flash(true)
 }
 /** The fields of the dialect (what each place of the expression is). */
 const FIELDS = computed(() => dialect.value.fields)

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
+import { LaterWrite } from './laterWrite'
 import { join } from 'node:path'
 import {
   badBodyIds,
@@ -61,7 +62,6 @@ export class CheckWatch {
   private list: CheckProblem[]
   private flights = new Map<string, Map<string, Flight>>()
   private recent = new Map<string, Done[]>()
-  private saveTimer?: ReturnType<typeof setTimeout>
   private seq = 0
 
   constructor(
@@ -75,28 +75,23 @@ export class CheckWatch {
     this.list = Array.isArray(saved?.list) ? saved.list : []
   }
   private read<T>(): T | undefined {
-    const f = join(this.root, 'check.json')
-    if (!existsSync(f)) return undefined
-    try {
-      return JSON.parse(readFileSync(f, 'utf8')) as T
-    } catch {
-      return undefined
-    }
+    return readJsonFile<T>(join(this.root, 'check.json'))
   }
+  private readonly saving = new LaterWrite(() => this.write(), 400)
   private save(): void {
-    clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      // over 30 MB of bodies kept: the oldest findings (beyond the newest 100) lose theirs — their length stays
-      let total = this.list.reduce((n, p) => n + (p.req?.reqBody?.length ?? 0), 0)
-      for (let i = this.list.length - 1; i >= 100 && total > 30_000_000; i--) {
-        const r = this.list[i].req
-        if (!r?.reqBody) continue
-        total -= r.reqBody.length
-        r.reqBodyCut = r.reqBody.length
-        r.reqBody = undefined
-      }
-      writeAtomic(join(this.root, 'check.json'), JSON.stringify({ settings: this.settings, list: this.list }))
-    }, 400)
+    this.saving.soon()
+  }
+  private write(): void {
+    // over 30 MB of bodies kept: the oldest findings (beyond the newest 100) lose theirs — their length stays
+    let total = this.list.reduce((n, p) => n + (p.req?.reqBody?.length ?? 0), 0)
+    for (let i = this.list.length - 1; i >= 100 && total > 30_000_000; i--) {
+      const r = this.list[i].req
+      if (!r?.reqBody) continue
+      total -= r.reqBody.length
+      r.reqBodyCut = r.reqBody.length
+      r.reqBody = undefined
+    }
+    writeJsonAtomic(join(this.root, 'check.json'), { settings: this.settings, list: this.list })
   }
   private changed(): void {
     this.save()
@@ -289,11 +284,6 @@ export class CheckWatch {
   }
 }
 
-function writeAtomic(file: string, data: string): void {
-  const tmp = `${file}.tmp`
-  writeFileSync(tmp, data, 'utf8')
-  renameSync(tmp, file)
-}
 const pathOf = (u: string) => {
   try {
     const x = new URL(u)

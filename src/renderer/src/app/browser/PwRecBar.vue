@@ -6,7 +6,7 @@ import { pwRec, stopPwRec } from '../../lib/pwrec'
 
 <template>
   <div v-if="pwRec" class="pwrecbar tw:flex-none tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:py-6 tw:px-12 tw:border-b tw:border-b-stop/50 tw:bg-stop/12 tw:text-[12.5px] tw:whitespace-nowrap">
-    <i class="prd tw:w-10 tw:h-10 tw:rounded-[50%] tw:bg-stop tw:animate-[BrowserView-prblink_1.2s_ease-in-out_infinite] tw:[.hsw_input:checked+&]:bg-accent tw:[.hsw_input:checked+&]:after:[transform:translateX(12px)] tw:[.hsw_input:checked+&]:after:bg-white"></i><b class="">Запись сценария Playwright</b>
+    <i class="prd tw:w-10 tw:h-10 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-35_1.2s_ease-in-out_infinite] tw:[.hsw_input:checked+&]:bg-accent tw:[.hsw_input:checked+&]:after:[transform:translateX(12px)] tw:[.hsw_input:checked+&]:after:bg-white"></i><b class="">Запись сценария Playwright</b>
     <span class="pmuted tw:text-muted">{{ pwRec.key === 'check:steps' ? 'шаги для журнала' : `в «${pwRec.note.split('/').pop()!.replace(/\.md$/i, '')}»` }} · строк: {{ pwRec.count }}</span>
     <code v-if="pwRec.last" class="plast tw:min-w-0 tw:overflow-hidden tw:text-text-2 tw:font-data tw:text-[11.5px] tw:text-ellipsis" :title="pwRec.last">{{ pwRec.last }}</code>
     <span class="pgrow tw:flex-1"></span>

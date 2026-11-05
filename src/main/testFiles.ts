@@ -37,12 +37,6 @@ export class TestFiles implements TestFilesApi {
     for (let i = 2; existsSync(join(this.dir(set), out)); i++) out = `${base} (${i})${ext}`
     return out
   }
-  /** The absolute path of «set/file» (for a run) — nothing outside the files' folder. */
-  abs(rel: string): string {
-    const parts = String(rel).split(/[\\/]/).filter(Boolean)
-    if (parts.length !== 2 || parts.some((p) => p !== safeName(p))) throw new Error(`Файл «${rel}»: ожидается «Набор/файл»`)
-    return join(this.root, parts[0], parts[1])
-  }
 
   sets(): TestFileSet[] {
     if (!existsSync(this.root)) return []

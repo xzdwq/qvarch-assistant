@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import type { BlockInfo } from '@nb/domain/blockInfo'
 import { fencedBlocksOf } from '@nb/domain/noteBlocks'
 import { noteRun, runBlockInNote, saveRunsSoon, stopBlockInNote } from '@nb/engine'
+import { loadedRuns } from '@nb/engine/runStore'
 import { REGRESS_KEEP, swapStand, tallyChecks, type RegressCfg, type RegressItem, type RegressRun } from '@shared/regress'
 import type { VaultNode } from '@shared/vault'
 
@@ -50,9 +51,8 @@ export const historyOf = (path: string, key: string): RegressRun[] => ((noteRun(
 export async function runRegression(path: string, key: string, cfg: RegressCfg): Promise<void> {
   const id = `${path}#${key}`
   if (live.has(id)) return
-  const n = noteRun(path)
   // the history saved before must be in first (it is read from the disk a moment after the note opens)
-  for (let i = 0; i < 40 && !n.loaded; i++) await new Promise((r) => setTimeout(r, 50))
+  const n = await loadedRuns(path)
   const tests = await testsOf(cfg)
   const st = reactive({ done: 0, total: tests.length } as { done: number; total: number; current?: string; stop?: boolean; cur?: Test })
   live.set(id, st)

@@ -2,9 +2,7 @@ import * as Y from 'yjs'
 import type { DeviceInfo } from '../../../../src/shared/transport/protocol'
 import { isPeerSel, type PeerSel } from '../../../../src/shared/transport/places'
 import { ROLE_RIGHTS } from '../../../../src/shared/transport/space'
-import { RpcFail, text, uuid, type ModuleFactory, type Session } from '../../module'
-import { readUpdate } from '../space'
-import { SpaceStore } from '../space/spaceStore'
+import { RpcFail, text, uuid, yjsUpdate, type ModuleFactory, type Session } from '../../module'
 import { COMPACT_EVERY, DOC_MIGRATIONS, DocStore } from './docStore'
 
 /** A document held in memory while someone has it open. */
@@ -27,7 +25,7 @@ const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64')
  */
 export const docModule: ModuleFactory = (ctx) => {
   const store = new DocStore(ctx.db)
-  const spaces = new SpaceStore(ctx.db)
+  ctx.ports.provide('docs', { init: (sql, doc, update, author) => store.append(doc, update, author, sql).then(() => undefined) })
   const live = new Map<string, Promise<Live>>()
 
   function hold(doc: string, space: string): Promise<Live> {
@@ -40,7 +38,7 @@ export const docModule: ModuleFactory = (ctx) => {
     return l
   }
   async function access(doc: string, s: Session) {
-    const r = await spaces.docRole(doc, s.device.id)
+    const r = await ctx.ports.get('spaces').docRole(doc, s.device.id)
     if (!r) throw new RpcFail('denied', 'Нет доступа к этому документу')
     return r
   }
@@ -96,7 +94,7 @@ export const docModule: ModuleFactory = (ctx) => {
         const doc = uuid(p, 'doc')
         const { space, role } = await access(doc, s)
         if (!ROLE_RIGHTS[role].edit) throw new RpcFail('denied', 'Только чтение: править документ нельзя')
-        const update = readUpdate(p.update)
+        const update = yjsUpdate(p, 'update')
         const l = await hold(doc, space)
         // into memory first: a merge into the state never drops an update kept but not applied
         Y.applyUpdate(l.y, update)
@@ -106,6 +104,8 @@ export const docModule: ModuleFactory = (ctx) => {
           l.since = 0
           await store.compact(doc, l.y)
         }
+        // changed by one who has it not open (a folder's note synced): nobody holds it — it leaves memory (it is kept)
+        if (!l.open.size) live.delete(doc)
         return null
       },
       'doc.cursor': async (p, s) => {

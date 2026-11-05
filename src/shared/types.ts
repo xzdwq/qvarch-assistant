@@ -77,20 +77,6 @@ export interface Entry {
   attrs?: EntryAttrs
 }
 
-/** A planned block of the day ("План на день") — kept apart from what actually happened (Entry). */
-export interface PlanBlock {
-  id: string
-  start: Ms
-  end: Ms
-  kind: EntryKind
-  label: string
-  task?: { key: string; summary: string }
-  /** Row inside the plan lane (overlapping plans stack). */
-  lane?: number
-  /** "Сделано по плану": the block made from it (it is made only once). */
-  doneEntryId?: string
-}
-
 /** A quick note typed in the island (click the orb). Its block is resolved by time — see noteEntry(). */
 export interface Note {
   id: string
@@ -140,16 +126,6 @@ export interface VoiceState {
   busy: string[]
 }
 
-/** A full-text search hit over the whole history. */
-export interface SearchHit {
-  day: string
-  kind: 'entry' | 'note' | 'plan' | 'task'
-  ref: string
-  at: Ms
-  /** The matching text with «highlights». */
-  snippet: string
-}
-
 export interface DayData {
   /** YYYY-MM-DD in local time. */
   day: string
@@ -162,8 +138,6 @@ export interface DayData {
   pulse?: Array<[number, number, number, number]>
   /** The automatic lunch block was handled today (its id, or "manual" when the user had one) — never twice. */
   autoLunch?: string
-  /** The plan of the day. */
-  plan?: PlanBlock[]
   /** Outlook meetings whose block the user deleted — not brought back by the sync. */
   outlookDismissed?: string[]
   /** «Моя работа»: the tasks taken for the day (Jira and own), in the user's order. */
@@ -202,14 +176,12 @@ export interface IslandPrefs {
 
 /** What the interface shows (Настройки → Интерфейс). */
 export interface UiPrefs {
-  /** Mini island: call name, date, typing combo, activity wave, block chips, totals line, work-day bar. */
-  pill: { app: boolean; date: boolean; combo: boolean; wave: boolean; chips: boolean; stats: boolean; dayBar: boolean; plan: boolean }
+  /** Mini island: call name, date, typing combo, activity wave, block chips, totals line. */
+  pill: { app: boolean; date: boolean; combo: boolean; wave: boolean; chips: boolean; stats: boolean }
   /** The island stuck to a screen edge (slim): the orb, the day's time, the countdown to the next Outlook meeting, the wave. */
   dock: { orb: boolean; time: boolean; next: boolean; wave: boolean }
   /** Island: date, activity wave, totals under the timeline. */
-  island: { date: boolean; wave: boolean; totals: boolean; plan: boolean }
-  /** Main window: every counter in the day header (else the main three), "План дня". */
-  main: { allStats: boolean; plan: boolean }
+  island: { date: boolean; wave: boolean; totals: boolean }
   /**
    * The main timeline following the time: on/off; how often it moves (s); where "now" stands (px from the
    * left); after a manual move it comes back in idleSec; the scale — kept as it is or a set span (min).
@@ -224,7 +196,6 @@ export interface UiPrefs {
   menu: { order: string[]; hidden: string[]; tools: string[] }
 }
 export type UiPrefsPatch = { [K in keyof UiPrefs]?: Partial<UiPrefs[K]> }
-
 
 export interface Settings {
   schedule: WorkSchedule
@@ -291,17 +262,6 @@ export interface Selection {
   start: Ms
   /** undefined → follows "now" */
   end?: Ms
-}
-
-/** One day in the history calendar. */
-export interface DaySummary {
-  day: string
-  pcOnMs: number
-  labelledMs: number
-  firstStart?: Ms
-  lastEnd?: Ms
-  entries: number
-  byKind: Record<string, number>
 }
 
 export interface DayStateMessage {

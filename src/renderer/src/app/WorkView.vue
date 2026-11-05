@@ -72,6 +72,6 @@ watch(
     <WorkList v-else-if="tab === 'list'" class="wbody tw:flex-1 tw:[&&]:min-h-0" @open-day="open" />
     <TaskList v-else-if="tab === 'jira'" class="wbody tw:flex-1 tw:min-h-0" @settings="emit('settings')" @open-day="(d) => open(d)" />
     <TaskCalendar v-else-if="tab === 'calendar'" class="wbody tw:flex-1 tw:min-h-0" fill :work-days="settings.schedule.workDays" @open-day="(d) => open(d)" />
-    <ReportsView v-else class="wbody rep-in tw:flex-1 tw:[&&]:min-h-0" @go="(_v, d, id) => d && open(d, id)" />
+    <ReportsView v-else class="wbody rep-in tw:flex-1 tw:[&&]:min-h-0" @go="(d, id) => open(d, id)" />
   </div>
 </template>

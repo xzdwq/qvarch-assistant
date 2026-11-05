@@ -5,7 +5,6 @@ import { computed, ref, watch } from 'vue'
 import { formatDuration, joinTitle } from '@shared/timeline'
 import type { Entry, Ms, Note } from '@shared/types'
 import { kindLabel } from '../lib/palette'
-import LabelInput, { type Recent } from './LabelInput.vue'
 import TaskPicker from './TaskPicker.vue'
 import DictateButton from './DictateButton.vue'
 import Icon from './Icon.vue'
@@ -38,16 +37,11 @@ export type AddPrefs = AddPlacement
 const props = defineProps<{
   day: string
   entry: Draft
-  recent: Recent[]
   now?: Ms
   entries: Entry[]
   notes: Note[]
   /** Shown for a new block without a range picked on the timeline. */
   add?: AddPrefs
-  /** A moment was clicked on the timeline ("от курсора" is possible). */
-  hasCursor?: boolean
-  /** A plain multi-line field (Enter — a new line, the height can be pulled) instead of the one-line input. */
-  textarea?: boolean
   /** Saved only by the button (a modal form) — no autosave. */
   manual?: boolean
 }>()
@@ -74,18 +68,16 @@ const { save, copySource, copiedTo, onCopied, remove } = actions
 const rootEl = ref<HTMLElement>()
 const { saveState, flush, onFocusOut, close } = useEntryAutosave(props, emit, form, reminder, actions, rootEl)
 
-const labelInput = ref<InstanceType<typeof LabelInput>>()
 const quickEl = ref<InstanceType<typeof QuickField>>()
 const area = ref<HTMLTextAreaElement>()
 defineExpose({
-  focus: () => (isNew.value ? quickEl.value?.focus() : props.textarea ? area.value?.focus() : labelInput.value?.focus()),
+  focus: () => (isNew.value ? quickEl.value?.focus() : area.value?.focus()),
   /** "Continue that topic": take kind and text of another entry. */
   copyFrom: (e: Pick<Entry, 'kind' | 'label' | 'description'>) => {
     kind.value = e.kind
     label.value = joinTitle(e.label, e.description)
     copied.value = `${kindLabel(e.kind)} · ${e.label}`
-    if (props.textarea) area.value?.focus()
-    else labelInput.value?.focus()
+    area.value?.focus()
   },
 })
 
@@ -147,14 +139,6 @@ watch(
       <TimeRange boxed :start="start" :end="effectiveEnd" :live-start="startsNow" :live-end="followsNow" @change="setRange" />
     </div>
     <div v-if="add && !readonly" class="presets tw:flex tw:items-center tw:flex-wrap tw:gap-2 tw:-mt-4">
-      <button
-        class="pill tw:inline-flex tw:items-center tw:gap-3 tw:py-3 tw:px-8 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-[12px] tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:text-accent-fg"
-        :title="add.from === 'now' ? 'От текущего момента' : 'От курсора на таймлайне'"
-        :disabled="!hasCursor && add.from === 'now'"
-        @click="setAdd({ from: add.from === 'now' ? 'cursor' : 'now' })"
-      >
-        <Icon :name="add.from === 'now' ? 'clock' : 'pin'" :size="12" />{{ add.from === 'now' ? (now ? 'сейчас' : '09:00') : 'курсор' }}
-      </button>
       <OffsetField :model-value="add.back ? -add.min : add.min" @update:model-value="(v) => setAdd({ back: v < 0, min: Math.abs(v) })" />
     </div>
 
@@ -181,15 +165,15 @@ watch(
       ref="quickEl"
       v-model="label"
       :day="date"
-      :enter-newline="textarea"
-      :rows="textarea ? 3 : 1"
+      enter-newline
+      :rows="3"
       @submit="save()"
       @kind="(k) => (kind = k)"
       @task="addTask"
       @parsed="(p) => (parsed = p)"
     />
     <textarea
-      v-else-if="textarea"
+      v-else
       ref="area"
       v-model="label"
       class="ta tw:box-border tw:w-full tw:min-h-64 tw:max-h-420 tw:py-8 tw:px-10 tw:rounded-[4px] tw:border tw:border-border tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:font-[inherit] tw:[&&]:text-[13px] tw:[&&]:leading-[1.45] tw:resize-y tw:outline-none tw:focus:border-accent"
@@ -198,16 +182,6 @@ watch(
       title="Первая строка"
       @keydown.ctrl.enter.prevent="save()"
     ></textarea>
-    <LabelInput
-      v-else
-      ref="labelInput"
-      v-model="label"
-      multiline
-      placeholder="Что делали? Shift+Enter — описание"
-      :recent="recent"
-      @submit="save()"
-      @pick="(s) => s.kind && (kind = s.kind)"
-    />
 
     <!-- everything else — one row of equal small square buttons; their choices open as lists (the card never jumps) -->
     <div class="bar tw:flex tw:items-center tw:flex-wrap tw:gap-6">

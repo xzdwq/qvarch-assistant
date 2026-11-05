@@ -4,7 +4,7 @@ import { jsonClone } from '../domain/values'
 import { errorText, runApi } from './runApi'
 import { followEmits } from './runEmits'
 import { PassEnv, type RunEnv } from './runEnv'
-import { itemError, itemIsSoft, itemName, libsOf, loopHasPw, runItemsIn, type RunItem } from './runItems'
+import { itemError, itemIsSoft, itemName, libsOf, loopGoesSerial, runItemsIn, type RunItem } from './runItems'
 import { noteRun, saveRunsSoon } from './runStore'
 import type { LoopRun, PassRun } from './runTypes'
 
@@ -62,8 +62,8 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
   listenToPasses()
   const n = noteRun(env.notePath)
   const items = runItemsIn(noteText, loop)
-  // (a Playwright block's files are the block's own — anywhere in the loop: such a loop goes pass by pass)
-  const serial = loop.info.parallel <= 1 || loopHasPw(noteText, loop)
+  // (a block whose files are its own — anywhere in the loop: such a loop goes pass by pass)
+  const serial = loop.info.parallel <= 1 || loopGoesSerial(noteText, loop)
   env.loops[loop.key] = { state: 'run', at: Date.now(), passes: [] }
   const lr = env.loops[loop.key]
   // seen on the note's blocks: the latest of a loop inside a loop too
@@ -94,7 +94,12 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
     for (const pe of passEnvs.values()) for (const x of items) stopChild(x, pe)
   }
   loopStops.set(runId, stop)
+  /** The passes going on, and what waits for them all to end. */
+  let going = 0
+  let allEnded: (() => void) | undefined
+  const passesEnded = () => (going ? new Promise<void>((done) => (allEnded = done)) : Promise.resolve())
   const handler: PassHandler = (pn, vars) => {
+    going++
     const pass: PassRun = { n: pn, vars, state: 'run', at: Date.now(), values: {}, runs: {}, loops: {} }
     // (in the order of their numbers — parallel ones may come in another)
     let at = lr.passes.length
@@ -131,6 +136,7 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
       p.error = error
       p.ms = performance.now() - t0
       passEnvs.delete(p.n)
+      if (--going === 0) allEnded?.()
       // the note's blocks show the latest pass (unless another one was picked to look at)
       if (lr.sel === undefined) showPass(env.notePath, lr, undefined)
       saveRunsSoon(env.notePath)
@@ -161,8 +167,9 @@ async function runLoopOnce(loop: LoopRange, env: RunEnv, noteText: string, runId
   }
   // (stopped / timed out — the passes going on are stopped too, and waited for a while)
   if (!res.ok) stop()
-  const until = Date.now() + PASS_WAIT_MS
-  while (lr.passes.some((p) => p.state === 'run') && Date.now() < until) await new Promise((r) => setTimeout(r, 50))
+  let giveUp: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([passesEnded(), new Promise<void>((done) => (giveUp = setTimeout(done, PASS_WAIT_MS)))])
+  clearTimeout(giveUp)
   for (const p of lr.passes) if (p.state === 'run') Object.assign(p, { state: 'error', error: 'Не дождались — остановлено' })
   const lost = await gather.end(res.emits, res.ok)
   if (lost && res.ok) res = { ...res, ok: false, error: lost }
@@ -187,7 +194,7 @@ function publishLoopResults(loop: LoopRange, env: RunEnv, items: RunItem[], lr: 
  * A pass picked to look at (none — the latest): the loop's blocks show its runs — and only its (a block that did not
  * run in it shows nothing, not another pass's result).
  */
-export function showPass(path: string, lr: LoopRun, index: number | undefined): void {
+function showPass(path: string, lr: LoopRun, index: number | undefined): void {
   const n = noteRun(path)
   const p = lr.passes[index ?? lr.passes.length - 1]
   if (!p) return

@@ -1,7 +1,7 @@
 import { shell, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import type { ApiEndpoint } from '../shared/apiMap'
-import type { Bookmark, BrowserApi, BrowserSettings, BrowserTab, CertInfo, DeviceMode, PasswordInfo, PwRecState, RecFull, RecItem, RecState, Visit } from '../shared/browser'
+import type { ApiMapHost, Bookmark, BrowserApi, BrowserSettings, BrowserTab, CertInfo, DeviceMode, PasswordInfo, PwAnswer, PwRecState, RecFull, RecItem, RecState, Visit } from '../shared/browser'
 import type { CheckProblem, CheckSettings, CheckState } from '../shared/check'
 import type { BrowserHook, HookHit, HookStatus } from '../shared/hooks'
 import { BrowserCore } from './browser/browserCore'
@@ -9,7 +9,7 @@ import type { Tab } from './browser/tab'
 import { chooseMenu, folderMenu } from './browser/nativeMenus'
 import { clearSiteData, readLocalStorage } from './browser/pageTools'
 import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
-import { lookAtTab } from './browser/pageLook'
+import { lookAtTab, takeLookReply } from './browser/pageLook'
 import { pageLookText } from '../shared/browser/pageLook'
 import { sameAddress } from '../shared/browser/scenarioAddress'
 import { newBookmarksOnly, type ImportSource } from '../shared/browser/browserImport'
@@ -43,6 +43,10 @@ export class Browser extends BrowserCore implements BrowserApi {
     if (!t) throw new Error('Во встроенном браузере нет открытой страницы — дай адрес (url)')
     return pageLookText(await lookAtTab(t, t.t.loading))
   }
+  /** A page's answer to a look. */
+  lookReply(from: WebContents, id: unknown, look: unknown): void {
+    takeLookReply(from, id, look)
+  }
 
   // ---------- a scenario run in the Браузер ----------
   /** Each note block's tab to run in (owner → tab id): kept for its next run. */
@@ -63,6 +67,11 @@ export class Browser extends BrowserCore implements BrowserApi {
     else if (!url && !t.view.webContents.getURL()) void t.view.webContents.loadURL('about:blank').catch(() => undefined)
     this.emit('activate', { id: t.t.id })
     return t
+  }
+  /** A tab closed: no block runs in it any more (its next run takes another). */
+  override close(id: string): void {
+    super.close(id)
+    for (const [owner, tabId] of this.runTabs) if (tabId === id) this.runTabs.delete(owner)
   }
   /** A tab's device mode told to its page again (a run's window size undone over it). */
   deviceAgain(t: Tab): void {
@@ -215,7 +224,7 @@ export class Browser extends BrowserCore implements BrowserApi {
   passwords(): PasswordInfo[] {
     return this.passwordVault.passwords()
   }
-  pwAnswer(askId: string, answer: 'save' | 'no' | 'never'): void {
+  pwAnswer(askId: string, answer: PwAnswer): void {
     this.passwordVault.answer(askId, answer)
   }
   pwReveal(id: string): string {
@@ -311,7 +320,7 @@ export class Browser extends BrowserCore implements BrowserApi {
   checkShot(tabId: string): Promise<Uint8Array | undefined> {
     return this.checkTabs.shot(tabId)
   }
-  apiMapHosts(): Array<{ host: string; endpoints: number; calls: number; last: number }> {
+  apiMapHosts(): ApiMapHost[] {
     return this.checkTabs.apiMap.hosts()
   }
   apiMapList(host?: string): ApiEndpoint[] {

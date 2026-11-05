@@ -33,6 +33,11 @@ export class VaultWatcher {
         clearTimeout(this.timer)
         this.timer = setTimeout(() => this.flush(), 250)
       })
+      // the vault's folder gone or its drive lost: watching stops (an unheard 'error' would take main down)
+      this.watcher.on('error', (e) => {
+        console.error('[vault] watching stopped', e)
+        this.stop()
+      })
     } catch {
       // no watching on this system — the tree refreshes on our own actions only
     }
@@ -49,6 +54,8 @@ export class VaultWatcher {
     if (paths.length) this.onChange(paths)
   }
   stop(): void {
+    clearTimeout(this.timer)
     this.watcher?.close()
+    this.watcher = undefined
   }
 }

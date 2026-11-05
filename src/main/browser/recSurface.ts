@@ -32,7 +32,7 @@ export function tabSurface(host: BrowserHost, tabId: string): RecSurface {
       const t = tab()
       if (!t) return
       try {
-        void host.cdp.use(t, 'pw').sendCommand('Network.enable', { maxPostDataSize: 4 * 1024 * 1024 }).catch(() => undefined)
+        void host.cdp.networkOn(t, 'pw', { maxPostDataSize: 4 * 1024 * 1024 }).catch(() => undefined)
         off = host.cdp.listen('pw', (x, method, p) => x.t.id === tabId && fn(method, p))
       } catch {
         // the page's DevTools hold the protocol: no binding, the run finds the request by the file's content

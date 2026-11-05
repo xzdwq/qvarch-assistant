@@ -4,6 +4,7 @@ import { EditorView, Decoration, keymap, placeholder, WidgetType, type Decoratio
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { REGEX_LANG_INFO, REGEX_LANGS, REGEX_SUPERSEDED, regexCode, runRegex, type RxResult } from '../../lib/regexRun'
+import { useFlash } from '../../lib/useFlash'
 import Icon from '../Icon.vue'
 
 /**
@@ -170,11 +171,10 @@ function goMatch(i: number): void {
 }
 
 const code = computed(() => REGEX_LANGS.map((l) => ({ l, title: REGEX_LANG_INFO[l].title, code: regexCode(src.value, flags.value, l) })))
-const copied = ref('')
+const { shown: copied, flash } = useFlash<string>(1200)
 async function copy(t: string, what: string): Promise<void> {
   await navigator.clipboard.writeText(t)
-  copied.value = what
-  setTimeout(() => copied.value === what && (copied.value = ''), 1200)
+  flash(what)
 }
 const show = (s?: string) => (s === undefined ? '—' : s === '' ? '«пусто»' : s.length > 200 ? s.slice(0, 200) + '…' : s)
 const CHEAT: Array<[string, string]> = [

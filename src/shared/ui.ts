@@ -4,10 +4,9 @@ import type { UiPrefs, UiPrefsPatch } from './types'
 
 /** Everything is shown by default; the user hides what they do not need (nothing is lost — only hidden). */
 export const DEFAULT_UI: UiPrefs = {
-  pill: { app: true, date: true, combo: true, wave: true, chips: true, stats: true, dayBar: true, plan: false },
+  pill: { app: true, date: true, combo: true, wave: true, chips: true, stats: true },
   dock: { orb: true, time: true, next: true, wave: false },
-  island: { date: true, wave: true, totals: true, plan: false },
-  main: { allStats: false, plan: true },
+  island: { date: true, wave: true, totals: true },
   timeline: { follow: false, stepSec: 60, leftPx: 200, idleSec: 10, zoom: 'keep', spanMin: 240, countdown: 'any' },
   theme: DEFAULT_THEME,
   menu: { order: [], hidden: [], tools: [...DEFAULT_IN_TOOLS] },
@@ -25,7 +24,6 @@ export function mergeUi(base: UiPrefs, patch?: UiPrefsPatch): UiPrefs {
     pill: only(DEFAULT_UI.pill, { ...base.pill, ...patch?.pill }),
     dock: only(DEFAULT_UI.dock, { ...base.dock, ...patch?.dock }),
     island: only(DEFAULT_UI.island, { ...base.island, ...patch?.island }),
-    main: only(DEFAULT_UI.main, { ...base.main, ...patch?.main }),
     timeline: clampTimeline({ ...DEFAULT_UI.timeline, ...base.timeline, ...patch?.timeline }),
     theme: cleanTheme({ ...base.theme, ...patch?.theme }),
     menu: cleanMenu({ ...DEFAULT_UI.menu, ...base.menu, ...patch?.menu }),

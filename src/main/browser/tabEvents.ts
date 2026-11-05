@@ -1,6 +1,6 @@
 import { clipboard, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import type { NavAction } from '../../shared/browser'
 import type { Hooks } from '../hooks'
-import { SOURCE_SCHEME } from '../viewSource'
 import type { BrowserStore } from './browserStore'
 import type { CheckTabs } from './checkTabs'
 import type { DockedDevTools } from './dockedDevTools'
@@ -17,7 +17,7 @@ export interface TabEventsHost extends BrowserHost {
   readonly scenario: ScenarioRecorder
   readonly store: BrowserStore
   readonly devTools: DockedDevTools
-  nav(id: string, action: 'back' | 'fwd' | 'reload' | 'hard' | 'stop' | 'devtools'): void
+  nav(id: string, action: NavAction): void
   zoom(id: string, percent: number): void
   savePage(id: string): Promise<void>
   viewSource(id: string): void
@@ -70,7 +70,8 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     sync()
   })
   wc.on('will-navigate', (e) => {
-    if (e.url.startsWith('file:') && !wc.getURL().startsWith('file:') && !e.url.startsWith(SOURCE_SCHEME)) {
+    // a local file linked from a site: a tab of its own (the site's page stays)
+    if (e.url.startsWith('file:') && !wc.getURL().startsWith('file:')) {
       e.preventDefault()
       b.create(e.url, t.id)
     }

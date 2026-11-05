@@ -1,11 +1,11 @@
 import { nextTick, ref, watch } from 'vue'
 import type { VaultHit } from '@shared/vault'
-import { docs, saveAll } from '@nb/workspace/noteDocs'
-import { curPane, layout, openFile } from '@nb/workspace/paneLayout'
-import type { NoteEditors } from './noteEditors'
+import { saveAll } from '@nb/workspace/noteDocs'
+import { askPlace } from '@nb/workspace/noteGoto'
+import { layout, openFile } from '@nb/workspace/paneLayout'
 
 /** Search through all notes (unsaved typing too): the query kept while the side shows the files, a hit opened at its line. */
-export function useVaultSearch(editors: NoteEditors) {
+export function useVaultSearch() {
   const q = ref('')
   const hits = ref<VaultHit[]>([])
   const searching = ref(false)
@@ -13,14 +13,21 @@ export function useVaultSearch(editors: NoteEditors) {
   let input: HTMLInputElement | null = null
   const setSearchInput = (el: unknown) => (input = (el as HTMLInputElement | null) ?? null)
   let timer: ReturnType<typeof setTimeout> | undefined
+  /** The last search asked: a slower answer to an older query never replaces a newer one. */
+  let asked = 0
   watch(q, (v) => {
     clearTimeout(timer)
     timer = setTimeout(async () => {
+      const mine = ++asked
       searching.value = true
-      // unsaved typing is searched too
-      await saveAll()
-      hits.value = await window.qa.vaultSearch(v)
-      searching.value = false
+      try {
+        // unsaved typing is searched too
+        await saveAll()
+        const found = await window.qa.vaultSearch(v)
+        if (mine === asked) hits.value = found
+      } finally {
+        if (mine === asked) searching.value = false
+      }
     }, 160)
   })
   /** The side shows the search (its field focused, its text chosen) or the files. */
@@ -32,20 +39,10 @@ export function useVaultSearch(editors: NoteEditors) {
       input?.select()
     }
   }
-  /** A hit opened — at its line once the editor is there (the note may still be loading). */
-  async function openHit(h: VaultHit, line?: VaultHit['lines'][number]): Promise<void> {
+  /** A hit opened at its line: the note's editor shows it once its text is in (the note may still be loading). */
+  function openHit(h: VaultHit, line?: VaultHit['lines'][number]): void {
+    askPlace(h.path, line && { line: line.line, col: line.col, len: line.len })
     openFile(h.path)
-    const p = curPane()
-    if (!line) return
-    for (let i = 0; i < 40; i++) {
-      await nextTick()
-      const ed = editors.of(p)
-      if (ed && docs.get(h.path)?.loaded) {
-        ed.reveal(line.line, line.col, line.len)
-        return
-      }
-      await new Promise((r) => setTimeout(r, 25))
-    }
   }
   return { q, hits, searching, setSearchInput, toggleSearch, openHit }
 }

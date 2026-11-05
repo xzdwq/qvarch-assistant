@@ -1,5 +1,5 @@
 import type { HttpFolder, HttpKV } from '../../shared/http'
-import type { TermConfig } from '../../shared/terminal'
+import { cleanTermConfigPatch } from '../../shared/terminal'
 import { contentsOf, type AppContext } from '../app/appContext'
 import { ClipLog } from '../clipLog'
 import { HttpClient } from '../http'
@@ -38,7 +38,7 @@ function registerTerminal(app: AppContext): void {
   handle('termList', () => term.list())
   handle('termDirs', (_e, p) => term.dirs(String(p)))
   handle('termConfig', () => term.cfg)
-  handle('termSetConfig', (_e, c) => term.setConfig(JSON.parse(JSON.stringify(c)) as Partial<TermConfig>))
+  handle('termSetConfig', (_e, c) => term.setConfig(cleanTermConfigPatch(c)))
   handle('termRender', (_e, id, cmd, answers) => term.render(String(id), String(cmd), answers ?? {}))
 }
 
@@ -50,7 +50,11 @@ function registerHttp(app: AppContext): void {
   handle('httpRun', (_e, req, doc, runId) => http.run(req, doc, typeof runId === 'string' ? runId : undefined))
   handle('httpChain', (_e, ids, doc, stopOn, runId) => http.chain(Array.isArray(ids) ? ids.map(String) : [], doc, String(stopOn ?? ''), String(runId), (i, id, out) => app.emitToMain('onHttpChain', runId, i, id, out)))
   handle('httpAbort', (_e, runId) => http.abort(String(runId)))
-  handle('httpImport', (_e, folder, vars) => http.import(JSON.parse(JSON.stringify(folder)) as HttpFolder, JSON.parse(JSON.stringify(vars)) as HttpKV[]))
+  // (the IPC gave a copy already; a folder that is not one is refused)
+  handle('httpImport', (_e, folder, vars) => {
+    if (!folder || typeof folder !== 'object' || (folder as HttpFolder).type !== 'folder') throw new Error('Импорт: ожидается папка запросов')
+    http.import(folder as HttpFolder, Array.isArray(vars) ? (vars as HttpKV[]) : [])
+  })
 }
 
 /** The clipboard's history (texts copied anywhere; kept encrypted, the last 1000). */

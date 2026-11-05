@@ -1,6 +1,8 @@
-import { ref, watch, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import type { ReportFilter } from '@shared/report'
-import { readJson, todayDay, writeJson, type ReportState } from './useReportsState'
+import { readStored, storedRef } from '../../lib/storedRef'
+import { todayKey } from '../../lib/today'
+import type { ReportState } from './useReportsState'
 
 /** A report view saved under a name (a picked range keeps its dates, a unit period follows today). */
 export interface SavedView {
@@ -12,8 +14,7 @@ const copyFilter = (f: ReportFilter) => JSON.parse(JSON.stringify(f)) as ReportF
 
 /** Saved report views and whether their list (a popover by its button) is open. */
 export function useSavedViews(st: Ref<ReportState>) {
-  const saved = ref<SavedView[]>(readJson<SavedView[]>(SAVED_KEY, []))
-  watch(saved, (v) => writeJson(SAVED_KEY, v), { deep: true })
+  const saved = storedRef<SavedView[]>(SAVED_KEY, readStored(SAVED_KEY, [] as SavedView[], (v): v is SavedView[] => Array.isArray(v)), true)
   const open = ref(false)
   const newName = ref('')
 
@@ -27,7 +28,7 @@ export function useSavedViews(st: Ref<ReportState>) {
     newName.value = ''
   }
   function applyView(v: SavedView): void {
-    st.value = { ...st.value, ...v.state, filter: copyFilter(v.state.filter), anchor: todayDay() }
+    st.value = { ...st.value, ...v.state, filter: copyFilter(v.state.filter), anchor: todayKey.value }
     open.value = false
   }
 

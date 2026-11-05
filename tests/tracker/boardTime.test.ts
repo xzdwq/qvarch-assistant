@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { dayStart, HOUR, MINUTE } from '../../src/shared/timeline'
-import type { Entry, PlanBlock } from '../../src/shared/types'
+import type { Entry } from '../../src/shared/types'
 import { dayCell, dayFeed, periodTotals, placeQuick, plural, timelineWindow, unionWithin, type BoardDay } from '../../src/shared/tracker/boardTime'
 
 const DAY = '2026-10-14'
 const at = (h: number, day = DAY) => dayStart(day) + h * HOUR
 let n = 0
 const entry = (a: number, b: number, extra: Partial<Entry> = {}): Entry => ({ id: `e${n++}`, start: at(a), end: at(b), kind: 'task', label: 'x', source: 'manual', ...extra })
-const board = (entries: Entry[], plan: PlanBlock[] = []): BoardDay => ({ day: DAY, entries, notes: [], plan })
+const board = (entries: Entry[]): BoardDay => ({ day: DAY, entries, notes: [] })
 
 describe('board time sums', () => {
   it('union cut to a window, overlaps once', () => {
@@ -41,9 +41,8 @@ describe('board day feed', () => {
     expect(rows.map((r) => r.t)).toEqual(['e', 'gap', 'now', 'gap'])
     expect(rows[3]).toMatchObject({ start: at(13), end: at(18), plan: true })
   })
-  it('short gaps are skipped; done plans are not shown', () => {
-    const plan: PlanBlock = { id: 'p', start: at(12), end: at(13), kind: 'task', label: 'p', doneEntryId: 'x' } as PlanBlock
-    const rows = dayFeed(board([entry(9, 10), entry(10 + 10 / 60, 18)], [plan]), { now: at(20, '2026-10-20'), today: '2026-10-20', work, order: 'asc' })
+  it('short gaps are skipped', () => {
+    const rows = dayFeed(board([entry(9, 10), entry(10 + 10 / 60, 18)]), { now: at(20, '2026-10-20'), today: '2026-10-20', work, order: 'asc' })
     expect(rows.map((r) => r.t)).toEqual(['e', 'e'])
   })
 })

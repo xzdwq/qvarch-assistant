@@ -38,7 +38,7 @@ interface BlockActionDef {
   /** Under a line, in red. */
   danger?: boolean
 }
-export const BLOCK_ACTIONS: Record<BlockActionId, BlockActionDef> = {
+const BLOCK_ACTIONS: Record<BlockActionId, BlockActionDef> = {
   run: { icon: 'play', label: (c) => (c.count > 1 ? `Выполнить по порядку: ${blocksWord(c.runnable)}` : 'Выполнить'), shows: (c) => c.runnable > 0 },
   copy: { icon: 'copy', label: (c) => (c.count > 1 ? `Копировать ${blocksWord(c.count)}` : 'Копировать'), shows: () => true },
   dup: { icon: 'layers', label: (c) => (c.count > 1 ? `Дублировать ${blocksWord(c.count)}` : 'Дублировать'), shows: () => true },

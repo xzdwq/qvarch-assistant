@@ -5,7 +5,7 @@ import { islandAxis } from '../../src/shared/tracker/islandAxis'
 import { cutPlace, dayListRows, quickEventPlace } from '../../src/shared/tracker/islandCut'
 import { dockLength, ISLAND_DRAWERS, islandSize, NOTE_H, NOTE_W, pillHeight, shellTopAt } from '../../src/shared/tracker/islandGeometry'
 import { chipText, countdownText, islandDateText, kindTotals, orbMood, PILL_MAX, PILL_MIN, pillItemKey, pillItems, pillWidthFor, taskTotals } from '../../src/shared/tracker/islandPill'
-import type { Entry, Note, PlanBlock } from '../../src/shared/types'
+import type { Entry, Note } from '../../src/shared/types'
 
 const M = 60_000
 const H = 60 * M
@@ -30,23 +30,16 @@ describe('pill width and chips', () => {
     expect(chipText(30_000, 0)).toBe('<1м')
     expect(chipText(30 * M, 0)).toBe('30м')
   })
-  it('keeps the latest items that fit, in time order, notes and the plan included', () => {
+  it('keeps the latest items that fit, in time order, notes included', () => {
     const entries = Array.from({ length: 40 }, (_, i) => ({ ...entry(`e${i}`, '09:00', '09:10'), start: t('09:00') + i * 10 * M, end: t('09:00') + (i + 1) * 10 * M }))
-    const shown = pillItems({ entries, notes: [note('n1', '15:25')], plan: [], showPlan: false, now: t('16:00'), workMs: 8 * H })
+    const shown = pillItems({ entries, notes: [note('n1', '15:25')], workMs: 8 * H })
     expect(shown.length).toBeLessThan(41)
     expect(shown[shown.length - 1].type).toBe('entry')
     expect(shown.some((it) => it.type === 'note')).toBe(true)
     expect(shown.map((it) => it.t)).toEqual([...shown.map((it) => it.t)].sort((a, b) => a - b))
   })
-  it('adds what is still planned only when switched on, starting at now', () => {
-    const plan: PlanBlock[] = [{ id: 'p1', start: t('10:00'), end: t('12:00'), kind: 'task', label: 'p' }, { id: 'p0', start: t('08:00'), end: t('09:00'), kind: 'task', label: 'old' }]
-    const on = pillItems({ entries: [], notes: [], plan, showPlan: true, now: t('11:00'), workMs: 8 * H })
-    expect(on.map(pillItemKey)).toEqual(['pp1'])
-    expect(on[0].t).toBe(t('11:00'))
-    expect(pillItems({ entries: [], notes: [], plan, showPlan: false, now: t('11:00'), workMs: 8 * H })).toEqual([])
-  })
   it('skips empty notes and keys items by type', () => {
-    const shown = pillItems({ entries: [entry('a', '09:00', '10:00')], notes: [note('n', '09:30', ' '), note('m', '09:40')], plan: [], showPlan: false, now: t('12:00'), workMs: 0 })
+    const shown = pillItems({ entries: [entry('a', '09:00', '10:00')], notes: [note('n', '09:30', ' '), note('m', '09:40')], workMs: 0 })
     expect(shown.map(pillItemKey)).toEqual(['a', 'nm'])
   })
 })

@@ -113,7 +113,7 @@ export function useBoardDoc(o: BoardDocOptions) {
 export type BoardDoc = ReturnType<typeof useBoardDoc>
 
 /** The status line: strokes, texts (and shapes), pictures. */
-export function countsLine(items: BoardItem[]): string {
+function countsLine(items: BoardItem[]): string {
   const ink = items.filter((i) => i.type === 'ink').length
   const pics = items.filter((i) => i.type === 'image').length
   const text = items.length - ink - pics

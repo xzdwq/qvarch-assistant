@@ -8,6 +8,7 @@ import { blockRunKey } from '@nb/domain/noteBlocks'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { besidePlace } from '@renderer/lib/usePopover'
+import { useFlash } from '@renderer/lib/useFlash'
 import { blockActionsFor, type BlockActionId, type BlockCaps } from '@nb/commands/blockActions'
 import type { BlockSelectHow } from '@nb/editor/components/blockSelection'
 import BlockOrigin from './BlockOrigin.vue'
@@ -63,7 +64,7 @@ const viewProps = computed(() =>
     onDropAudio: props.onDropAudio,
   }),
 )
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1400)
 /** The handle's menu: a popover by the handle it opened from. */
 const menu = ref(false)
 const menuAnchor = ref<HTMLElement>()
@@ -108,9 +109,7 @@ function act(id: BlockActionId): void {
   menu.value = false
   if (id === 'raw') return void (raw.value = props.src)
   props.onAction(id)
-  if (id !== 'copy') return
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1400)
+  if (id === 'copy') flash(true)
 }
 /** A runnable block in a loop: its kind and key (the bar of its passes under it). */
 const inLoop = computed(() => {

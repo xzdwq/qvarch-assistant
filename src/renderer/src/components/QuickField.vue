@@ -20,7 +20,7 @@ export interface QuickParsed {
   /** The task named in the text, with its summary when it is known. */
   task?: TaskRef
 }
-const props = withDefaults(defineProps<{ modelValue: string; day: string; placeholder?: string; enterNewline?: boolean; rows?: number; dropUp?: boolean }>(), { rows: 1 })
+const props = withDefaults(defineProps<{ modelValue: string; day: string; placeholder?: string; enterNewline?: boolean; rows?: number }>(), { rows: 1 })
 const emit = defineEmits<{
   'update:modelValue': [text: string]
   submit: []

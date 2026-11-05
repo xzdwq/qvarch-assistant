@@ -103,7 +103,7 @@ export function runRegex(source: string, flags: string, text: string, opts: { re
 }
 
 /** The capturing groups of a pattern in order: their names ('' — a numbered one). */
-export function groupNames(source: string): string[] {
+function groupNames(source: string): string[] {
   const out: string[] = []
   let cls = false
   for (let i = 0; i < source.length; i++) {

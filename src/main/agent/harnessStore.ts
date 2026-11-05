@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import type { HarnessSettings } from '../../shared/agent/harness/constants'
 import type { HarnessRun } from '../../shared/agent/harness/model'
@@ -61,15 +61,10 @@ export class HarnessStore {
   }
 
   private read(): { settings?: unknown; rooms?: Record<string, unknown>; runs?: unknown[] } {
-    if (!existsSync(this.file)) return {}
-    try {
-      return JSON.parse(readFileSync(this.file, 'utf8')) as { settings?: unknown; rooms?: Record<string, unknown>; runs?: unknown[] }
-    } catch {
-      return {}
-    }
+    // (a broken file is set aside, not overwritten)
+    return readJsonFile<{ settings?: unknown; rooms?: Record<string, unknown>; runs?: unknown[] }>(this.file) ?? {}
   }
   private write(v: HarnessState): void {
-    writeFileSync(`${this.file}.tmp`, JSON.stringify({ v: 1, ...v }))
-    renameSync(`${this.file}.tmp`, this.file)
+    writeJsonAtomic(this.file, { v: 1, ...v })
   }
 }

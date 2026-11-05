@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron'
 import { ProcessSupervisor } from '../process/processSupervisor'
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { statSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import { DB_DEFAULTS, connName, sqlTemplates, type DbConn, type DbSchema, type ErSchema, type SqlMode, type SqlRun, type SqlRunOut, type SqlTemplate } from '../../shared/sql'
 import type { Vault } from '../vault'
@@ -40,18 +41,12 @@ export class SqlStore {
   }
 
   private read(): Stored[] {
-    if (!existsSync(this.file)) return []
-    try {
-      const d = JSON.parse(readFileSync(this.file, 'utf8')) as { conns?: Stored[] }
-      return Array.isArray(d.conns) ? d.conns : []
-    } catch {
-      return []
-    }
+    // (a broken file is set aside: the connections in it are not overwritten by the next save)
+    const d = readJsonFile<{ conns?: Stored[] }>(this.file)
+    return Array.isArray(d?.conns) ? d.conns : []
   }
   private write(list: Stored[]): void {
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify({ v: 1, conns: list }, null, 2))
-    renameSync(tmp, this.file)
+    writeJsonAtomic(this.file, { v: 1, conns: list }, 2)
   }
   private password(s: Stored): string | undefined {
     if (s.enc)

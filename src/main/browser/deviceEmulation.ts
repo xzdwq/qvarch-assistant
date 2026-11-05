@@ -69,7 +69,7 @@ export class DeviceEmulation {
       await d.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: dv.mobile, configuration: dv.mobile ? 'mobile' : 'desktop' })
       await d.sendCommand('Emulation.setUserAgentOverride', this.host.uaOverride(dv.ua || undefined, dv.mobile))
     } catch (e) {
-      this.host.emit('recError', `Режим устройства не включился: ${e instanceof Error ? e.message : String(e)}`)
+      this.host.emit('deviceError', `Режим устройства не включился: ${e instanceof Error ? e.message : String(e)}`)
       t.t.device = undefined
       this.host.cdp.drop(t, 'device')
       this.host.changed()

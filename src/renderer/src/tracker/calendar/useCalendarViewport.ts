@@ -9,7 +9,7 @@ const MAX_SPAN = 366
 const STORE_KEY = 'qa.tcal2'
 
 /** Zoom presets of the toolbar. */
-export const ZOOM_PRESETS: Array<{ label: string; days: number }> = [
+const ZOOM_PRESETS: Array<{ label: string; days: number }> = [
   { label: 'День', days: 1 },
   { label: 'Неделя', days: 7 },
   { label: 'Месяц', days: 31 },

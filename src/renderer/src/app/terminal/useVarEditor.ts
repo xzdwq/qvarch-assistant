@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue'
 import { BUILTIN_VARS, presetId, type TermVar } from '@shared/terminal'
 import { insertOf, upsertById, varNameError } from '@shared/terminalEdit'
 import { remoteError } from '../../../../shared/remoteError'
+import { useFlash } from '../../lib/useFlash'
 import type { TermConfigState } from './useTermConfig'
 import type { TermShells } from './useTermShells'
 import type { SideTab } from './useTermViewPrefs'
@@ -57,11 +58,10 @@ export function useVarEditor({ cfg, saveCfg }: TermConfigState, shells: TermShel
   }
 
   /** The variable whose insert was just copied (a moment's «скопировано»). */
-  const copied = ref('')
+  const { shown: copied, flash } = useFlash<string>(1200)
   function copyVar(name: string): void {
     void navigator.clipboard.writeText(insertOf(name))
-    copied.value = name
-    setTimeout(() => copied.value === name && (copied.value = ''), 1200)
+    flash(name)
   }
   return { values, loadValues, vEdit, vNew, vErr, addVar, editVar, saveVar, removeVar, copied, copyVar }
 }

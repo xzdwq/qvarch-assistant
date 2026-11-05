@@ -48,6 +48,11 @@ export async function claudeCodeTurn(t: ClaudeTurn): Promise<string> {
     ...(t.model ? ['--model', t.model] : []),
   ]
   return new Promise<string>((ok, fail) => {
+    // stopped before it started: nothing is run (an 'abort' already gone would never reach the listener)
+    if (t.signal.aborted) {
+      rmSync(dir, { recursive: true, force: true })
+      return fail(new Error('Остановлено'))
+    }
     const shell = viaShell(bin)
     const p = spawn(commandOf(bin), shell ? args.map(arg) : args, { shell, windowsHide: true, cwd: t.project || dir, env: bin.env })
     let out = ''
@@ -60,7 +65,8 @@ export async function claudeCodeTurn(t: ClaudeTurn): Promise<string> {
       else ok(text ?? '')
     }
     const stop = () => killTree(p.pid)
-    const timer = setTimeout(stop, TURN_MS)
+    let timedOut = false
+    const timer = setTimeout(() => ((timedOut = true), stop()), TURN_MS)
     t.signal.addEventListener('abort', stop)
     p.stdout.on('data', (d: Buffer) => (out += d.toString('utf8')))
     p.stderr.on('data', (d: Buffer) => (err += d.toString('utf8')))
@@ -68,6 +74,7 @@ export async function claudeCodeTurn(t: ClaudeTurn): Promise<string> {
     p.on('error', (e) => (void findClaude(true), done(new Error(e.message))))
     p.on('close', (code) => {
       if (t.signal.aborted) return done(new Error('Остановлено'))
+      if (timedOut) return done(new Error(`Claude Code не ответил за ${Math.round(TURN_MS / 60_000)} мин — ход остановлен`))
       const r = lastJson(out)
       if (r && typeof r.result === 'string') return r.is_error ? done(new Error(r.result || 'Claude Code: ошибка')) : done(undefined, r.result)
       done(new Error((err.trim() || out.trim() || `Claude Code завершился с кодом ${code}`).slice(0, 600)))

@@ -23,18 +23,6 @@ export const NODE_KIND: Record<GraphNodeKind, { title: string; weight: number }>
   jira: { title: 'задача', weight: 1.5 },
   event: { title: 'событие', weight: 1 },
 }
-/** Each edge: its words (a note … it). */
-export const EDGE_TYPE: Record<GraphEdgeType, { title: string }> = {
-  links: { title: 'ссылается' },
-  tagged: { title: 'с тегом' },
-  has: { title: 'с разделом' },
-  reads: { title: 'читает' },
-  writes: { title: 'пишет в' },
-  defines: { title: 'описывает' },
-  calls: { title: 'вызывает' },
-  opens: { title: 'открывает' },
-  mentions: { title: 'упоминает' },
-}
 
 /** One edge of a note: how (`type`), to what (`kind` + its key `name`), shown as `label`, at its line (0-based). */
 export interface GraphEdge {

@@ -4,7 +4,7 @@
  * aside, a WITH's names are not tables, `FROM func(` is not one, a schema is dropped from the key.
  */
 
-export const SQL_USES = ['reads', 'writes', 'defines'] as const
+const SQL_USES = ['reads', 'writes', 'defines'] as const
 export type SqlUse = (typeof SQL_USES)[number]
 
 export interface SqlTable {

@@ -1,5 +1,6 @@
 import { blockReport, loopReport, noteRun, type RunItem } from '@nb/engine'
-import { doc } from './notebook'
+import { loadedRuns } from '@nb/engine/runStore'
+import { loadedDoc } from '@nb/workspace/noteDocs'
 
 /**
  * Running a note's blocks from outside its screen (the AI's tools, the harness's checks): its text as the editor holds
@@ -7,17 +8,9 @@ import { doc } from './notebook'
  */
 
 /** A note's text as the editor holds it (typed, not saved yet — too). */
-export async function noteTextOf(path: string): Promise<string> {
-  const d = doc(path)
-  for (let i = 0; i < 200 && !d.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-  if (d.error) throw new Error(`Заметка «${path}»: ${d.error}`)
-  return d.text
-}
+export const noteTextOf = async (path: string): Promise<string> => (await loadedDoc(path)).text
 /** The note's earlier results read (a run adds to them). */
-export async function noteRunsLoaded(path: string): Promise<void> {
-  const n = noteRun(path)
-  for (let i = 0; i < 200 && !n.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-}
+export const noteRunsLoaded = async (path: string): Promise<void> => void (await loadedRuns(path))
 /** An item's last run as a report (a loop — its passes; in a loop's pass, its block — the pass shown). */
 export function itemReport(path: string, item: RunItem): string {
   switch (item.kind) {

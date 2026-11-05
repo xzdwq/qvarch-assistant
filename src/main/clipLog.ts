@@ -1,5 +1,6 @@
 import { clipboard, safeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeAtomic } from './fsAtomic'
 import { join } from 'node:path'
 import type { ClipState } from '../shared/clip'
 
@@ -48,9 +49,12 @@ export class ClipLog {
     const write = () => {
       // never as plain text: no encryption — nothing kept on disk
       if (!safeStorage.isEncryptionAvailable()) return
-      const tmp = `${this.file}.tmp`
-      writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(this.state)))
-      renameSync(tmp, this.file)
+      try {
+        writeAtomic(this.file, safeStorage.encryptString(JSON.stringify(this.state)))
+      } catch (e) {
+        // (from a timer: a refusal of the disk is logged, the next change writes again)
+        console.error('[clipLog] save failed', e)
+      }
     }
     if (now) write()
     else this.saveTimer = setTimeout(write, 1500)

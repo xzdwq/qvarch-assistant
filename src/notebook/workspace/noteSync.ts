@@ -1,6 +1,6 @@
 import { remapPath } from '@shared/vault'
 import { remapHistory } from '@renderer/lib/boardHistory'
-import { doc, docs, save, setText } from './noteDocs'
+import { doc, docs, moveDoc, save, setText } from './noteDocs'
 import { closeEverywhere, layout } from './paneLayout'
 import { cancelTranscribe } from './transcription'
 import { loadTree } from './vaultTreeStore'
@@ -13,12 +13,9 @@ import { loadTree } from './vaultTreeStore'
 /** Renamed / moved: open documents and tabs (and a board's undo history) follow. */
 export function remap(from: string, to: string): void {
   remapHistory(from, to)
-  for (const [k, d] of [...docs]) {
+  for (const k of [...docs.keys()]) {
     const n = remapPath(k, from, to)
-    if (n !== k) {
-      docs.delete(k)
-      docs.set(n, d)
-    }
+    if (n !== k) moveDoc(k, n)
   }
   for (const p of layout.panes) {
     for (const t of p.tabs) t.path = remapPath(t.path, from, to)
@@ -35,6 +32,8 @@ export async function onOutside(paths: string[]): Promise<void> {
     if (!d || d.text !== d.saved) continue
     try {
       const t = await window.qa.vaultRead(p)
+      // typed while it was read — the typing wins (it is saved over the outside change)
+      if (d.text !== d.saved) continue
       d.text = t
       d.saved = t
     } catch {

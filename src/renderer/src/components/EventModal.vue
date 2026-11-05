@@ -14,7 +14,7 @@ const emit = defineEmits<{ close: []; created: [day: string, entry: Entry] }>()
 
 const today = todayKey
 const { data, now } = useDay(today)
-const add = ref<AddPrefs>({ from: 'now', back: false, min: 30 })
+const add = ref<AddPrefs>({ back: false, min: 30 })
 const draft = computed<Draft>(() => {
   const b = Math.floor(now.value / MINUTE) * MINUTE
   const span = add.value.min * MINUTE
@@ -39,12 +39,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <EntryEditor
           :day="today"
           :entry="draft"
-          :recent="[]"
           :now="now"
           :entries="data.entries"
           :notes="data.notes"
           :add="add"
-          textarea
           @update:add="(a) => (add = a)"
           @saved="(e, d) => (emit('created', d, e), emit('close'))"
         />

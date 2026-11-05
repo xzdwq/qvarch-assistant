@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { usePopover, type Placement } from '../lib/usePopover'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { dayKey } from '@shared/timeline'
+import { todayKey } from '../lib/today'
 import Icon from './Icon.vue'
 
 /**
@@ -10,8 +12,8 @@ import Icon from './Icon.vue'
 const props = defineProps<{ from: string; to: string; anchor: HTMLElement | undefined; max?: number }>()
 const emit = defineEmits<{ apply: [from: string, to: string]; close: [] }>()
 
-const iso = (d: Date) => d.toLocaleDateString('sv-SE')
-const today = iso(new Date())
+const iso = (d: Date) => dayKey(d.getTime())
+const today = todayKey.value
 const a = ref<string>(props.from)
 const b = ref<string | undefined>(props.to)
 const hover = ref<string>()

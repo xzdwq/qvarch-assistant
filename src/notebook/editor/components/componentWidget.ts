@@ -23,13 +23,20 @@ import { dragComponent } from './dragDrop'
  * included): its first field takes the focus once it is drawn.
  */
 export const focusNewBlock = StateEffect.define<number>({ map: (pos, ch) => ch.mapPos(pos) })
+/** The new component took the focus: nothing pending any more (a redraw of it later does not take it again). */
+const focusTaken = StateEffect.define<null>()
 const pendingFocusField = StateField.define<{ pos: number }>({
   create: () => ({ pos: -1 }),
   update: (v, tr) => {
-    for (const e of tr.effects) if (e.is(focusNewBlock)) return { pos: e.value }
+    for (const e of tr.effects) {
+      if (e.is(focusNewBlock)) return { pos: e.value }
+      if (e.is(focusTaken)) return { pos: -1 }
+    }
     return v.pos < 0 || !tr.docChanged ? v : { pos: tr.changes.mapPos(v.pos) }
   },
 })
+/** The pending focus taken by the component drawn now — told to the state once the drawing is over (no dispatch while it goes). */
+const takeFocus = (view: EditorView) => queueMicrotask(() => view.dispatch({ effects: focusTaken.of(null) }))
 
 /** The host's props kept by a widget's DOM (updated in place when the text changes / the blocks chosen change). */
 type HostState = { kind: BlockKind; src: string; headings: Heading[]; line: number; loop?: string; selected: boolean }
@@ -54,7 +61,7 @@ class ComponentWidget extends WidgetType {
     setLoopBand(dom, r.band)
     const pending = view.state.field(pendingFocusField)
     const autofocus = pending.pos >= 0 && pending.pos === r.from
-    if (autofocus) pending.pos = -1
+    if (autofocus) takeFocus(view)
     const host = view.state.facet(editorHost)
     const hp = reactive({
       kind: r.kind,

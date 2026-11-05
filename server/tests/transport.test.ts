@@ -26,7 +26,7 @@ async function until(cond: () => boolean | Promise<boolean>, ms = 5000): Promise
 let pg: Awaited<ReturnType<typeof startPg>>
 let db: Db
 let server: Transport
-const config = (over: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, databaseUrl: '', accessCode: '', version: 'test', ...over })
+const config = (over: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, databaseUrl: '', accessCode: '', version: 'test', mediaSecret: '', ...over })
 
 beforeAll(async () => {
   pg = await startPg()
@@ -90,6 +90,7 @@ describe('the transport server', () => {
     // the first chat with Гамма: their main one
     const first = await a.client.request('chat.create', { title: 'Первый' })
     expect(await a.client.request('chat.main', { device: bId })).toBeNull()
+    await expect(a.client.request('chat.add', { room: first.id, device: bId, as: 'другое' as never })).rejects.toMatchObject({ code: 'bad' })
     const main = await a.client.request('chat.add', { room: first.id, device: bId, as: 'branch' })
     expect(main).toMatchObject({ id: first.id, title: 'Первый' })
     expect(main.parent).toBeUndefined()

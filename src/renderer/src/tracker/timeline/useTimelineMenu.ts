@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { MINUTE } from '@shared/timeline'
 import type { DayData, Ms, Selection } from '@shared/types'
 import { gapAround } from '@shared/tracker/timelineRanges'
@@ -13,7 +13,6 @@ export interface TimelineMenuProps {
 
 /** The menu's events. */
 export interface TimelineMenuEmit {
-  (e: 'planChanged'): void
   (e: 'selection', sel: Selection | null, commit: boolean): void
   (e: 'deleteEntry', id: string): void
   (e: 'merge', ids: string[]): void
@@ -21,7 +20,7 @@ export interface TimelineMenuEmit {
   (e: 'cutAs', kind: string): void
 }
 
-/** The open right-click menu: where, what for (blocks, one block, an Outlook meeting, a plan block or the marker). */
+/** The open right-click menu: where, what for (blocks, one block, an Outlook meeting or the marker). */
 export interface TimelineMenuState {
   x: number
   y: number
@@ -30,31 +29,14 @@ export interface TimelineMenuState {
   title: string
   current?: string
   outlook?: boolean
-  planId?: string
 }
 
 /**
  * The timeline's right-click menu: on several Ctrl-selected blocks — merge / kind / delete; on a block — its kind
- * (an Outlook meeting only opens); on a plan block — done / delete; on empty space — the free gap gets selected
- * and cut as the kind picked.
+ * (an Outlook meeting only opens); on empty space — the free gap gets selected and cut as the kind picked.
  */
 export function useTimelineMenu(props: TimelineMenuProps, scale: TimelineScale, multi: Ref<Set<string>>, emit: TimelineMenuEmit) {
   const menu = ref<TimelineMenuState>()
-  /** Plan blocks already turned into real ones (their block still exists). */
-  const planDoneIds = computed(() => new Set((props.data.plan ?? []).filter((p) => p.doneEntryId && props.data.entries.some((e) => e.id === p.doneEntryId)).map((p) => p.id)))
-
-  function openPlanMenu(e: MouseEvent, p: { id: string }): void {
-    menu.value = { x: e.clientX, y: e.clientY, title: 'План', planId: p.id }
-  }
-
-  async function planMenu(action: 'done' | 'delete'): Promise<void> {
-    const id = menu.value?.planId
-    menu.value = undefined
-    if (!id) return
-    if (action === 'done') await window.qa.planDone(props.data.day, id)
-    else await window.qa.deletePlan(props.data.day, id)
-    emit('planChanged')
-  }
 
   function onContext(e: MouseEvent): void {
     const at = { x: e.clientX, y: e.clientY }
@@ -103,5 +85,5 @@ export function useTimelineMenu(props: TimelineMenuProps, scale: TimelineScale, 
     else emit('cutAs', kind)
   }
 
-  return { menu, planDoneIds, openPlanMenu, planMenu, onContext, onMenuDelete, onMenuMerge, onMenuPick }
+  return { menu, onContext, onMenuDelete, onMenuMerge, onMenuPick }
 }

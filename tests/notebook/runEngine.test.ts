@@ -3,6 +3,7 @@ import type { QaApi } from '../../src/shared/api'
 import type { HttpRunResult } from '../../src/shared/http'
 import * as engine from '../../src/notebook/engine'
 import { setRunApi } from '../../src/notebook/engine/runApi'
+import { loadedNoteRun } from '../../src/notebook/engine/runStore'
 import { parseInfo } from '../../src/notebook/domain/blockInfo'
 import type { EmitBatch, EmitMode } from '../../src/notebook/domain/emits'
 
@@ -157,6 +158,53 @@ describe('run engine: «Выполнить всё»', () => {
     await E.runAll(path, note(fence('ts lib', 'const f = 1'), fence('js run', 'return f')))
     expect(Object.keys(E.noteRun(path).runs)).toEqual(['_code4'])
     expect(qa.runCode.mock.calls[0][1].libs).toEqual([{ code: 'const f = 1', ts: true }])
+  })
+  it('two runs of one note go one after another; «Стоп» stops the one going and the one waiting', async () => {
+    const path = fresh()
+    await loaded(path)
+    const order: string[] = []
+    let release!: () => void
+    h.runCode = async (_id, job) => {
+      order.push(`start ${job.code}`)
+      if (job.code === 'first') await new Promise<void>((r) => (release = r))
+      order.push(`end ${job.code}`)
+      return { ok: true, value: 1, hasValue: true, logs: [], ms: 1 }
+    }
+    const a = E.runAll(path, note(fence('js run name=a', 'first'), fence('js run name=b', 'after')))
+    const b = E.runAll(path, note(fence('js run name=c', 'second')))
+    await new Promise((r) => setTimeout(r, 5))
+    expect(order).toEqual(['start first'])
+    release()
+    await Promise.all([a, b])
+    expect(order).toEqual(['start first', 'end first', 'start after', 'end after', 'start second', 'end second'])
+    // stopped while the first one waits: the queued one never starts
+    order.length = 0
+    const c = E.runAll(path, note(fence('js run name=a', 'first'), fence('js run name=b', 'after')))
+    const d = E.runAll(path, note(fence('js run name=c', 'second')))
+    await new Promise((r) => setTimeout(r, 5))
+    E.stopRunAll(path)
+    release()
+    await Promise.all([c, d])
+    expect(order).toEqual(['start first', 'end first'])
+    expect(E.noteRun(path).all?.error).toBe('Остановлено')
+  })
+  it('a note renamed while its run goes: the result lands in the renamed note (nothing left under the old name)', async () => {
+    const from = fresh()
+    const to = fresh()
+    await loaded(from)
+    let release!: () => void
+    h.runCode = async () => {
+      await new Promise<void>((r) => (release = r))
+      return { ok: true, value: 5, hasValue: true, logs: [], ms: 1 }
+    }
+    const run = E.runAll(from, note(fence('js run name=x', 'slow')))
+    await new Promise((r) => setTimeout(r, 5))
+    E.moveRuns(from, to)
+    release()
+    await run
+    expect(E.noteRun(to).runs.x.state).toBe('ok')
+    expect(E.noteRun(to).ctx.x.value).toBe(5)
+    expect(loadedNoteRun(from)).toBeUndefined()
   })
 })
 

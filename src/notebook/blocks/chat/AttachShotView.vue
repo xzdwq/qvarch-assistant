@@ -3,10 +3,11 @@
  * A block a message carries: a query (its text, its rows as a table), a request's answer, code / a browser test as
  * written (copied as a block — pasted into a note, it runs there) with code's value, a value.
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { ChatAttach } from '@shared/transport/chat'
 import type { CodeShot, HttpShot, SqlShot, ValueShot } from '@nb/engine/chatAttach'
 import Icon from '@renderer/components/Icon.vue'
+import { useFlash } from '@renderer/lib/useFlash'
 
 const props = defineProps<{ a: ChatAttach }>()
 const ICONS: Record<ChatAttach['kind'], string> = { sql: 'database', http: 'api', code: 'code', value: 'braces', pw: 'globe', image: 'image', file: 'file', trace: 'sparkles', voice: 'mic' }
@@ -20,12 +21,11 @@ const value = computed(() => (written.value ? written.value.value : props.a.kind
 const hasValue = computed(() => (written.value ? !!written.value.hasValue : true))
 const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2))
 const cell = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1500)
 async function copyBlock(): Promise<void> {
   if (!written.value) return
   await navigator.clipboard.writeText(written.value.source)
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
+  flash(true)
 }
 </script>
 

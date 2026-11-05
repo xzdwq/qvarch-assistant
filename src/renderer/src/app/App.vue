@@ -58,48 +58,35 @@ startSharedFolders()
 startSharedRunResults()
 startSharedAttachments()
 
-import { openHttp, openPlace, orderedViews, setMenu, showForRun, view, VIEWS, type View } from '../lib/views'
+import { dayFocus, openDay, openHttp, openPlace, orderedViews, setMenu, showForRun, view, VIEWS } from '../lib/views'
 import { placeOf } from '@shared/places'
-/** A day (and a block on it) to show — Моя работа opens it. */
-const focus = ref<{ day: string; entryId?: string; n: number }>()
-let focusN = 0
-const openDay = (day: string, entryId?: string) => {
-  focus.value = { day: day || todayKey.value, entryId, n: ++focusN }
-  view.value = 'work'
-}
 const settings = ref<PublicSettings>()
 const menuOpen = ref(false)
 
 /** Opened from somewhere (a reminder, the island) — that section, not the menu's first one. */
 let navigated = false
-void window.qa.getSettings().then((s) => {
-  settings.value = s
-  setMenu(s.ui.menu)
-  setKinds(s.kinds)
-  setAttrDefs(s.attributes)
-  // the window opens on the first section of the user's menu
-  if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'work'
-})
-
 function onSettings(s: PublicSettings): void {
   settings.value = s
   setMenu(s.ui.menu)
   setKinds(s.kinds)
   setAttrDefs(s.attributes)
 }
+void window.qa.getSettings().then((s) => {
+  onSettings(s)
+  // the window opens on the first section of the user's menu
+  if (!navigated) view.value = orderedViews(s.ui.menu).find((v) => !s.ui.menu.hidden.includes(v.id))?.id ?? 'work'
+})
 
 const offSettings = window.qa.onSettings(onSettings)
 onBeforeUnmount(offSettings)
-/** The old Таймлайн section's names: a day / a block asked for there is shown in Моя работа. */
-const DAY_VIEW_ALIASES: ReadonlySet<string> = new Set(['day', 'log'])
 const off = window.qa.onNavigate((nav) => {
   navigated = true
   if (nav.run) return showForRun(nav.run)
-  const v = nav.view as string | undefined
-  if (!v || DAY_VIEW_ALIASES.has(v)) {
+  // no section or «day»: a day / a block is shown in Моя работа
+  if (!nav.view || nav.view === 'day') {
     if (nav.day || nav.entryId) openDay(nav.day ?? todayKey.value, nav.entryId)
     else view.value = 'work'
-  } else openPlace(v)
+  } else openPlace(nav.view)
 })
 onBeforeUnmount(off)
 
@@ -129,21 +116,6 @@ watch(
     if (placeOf(m, 'notebook') === 'tools') nbOpened.value = false
   },
 )
-/** The sections one may ask for from inside another (the scenario recording: to the Браузер and back to the note). */
-const VIEWS_ASKED_FROM_INSIDE: ReadonlySet<string> = new Set<View>(['notebook', 'browser', 'work'])
-const onView = (e: Event) => {
-  const v = (e as CustomEvent<string>).detail
-  if (VIEWS_ASKED_FROM_INSIDE.has(v)) openPlace(v)
-}
-onMounted(() => window.addEventListener('qa:view', onView))
-onBeforeUnmount(() => window.removeEventListener('qa:view', onView))
-// an event opened in Моя работа (from a note's event card)
-const onOpenDay = (e: Event) => {
-  const d = (e as CustomEvent<{ day: string; id?: string }>).detail
-  if (d?.day) openDay(d.day, d.id)
-}
-onMounted(() => window.addEventListener('qa:open-day', onOpenDay))
-onBeforeUnmount(() => window.removeEventListener('qa:open-day', onOpenDay))
 // Ctrl+` — the terminal's panel, from any section
 let stopTermKey: (() => void) | undefined
 onMounted(() => (stopTermKey = listenTermKey()))
@@ -236,7 +208,7 @@ function setAppZoom(z: number): void {
     <main class="tw:flex-1 tw:overflow-auto tw:min-h-0 tw:[&:has(>_.tools)]:not-[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.termslot)]:overflow-hidden" v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
         <div v-if="view === 'notebook'" class="termslot tw:hidden"></div>
-        <WorkView v-else-if="view === 'work'" :settings="settings" :focus="focus" @settings="view = 'settings'" />
+        <WorkView v-else-if="view === 'work'" :settings="settings" :focus="dayFocus" @settings="view = 'settings'" />
         <ReleaseView v-else-if="view === 'release'" />
         <HttpView v-else-if="view === 'http'" />
         <div v-else-if="view === 'terminal'" class="termslot tw:hidden"></div>

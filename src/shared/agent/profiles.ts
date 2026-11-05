@@ -34,10 +34,6 @@ export const INSTRUCTIONS_MAX = 8000
 export const defaultAgentName = (owner: string): string => `ИИ · ${owner.trim() || 'я'}`.slice(0, AGENT_NAME_MAX)
 /** An agent as a chat knows it: its owner's device and its profile (one id everywhere). */
 export const agentIdOf = (device: string, profile: string): string => `${device}:${profile}`
-/** The owner's device of an agent's id. */
-export const ownerOfAgent = (agentId: string): string => agentId.slice(0, agentId.lastIndexOf(':'))
-/** The profile's id of an agent's id. */
-export const profileOfAgent = (agentId: string): string => agentId.slice(agentId.lastIndexOf(':') + 1)
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '')
 const cleanPath = (v: unknown): string => str(v, 500).replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')

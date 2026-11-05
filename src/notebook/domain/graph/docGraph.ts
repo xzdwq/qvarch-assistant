@@ -14,7 +14,7 @@ import { tagsIn } from './tags'
  */
 
 /** At most this many edges a note (a generated note of thousands of requests — its first ones). */
-export const EDGES_MAX = 2000
+const EDGES_MAX = 2000
 
 /** The kinds of fenced text that say what they work with, and which languages are each. */
 const FENCE_FAMILIES = ['sql', 'http', 'code', 'browser'] as const

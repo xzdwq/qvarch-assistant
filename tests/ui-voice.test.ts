@@ -29,10 +29,16 @@ describe('mergeUi', () => {
     expect(r.pill.wave).toBe(false)
     expect(r.pill.chips).toBe(true)
     expect(r.island).toEqual(DEFAULT_UI.island)
-    expect(r.main).toEqual(DEFAULT_UI.main)
   })
   it('does not mutate the base', () => {
-    mergeUi(DEFAULT_UI, { main: { plan: false } })
-    expect(DEFAULT_UI.main.plan).toBe(true)
+    mergeUi(DEFAULT_UI, { island: { totals: false } })
+    expect(DEFAULT_UI.island.totals).toBe(true)
+  })
+  it('drops settings of removed features (groups and keys)', () => {
+    const old = { ...DEFAULT_UI, main: { allStats: true }, pill: { ...DEFAULT_UI.pill, dayBar: false, plan: true } } as typeof DEFAULT_UI
+    const r = mergeUi(old, { island: { plan: true } as Partial<typeof DEFAULT_UI.island> })
+    expect(r).not.toHaveProperty('main')
+    expect(r.pill).toEqual(DEFAULT_UI.pill)
+    expect(r.island).toEqual(DEFAULT_UI.island)
   })
 })

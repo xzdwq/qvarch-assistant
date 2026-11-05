@@ -44,6 +44,14 @@ describe('a shared note\'s run results', () => {
     expect(login.request.headers).toEqual([['Authorization', HIDDEN], ['Accept', '*/*']])
     expect(login.response.headers).toEqual([['Set-Cookie', HIDDEN], ['Content-Type', 'application/json']])
   })
+  it('a loop\'s passes and a published answer go out scrubbed too (any depth)', () => {
+    const n = note()
+    const run = n.runs.login
+    n.loops.pages = { state: 'ok', at: 20, value: { token: 't' }, passes: [{ n: 1, vars: { password: 'p' }, state: 'ok', at: 20, values: { login: { headers: { authorization: 'Bearer y' } } }, runs: { login: run } }] }
+    n.ctx.answer = { value: { status: 200, headers: { 'set-cookie': 'sid=1' }, body: { access_token: 'z' } }, at: 21, from: 'http', block: 'login' }
+    const sent = JSON.stringify(runEntries(n))
+    expect(sent).not.toMatch(/Bearer|"p"|sid=1|"z"|"t"/)
+  })
   it('an entry put in as given — someone else\'s marked with who ran it, one\'s own not; null — taken away', () => {
     const n = note()
     expect(putEntry(n, 'run:login', { state: 'ok', at: 30, table: { rows: [] } }, 'Бета')).toBe(true)

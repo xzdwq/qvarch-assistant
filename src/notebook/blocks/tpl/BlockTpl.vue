@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { interpolate } from '@nb/domain/values'
 import { blockRunKey } from '@nb/domain/noteBlocks'
 import { envAtLine, noteRun } from '@nb/engine'
-import { doc } from '@renderer/lib/notebook'
+import { doc } from '@nb/workspace/noteDocs'
 import { useFold } from '@renderer/lib/foldState'
 import { copyMd } from '@renderer/lib/copyMd'
+import { useFlash } from '@renderer/lib/useFlash'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
 import Markdown from '@renderer/components/Markdown.vue'
@@ -35,12 +36,11 @@ const sent = computed(() => noteRun(props.path).runs[key.value])
 const missingText = computed(() => missing.value.map((m) => `{{${m}}}`).join(', '))
 // (published under its name by the note itself, when whole — syncTemplates: the ones off screen too)
 const open = useFold(() => `${props.path}#${key.value}#result`, true)
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1500)
 async function copy(): Promise<void> {
   if (!filled.value) return
   await copyMd(filled.value.text)
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
+  flash(true)
 }
 </script>
 

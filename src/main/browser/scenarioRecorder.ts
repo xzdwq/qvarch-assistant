@@ -1,11 +1,17 @@
-import { ipcMain, webContents, type WebContents } from 'electron'
+import { webContents, type WebContents } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { apiPath } from '../../shared/apiMap'
 import { sameAddress } from '../../shared/browser/scenarioAddress'
 import type { BrowserTab, DeviceMode, PwRecState } from '../../shared/browser'
+import type { PageRecState } from '../../shared/browser/pageChannels'
+import { toPage } from '../ipc/browserPageIpc'
 import { guestSurface, tabSurface, type RecSurface } from './recSurface'
 import type { BrowserHost } from './tab'
+
+/** How long a stop waits for the page to write down the rest (it answers at once; a hung page does not). */
+const FLUSH_WAIT_MS = 800
 
 /** A JS string literal in single quotes (an address in a scenario's line). */
 const quoted = (x: string) => x.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
@@ -32,6 +38,8 @@ interface Recording {
  */
 export class ScenarioRecorder {
   private r?: Recording
+  /** A stop waiting for its page to write down the rest (the page answers this id). */
+  private flushing?: { wc: WebContents; id: string; done: () => void }
   /** Files picked while recording → kept with the notebook; their «Набор/файл» back (index.ts sets it). */
   onRecordFiles?: (paths: string[]) => string[]
 
@@ -39,22 +47,30 @@ export class ScenarioRecorder {
     private host: BrowserHost,
     /** The tab as a device (undefined — as itself). */
     private device: (id: string, d?: DeviceMode) => void,
-  ) {
-    // a page recorded in (each new one asks): recording or not, how many lines so far
-    ipcMain.handle('qa:pwrec-get', (e) => (this.recordsIn(e.sender) ? { on: true, count: this.r!.lines.length } : null))
-    ipcMain.on('qa:pwrec-act', (e, a: { code?: unknown; replace?: unknown; files?: { how?: unknown; loc?: unknown; paths?: unknown; where?: unknown; opener?: unknown } }) => {
-      const r = this.r
-      if (!r || r.where.contents() !== e.sender || typeof a?.code !== 'string' || a.code.length > 2000) return
-      // files picked / dropped: kept with the notebook, the line names them there (a replay needs no window of the system's)
-      if (a.files && typeof a.files.loc === 'string' && Array.isArray(a.files.paths) && a.files.paths.length) return this.onFiles(r, a.files as { how?: unknown; loc: string; paths: unknown[]; where?: unknown; opener?: unknown })
-      // a double click: the clicks it was made of go
-      if (typeof a.replace === 'string') for (let i = 0; i < 2 && bare(r.lines[r.lines.length - 1]) === bare(a.replace); i++) r.lines.pop()
-      // the same line twice in a row (a click caught twice) — once
-      else if (bare(r.lines[r.lines.length - 1]) === bare(a.code)) return
-      r.lines.push(a.code)
-      r.at ??= e.sender.getURL()
-      this.told()
-    })
+  ) {}
+  /** A page recorded in (each new one asks): recording or not, how many lines so far. */
+  pageState(wc: WebContents): PageRecState | null {
+    return this.recordsIn(wc) ? { on: true, count: this.r!.lines.length } : null
+  }
+  /** A line from the page recorded in (the page's word: checked). */
+  onPageAct(wc: WebContents, raw: unknown): void {
+    const a = raw as { code?: unknown; replace?: unknown; files?: { how?: unknown; loc?: unknown; paths?: unknown; where?: unknown; opener?: unknown } } | undefined
+    const r = this.r
+    if (!r || r.where.contents() !== wc || typeof a?.code !== 'string' || a.code.length > 2000) return
+    // files picked / dropped: kept with the notebook, the line names them there (a replay needs no window of the system's)
+    if (a.files && typeof a.files.loc === 'string' && Array.isArray(a.files.paths) && a.files.paths.length) return this.onFiles(r, a.files as { how?: unknown; loc: string; paths: unknown[]; where?: unknown; opener?: unknown })
+    // a double click: the clicks it was made of go
+    if (typeof a.replace === 'string') for (let i = 0; i < 2 && bare(r.lines[r.lines.length - 1]) === bare(a.replace); i++) r.lines.pop()
+    // the same line twice in a row (a click caught twice) — once
+    else if (bare(r.lines[r.lines.length - 1]) === bare(a.code)) return
+    r.lines.push(a.code)
+    r.at ??= wc.getURL()
+    this.told()
+  }
+  /** The page wrote down what it had not yet («Стоп»): the stop waiting for it goes on. */
+  onFlushed(wc: WebContents, ackId: unknown): void {
+    const f = this.flushing
+    if (f && f.wc === wc && f.id === ackId) f.done()
   }
   private told(): void {
     this.host.emit('pwrec', this.state())
@@ -120,7 +136,7 @@ export class ScenarioRecorder {
   }
   /** A page of the place recorded in is ready: it is told to record (each page of it records, not only the first). */
   onDomReady(wc: WebContents): void {
-    if (this.recordsIn(wc)) wc.send('qa:pwrec', true)
+    if (this.recordsIn(wc)) toPage(wc, 'rec', true)
   }
   /** Recording in a tab of the Браузер: at this address (a tab there already — as it is now, else a new one). */
   start(note: string, key: string, url: string, screen?: { w: number; h: number }): BrowserTab {
@@ -145,7 +161,7 @@ export class ScenarioRecorder {
       rec.lines.unshift(`await qa.window({ width: ${w}, height: ${h}, dpr: 1 }) // шаг: Окно браузера ${w}×${h} (экран ${w} px)`)
     } else this.windowLine(rec, `масштаб при записи ${this.host.tabs.get(t.id)?.t.zoom || 100}%`)
     // a page already loaded asks no more: it is told
-    if (open && !open.asleep && !open.view.webContents.isLoading()) open.view.webContents.send('qa:pwrec', true)
+    if (open && !open.asleep && !open.view.webContents.isLoading()) toPage(open.view.webContents, 'rec', true)
     this.told()
     return t
   }
@@ -161,7 +177,7 @@ export class ScenarioRecorder {
     if (this.r) void this.stop(true)
     const rec = this.begin(note, key, url, guestSurface(g, String(name)))
     this.windowLine(rec, 'браузер в заметке')
-    if (!g.isLoading()) g.send('qa:pwrec', true)
+    if (!g.isLoading()) toPage(g, 'rec', true)
     this.told()
   }
   private begin(note: string, key: string, url: string, where: RecSurface): Recording {
@@ -190,19 +206,40 @@ export class ScenarioRecorder {
     const r = this.r
     if (!r || r.stopping) return undefined
     const wc = r.where.contents()
-    // the page writes down what it has not yet (typing, a click still being looked at) — a moment for it
+    // the page writes down what it has not yet (typing, a pick's check still due) and says so
     if (!cancel && wc) {
       r.stopping = true
-      wc.send('qa:pwrec-flush')
-      await new Promise((ok) => setTimeout(ok, 800))
+      await this.flushPage(wc)
     }
-    this.r = undefined
-    if (wc && !wc.isDestroyed()) wc.send('qa:pwrec', false)
-    r.where.end()
-    // the screen it was recorded for: the tab back to itself
-    if (r.device && r.where.tabId) this.device(r.where.tabId)
-    this.host.emit('pwrec', undefined)
+    // a new recording may have begun meanwhile (Stop, then Record at once): it is left alone
+    const superseded = this.r !== r
+    if (!superseded) this.r = undefined
+    const samePage = superseded && !!wc && this.r?.where.contents() === wc
+    if (!samePage) {
+      toPage(wc, 'rec', false)
+      r.where.end()
+      // the screen it was recorded for: the tab back to itself
+      if (r.device && r.where.tabId) this.device(r.where.tabId)
+    }
+    if (!superseded) this.host.emit('pwrec', undefined)
     return cancel ? undefined : { note: r.note, key: r.key, url: r.url, lines: r.lines }
+  }
+  /**
+   * The page told to write down the rest; done when it says so (its lines come before its answer — one channel
+   * order), or after FLUSH_WAIT_MS (a page hung, gone, or one whose preload does not answer).
+   */
+  private flushPage(wc: WebContents): Promise<void> {
+    return new Promise((ok) => {
+      const id = randomUUID()
+      const done = () => {
+        clearTimeout(limit)
+        if (this.flushing?.id === id) this.flushing = undefined
+        ok()
+      }
+      const limit = setTimeout(done, FLUSH_WAIT_MS)
+      this.flushing = { wc, id, done }
+      toPage(wc, 'recFlush', id)
+    })
   }
   /** An address typed in the recording tab: a line of its own. */
   onAddressTyped(tabId: string, url: string): void {

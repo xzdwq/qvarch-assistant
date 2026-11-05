@@ -1,6 +1,6 @@
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { browserId, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
+import { readJsonFile, writeJsonQuietly } from '../fsAtomic'
+import { browserId, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserEmit, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
 import type { Tab } from './tab'
 
 const MAX_HISTORY = 3000
@@ -17,6 +17,7 @@ function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
     ua: typeof st.ua === 'string' ? st.ua : DEFAULT_BROWSER_SETTINGS.ua,
     acceptBadCerts: typeof st.acceptBadCerts === 'boolean' ? st.acceptBadCerts : DEFAULT_BROWSER_SETTINGS.acceptBadCerts,
     sleepMin: typeof st.sleepMin === 'number' && st.sleepMin >= 0 ? Math.min(240, Math.round(st.sleepMin)) : DEFAULT_BROWSER_SETTINGS.sleepMin,
+    sitePermissions: typeof st.sitePermissions === 'boolean' ? st.sitePermissions : DEFAULT_BROWSER_SETTINGS.sitePermissions,
   }
 }
 
@@ -36,7 +37,7 @@ export class BrowserStore {
   constructor(
     root: string,
     private tabs: () => Iterable<Tab>,
-    private emit: (type: string, payload: unknown) => void,
+    private emit: BrowserEmit,
   ) {
     this.file = join(root, 'browser.json')
     this.visitsFile = join(root, 'browser-history.json')
@@ -46,38 +47,27 @@ export class BrowserStore {
     return this.data.settings
   }
   private read(): BrowserData {
-    try {
-      const d = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings> }>
-      return {
-        bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
-        history: Array.isArray(d.history) ? d.history : [],
-        settings: readSettings(d.settings ?? {}),
-      }
-    } catch {
-      return { bookmarks: [], history: [], settings: { ...DEFAULT_BROWSER_SETTINGS } }
+    // a broken file is set aside — the bookmarks in it are not overwritten by the first save
+    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings> }>>(this.file) ?? {}
+    return {
+      bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
+      history: Array.isArray(d.history) ? d.history : [],
+      settings: readSettings(d.settings ?? {}),
     }
   }
   save(): void {
     clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      const tmp = `${this.file}.tmp`
-      writeFileSync(tmp, JSON.stringify(this.data, null, 2))
-      renameSync(tmp, this.file)
-    }, 500)
+    this.saveTimer = setTimeout(() => writeJsonQuietly(this.file, this.data, 2), 500)
   }
   /** What waits to be written goes now (the app quits). */
   flush(): void {
-    try {
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer)
-        writeFileSync(this.file, JSON.stringify(this.data, null, 2))
-      }
-      if (this.visitsTimer && this.visitList) {
-        clearTimeout(this.visitsTimer)
-        writeFileSync(this.visitsFile, JSON.stringify({ visits: this.visitList }))
-      }
-    } catch {
-      // the disk refused — nothing more to do on the way out
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      writeJsonQuietly(this.file, this.data, 2)
+    }
+    if (this.visitsTimer && this.visitList) {
+      clearTimeout(this.visitsTimer)
+      writeJsonQuietly(this.visitsFile, { visits: this.visitList })
     }
   }
 
@@ -96,12 +86,8 @@ export class BrowserStore {
   private visitsAll(): Visit[] {
     if (this.visitList) return this.visitList
     let list: Visit[] | undefined
-    try {
-      const d = JSON.parse(readFileSync(this.visitsFile, 'utf8')) as { visits?: Visit[] }
-      if (Array.isArray(d.visits)) list = d.visits.filter((v) => v && typeof v.url === 'string' && typeof v.at === 'number')
-    } catch {
-      // none yet
-    }
+    const d = readJsonFile<{ visits?: Visit[] }>(this.visitsFile)
+    if (Array.isArray(d?.visits)) list = d.visits.filter((v) => v && typeof v.url === 'string' && typeof v.at === 'number')
     list ??= this.data.history.map((h) => ({ id: browserId(), url: h.url, title: h.title, at: h.last })).sort((a, b) => b.at - a.at)
     this.visitList = list
     this.trimVisits()
@@ -118,10 +104,7 @@ export class BrowserStore {
   private saveVisits(): void {
     clearTimeout(this.visitsTimer)
     this.visitsTimer = setTimeout(() => {
-      if (!this.visitList) return
-      const tmp = `${this.visitsFile}.tmp`
-      writeFileSync(tmp, JSON.stringify({ visits: this.visitList }))
-      renameSync(tmp, this.visitsFile)
+      if (this.visitList) writeJsonQuietly(this.visitsFile, { visits: this.visitList })
     }, 1500)
   }
   visits(): Visit[] {
@@ -156,7 +139,9 @@ export class BrowserStore {
     if (!/^https?:/i.test(url) || !this.data.settings.history) return
     const list = this.visitsAll()
     const last = tab.visit
-    if (fresh && !(last && last.url === url)) {
+    // a new opening of the page (not its title coming, not the same page told again)
+    const opened = fresh && !(last && last.url === url)
+    if (opened) {
       tab.visit = { id: browserId(), url, title, at: Date.now() }
       list.unshift(tab.visit)
       if (list.length > MAX_VISITS + 500) this.trimVisits()
@@ -169,7 +154,7 @@ export class BrowserStore {
     const i = h.findIndex((x) => x.url === url)
     if (i >= 0) {
       const [x] = h.splice(i, 1)
-      h.unshift({ ...x, title: title || x.title, last: Date.now(), count: x.count + (title === x.title ? 0 : 1) })
+      h.unshift({ ...x, title: title || x.title, last: Date.now(), count: x.count + (opened ? 1 : 0) })
     } else h.unshift({ url, title, last: Date.now(), count: 1 })
     if (h.length > MAX_HISTORY) h.length = MAX_HISTORY
     this.save()

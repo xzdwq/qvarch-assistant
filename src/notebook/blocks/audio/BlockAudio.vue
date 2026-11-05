@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { AUDIO_EMBED } from '@shared/vault'
-import { fixDuration, transcribing } from '@renderer/lib/notebook'
+import { fixDuration } from '@renderer/lib/recorder'
+import { transcribing } from '@nb/workspace/transcription'
 import { useMediaFile } from '@nb/ui/useMediaFile'
 import Icon from '@renderer/components/Icon.vue'
 import ThinkingOrb from '@renderer/components/ThinkingOrb.vue'

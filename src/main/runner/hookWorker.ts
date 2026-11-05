@@ -6,20 +6,23 @@ import { queryRegex, type HookSearch } from '../../shared/hooks'
  * being looked into at once (the search yields between pieces).
  */
 type Job = { type: 'search'; id: string; body: string; search: HookSearch; maxHits: number }
-type Msg = Job | { type: 'skip'; id: string }
+/** «skip» without an id — the answer being looked into now (the app's stop message names none). */
+type Msg = Job | { type: 'skip'; id?: string }
 
 const port = process.parentPort
 let skip: string | undefined
+let current: string | undefined
 const tick = () => new Promise<void>((r) => setImmediate(r))
 const CHUNK = 256 * 1024
 
 port.on('message', (e: { data: Msg }) => {
   const m = e.data
-  if (m.type === 'skip') skip = m.id
+  if (m.type === 'skip') skip = m.id ?? current
   else void search(m)
 })
 
 async function search(j: Job): Promise<void> {
+  current = j.id
   const re = queryRegex(j.search)
   if (typeof re === 'string') return void port.postMessage({ type: 'done', id: j.id, error: re })
   const body = j.body

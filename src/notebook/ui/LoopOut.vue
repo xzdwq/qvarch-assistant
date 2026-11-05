@@ -51,7 +51,7 @@ const eachList = computed(() => (mode.value === 'each' ? passes.value.slice(0, l
 <template>
   <div v-if="lr" class="lo tw:mt-4 tw:border tw:border-border tw:rounded-[8px] tw:bg-bg tw:contain-[inline-size] tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border">
     <div class="lo-bar tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:py-3 tw:px-6 tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border">
-      <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-if="tpl">
+      <template v-if="tpl">
         <button class="ib tw:inline-grid tw:flex-none tw:place-items-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :title="open ? 'Свернуть' : 'Показать'" @mousedown.prevent @click="open = !open"><Icon class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" name="chevronRight" :size="12" :style="open ? 'transform: rotate(90deg)' : ''" /></button>
         <b class="tt tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-text-2 tw:font-semibold">Тексты проходов</b>
       </template>
@@ -61,24 +61,24 @@ const eachList = computed(() => (mode.value === 'each' ? passes.value.slice(0, l
         <button class="tw:h-22 tw:py-0 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: out === 'acc' }" :title="tpl ? 'Все тексты одним — подряд, через пустую строку' : 'Все проходы одной таблицей: № прохода, его значения, результат'" @mousedown.prevent @click="onMode('acc')">Вместе</button>
         <button class="tw:h-22 tw:py-0 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: out === 'each' }" title="Результат каждого прохода отдельно, один под другим" @mousedown.prevent @click="onMode('each')">Каждый</button>
       </span>
-      <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-if="!mode && passes.length">
+      <template v-if="!mode && passes.length">
         <button class="ib tw:inline-grid tw:flex-none tw:place-items-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :disabled="cur <= 0" title="Предыдущий проход" @mousedown.prevent @click="go(-1)"><Icon class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" name="chevronLeft" :size="12" /></button>
         <span class="pn tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:min-w-0 tw:overflow-hidden tw:text-text-2 tw:font-data tw:text-ellipsis" :title="passes[cur] ? passTitle(passes[cur]) : ''">{{ passes[cur] ? passTitle(passes[cur]) : '' }} <span class="muted tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-muted">из {{ passes.length }}</span></span>
         <button class="ib tw:inline-grid tw:flex-none tw:place-items-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :disabled="cur >= passes.length - 1" title="Следующий проход" @mousedown.prevent @click="go(1)"><Icon class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" name="chevronRight" :size="12" /></button>
       </template>
       <span v-else class="muted tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-muted">{{ tpl ? '·' : 'проходов' }} {{ passes.length }}{{ lr.state === 'run' ? '…' : '' }}</span>
       <span class="grow tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:flex-1"></span>
-      <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-if="mode === 'acc'">
+      <template v-if="mode === 'acc'">
         <button v-if="tpl" class="ib tw:inline-grid tw:flex-none tw:place-items-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :disabled="!text" :title="copied ? 'Скопировано' : 'Копировать все тексты: с оформлением и как Markdown'" @mousedown.prevent @click="copyText"><Icon class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" :name="copied ? 'check' : 'copy'" :size="13" /></button>
-        <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-else>
+        <template v-else>
           <span v-if="grid.copied.value" class="muted tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-muted">скопировано</span>
           <span v-else-if="grid.selCount.value > 1" class="muted tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-muted">выделено {{ grid.selCount.value }}</span>
           <MenuButton class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" icon="download" title="Все проходы: скопировать или сохранить в Excel / CSV" :width="240" :items="grid.exportItems.value" />
         </template>
       </template>
     </div>
-    <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-if="mode === 'acc'">
-      <template class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-if="tpl"><Markdown v-if="open" class="lo-md tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:py-6 tw:px-12 tw:select-text" :text="text || '_Текстов пока нет_'" /></template>
+    <template v-if="mode === 'acc'">
+      <template v-if="tpl"><Markdown v-if="open" class="lo-md tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:py-6 tw:px-12 tw:select-text" :text="text || '_Текстов пока нет_'" /></template>
       <DataGrid class="tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border" v-else-if="acc && acc.rows.length" :grid="grid" />
       <p v-else class="muted pad tw:[.lo-bar+&]:border-t tw:[.lo-bar+&]:border-t-border tw:text-muted tw:my-6 tw:mx-10">Проходы ничего не дали.</p>
     </template>

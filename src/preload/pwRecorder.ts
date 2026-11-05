@@ -1,13 +1,15 @@
 /// <reference lib="dom" />
 import { ipcRenderer, webUtils } from 'electron'
 import { PAGE_MARK } from '../shared/browser/pageMarks'
+import { PAGE_CHANNELS, type PageRecState } from '../shared/browser/pageChannels'
+import { UI } from '../shared/browser/uiKits'
 import { CHECKABLE_INPUT_TYPES, TEXT_INPUT_TYPES, q, textOf, fieldLocator, rowFieldLocator, listFieldLocator, locatorFor, placeOf, fileInputLocator, whatOf, qt, sayClick, fieldWords, say, targetOf } from './recorderDom'
 
 /**
  * Recording a Playwright scenario in the app's browser: clicks, typing, Enter / Escape, choices in lists — each
  * as a line of Playwright code with a locator a person would write (test id → role and name → placeholder /
- * label → text, narrowed to a menu / a dialog when not unique → CSS). Quasar's icon ligatures (aria-hidden) are
- * not names. Passwords are never written down. The lines go to the app; it puts them into the note's block.
+ * label → text, narrowed to a menu / a dialog when not unique → CSS). Icon ligatures (aria-hidden) are not
+ * names. Passwords are never written down. The lines go to the app; it puts them into the note's block.
  */
 /** A line; `replace` — the same click just written (twice: a double click) goes, this one stands for it. */
 type Act = {
@@ -31,13 +33,13 @@ function flush(): void {
   else send({ code: say(`await ${t.loc}.fill(${q(t.el.value)})`, t.el.value ? `Ввести ${qt(t.el.value.length > 80 ? `${t.el.value.slice(0, 80)}…` : t.el.value)} ${into}` : `Очистить ${where}`) })
 }
 function send(a: Act): void {
-  ipcRenderer.send('qa:pwrec-act', a)
+  ipcRenderer.send(PAGE_CHANNELS.recAct, a)
   flashBadge()
 }
 
 let lastField: string | undefined
-/** A field that opens a list of options when clicked (a select, a combobox — Quasar's q-select with its search box). */
-const opensList = (el: Element) => el.getAttribute('role') === 'combobox' || /^(listbox|true|menu)$/.test(el.getAttribute('aria-haspopup') ?? '') || !!el.closest('.q-select, [role="combobox"]')
+/** A field that opens a list of options when clicked (a select, a combobox — a kit's select with its search box). */
+const opensList = (el: Element) => /^(listbox|true|menu)$/.test(el.getAttribute('aria-haspopup') ?? '') || !!el.closest(UI.listField)
 function onClick(e: MouseEvent): void {
   if (!on || !e.isTrusted || (e.target as Element)?.closest?.('#qa-pwrec')) return
   const el = targetOf(e)
@@ -48,11 +50,11 @@ function onClick(e: MouseEvent): void {
     // box): without that click a replay finds the list shut and its option nowhere
     if (!opensList(el)) return
     if (typing && typing.el !== el) flush()
-    // the field by its label (its .q-field), else the input itself — the check of the pick follows what this points at
+    // the field by its label (its kit's wrapper), else the input itself — the check of the pick follows what this points at
     const { loc: fld, onField } = listFieldLocator(el)
     send({ code: say(`await ${fld}.click()`, `Открыть список ${fieldWords(el).replace(/^поле /, "")}`) })
     lastField = fld
-    lastFieldEl = onField ? (el.closest('.q-field') ?? el) : el
+    lastFieldEl = onField ? (el.closest(UI.field) ?? el) : el
     return
   }
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return
@@ -62,8 +64,9 @@ function onClick(e: MouseEvent): void {
   if (el instanceof HTMLInputElement && CHECKABLE_INPUT_TYPES.has(el.type)) send({ code: say(`await ${loc}.${el.checked ? 'check' : 'uncheck'}()`, words) })
   else send({ code: say(`await ${loc}.click()`, words) })
   // a field opened: remembered; one of its options picked — the field must show it before the next step
-  if (el.closest('.q-field')) ((lastField = fieldLocator(el) ?? rowFieldLocator(el)), (lastFieldEl = el.closest('.q-field') ?? undefined))
-  else if (lastField && el.closest('.q-menu, [role="listbox"]') && (el.getAttribute('role') === 'option' || el.matches('.q-item'))) expectPicked(lastField, lastFieldEl, textOf(el, 60))
+  const field = el.closest(UI.field)
+  if (field) ((lastField = fieldLocator(el) ?? rowFieldLocator(el)), (lastFieldEl = field))
+  else if (lastField && el.closest(UI.menu) && el.matches(UI.option)) expectPicked(lastField, lastFieldEl, textOf(el, 60))
 }
 let lastFieldEl: Element | undefined
 /**
@@ -75,14 +78,21 @@ function expectPicked(loc: string, fieldEl: Element | undefined, opt: string): v
   lastField = undefined
   lastFieldEl = undefined
   if (!opt || !fieldEl) return
-  setTimeout(() => {
-    const input = (fieldEl.matches('input') ? fieldEl : fieldEl.querySelector('input')) as HTMLInputElement | null
-    const shown = (fieldEl as HTMLElement).innerText ?? ''
-    if (shown.includes(opt)) send({ code: say(`await expect(${loc}).toContainText(${q(opt)})`, '-') })
-    // (the value in the field's input: the input itself checked — the field's locator may already be the input)
-    else if (input && input.value.trim() === opt) send({ code: say(`await expect(${input === fieldEl ? loc : `${loc}.locator('input').first()`}).toHaveValue(${q(opt)})`, '-') })
-  }, 250)
+  pickDue = new Promise<void>((due) =>
+    setTimeout(() => {
+      const input = (fieldEl.matches('input') ? fieldEl : fieldEl.querySelector('input')) as HTMLInputElement | null
+      const shown = (fieldEl as HTMLElement).innerText ?? ''
+      if (shown.includes(opt)) send({ code: say(`await expect(${loc}).toContainText(${q(opt)})`, '-') })
+      // (the value in the field's input: the input itself checked — the field's locator may already be the input)
+      else if (input && input.value.trim() === opt) send({ code: say(`await expect(${input === fieldEl ? loc : `${loc}.locator('input').first()`}).toHaveValue(${q(opt)})`, '-') })
+      due()
+    }, PICK_SHOWN_MS),
+  )
 }
+/** A pick's check still due: «Стоп» waits for it before saying the page has written everything. */
+let pickDue: Promise<void> = Promise.resolve()
+/** A field shows the option picked after its list closes and it re-renders: looked at once, this long after. */
+const PICK_SHOWN_MS = 250
 function onDbl(e: MouseEvent): void {
   if (!on || !e.isTrusted || (e.target as Element)?.closest?.('#qa-pwrec')) return
   const el = targetOf(e)
@@ -187,11 +197,14 @@ document.addEventListener('keydown', onKey, true)
 document.addEventListener('mouseover', onOver, true)
 window.addEventListener('blur', flush)
 window.addEventListener('beforeunload', flush)
-ipcRenderer.on('qa:pwrec', (_e, v: boolean) => set(!!v))
-// «Стоп» pressed: the typing not written yet goes now
-ipcRenderer.on('qa:pwrec-flush', () => flush())
+ipcRenderer.on(PAGE_CHANNELS.rec, (_e, v: boolean) => set(!!v))
+// «Стоп» pressed: the typing not written yet goes now, a pick's check due — then the app is told (its lines came first)
+ipcRenderer.on(PAGE_CHANNELS.recFlush, (_e, ackId: string) => {
+  flush()
+  void pickDue.then(() => ipcRenderer.send(PAGE_CHANNELS.recFlushed, ackId))
+})
 window.addEventListener('DOMContentLoaded', () => {
-  void ipcRenderer.invoke('qa:pwrec-get').then((v: { on: boolean; count: number } | null) => {
+  void ipcRenderer.invoke(PAGE_CHANNELS.recGet).then((v: PageRecState | null) => {
     if (!v?.on) return
     // a new page while recording: the badge goes on with the count so far
     set(true)

@@ -1,5 +1,6 @@
 import { app, clipboard, Menu, shell, webContents, type MenuItemConstructorOptions, type WebContents } from 'electron'
 import type { NetItem, NetPage } from '../shared/noteBrowser'
+import { BROWSER_PARTITION } from '../shared/browser/constants'
 import { tellIdentity, type ChromeOverride } from './browser/pageIdentity'
 
 /**
@@ -9,7 +10,7 @@ import { tellIdentity, type ChromeOverride } from './browser/pageIdentity'
  * tabs only), no Node, sandboxed, http(s) only. A page's new window becomes a tab of its component; the requests of a tab are
  * listened to over the DevTools protocol while its «Запросы» panel is open.
  */
-export const NOTE_PARTITION = 'persist:qa-browser'
+export const NOTE_PARTITION = BROWSER_PARTITION
 const MAX_ITEMS = 1000
 
 interface Listen {

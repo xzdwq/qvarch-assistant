@@ -35,6 +35,7 @@ import { Vault } from './vault'
 import { Voice } from './voice'
 import { APP_ID, fixShortcut, Island } from './windows'
 import { sweepRunTemp } from './process/runTemp'
+import { flushLaterWrites } from './laterWrite'
 
 /**
  * The main process's composition root: the services made and wired, the window calls registered (src/main/ipc —
@@ -48,12 +49,18 @@ if (SNAP) app.setPath('userData', process.env.QA_SNAP_HOME!)
 // another profile on the same computer — its own data and key, another device to the server («… --profile=2»)
 const PROFILE = process.argv.find((a) => a.startsWith('--profile='))?.slice('--profile='.length).replace(/[^\w-]/g, '')
 if (PROFILE && !SNAP) app.setPath('userData', `${app.getPath('userData')}-${PROFILE}`)
-if (!app.requestSingleInstanceLock()) app.quit()
+// a second copy goes at once: it must not open the database, the MCP port or the bridge file the first one holds
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  process.exit(0)
+}
 app.setAppUserModelId(APP_ID)
 
 const ctx = new AppContext()
 ctx.mainDir = __dirname
 let stopRuns: ((reason: string) => void) | undefined
+/** The app's own timers (stopped before the database closes: a late tick would write to a closed one). */
+const ticks: Array<ReturnType<typeof setInterval>> = []
 
 app.on('second-instance', () => ctx.windows.showMain())
 
@@ -98,11 +105,13 @@ app.whenReady().then(() => {
   ctx.windows.applyAutoStart()
   globalShortcut.register(ISLAND_HOTKEY, () => ctx.windows.focusIsland())
   // persist activity regularly even without heartbeats
-  setInterval(() => ctx.store.flush(), 10_000)
-  setInterval(() => {
-    checkReminders(ctx)
-    ctx.broadcast()
-  }, 20_000)
+  ticks.push(setInterval(() => ctx.store.flush(), 10_000))
+  ticks.push(
+    setInterval(() => {
+      checkReminders(ctx)
+      ctx.broadcast()
+    }, 20_000),
+  )
 })
 
 /** The services: the store, the tracker and the input probe, the integrations, the notebook, the voice; the activity tracker. */
@@ -190,5 +199,8 @@ app.on('before-quit', () => {
   ctx.terminals?.killAll()
   ctx.browser?.closeAll()
   ctx.clipLog?.flush()
+  // what services were about to write (hooks, the API map, «Проверка»…) — written now
+  flushLaterWrites()
+  for (const t of ticks) clearInterval(t)
   ctx.store?.close()
 })

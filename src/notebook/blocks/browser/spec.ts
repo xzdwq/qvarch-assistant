@@ -1,7 +1,7 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 
 /** The height a browser block asks for (`height:` in its body; default 560). */
-export const browserHeightOf = (src: string) => Number(/height:\s*(\d+)/.exec(src)?.[1]) || 560
+const browserHeightOf = (src: string) => Number(/height:\s*(\d+)/.exec(src)?.[1]) || 560
 
 /** Live pages in tabs right in the note (```browser, any attributes: name=…). */
 export const browserSpec: BlockSpec<'browser'> = {

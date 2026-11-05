@@ -1,11 +1,13 @@
-import type { BlockInfo } from './blockInfo'
+import type { BlockInfo, ValueSource } from './blockInfo'
+import type { Values } from './values'
 import type { NoteCommand } from '../commands/command'
 
 /**
  * A component of a note: what kinds there are, where one is in the text, and the description every kind
  * registers (`BlockSpec`) — how it is recognized, its name, its size before it is drawn, its «@» commands.
  */
-export type BlockKind = 'table' | 'chart' | 'mermaid' | 'toc' | 'callout' | 'toggle' | 'work' | 'audio' | 'image' | 'board' | 'chat' | 'chatfeed' | 'http' | 'code' | 'data' | 'ref' | 'pw' | 'browser' | 'regress' | 'files' | 'sql' | 'tpl' | 'loop' | 'loopEnd' | 'cron' | 'save'
+export const BLOCK_KINDS = ['table', 'chart', 'mermaid', 'toc', 'callout', 'toggle', 'work', 'audio', 'image', 'board', 'chat', 'chatfeed', 'http', 'code', 'data', 'ref', 'pw', 'browser', 'regress', 'files', 'sql', 'tpl', 'loop', 'loopEnd', 'cron', 'save'] as const
+export type BlockKind = (typeof BLOCK_KINDS)[number]
 
 /** A component found in the note's text. */
 export interface NoteBlock {
@@ -59,13 +61,35 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   commands?: NoteCommand[]
   /** How an AI agent writes it: what it is for, its settings (the sample comes from its «@» command). */
   guide?: string
+  /** Its value is published under its name with no run, as soon as its text gives one (engine/runNote). */
+  publishWithoutRun?: PublishWithoutRun
 }
 
-/**
- * The spec of a kind that runs (its type marks it, so the runnable kinds are known to the compiler); `chip` — its
- * short name on a note's chips in the notebook's tree (db, js/ts, http…).
- */
-export type RunnableBlockSpec<K extends BlockKind> = BlockSpec<K> & { runnable: true; chip: string }
+/** What a block's text gives with no run: its value; `error` — the text is broken; none — not ready (a value missing). */
+export type UnrunValue = { value: unknown } | { error: string } | undefined
 
-/** The number of lines of a block's text (height estimates go by it). */
-export const lineCount = (src: string) => src.split('\n').length
+/**
+ * A kind published with no run (data, a template). A kind that also runs is published so only outside loops (a
+ * loop's pass runs it with the pass's values).
+ */
+export interface PublishWithoutRun {
+  /** Where the value is said to come from. */
+  source: ValueSource
+  /** It is filled from the note's values (published again whenever they change); else its text alone gives it. */
+  usesValues: boolean
+  valueOf(body: string, info: BlockInfo, values: Values): UnrunValue
+}
+
+/** What a runnable kind's runs are, as the engine treats them. */
+interface RunnableTraits {
+  runnable: true
+  /** Its short name on a note's chips in the notebook's tree (db, js/ts, http…). */
+  chip: string
+  /** Its runs share the block's files: a loop with one anywhere inside goes pass by pass. */
+  serialInLoop: boolean
+  /** A test: a note's report counts its passed ones (under this label) and gives each in full; false — not a test. */
+  test: false | { tally: string }
+}
+/** The spec of a kind that runs (its type marks it, so the runnable kinds are known to the compiler). */
+export type RunnableBlockSpec<K extends BlockKind> = BlockSpec<K> & RunnableTraits
+

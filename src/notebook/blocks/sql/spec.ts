@@ -12,6 +12,8 @@ export const sqlSpec: RunnableBlockSpec<'sql'> = {
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
   chip: 'db',
+  serialInLoop: false,
+  test: false,
   rawEditable: true,
   commands: [
     {

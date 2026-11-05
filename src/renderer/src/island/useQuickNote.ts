@@ -110,4 +110,3 @@ export function useQuickNote(els: IslandElements, day: IslandDay, island: Island
   return { noteOpen, note, qtab, qMsg, noteTarget, toggleNote, onNoteInput, quickToTask, onNoteKey, ...rec }
 }
 
-export type QuickNote = ReturnType<typeof useQuickNote>

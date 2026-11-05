@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { writeAtomic } from '../fsAtomic'
 import { dirname, join } from 'node:path'
 import type { VaultFiles } from './vaultFiles'
 
@@ -29,8 +30,7 @@ export class VaultRuns {
     if (json.length > 16 * 1024 * 1024) throw new Error('Результаты больше 16 МБ — не сохраняются')
     const f = this.runFile(rel)
     mkdirSync(dirname(f), { recursive: true })
-    writeFileSync(`${f}.tmp`, json)
-    renameSync(`${f}.tmp`, f)
+    writeAtomic(f, json)
   }
   /** A block's files of its last run: vault/.runs/<note>/<block>/ (on disk). */
   dir(rel: string, key: string): string {

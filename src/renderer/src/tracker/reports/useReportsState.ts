@@ -5,7 +5,8 @@ import { isProductive } from '@shared/kinds'
 import { eventsOf, heatOf } from '@shared/analytics'
 import type { Entry } from '@shared/types'
 import { kindColor, kindLabel, kinds } from '../../lib/palette'
-import { onNewDay } from '../../lib/today'
+import { onNewDay, todayKey } from '../../lib/today'
+import { isRecord, readStored, writeStored } from '../../lib/storedRef'
 import { periodLabel, periodRange, previousRange, rangeLabel, shiftedPeriod, type Period } from '@shared/tracker/reportPeriod'
 import { kpiCards, reportInsights, type KindLook } from '@shared/tracker/reportStats'
 import type { ChartColor } from '@shared/tracker/reportChart'
@@ -23,23 +24,7 @@ export interface ReportState {
   onlyProd?: boolean
 }
 
-export const todayDay = () => new Date().toLocaleDateString('sv-SE')
 const STATE_KEY = 'qa.reports'
-export function readJson<T>(key: string, fallback: T): T {
-  try {
-    const v = JSON.parse(localStorage.getItem(key) ?? 'null') as T | null
-    return v ?? fallback
-  } catch {
-    return fallback
-  }
-}
-export function writeJson(key: string, v: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(v))
-  } catch {
-    // not remembered — fine
-  }
-}
 
 /** The palette as pure code wants it. */
 export const KIND_LOOK: KindLook = { label: kindLabel, color: kindColor }
@@ -67,10 +52,11 @@ function useRangeDays(range: () => [string, string]) {
  * The report's state shared by its parts: the period, the loaded days, the filtered items and the totals
  * built from them. Created once by ReportsView, read by its parts through `useReports()`.
  */
-export function createReportsState() {
-  const DEFAULT: ReportState = { period: 'week', anchor: todayDay(), from: shiftDay(todayDay(), -6), to: todayDay(), filter: {}, group: 'kind', color: 'kind', onlyProd: true }
-  const st = ref<ReportState>({ ...DEFAULT, ...readJson<Partial<ReportState>>(STATE_KEY, {}), anchor: todayDay() })
-  watch(st, (v) => writeJson(STATE_KEY, { ...v, anchor: undefined }), { deep: true })
+function createReportsState() {
+  const today = todayKey.value
+  const DEFAULT: ReportState = { period: 'week', anchor: today, from: shiftDay(today, -6), to: today, filter: {}, group: 'kind', color: 'kind', onlyProd: true }
+  const st = ref<ReportState>({ ...DEFAULT, ...readStored<Partial<ReportState>>(STATE_KEY, {}, isRecord), anchor: today })
+  watch(st, (v) => writeStored(STATE_KEY, { ...v, anchor: undefined }), { deep: true })
   onNewDay((prev, next) => {
     if (st.value.anchor === prev) st.value.anchor = next
   })
@@ -80,7 +66,7 @@ export function createReportsState() {
   const allDays = computed(() => daysBetween(range.value[0], range.value[1]))
   /** A period forward (1) or back (-1). */
   const shift = (dir: 1 | -1) => Object.assign(st.value, shiftedPeriod(st.value, dir))
-  const isCurrent = computed(() => st.value.period !== 'custom' && range.value[0] <= todayDay() && todayDay() <= range.value[1])
+  const isCurrent = computed(() => st.value.period !== 'custom' && range.value[0] <= todayKey.value && todayKey.value <= range.value[1])
   const label = computed(() => periodLabel(st.value.period, range.value))
   const customLabel = computed(() => rangeLabel(range.value))
 

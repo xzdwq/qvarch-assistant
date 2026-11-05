@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addPart, BatchOrder, EMIT_BATCH_SIZE, EMIT_FLUSH_MS, EMIT_VAR_MAX, keepOf, keptOf, startValue, type EmitBatch } from '../../src/notebook/domain/emits'
 import { Emitter } from '../../src/main/runner/emitter'
-import { plain } from '../../src/main/runner/loopCore'
+import { plain } from '../../src/main/runner/sandbox'
 import { parseInfo, infoMd } from '../../src/notebook/domain/blockInfo'
 import { parseLoopInfo, loopOpenMd } from '../../src/notebook/domain/loop'
 

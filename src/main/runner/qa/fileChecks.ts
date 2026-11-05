@@ -69,7 +69,7 @@ export function fileChecks(ctx: QaContext) {
         try {
           for (const n of names) {
             // the file before's requests still on their way — let go first
-            for (let t = Date.now(); Date.now() - t < 60000 && sent.some((x) => !x.done && MUT.test(x.method)); ) await page.waitForTimeout(200)
+            await ctx.until(() => !sent.some((x) => !x.done && MUT.test(x.method)), 60000, 200)
             const from = traffic.mark()
             const t0 = Date.now()
             const path = ctx.fileOf(`${o.set}/${n}`)
@@ -84,7 +84,7 @@ export function fileChecks(ctx: QaContext) {
               }
             })
             // an import may take long: its requests let finish (up to 2 min), then the page's word
-            for (let t = Date.now(); Date.now() - t < 120000 && traffic.from(from).some((x) => !x.done && MUT.test(x.method)); ) await page.waitForTimeout(200)
+            await ctx.until(() => !traffic.from(from).some((x) => !x.done && MUT.test(x.method)), 120000, 200)
             await ctx.quiet(700, 8000)
             const picked = adapter.pick(traffic.from(from))
             const hints = await ctx.hints()

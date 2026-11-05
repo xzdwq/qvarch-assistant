@@ -23,8 +23,11 @@ function urlOf(kind: keyof typeof urls, rel: string): Promise<string> {
   }
   return u
 }
-/** A picture's address made again next time (its file was put back: an undo). */
-export const forgetImage = (rel: string) => void urls.image.delete(rel)
+/** A picture's address made again next time (its file was put back: an undo); the old one let go (its bytes freed). */
+export function forgetImage(rel: string): void {
+  void urls.image.get(rel)?.then(URL.revokeObjectURL, () => undefined)
+  urls.image.delete(rel)
+}
 
 // ---------- a file's coming ----------
 const arrivals = new Map<string, Set<() => void>>()

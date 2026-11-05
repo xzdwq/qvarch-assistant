@@ -4,7 +4,7 @@ import { AUDIO_NOTE_LOOK, type AudioNoteKind } from '@shared/tracker/constants'
 import { startRecording, transcribeNote, type Recording } from '../lib/recorder'
 
 /** Recording seconds as m:ss. */
-export const fmtRec = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
+const fmtRec = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
 
 /**
  * A recording from the orb panel — a voice note (it joins the open note) or the call. It goes on even with the

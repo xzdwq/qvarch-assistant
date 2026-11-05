@@ -1,7 +1,8 @@
 import { safeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { readJsonFile, writeAtomic } from '../fsAtomic'
 import { join } from 'node:path'
-import type { JiraIssue, MyTaskStatus } from '../../shared/jira'
+import type { JiraIssue } from '../../shared/jira'
 
 /** The OAuth secrets: kept encrypted with the OS (safeStorage / DPAPI), never leave this machine. */
 export interface JiraSecrets {
@@ -19,18 +20,11 @@ export interface JiraCache {
   issues: JiraIssue[]
   /** The tasks' ancestors not among them (the tree's upper levels: done, of other projects, above the epics). */
   parents?: JiraIssue[]
-  starred: string[]
-  myStatus: Record<string, MyTaskStatus>
 }
 
 const CACHE_FILE = 'jira.json'
 const SECRETS_FILE = 'jira-secrets.bin'
 
-/** Written to a side file first, then renamed over (never half a file). */
-function writeAtomic(file: string, data: string | Buffer): void {
-  writeFileSync(`${file}.tmp`, data)
-  renameSync(`${file}.tmp`, file)
-}
 
 /** Jira's files in the app's folder: the task cache (JSON) and the encrypted secrets. */
 export class JiraStorage {
@@ -38,14 +32,9 @@ export class JiraStorage {
 
   /** The cache as kept (an empty one when missing or broken). */
   readCache(): JiraCache {
-    const empty: JiraCache = { issues: [], starred: [], myStatus: {} }
-    const file = join(this.root, CACHE_FILE)
-    if (!existsSync(file)) return empty
-    try {
-      return { ...empty, ...(JSON.parse(readFileSync(file, 'utf8')) as Partial<JiraCache>) }
-    } catch {
-      return empty
-    }
+    // (the hand-picked tasks and own marks of old caches are dropped)
+    const { starred: _s, myStatus: _m, ...kept } = readJsonFile<Partial<JiraCache> & { starred?: unknown; myStatus?: unknown }>(join(this.root, CACHE_FILE)) ?? {}
+    return { issues: [], ...kept }
   }
   writeCache(cache: JiraCache): void {
     writeAtomic(join(this.root, CACHE_FILE), JSON.stringify(cache))

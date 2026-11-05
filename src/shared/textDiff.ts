@@ -61,11 +61,6 @@ function parse(s: string): { ok: true; v: unknown } | { ok: false; e: string } {
     return { ok: false, e: e instanceof Error ? e.message : String(e) }
   }
 }
-/** A text as JSON pretty-printed (keys sorted if asked), or as it was. */
-export function formatJson(s: string, sortKeys: boolean): string | undefined {
-  const p = parse(s)
-  return p.ok ? JSON.stringify(sortKeys ? sortDeep(p.v) : p.v, null, 2) : undefined
-}
 
 const norm = (line: string, o: DiffOptions) => {
   let x = line

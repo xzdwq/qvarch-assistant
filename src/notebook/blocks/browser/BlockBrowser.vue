@@ -2,12 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { remoteError } from '../../../shared/remoteError'
 import { joinFence, splitFence } from '@nb/domain/fence'
-import { publishValue } from '@nb/engine'
+import { publishToNote } from '@nb/engine'
 import { addressOf, BROWSER_MIN_H, browserBody, parseBrowserBody, type NetItem, type NetPage } from '@shared/noteBrowser'
 import { isName } from '@nb/domain/blockInfo'
+import { BROWSER_PARTITION } from '@shared/browser/constants'
 import Icon from '@renderer/components/Icon.vue'
 import { holdNoteBrowser } from '@nb/engine/noteBrowsers'
 import { useDraft } from '@renderer/lib/drafts'
+import { useFlash } from '@renderer/lib/useFlash'
 
 /**
  * A browser in the note: tabs of real pages (the Браузер section's profile — its sign-ins), scrolling with the
@@ -300,19 +302,18 @@ function clearNet(): void {
   net.value = []
   if (netFor !== undefined) void window.qa.nbNetClear(netFor)
 }
-const published = ref(false)
+const { shown: published, flash: flashPublished } = useFlash(1500)
 function publish(): void {
   const name = info.value.name
   if (!name || !isName(name)) return
-  publishValue(props.path, name, {
+  publishToNote(props.path, name, {
     url: cur.value.url,
     title: cur.value.title,
     domContentLoaded: sinceStart(page.value.dcl),
     load: sinceStart(page.value.load),
     requests: net.value.map((n) => ({ method: n.method, url: n.url, type: n.type, status: n.status ?? null, size: n.size ?? null, ms: n.ms ?? null, ...(n.error ? { error: n.error } : {}) })),
   }, 'browser', name)
-  published.value = true
-  setTimeout(() => (published.value = false), 1500)
+  flashPublished(true)
 }
 const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browserOpen(cur.value.url)
 </script>
@@ -323,7 +324,7 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
     <div class="tw:min-w-0 tw:pt-4 tw:px-10 tw:text-muted tw:font-data tw:text-[11px] tw:leading-14 tw:truncate" :title="info.name ? `Имя браузера: тесты и запись этой заметки выбирают его как «${info.name}»` : 'У браузера нет имени — допишите name=… в его строку, чтобы тесты могли его выбрать'">{{ info.name ?? 'без имени' }}</div>
     <div class="tb-tabs tw:flex tw:items-end tw:gap-2 tw:min-w-0 tw:pt-6 tw:pr-8 tw:pb-0 tw:pl-8 tw:overflow-x-auto tw:scrollbar-none">
       <button v-for="(t, i) in tabs" :key="t.key" class="tab tw:group/tab tw:inline-flex tw:flex-[0_1_200px] tw:items-center tw:gap-6 tw:min-w-70 tw:h-28 tw:pt-0 tw:pr-6 tw:pb-0 tw:pl-10 tw:border tw:border-transparent tw:[&&]:border-b-0 tw:rounded-[6px_6px_0_0] tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&&]:[&.on]:border-border tw:[&.on]:bg-bg tw:[&.on]:text-text tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: i === active }" :title="t.url" @mousedown.prevent @click="pick(i)" @auxclick.prevent="$event.button === 1 && closeTab(i)">
-        <i v-if="t.loading" class="spin tw:w-9 tw:h-9 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[BlockBrowser-spin_0.8s_linear_infinite]"></i><Icon v-else name="globe" :size="11" />
+        <i v-if="t.loading" class="spin tw:w-9 tw:h-9 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[Shared-spin_0.8s_linear_infinite]"></i><Icon v-else name="globe" :size="11" />
         <span class="tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-left tw:text-ellipsis tw:whitespace-nowrap">{{ label(t) }}</span>
         <b class="tw:inline-flex tw:p-2 tw:rounded-[4px] tw:opacity-0 tw:group-hover/tab:not-group-[.on]/tab:opacity-100 tw:group-[.on]/tab:opacity-100 tw:hover:bg-hover" title="Закрыть вкладку" @click.stop="closeTab(i)"><Icon name="x" :size="10" /></b>
       </button>
@@ -346,7 +347,7 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
         :ref="(el: unknown) => bind(t, el)"
         :class="{ off: i !== active }"
         :src="t.start"
-        partition="persist:qa-browser"
+        :partition="BROWSER_PARTITION"
         allowpopups
         webpreferences="contextIsolation=yes, sandbox=yes"
       ></webview>

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import { BOARD_EXT } from '../../shared/whiteboard'
 import { isEmoji } from '../../shared/emoji'
@@ -24,12 +25,8 @@ export class VaultMeta {
   private ai: AiStore
 
   constructor(private files: VaultFiles) {
-    let read: Partial<MetaData> & { docAi?: Record<string, unknown>; agentLines?: Record<string, AgentLines> } = {}
-    try {
-      read = JSON.parse(readFileSync(this.file, 'utf8')) as typeof read
-    } catch {
-      // none yet, or not readable — empty
-    }
+    // none yet — empty; a broken one is set aside, not overwritten
+    const read = readJsonFile<Partial<MetaData> & { docAi?: Record<string, unknown>; agentLines?: Record<string, AgentLines> }>(this.file) ?? {}
     this.data = { colors: read.colors ?? {}, pairs: read.pairs ?? {}, emojis: read.emojis ?? {} }
     this.ai = new AiStore(join(this.files.root, '.ai.db'))
     // (kept in the marks' file before: moved to the AI's store once, the file written without it)
@@ -43,8 +40,7 @@ export class VaultMeta {
   }
   /** Written whole (a temp file + rename: never half a file). */
   save(): void {
-    writeFileSync(`${this.file}.tmp`, JSON.stringify(this.data, null, 1), 'utf8')
-    renameSync(`${this.file}.tmp`, this.file)
+    writeJsonAtomic(this.file, this.data, 1)
   }
 
   colorOf = (rel: string): string | undefined => this.data.colors[rel]

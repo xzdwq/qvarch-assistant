@@ -1,5 +1,6 @@
 import { net } from 'electron'
 import { netReason } from './netReason'
+import { withTimeout } from '../netLimits'
 import type { JiraSecrets, JiraStorage } from './jiraStorage'
 
 export const ATLASSIAN_AUTH = 'https://auth.atlassian.com'
@@ -18,7 +19,7 @@ export const JIRA_SCOPES = 'read:jira-work read:jira-user offline_access'
 export async function requestWithRetry(url: string, init: RequestInit): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await net.fetch(url, init)
+      return await net.fetch(url, withTimeout(init))
     } catch (e) {
       if (attempt < 1) {
         await new Promise((r) => setTimeout(r, 2000))

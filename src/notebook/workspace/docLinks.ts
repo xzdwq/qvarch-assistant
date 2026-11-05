@@ -3,8 +3,9 @@ import { ROLE_RIGHTS, sharedDocOf, sharedMark } from '@shared/transport/space'
 import { openNoteAt } from './noteGoto'
 import { serverCall } from '@renderer/lib/transport'
 import { noteName } from '@nb/domain/notePaths'
-import { doc } from './noteDocs'
-import { docPaths, shareNote, sharedInfo } from './sharedDocs'
+import { loadedDoc } from './noteDocs'
+import { docPaths, sharedInfo } from './sharedDocs'
+import { shareNote } from './sharedJoin'
 import { joinByCode } from './sharedFolders'
 
 /**
@@ -26,12 +27,7 @@ export async function docLinkPath(url: string, join: boolean): Promise<string> {
   if (!l.join || !join) throw new Error('Этой общей заметки здесь нет — нужно приглашение')
   return joinByCode(l.join)
 }
-async function textOf(path: string): Promise<string> {
-  const d = doc(path)
-  for (let i = 0; i < 200 && !d.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-  if (d.error) throw new Error(`Заметка «${path}»: ${d.error}`)
-  return d.text
-}
+const textOf = async (path: string): Promise<string> => (await loadedDoc(path)).text
 /**
  * A note's link for a chat: its shared document (a note not shared yet — shared now, its owner this person) with a
  * reader's code when this person may invite; one who may not — the link without a code (the space's members have it).

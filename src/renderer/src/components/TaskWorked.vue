@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { formatDuration, formatHM } from '@shared/timeline'
 import { todayKey } from '../lib/today'
-import { openEventInWork } from '../lib/mentions'
+import { openDay } from '../lib/views'
 import { besidePlace } from '../lib/usePopover'
 import Icon from './Icon.vue'
 import Popover from './Popover.vue'
@@ -29,7 +29,7 @@ const dayText = (d: string) => {
 }
 function go(b: Worked): void {
   open.value = false
-  openEventInWork(b.day, b.id)
+  openDay(b.day, b.id)
 }
 </script>
 

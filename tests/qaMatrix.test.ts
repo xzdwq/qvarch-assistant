@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { casesFor, findPath, getAt, judge, kindOf, pathText, type MatrixCase } from '../src/shared/qaMatrix'
+import { casesFor, getAt, judge, kindOf, type MatrixCase } from '../src/shared/qaMatrix'
+import { pathText } from '../src/shared/browser/recordedRequest'
 
 describe('Матрица: the field and its values', () => {
   it('the kind: type, label words, the value recorded', () => {
@@ -21,9 +22,8 @@ describe('Матрица: the field and its values', () => {
     expect(casesFor('date', {}, '2024-05-01').find((c) => c.label.startsWith('Несуществующая'))?.value).toBe('2024-02-31')
     for (const k of ['text', 'number', 'date', 'email', 'phone'] as const) expect(casesFor(k, {}, 'x').length).toBeLessThanOrEqual(12)
   })
-  it('what went in the request: the recorded value\'s place', () => {
-    const body = { data: { items: [{ name: 'Болт', qty: 5 }] } }
-    const p = findPath(body, '5')!
+  it('a place in a JSON body: its text and its value', () => {
+    const p = ['data', 'items', 0, 'qty']
     expect(pathText(p)).toBe('data.items[0].qty')
     expect(getAt({ data: { items: [{ qty: null }] } }, p)).toEqual({ has: true, value: null })
     expect(getAt({ data: {} }, p)).toEqual({ has: false })

@@ -1,3 +1,4 @@
+import { remoteError } from '../../../shared/remoteError';
 import { GitService } from '../git/gitService';
 import { DevFirstParentShas, ExtraBaseRef, resolveBranchOwnCommits } from './branchOwnCommits';
 import { mapWithConcurrency } from './concurrency';
@@ -105,8 +106,8 @@ export async function buildPlanItems(
       basesByBranch.set(branch.name, base);
       if (truncated) truncatedBranches.push(branch.name);
       if (absorbed) absorbedBranches.push(branch.name);
-    } catch (err: any) {
-      skipped.push({ branch: branch.name, reason: err?.message ?? String(err) });
+    } catch (err) {
+      skipped.push({ branch: branch.name, reason: remoteError(err) });
     }
   }
 

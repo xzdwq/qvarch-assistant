@@ -5,7 +5,7 @@ import { resolvePath, summary } from '@nb/domain/values'
 import { joinFence, splitFence } from '@nb/domain/fence'
 import { clearValue, envAtLine, noteRun } from '@nb/engine'
 import { TEXT_VALUE_SOURCES } from '@nb/domain/blockInfo'
-import { doc, setText } from '@renderer/lib/notebook'
+import { doc, setText } from '@nb/workspace/noteDocs'
 import { savesOf, withSaveBlock } from '../save/modelNotes'
 import Icon from '@renderer/components/Icon.vue'
 

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isUuid } from '../../shared/transport/ids'
 import { isLocalChat, type LocalChat } from '../../shared/transport/localChat'
 
 /**
@@ -12,7 +13,7 @@ export class LocalChats {
     this.dir = join(root, 'local-chats')
   }
   private file(id: string): string {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Неверный id чата')
+    if (!isUuid(id)) throw new Error('Неверный id чата')
     return join(this.dir, `${id}.json`)
   }
   list(): LocalChat[] {

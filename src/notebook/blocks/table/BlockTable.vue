@@ -25,9 +25,8 @@ import { useTablePaste } from './import/useTablePaste'
  * «Из переменной» (TableTools): filled from a value of the note. Every table is a variable of the note too (its rows as
  * objects — code reads it by its name). Seen as JSON too; copied / saved as Excel or CSV.
  */
-const props = defineProps<{ src: string; autofocus?: boolean; path?: string; line?: number }>()
-const emit = defineEmits<{ change: [src: string]; exit: [dir: 1 | -1] }>()
-const { t, save: saveDoc } = useTableDoc(() => props.src, (md) => emit('change', md))
+const props = defineProps<{ src: string; autofocus?: boolean; path?: string; line?: number; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
+const { t, save: saveDoc } = useTableDoc(() => props.src, (md) => props.onChange?.(md))
 // ---------- its variable in the note: the name given kept in the file with any edit ----------
 const tv = useTableVar(t, () => ({ path: props.path, line: props.line }))
 const save = (now?: boolean) => {
@@ -37,7 +36,7 @@ const save = (now?: boolean) => {
 const root = ref<HTMLElement>()
 const tableEl = ref<HTMLTableElement>()
 const menuRef = ref<InstanceType<typeof TableMenu>>()
-const { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, setTotal, setAlign, sortBy } = useTableEditing(t, save, root, (dir) => emit('exit', dir))
+const { edit, isEdit, leaveCell, focusCell, onKey, setCell, addRow, delRow, addCol, delCol, setTotal, setAlign, sortBy } = useTableEditing(t, save, root, (dir) => props.onExit?.(dir))
 const { sel, inSel, selCells, cellDown, cellEnter, doMerge, curMerge, doUnmerge, onFocusCell, cellMenu, onCellMenu, cellItems } = useTableSelection(t, save, root, { isEdit, focusCell })
 // ---------- cells from outside: a file / the clipboard imported, a spreadsheet's block pasted ----------
 const imp = useTableImport(t, save)

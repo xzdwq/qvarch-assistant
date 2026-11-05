@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDraft } from '../lib/drafts'
-import { dayStart, MINUTE, shiftDay } from '@shared/timeline'
-import { parseQuick, type Quick } from '@shared/quickadd'
+import { dayStart, formatHM, MINUTE, shiftDay } from '@shared/timeline'
+import { parseQuick, withTime, type Quick } from '@shared/quickadd'
 import type { TaskRef } from '@shared/jira'
 import type { Ms } from '@shared/types'
 import { isOwnTask } from '@shared/work'
@@ -32,7 +32,12 @@ const props = defineProps<{
   /** Where a line without an exact time goes. */
   place: (q: Quick) => { start: Ms; end: Ms }
 }>()
-const emit = defineEmits<{ add: [d: QuickDraft]; record: [r: { kind: string; label: string }] }>()
+const emit = defineEmits<{
+  add: [d: QuickDraft]
+  record: [r: { kind: string; label: string }]
+  /** The time the line names (on the shown day) — none: no time in it. */
+  range: [r: { start: Ms; end: Ms } | null]
+}>()
 
 // (the line not added yet — as left, back from another section)
 const text = useDraft('quickadd:line')
@@ -67,37 +72,37 @@ const { summaryOf, sug, active, sugOpen, updateSug, pickSug, onSugKey } = useQui
   onPick: (type, it) => (type === '#' ? (kindSel.value = it.id) : (attached.value = { key: it.id, summary: it.sub ?? '' })),
 })
 
-const q = computed(() => parseQuick(text.value, { day: props.day, weekStart: props.weekStart, kinds: kinds.value }))
+/** How the line is read: the shown day, its week, the kinds. */
+const parseCtx = () => ({ day: props.day, weekStart: props.weekStart, kinds: kinds.value })
+const q = computed(() => parseQuick(text.value, parseCtx()))
 const task = computed<TaskRef | undefined>(() => attached.value ?? (q.value.task ? { key: q.value.task, summary: summaryOf(q.value.task) } : undefined))
 const kind = computed(() => q.value.kind ?? (task.value && !attached.value ? 'task' : kindSel.value))
 // ---------- the day and the time under the line: the wheel / the keys change them ----------
-/** Set by hand in the preview (they win over the text until the text names another time / day). */
+/** The day set by hand in the preview (it wins over the text until the text names another day). */
 const dayOv = ref<string>()
-const startOv = ref<number>()
-const endOv = ref<number>()
 watch(
-  // a string: a new array every keystroke would reset the hand-set time while the title is typed
-  () => [q.value.day, q.value.start, q.value.end, q.value.dur].join('|'),
-  () => {
-    dayOv.value = undefined
-    startOv.value = undefined
-    endOv.value = undefined
-  },
+  () => q.value.day,
+  () => (dayOv.value = undefined),
 )
 const finalDay = computed(() => dayOv.value ?? q.value.day)
 const range = computed(() => {
   const r = props.place(q.value)
-  const base = dayStart(finalDay.value)
-  const shift = base - dayStart(q.value.day)
-  let start = r.start + shift
-  let end = r.end + shift
-  if (startOv.value !== undefined) start = base + startOv.value * MINUTE
-  if (endOv.value !== undefined) end = base + endOv.value * MINUTE
-  if (end <= start) end = start + Math.max(5 * MINUTE, r.end - r.start)
-  return { start, end }
+  const shift = dayStart(finalDay.value) - dayStart(q.value.day)
+  const start = r.start + shift
+  const end = r.end + shift
+  return { start, end: end > start ? end : start + Math.max(5 * MINUTE, r.end - r.start) }
 })
-const handTime = computed(() => startOv.value !== undefined || endOv.value !== undefined)
-const minOf = (t: number) => Math.round((t - dayStart(finalDay.value)) / MINUTE)
+/** The line's own time (named in it) — else it is placed «авто». */
+const timed = computed(() => q.value.start !== undefined)
+/** A time set from outside the text (the preview, the timeline): written into the line itself — one source of truth. */
+function putTime(start: Ms, end: Ms): void {
+  text.value = withTime(text.value, parseCtx(), formatHM(start), formatHM(end))
+}
+// the range the line names, told out (the timeline's band follows it); none — no time in the line
+watch(
+  () => (timed.value && finalDay.value === props.day ? `${range.value.start}|${range.value.end}` : ''),
+  (k) => emit('range', k ? { start: range.value.start, end: range.value.end } : null),
+)
 /** The wheel: up — later (the next day), down — earlier. */
 const dirOf = (e: WheelEvent) => ((Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1)
 function wheelDay(e: WheelEvent): void {
@@ -112,11 +117,8 @@ function keyDay(e: KeyboardEvent): void {
   e.preventDefault()
   dayOv.value = shiftDay(finalDay.value, d)
 }
-/** The time set by hand in the preview (TimeRange keeps the start before the end). */
-function setRange(r: { start: number; end: number }): void {
-  startOv.value = minOf(r.start)
-  endOv.value = minOf(r.end)
-}
+/** The time set by hand in the preview (TimeRange keeps the start before the end): into the line. */
+const setRange = (r: { start: number; end: number }) => putTime(r.start, r.end)
 const label = computed(() => q.value.label || (task.value ? `${task.value.key} ${task.value.summary}`.trim() : kindLabel(kind.value)))
 const ready = computed(() => !!(q.value.label || task.value || q.value.kind || q.value.parts.length))
 const otherDay = computed(() => finalDay.value !== props.day)
@@ -130,8 +132,6 @@ function submit(): void {
   const r = range.value
   emit('add', { day: finalDay.value, start: r.start, end: r.end, kind: kind.value, label: label.value, task: task.value })
   dayOv.value = undefined
-  startOv.value = undefined
-  endOv.value = undefined
   text.value = ''
   attached.value = undefined
   sug.value = undefined
@@ -173,7 +173,12 @@ function focus(prefill?: string): void {
     inp.value?.setSelectionRange(n, n)
   })
 }
-defineExpose({ focus })
+/** A range picked on the timeline: written into the line (what is typed in it stays), the line focused. */
+function setTime(start: Ms, end: Ms): void {
+  putTime(start, end)
+  focus()
+}
+defineExpose({ focus, setTime })
 </script>
 
 <template>
@@ -212,8 +217,8 @@ defineExpose({ focus })
     <div class="qprev tw:flex tw:items-center tw:gap-8 tw:min-h-28 tw:pt-0 tw:pr-10 tw:pb-7 tw:pl-10 tw:overflow-hidden tw:whitespace-nowrap tw:text-[12px]">
       <template v-if="ready">
         <span class="pv day tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-20 tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-panel-3 tw:text-text-2 tw:[&.other]:bg-accent-soft tw:[&.other]:text-accent-fg tw:cursor-ns-resize tw:hover:not-focus:[outline:1px_solid_var(--accent-line)] tw:focus:[outline:1px_solid_var(--accent-line)]" :class="{ other: otherDay }" tabindex="0" title="Колесо или стрелки — другой день" @wheel="wheelDay" @keydown="keyDay"><Icon name="calendar" :size="11" />{{ dayText(finalDay) }}</span>
-        <span class="pv time tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-20 tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-panel-3 tw:font-data tw:text-text" :class="{ auto: q.start === undefined && !handTime }" :title="q.start === undefined && !handTime ? 'Время не указано — сейчас + 30 мин' : ''">
-          <TimeRange :start="range.start" :end="range.end" @change="setRange"><i class="tw:text-muted tw:not-italic" v-if="q.start === undefined && !handTime"> авто</i></TimeRange>
+        <span class="pv time tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-20 tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-panel-3 tw:font-data tw:text-text" :class="{ auto: !timed }" :title="timed ? '' : 'Время не указано — сейчас + 30 мин'">
+          <TimeRange :start="range.start" :end="range.end" @change="setRange"><i class="tw:text-muted tw:not-italic" v-if="!timed"> авто</i></TimeRange>
         </span>
         <span class="pv kind tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-20 tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-panel-3 tw:text-text-2" :style="{ '--c': kindColor(kind) }"><i class="tw:w-8 tw:h-8 tw:rounded-[2px] tw:[background:var(--c)]"></i>{{ kindLabel(kind) }}</span>
         <span v-if="task" class="pv task tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:h-20 tw:py-0 tw:px-7 tw:rounded-r2 tw:max-w-340 tw:bg-info/14 tw:text-info-fg tw:font-data tw:[&.unknown]:bg-warn/14 tw:[&.unknown]:text-warn-fg" :class="{ unknown: !task.summary }" :title="task.summary || 'Задача не найдена в списке'">

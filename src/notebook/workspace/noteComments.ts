@@ -5,6 +5,7 @@ import { chatRooms } from '@renderer/lib/chat'
 import { serverCall } from '@renderer/lib/transport'
 import { sharedDocOfPath, sharedInfo, sharedTick } from './sharedDocs'
 import { anchorFor, rangeFor } from './sharedPlaces'
+import { gotoRange } from './noteGoto'
 
 /**
  * The comments of a shared note: each a discussion of the space's members about a place of the note (it goes with the
@@ -60,5 +61,5 @@ export const resolveComment = (room: string, resolved: boolean) => serverCall('s
 
 /** The note's editor shows a place (the text selected, scrolled to it). */
 export function gotoComment(path: string, c: NoteComment): void {
-  if (c.at && !c.at.gone) window.dispatchEvent(new CustomEvent('qa:note-goto', { detail: { path, from: c.at.from, to: c.at.to } }))
+  if (c.at && !c.at.gone) gotoRange({ path, from: c.at.from, to: c.at.to })
 }

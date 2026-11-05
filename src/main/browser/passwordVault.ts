@@ -1,7 +1,10 @@
-import { ipcMain, safeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { safeStorage, type WebContents } from 'electron'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeAtomic } from '../fsAtomic'
 import { join } from 'node:path'
-import { browserId, type PasswordInfo } from '../../shared/browser'
+import { browserId, PW_ANSWERS, type PasswordInfo, type PwAnswer } from '../../shared/browser'
+import type { PageLogin } from '../../shared/browser/pageChannels'
+import { toPage } from '../ipc/browserPageIpc'
 import { originOf, type BrowserHost } from './tab'
 
 interface Saved {
@@ -22,6 +25,8 @@ export class PasswordVault {
   private pw: { list: Saved[]; never: string[] } = { list: [], never: [] }
   private asks = new Map<string, { origin: string; username: string; password: string }>()
   private last = ''
+  /** The kept file is there but could not be read (the OS encryption failed for a while): never overwritten. */
+  private unreadable = false
 
   constructor(
     root: string,
@@ -30,51 +35,54 @@ export class PasswordVault {
     this.file = join(root, 'browser-passwords.bin')
     try {
       if (existsSync(this.file) && safeStorage.isEncryptionAvailable()) this.pw = JSON.parse(safeStorage.decryptString(readFileSync(this.file))) as typeof this.pw
-    } catch {
-      this.pw = { list: [], never: [] }
+    } catch (e) {
+      this.unreadable = true
+      console.error('[browser] saved passwords could not be read — the file is kept as it is', e)
     }
-    // a page's sign-in form was sent: offer to keep it (the origin is the page's own, never what it says)
-    ipcMain.on('qa:bpw-submit', (e, c: { username?: string; password?: string }) => {
-      const t = this.host.byContents(e.sender)
-      const origin = originOf(e.sender.getURL())
-      const password = String(c?.password ?? '')
-      const username = String(c?.username ?? '').slice(0, 200)
-      if (!t || !origin || !password || password.length > 500 || this.pw.never.includes(origin)) return
-      // the same form sent twice (submit + click) — once
-      const key = `${origin}|${username}|${password}`
-      if (key === this.last) return
-      this.last = key
-      const has = this.pw.list.find((x) => x.origin === origin && x.username === username)
-      if (has?.password === password) return
-      const askId = browserId()
-      this.asks.set(askId, { origin, username, password })
-      this.host.emit('pwAsk', { askId, origin, username, update: !!has })
-    })
-    // a sign-in form on a page: its saved login, if any (the newest used)
-    ipcMain.handle('qa:bpw-get', (e) => {
-      if (!this.host.byContents(e.sender)) return null
-      const origin = originOf(e.sender.getURL())
-      const hit = this.pw.list.filter((x) => x.origin === origin).sort((a, b) => (b.used ?? b.saved) - (a.used ?? a.saved))[0]
-      if (!hit) return null
-      hit.used = Date.now()
-      return { username: hit.username, password: hit.password }
-    })
+  }
+  /** A page's sign-in form was sent: offer to keep it (the origin is the page's own, never what it says). */
+  onSubmit(wc: WebContents, raw: unknown): void {
+    const c = raw as { username?: unknown; password?: unknown } | undefined
+    const t = this.host.byContents(wc)
+    const origin = originOf(wc.getURL())
+    const password = String(c?.password ?? '')
+    const username = String(c?.username ?? '').slice(0, 200)
+    if (!t || !origin || !password || password.length > 500 || this.pw.never.includes(origin)) return
+    // the same form sent twice (submit + click) — once
+    const key = `${origin}|${username}|${password}`
+    if (key === this.last) return
+    this.last = key
+    const has = this.pw.list.find((x) => x.origin === origin && x.username === username)
+    if (has?.password === password) return
+    const askId = browserId()
+    // one question shown at a time: a replaced one is never answered — its password is not kept in memory
+    this.asks.clear()
+    this.asks.set(askId, { origin, username, password })
+    this.host.emit('pwAsk', { askId, origin, username, update: !!has })
+  }
+  /** A sign-in form on a tab's page: its site's saved login, if any (the newest used). */
+  loginFor(wc: WebContents): PageLogin | null {
+    if (!this.host.byContents(wc)) return null
+    const origin = originOf(wc.getURL())
+    const hit = this.pw.list.filter((x) => x.origin === origin).sort((a, b) => (b.used ?? b.saved) - (a.used ?? a.saved))[0]
+    if (!hit) return null
+    hit.used = Date.now()
+    return { username: hit.username, password: hit.password }
   }
   private save(): void {
-    if (!safeStorage.isEncryptionAvailable()) return
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(this.pw)))
-    renameSync(tmp, this.file)
+    if (!safeStorage.isEncryptionAvailable() || this.unreadable) return
+    writeAtomic(this.file, safeStorage.encryptString(JSON.stringify(this.pw)))
     this.host.emit('passwords', this.passwords())
   }
   /** The saved logins — without the passwords (those come one by one: reveal). */
   passwords(): PasswordInfo[] {
     return this.pw.list.map((x) => ({ id: x.id, origin: x.origin, username: x.username, saved: x.saved, used: x.used }))
   }
-  answer(askId: string, answer: 'save' | 'no' | 'never'): void {
+  answer(askId: string, answer: PwAnswer): void {
     const a = this.asks.get(askId)
     this.asks.delete(askId)
-    if (!a || answer === 'no') return
+    // (an answer the window never offers keeps nothing)
+    if (!a || answer === 'no' || !PW_ANSWERS.includes(answer)) return
     if (answer === 'never') {
       if (!this.pw.never.includes(a.origin)) this.pw.never.push(a.origin)
     } else {
@@ -111,7 +119,7 @@ export class PasswordVault {
     const s = this.pw.list.find((x) => x.id === id)
     if (!t || !s || originOf(t.view.webContents.getURL()) !== s.origin) return
     s.used = Date.now()
-    t.view.webContents.send('qa:bpw-fill', { username: s.username, password: s.password })
+    toPage(t.view.webContents, 'pwFill', { username: s.username, password: s.password })
   }
   neverList(): string[] {
     return this.pw.never

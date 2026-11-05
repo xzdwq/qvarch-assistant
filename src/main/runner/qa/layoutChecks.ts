@@ -3,6 +3,8 @@ import type { QaContext, SeenFlaws } from './qaContext'
 import { stepError } from './qaText'
 import type { QaMark } from '../../../shared/browser/constants'
 
+/** A page's resize handlers are debounced: by this time after a new screen their re-layout (and its requests) began. */
+const RELAYOUT_MS = 400
 /** The screens a layout check looks at: widths × zooms, at one height. */
 type Screens = { widths?: number[]; zooms?: number[]; height?: number }
 
@@ -34,7 +36,7 @@ export function layoutChecks(ctx: QaContext) {
               const cw = Math.round((w * 100) / z)
               const ch = Math.round((H * 100) / z)
               await cdp.send('Emulation.setDeviceMetricsOverride', { width: cw, height: ch, deviceScaleFactor: z / 100, mobile: false })
-              await page.waitForTimeout(400)
+              await page.waitForTimeout(RELAYOUT_MS)
               await ctx.quiet(300, 5000)
               const where = `${w} px · ${z}%`
               const file = `layout-${w}x${H}-${z}.png`
@@ -43,6 +45,8 @@ export function layoutChecks(ctx: QaContext) {
             }
         } finally {
           await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+          // (a session left attached repeats every page event to the app's bridge for the rest of the run)
+          await cdp.detach().catch(() => undefined)
           if (was) await page.setViewportSize(was).catch(() => undefined)
         }
         const list = [...seen.values()]
@@ -100,6 +104,8 @@ export function layoutChecks(ctx: QaContext) {
             }
         } finally {
           await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+          // (a session left attached repeats every page event to the app's bridge for the rest of the run)
+          await cdp.detach().catch(() => undefined)
           if (was) await page.setViewportSize(was).catch(() => undefined)
           page.setDefaultTimeout(30000)
         }

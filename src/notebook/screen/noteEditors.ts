@@ -24,6 +24,8 @@ export class NoteEditors {
   }
   private dropUnmounted(): void {
     for (const [key, editor] of this.editors) if (editor.$.isUnmounted) this.editors.delete(key)
+    // (their title fields gone with them)
+    for (const [key, el] of this.titles) if (!el.isConnected) this.titles.delete(key)
   }
   get(key: string): NoteEditor | undefined {
     return this.editors.get(key)

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { parseWork, workMd, workRange, workReport, WORK_PERIODS, type WorkModel, type WorkPeriod, type WorkReport } from './model'
 import { isProductive } from '@shared/kinds'
+import { dayKey, shiftDay } from '@shared/timeline'
 import type { KindDef } from '@shared/types'
 import DateRangePicker from '@renderer/components/DateRangePicker.vue'
 import Icon from '@renderer/components/Icon.vue'
@@ -12,8 +13,7 @@ import { useSharedWork } from './useSharedWork'
  * by days, each with its kind, title, task, time and length; then the hours per kind and the total
  * (parallel events counted once). A relative period («эта неделя») moves with the calendar.
  */
-const props = defineProps<{ src: string; path?: string; line?: number; autofocus?: boolean }>()
-const emit = defineEmits<{ change: [src: string] }>()
+const props = defineProps<{ src: string; path?: string; line?: number; autofocus?: boolean; onChange?: (src: string) => void }>()
 const m = ref<WorkModel>(parseWork(props.src))
 let mine = props.src
 watch(
@@ -28,18 +28,13 @@ function save(): void {
   const md = workMd(m.value)
   if (md === mine) return
   mine = md
-  emit('change', md)
+  props.onChange?.(md)
 }
 const range = computed(() => workRange(m.value, new Date(now.value)))
 
 // ---------- the period: ‹ dates ›, the wheel, «Сегодня» (as in Моя работа) ----------
 const pickOpen = ref(false)
 const pickEl = ref<HTMLElement>()
-const shiftDay = (d: string, n: number) => {
-  const x = new Date(`${d}T12:00:00`)
-  x.setDate(x.getDate() + n)
-  return x.toLocaleDateString('sv-SE')
-}
 const monthEnd = (d: string) => shiftDay(`${shiftDay(`${d.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1)
 const spanDays = () => Math.round((new Date(`${range.value.to}T12:00:00`).getTime() - new Date(`${range.value.from}T12:00:00`).getTime()) / 86_400_000) + 1
 const wholeMonth = () => range.value.from.endsWith('-01') && range.value.to === monthEnd(range.value.from)
@@ -54,7 +49,7 @@ function shift(dir: 1 | -1): void {
   if (wholeMonth()) {
     const x = new Date(`${r.from}T12:00:00`)
     x.setMonth(x.getMonth() + dir)
-    const a = `${x.toLocaleDateString('sv-SE').slice(0, 7)}-01`
+    const a = `${dayKey(x.getTime()).slice(0, 7)}-01`
     return setDates(a, monthEnd(a))
   }
   const n = spanDays() * dir
@@ -66,7 +61,7 @@ function onWheel(e: WheelEvent): void {
   wheelAt = performance.now()
   shift(e.deltaY < 0 ? 1 : -1)
 }
-const today = () => new Date().toLocaleDateString('sv-SE')
+const today = () => dayKey(Date.now())
 const hasToday = computed(() => range.value.from <= today() && today() <= range.value.to)
 /** «Сегодня»: the living period of that kind — today, this week, this month (it moves with the calendar). */
 function goToday(): void {
@@ -132,7 +127,7 @@ watch([() => range.value.from, () => range.value.to, kinds, () => (m.value.hide 
 // the period holds today: it follows the day (new events, the one going on)
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
 const offDay = window.qa.onDayState(() => {
-  const today = new Date().toLocaleDateString('sv-SE')
+  const today = dayKey(Date.now())
   if (today < range.value.from || today > range.value.to) return
   clearTimeout(reloadTimer)
   reloadTimer = setTimeout(() => void load(), 3000)

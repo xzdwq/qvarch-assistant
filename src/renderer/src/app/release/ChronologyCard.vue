@@ -34,7 +34,7 @@ const { rows, railW, railSvg, railH, onRailOver } = useChronologyRail(rowsEl, ()
   <section class="card tw:mb-14 tw:py-12 tw:px-14 tw:rounded-(--rad) tw:border tw:border-border tw:bg-panel">
     <ReleaseCardHead :num="2" title="Хронология коммитов" desc="Проверьте порядок коммитов перед сборкой релиза." :collapsed="collapsed" @toggle="collapsed = !collapsed">
       <button v-if="inSync !== null || rs.busy.plan" class="ib sync tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[50%] tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:enabled:bg-white/8 tw:hover:enabled:not-[&.ok]:not-[&.bad]:text-text tw:disabled:opacity-40 tw:[&.ok]:not-[&.bad]:text-(--c-green) tw:[&.bad]:text-(--c-red) tw:hover:enabled:border-border-3" :class="inSync ? 'ok' : 'bad'" :title="inSync ? 'Хронология соответствует текущему выбору веток' : 'Выбор веток изменился — нажмите, чтобы перестроить'" @click.stop="buildPlan">
-        <span v-if="rs.busy.plan" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite] tw:m-0"></span><Icon v-else name="refresh" :size="15" />
+        <span v-if="rs.busy.plan" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite] tw:m-0"></span><Icon v-else name="refresh" :size="15" />
       </button>
       <template v-if="items.length">
         <span v-if="!summary.conflicts && !summary.conditional" class="cst ok tw:inline-flex tw:items-center tw:gap-4 tw:py-2 tw:px-8 tw:rounded-[4px] tw:text-[11px] tw:whitespace-nowrap tw:bg-[color-mix(in_srgb,var(--c-green)_20%,transparent)] tw:text-(--c-green)">Конфликты: 0 ✓</span>
@@ -53,7 +53,7 @@ const { rows, railW, railSvg, railH, onRailOver } = useChronologyRail(rowsEl, ()
       <StaleBranches v-if="plan && items.length && (rs.staleLoading || rs.staleHints)" />
 
       <div v-if="!items.length" class="mut empty tw:text-muted tw:text-[12px] tw:flex tw:items-center tw:p-8">
-        <template v-if="rs.busy.plan"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>Строим хронологию…</template>
+        <template v-if="rs.busy.plan"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>Строим хронологию…</template>
         <template v-else>Постройте хронологию, чтобы увидеть коммиты</template>
       </div>
       <div v-else class="cscroll tw:mt-4 tw:overflow-x-auto tw:overflow-y-hidden">

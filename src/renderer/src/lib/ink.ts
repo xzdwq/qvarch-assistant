@@ -25,7 +25,7 @@ export interface InkStyle {
 export const DEFAULT_INK = { streamline: 0.55, smoothing: 0.6, thinning: 0.55 }
 
 /** An outline (perfect-freehand's polygon) → an SVG path, curved between the points. */
-export function outlinePath(pts: number[][]): string {
+function outlinePath(pts: number[][]): string {
   const n = pts.length
   if (n < 4) {
     if (!n) return ''
@@ -287,11 +287,6 @@ export function nibPath(points: number[][], s: Pick<InkStyle, 'size' | 'streamli
     ])
   }
   return path
-}
-
-/** The smoothed points of a stroke with their pressure (for effects along it). */
-export function smoothPoints(points: number[][], s: Pick<InkStyle, 'size' | 'streamline' | 'smoothing'>): Array<{ x: number; y: number; p: number }> {
-  return getStrokePoints(points, { size: s.size, streamline: s.streamline, smoothing: s.smoothing, last: true }).map((q) => ({ x: q.point[0], y: q.point[1], p: q.pressure }))
 }
 
 /**

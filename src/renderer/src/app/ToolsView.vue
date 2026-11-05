@@ -4,6 +4,7 @@ import { toolsIds } from '@shared/places'
 import type { UiPrefs } from '@shared/types'
 import Icon from '../components/Icon.vue'
 import { openHttp, openPlace, toolSel, view } from '../lib/views'
+import { isRecord, readStored, writeStored } from '../lib/storedRef'
 import { toolItem } from './toolsRegistry'
 
 /**
@@ -22,22 +23,10 @@ const alive = computed(() => items.value.filter((t) => t.alive && opened.value.h
 const shown = computed(() => view.value === 'tools')
 
 const KEY = 'qa.tools'
-const saved = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '{}') as { w?: number; mini?: boolean }
-  } catch {
-    return {}
-  }
-})()
-const width = ref(Math.min(360, Math.max(170, saved.w ?? 220)))
+const saved = readStored<{ w?: unknown; mini?: unknown }>(KEY, {}, isRecord)
+const width = ref(Math.min(360, Math.max(170, typeof saved.w === 'number' && Number.isFinite(saved.w) ? saved.w : 220)))
 const mini = ref(!!saved.mini)
-watch([width, mini], () => {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ w: width.value, mini: mini.value }))
-  } catch {
-    // fine
-  }
-})
+watch([width, mini], () => writeStored(KEY, { w: width.value, mini: mini.value }))
 function dragWidth(e: PointerEvent): void {
   e.preventDefault()
   const x0 = e.clientX

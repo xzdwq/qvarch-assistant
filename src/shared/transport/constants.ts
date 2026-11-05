@@ -1,3 +1,5 @@
+import { isUuid } from './ids'
+
 /** The app's connection to the transport server and its chat, as the person sets them (Настройки → Сервер и чат). */
 
 /** How a message is sent from the input: Enter (Shift+Enter — a new line) or Ctrl+Enter (Enter — a new line). */
@@ -59,7 +61,7 @@ export function cleanChat(raw: unknown): ChatPrefs {
   return {
     sendKey: (CHAT_SEND_KEYS as readonly string[]).includes(o.sendKey as string) ? (o.sendKey as ChatSendKey) : DEFAULT_CHAT.sendKey,
     notifyAll: typeof o.notifyAll === 'boolean' ? o.notifyAll : DEFAULT_CHAT.notifyAll,
-    rooms: Object.fromEntries(Object.entries(o.rooms && typeof o.rooms === 'object' ? o.rooms : {}).filter(([k, v]) => /^[0-9a-f-]{36}$/.test(k) && typeof v === 'boolean')),
+    rooms: Object.fromEntries(Object.entries(o.rooms && typeof o.rooms === 'object' ? o.rooms : {}).filter(([k, v]) => isUuid(k) && typeof v === 'boolean')),
   }
 }
 

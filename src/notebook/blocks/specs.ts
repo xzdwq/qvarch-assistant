@@ -1,4 +1,4 @@
-import type { BlockKind, BlockSpec } from '../domain/blockSpec'
+import type { BlockKind, BlockSpec, RunnableBlockSpec } from '../domain/blockSpec'
 import { audioSpec } from './audio/spec'
 import { boardSpec } from './board/spec'
 import { browserSpec } from './browser/spec'
@@ -69,3 +69,5 @@ export const blockSpec = <K extends BlockKind>(kind: K): BlockSpec<K> => BLOCK_S
 export type RunnableKind = { [K in BlockKind]: (typeof BLOCK_SPECS)[K] extends { runnable: true } ? K : never }[BlockKind]
 export const RUNNABLE_KINDS = ALL_BLOCK_SPECS.filter((s) => s.runnable).map((s) => s.kind) as readonly RunnableKind[]
 export const isRunnableKind = (kind: BlockKind): kind is RunnableKind => !!BLOCK_SPECS[kind].runnable
+/** A runnable kind's spec (with its run traits: serialInLoop, test). */
+export const runnableSpec = (kind: RunnableKind): RunnableBlockSpec<RunnableKind> => BLOCK_SPECS[kind]

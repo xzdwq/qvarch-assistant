@@ -6,7 +6,6 @@ import type { Entry, Ms, WorkSchedule } from '@shared/types'
 import type { RangeDay } from '../lib/useRange'
 import { entryIcon, kindColor, kindLabel } from '../lib/palette'
 import { todayKey } from '../lib/today'
-import type { Recent } from './LabelInput.vue'
 import EntryEditor, { type Draft } from './EntryEditor.vue'
 import Icon from './Icon.vue'
 import AttrChips from './AttrChips.vue'
@@ -17,7 +16,7 @@ import AttrChips from './AttrChips.vue'
  * smoothly to that event (the list next to it is hovered), `openId` — edit it.
  */
 /** `order` — 'desc': the latest day and event first (the default — the earliest first). */
-const props = defineProps<{ days: RangeDay[]; schedule: WorkSchedule; recent: Recent[]; now: Ms; focusId?: string; openId?: string; order?: 'asc' | 'desc' }>()
+const props = defineProps<{ days: RangeDay[]; schedule: WorkSchedule; now: Ms; focusId?: string; openId?: string; order?: 'asc' | 'desc' }>()
 const emit = defineEmits<{ open: [id: string | undefined]; changed: [] }>()
 
 const GAP_MIN = 15 * MINUTE
@@ -131,13 +130,13 @@ watch(
         </span>
       </div>
       <div v-if="draft?.head && draft.day === g.day" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`n${g.day}`">
-        <EntryEditor :key="`n${g.day}`" :day="g.day" :entry="draft.entry" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
+        <EntryEditor :key="`n${g.day}`" :day="g.day" :entry="draft.entry" :entries="g.data.entries" :notes="g.data.notes" :now="now" @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
         <button class="ex tw:absolute tw:top-8 tw:right-8 tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
       </div>
       <template v-for="r in g.rows" :key="r.key">
         <template v-if="r.t === 'gap'">
           <div v-if="!draft?.head && draft?.day === g.day && draft.entry.start === r.start" class="ecard draft tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)] tw:[&&&]:border-dashed" :data-k="`d${g.day}${r.start}`">
-            <EntryEditor :key="`d${r.start}`" :day="g.day" :entry="draft.entry" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
+            <EntryEditor :key="`d${r.start}`" :day="g.day" :entry="draft.entry" :entries="g.data.entries" :notes="g.data.notes" :now="now" @saved="(draft = undefined), emit('changed')" @close="draft = undefined" />
             <button class="ex tw:absolute tw:top-8 tw:right-8 tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Отмена" @click="draft = undefined"><Icon name="x" :size="13" /></button>
           </div>
           <button v-else class="egap tw:group/egap tw:flex tw:items-center tw:gap-8 tw:w-[calc(100%-12px)] tw:h-24 tw:my-0 tw:mx-6 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-9 tw:border-0 tw:[&&]:border-b tw:[&&]:[border-bottom-style:dashed] tw:[&&]:border-b-border tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:text-left tw:[&.past]:not-hover:text-dim tw:hover:bg-hover tw:hover:text-accent-fg tw:hover:enabled:border-border-3" :class="{ past: r.past }" title="Заполнить это время событием" @click="fillGap(g.day, r.start, r.end)">
@@ -147,7 +146,7 @@ watch(
           </button>
         </template>
         <div v-else-if="openId === r.e.id" class="ecard tw:relative tw:m-6 tw:py-10 tw:px-12 tw:border tw:border-accent-line tw:[&&]:border-l-3 tw:[&&]:border-l-(--c,var(--accent)) tw:rounded-r3 tw:bg-panel-2 tw:[box-shadow:0_0_0_3px_var(--accent-soft)]" :data-k="r.e.id" :style="{ '--c': kindColor(r.e.kind) }">
-          <EntryEditor :key="r.e.id" :day="g.day" :entry="r.e" :recent="recent" :entries="g.data.entries" :notes="g.data.notes" :now="now" textarea @saved="emit('changed')" @copied="(c, d) => (emit('changed'), d === g.day && emit('open', c.id))" @deleted="(emit('open', undefined), emit('changed'))" @close="emit('open', undefined)" />
+          <EntryEditor :key="r.e.id" :day="g.day" :entry="r.e" :entries="g.data.entries" :notes="g.data.notes" :now="now" @saved="emit('changed')" @copied="(c, d) => (emit('changed'), d === g.day && emit('open', c.id))" @deleted="(emit('open', undefined), emit('changed'))" @close="emit('open', undefined)" />
         </div>
         <button v-else class="erow tw:group/erow tw:flex tw:items-center tw:gap-8 tw:w-[calc(100%-12px)] tw:min-h-32 tw:my-0 tw:mx-6 tw:pt-3 tw:pr-8 tw:pb-3 tw:pl-6 tw:border-0 tw:[&&]:border-l-3 tw:[&&]:border-l-(--c) tw:[&&]:border-b tw:[&&]:border-b-border tw:rounded-none tw:bg-transparent tw:text-left tw:whitespace-nowrap tw:text-[12.5px] tw:cursor-default tw:[transition:background_0.2s] tw:hover:not-[&.focus]:not-[&.live]:bg-[color-mix(in_srgb,var(--c)_14%,transparent)] tw:[&.focus]:not-[&.live]:bg-[color-mix(in_srgb,var(--c)_14%,transparent)] tw:[&.focus]:[box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--c)_60%,transparent)] tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:hover:enabled:border-border-3" :data-k="r.e.id" :class="{ focus: focusId === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @click="emit('open', r.e.id)">
           <span class="num tm tw:font-data tw:tabular-nums tw:flex-none tw:w-84 tw:text-text-2 tw:text-[11.5px]">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>

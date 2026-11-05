@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { islandChatOf, type IslandChatOps, type IslandChatState } from '@shared/islandChat'
 import { mayWriteIn } from '@nb/blocks/chat/roomRights'
 import { chatPortLocal } from './chatPortLocal'
+import { serveOps, type ServedOp } from './serveOps'
 import { homeless } from '@nb/workspace/treeFacts'
 import { loadTree, tree } from '@nb/workspace/vaultTreeStore'
 import { chatMe, chatOnline, chatPrefs, chatRooms, deleteChat, messagesOf, openChat, pendingOf, showInIsland } from './chat'
@@ -122,12 +123,5 @@ export function startIslandChat(): void {
     },
     { immediate: true },
   )
-  window.qa.onIslandChatCall((id, op, args) => {
-    const fn = OPS[op] as ((a: Record<string, unknown>) => Promise<unknown>) | undefined
-    if (!fn) return window.qa.islandChatReply(id, false, `Неизвестная операция ${op}`)
-    fn(args).then(
-      (v) => window.qa.islandChatReply(id, true, v),
-      (e: unknown) => window.qa.islandChatReply(id, false, e instanceof Error ? e.message : String(e)),
-    )
-  })
+  window.qa.onIslandChatCall(serveOps(OPS as unknown as Record<string, ServedOp>, (id, ok, v) => window.qa.islandChatReply(id, ok, v)))
 }

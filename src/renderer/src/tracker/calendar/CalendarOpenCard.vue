@@ -19,11 +19,9 @@ const { els, panel, isOff, toNum, fmt, cap, panelEntry, isToday, nowMs, panelDay
         :key="panel.key"
         :day="panel.day"
         :entry="panelEntry ?? panel.entry"
-        :recent="[]"
         :now="isToday(panel.day) ? nowMs : undefined"
         :entries="panelDay?.entries ?? []"
         :notes="panelDay?.notes ?? []"
-        textarea
         @saved="onSaved"
         @copied="onCopied"
         @day="setPanelDay"

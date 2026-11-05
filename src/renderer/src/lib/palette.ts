@@ -11,14 +11,6 @@ export function setKinds(list: KindDef[] | undefined): void {
   if (list?.length) kinds.value = list
 }
 
-let loaded = false
-/** Loads kinds once per window; call again with `force` after settings change. */
-export function loadKinds(force = false): void {
-  if (loaded && !force) return
-  loaded = true
-  void window.qa.getSettings().then((s) => setKinds(s.kinds))
-}
-
 export function kindColor(kind: string): string {
   return findKind(kinds.value, kind).color
 }

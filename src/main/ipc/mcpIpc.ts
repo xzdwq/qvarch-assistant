@@ -1,5 +1,6 @@
 import { app as electronApp } from 'electron'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import type { McpClient } from '../../shared/api'
 import { contentsOf, type AppContext } from '../app/appContext'
@@ -76,7 +77,8 @@ const MCP_INSTALLERS: Record<McpClient, (i: McpServerInfo) => Promise<string>> =
     }
     cfg.mcpServers = { ...(cfg.mcpServers ?? {}), qvarch: { command: i.exe, args: [i.bridge], env: { ELECTRON_RUN_AS_NODE: '1' } } }
     mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, JSON.stringify(cfg, null, 2))
+    // (another app's file, with its other servers: never left half-written)
+    writeJsonAtomic(file, cfg, 2)
     return `Готово: ${file}. Перезапустите Claude Desktop.`
   },
   // Claude Code (VS Code and the terminal share it): its own command, for the user

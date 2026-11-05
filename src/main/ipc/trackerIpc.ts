@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { remindAt } from '../../shared/repeat'
 import { dayEnd, dayKey, mergeEntries, pinLanes, putEntry } from '../../shared/timeline'
-import type { Entry, Note } from '../../shared/types'
+import type { Note } from '../../shared/types'
 import type { AppContext } from '../app/appContext'
 import { addEntryOnFreeLane, moveEntry, OUTLOOK_RO, removeEntry, saveEntry } from '../tracker/dayEdits'
 import type { Series } from '../tracker/series'
 import { handle, listen } from './router'
 
-/** The time tracker's window calls: the day's blocks, notes, plan, tasks of the day, repeats, the cut marker. */
+/** The time tracker's window calls: the day's blocks, notes, tasks of the day, repeats, the cut marker. */
 export function registerTrackerIpc(app: AppContext, series: Series): void {
   const { store } = app
   /** The day changed: saved now, the windows told. */
@@ -98,33 +98,6 @@ export function registerTrackerIpc(app: AppContext, series: Series): void {
     return entry
   })
 
-  // ---------- the plan ----------
-  handle('savePlan', (_e, day, block) => {
-    if (!(block.end > block.start)) throw new Error('Конец должен быть позже начала')
-    const d = store.day(day)
-    const prev = (d.plan ?? []).find((p) => p.id === block.id)
-    d.plan = [...(d.plan ?? []).filter((p) => p.id !== block.id), { ...prev, ...block, label: block.label.trim() }]
-    changed(day)
-    return block
-  })
-  handle('deletePlan', (_e, day, id) => {
-    const d = store.day(day)
-    d.plan = (d.plan ?? []).filter((p) => p.id !== id)
-    changed(day)
-  })
-  handle('planDone', (_e, day, id) => {
-    const d = store.day(day)
-    const p = (d.plan ?? []).find((x) => x.id === id)
-    if (!p) return undefined
-    // pressed again (or from another place) — the block is already there
-    const made = p.doneEntryId ? d.entries.find((e) => e.id === p.doneEntryId) : undefined
-    if (made) return made
-    const entry: Entry = addEntryOnFreeLane(app, day, { id: randomUUID(), start: p.start, end: p.end, kind: p.kind, label: p.label, ...(p.task ? { task: { key: p.task.key, summary: p.task.summary } } : {}), source: 'manual' })
-    p.doneEntryId = entry.id
-    changed(day)
-    return entry
-  })
-
   // ---------- «Моя работа»: the tasks of the day, a block's task ----------
   const taskRef = (t: unknown): { key: string; summary: string } | undefined => {
     const x = t as { key?: unknown; summary?: unknown } | null
@@ -155,20 +128,6 @@ export function registerTrackerIpc(app: AppContext, series: Series): void {
     tasksChanged()
     app.broadcast() // a renamed task shows its new title on the calendar / blocks
     return task
-  })
-  handle('deleteTask', (_e, id) => {
-    store.deleteTask(id)
-    // notes made into this task are unlinked
-    for (const day of store.listDays()) {
-      const d = store.day(day)
-      if (d.notes.some((n) => n.taskId === id)) {
-        for (const n of d.notes) if (n.taskId === id) delete n.taskId
-        store.markDirty(day)
-      }
-    }
-    store.flush()
-    tasksChanged()
-    app.broadcast()
   })
 
   // ---------- the cut marker ----------

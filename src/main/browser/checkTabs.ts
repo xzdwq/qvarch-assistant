@@ -43,13 +43,19 @@ export class CheckTabs {
   async sync(tab: Tab, renew = false): Promise<void> {
     const want = this.check.settings.on && !tab.asleep
     const has = tab.dbg.has('check')
+    // (an asleep tab's page is closed: nothing to take off there)
+    if (!want && (!has || tab.asleep)) {
+      if (has) {
+        tab.checkScript = undefined
+        this.host.cdp.drop(tab, 'check')
+      }
+      return
+    }
     const d = tab.view.webContents.debugger
     if (!want) {
-      if (!has) return
       try {
         if (tab.checkScript) await d.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.checkScript }).catch(() => undefined)
         await d.sendCommand('Runtime.removeBinding', { name: CHECK_BINDING }).catch(() => undefined)
-        if (!tab.rec && !tab.dbg.has('hook') && tab.dbg.size > 1) await d.sendCommand('Network.disable').catch(() => undefined)
       } finally {
         tab.checkScript = undefined
         this.host.cdp.drop(tab, 'check')
@@ -69,7 +75,7 @@ export class CheckTabs {
       return
     }
     try {
-      await d.sendCommand('Network.enable', { maxTotalBufferSize: 100 * 1024 * 1024, maxResourceBufferSize: 20 * 1024 * 1024, maxPostDataSize: 1024 * 1024 })
+      await this.host.cdp.networkOn(tab, 'check', { maxTotalBufferSize: 100 * 1024 * 1024, maxResourceBufferSize: 20 * 1024 * 1024, maxPostDataSize: 1024 * 1024 })
       await d.sendCommand('Runtime.enable')
       await d.sendCommand('Page.enable')
       await d.sendCommand('Runtime.addBinding', { name: CHECK_BINDING, executionContextName: CHECK_WORLD })

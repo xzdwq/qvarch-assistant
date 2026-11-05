@@ -6,6 +6,8 @@ type Box = { x: number; y: number; w: number; h: number }
 const DEV_H = 'qa.browser.devH'
 const DEV_W = 'qa.browser.devW'
 const DEV_SIDE = 'qa.browser.devSide'
+/** How often the shown pages' boxes are looked at (a box moved without a resize). */
+const LAYOUT_POLL_MS = 300
 
 /**
  * Where the pages go: each pane's page box (and its docked tools, its device frame) reported to the main process,
@@ -90,15 +92,23 @@ export function usePageLayout(deps: {
   }
   let ro: ResizeObserver | undefined
   let tick: ReturnType<typeof setInterval> | undefined
+  /**
+   * While the section is shown, the boxes looked at every LAYOUT_POLL_MS: the app's zoom / a panel moving do not
+   * always resize the page box itself (it moves — no observer tells of that). Hidden — no pages to place.
+   */
+  function pollLayout(on: boolean): void {
+    clearInterval(tick)
+    tick = on ? setInterval(sendLayout, LAYOUT_POLL_MS) : undefined
+  }
   onMounted(() => {
     ro = new ResizeObserver(() => requestAnimationFrame(sendLayout))
     window.addEventListener('resize', sendLayout)
-    // the app's zoom / a panel moving do not always resize the page box itself
-    tick = setInterval(sendLayout, 300)
+    pollLayout(deps.active())
   })
+  watch(() => deps.active(), pollLayout)
   onBeforeUnmount(() => {
     ro?.disconnect()
-    clearInterval(tick)
+    pollLayout(false)
     window.removeEventListener('resize', sendLayout)
     window.qa.browserLayout([])
   })

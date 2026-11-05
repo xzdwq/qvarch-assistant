@@ -141,20 +141,6 @@ export function findPaths(body: unknown, value: string, max = 5): Path[] {
   walk(body, [])
   return out
 }
-/** Where a value is in a JSON body (the first place it is, as a string or a number). */
-export function findPath(body: unknown, value: string): Path | undefined {
-  const want = value.trim()
-  if (!want) return undefined
-  let found: Path | undefined
-  const walk = (v: unknown, p: Path) => {
-    if (found) return
-    if (Array.isArray(v)) v.forEach((x, i) => walk(x, [...p, i]))
-    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, [...p, k])
-    else if (v !== null && v !== undefined && String(v) === want) found = p
-  }
-  walk(body, [])
-  return found
-}
 export function getAt(body: unknown, path: Path): { has: boolean; value?: unknown } {
   let v: unknown = body
   for (const k of path) {
@@ -163,7 +149,6 @@ export function getAt(body: unknown, path: Path): { has: boolean; value?: unknow
   }
   return { has: true, value: v }
 }
-export const pathText = (p: Path) => p.map((k, i) => (typeof k === 'number' ? `[${k}]` : i ? `.${k}` : k)).join('')
 
 // ---------- the verdict of a try ----------
 export interface MatrixObs {

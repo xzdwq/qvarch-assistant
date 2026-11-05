@@ -4,6 +4,7 @@ import { cloneWithNewIds, importInto, moveNode, parentListOf, parseCopiedRequest
 import { postmanImport } from '@shared/httpPostman'
 import { firstRequestOf, takeHttpImports } from '../../lib/httpImport'
 import { backTo } from '../../lib/httpRuns'
+import { remoteError } from '@shared/remoteError'
 
 const SEL_KEY = 'qa.http.sel'
 
@@ -29,13 +30,18 @@ export function useHttpCollection() {
   }
   window.addEventListener('qa:http-select', onSelect)
   onBeforeUnmount(() => window.removeEventListener('qa:http-select', onSelect))
-  const loading = window.qa.httpLoad().then((d) => {
-    doc.items = d.items
-    doc.vars = d.vars
-    doc.settings = { ...DEFAULT_HTTP_SETTINGS, ...d.settings }
-    loaded.value = true
-    if (!sel.value || !findNode(doc.items, sel.value)) sel.value = allRequests(doc.items)[0]?.req.id
-  })
+  /** Why the collection could not be read or kept (shown in the tree; not loaded — nothing is saved over the file). */
+  const failure = ref<string>()
+  const loading = window.qa.httpLoad().then(
+    (d) => {
+      doc.items = d.items
+      doc.vars = d.vars
+      doc.settings = { ...DEFAULT_HTTP_SETTINGS, ...d.settings }
+      loaded.value = true
+      if (!sel.value || !findNode(doc.items, sel.value)) sel.value = allRequests(doc.items)[0]?.req.id
+    },
+    (e: unknown) => void (failure.value = `Коллекция не прочитана: ${remoteError(e)}`),
+  )
   // requests brought in from elsewhere while the section is open: into this copy (it is the one saved)
   onBeforeUnmount(takeHttpImports(async (folder, vars) => {
     await loading
@@ -43,7 +49,11 @@ export function useHttpCollection() {
   }))
   // kept by itself (a moment after the last change)
   let saveTimer: ReturnType<typeof setTimeout> | undefined
-  const saveNow = () => void window.qa.httpSave(JSON.parse(JSON.stringify(doc)) as HttpDoc)
+  const saveNow = () =>
+    void window.qa.httpSave(JSON.parse(JSON.stringify(doc)) as HttpDoc).then(
+      () => void (failure.value = undefined),
+      (e: unknown) => void (failure.value = `Изменения не сохранены: ${remoteError(e)}`),
+    )
   watch(
     doc,
     () => {
@@ -131,6 +141,6 @@ export function useHttpCollection() {
   /** A node dropped onto another one (or onto the empty space — undefined). */
   const dropNode = (id: string, target?: HttpNode) => void moveNode(doc.items, id, target)
 
-  return { doc, loaded, sel, req, folder, rows, varMap, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode }
+  return { doc, loaded, failure, sel, req, folder, rows, varMap, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode }
 }
 export type HttpCollection = ReturnType<typeof useHttpCollection>

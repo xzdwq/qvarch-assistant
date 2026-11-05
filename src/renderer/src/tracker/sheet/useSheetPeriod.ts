@@ -1,20 +1,18 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { daysBetween } from '@shared/report'
-import { onNewDay } from '../../lib/today'
+import { onNewDay, todayKey } from '../../lib/today'
 import { MAX_DAYS, periodDays, periodKey, periodOfRange, shiftPeriod, type SheetMode, type SheetPeriod } from '@shared/tracker/sheetPeriod'
-import { readStored, writeStored } from './sheetStorage'
+import { readStored, writeStored } from '../../lib/storedRef'
 
 /** What the period reads from the sheet's props. */
 export interface SheetPeriodProps {
   widget?: boolean
-  /** The day it follows (the timeline's). */
-  day?: string
   /** Embedded: these days, no bar of its own. */
   range?: { from: string; to: string }
 }
 
 /** Today as a day key. */
-export const sheetToday = () => new Date().toLocaleDateString('sv-SE')
+export const sheetToday = () => todayKey.value
 /** A day formatted for the header. */
 export const fmtDay = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T12:00:00`).toLocaleDateString('ru-RU', o)
 
@@ -39,16 +37,6 @@ export function useSheetPeriod(props: SheetPeriodProps, suffix: string) {
   onNewDay((prev, next) => {
     if (period.anchor === prev) set({ anchor: next })
   })
-  // the timeline's day: the period moves to it (a day or the week holding it)
-  watch(
-    () => props.day,
-    (d) => {
-      if (!d) return
-      if (period.mode === 'range') set({ mode: 'day' })
-      set({ anchor: d })
-    },
-    { immediate: true },
-  )
 
   const mode = computed(() => period.mode)
   const cols = computed(() => (props.range ? daysBetween(props.range.from, props.range.to).slice(0, MAX_DAYS) : periodDays(period)))

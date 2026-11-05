@@ -79,7 +79,7 @@ function createIslandState() {
   const pointer = useTrackPointer(els, day, track, pick)
   const cut = useIslandCut(els, day, pick, flash)
   const edit = useEntryEdit(day, pick, track.laneOf, flash)
-  const menu = useIslandMenu(els, { island, day, pick, pointer, cut, edit, flash })
+  const menu = useIslandMenu(els, { day, pick, pointer, cut, edit, flash })
   const list = useDayList(day)
 
   // the pin state is read once — later reloads (on every expand) must not overwrite a click in flight

@@ -1,15 +1,14 @@
-import { reactive, ref, shallowRef } from 'vue'
+import { reactive, ref } from 'vue'
 import { mainStatusOf, type BranchCommitInfo, type BranchDiffStat, type BranchRef, type ConflictSource, type MainStatus, type ProjectProfile, type ReleasePlan, type ReleaseProgressEvent, type StaleBranchHint } from '@shared/release'
 import type { JiraVersion } from '@shared/jira'
 import { makeColors } from './releaseRail'
-import { onNewDay } from './today'
+import { onNewDay, todayKey } from './today'
 
 /**
  * The "Релиз" section's state — kept here, outside the component, so that leaving the section and coming
  * back keeps the branch list, the selection and the chronology (the extension's panel was "retained" too).
  * Messages come from main (the session) exactly as they came to the extension's webview.
  */
-export const today = () => new Date().toLocaleDateString('sv-SE')
 export const colors = makeColors()
 
 type Msg = { command: string } & Record<string, any>
@@ -43,7 +42,7 @@ export const rs = reactive({
   current: '',
   dirty: { hasStaged: false, hasUnstaged: false },
   dateCheck: { branchName: null as string | null, exists: false },
-  releaseDate: today(),
+  releaseDate: todayKey.value,
   plan: null as ReleasePlan | null,
   staleHints: null as StaleBranchHint[] | null,
   staleLoading: false,
@@ -65,7 +64,6 @@ onNewDay((prev, next) => {
 })
 /** Bumped on every change of the chronology — the rail is redrawn. */
 export const planTick = ref(0)
-export const lastMsg = shallowRef<Msg>()
 
 const KEY = 'qa.release.project'
 try {
@@ -138,7 +136,6 @@ function resetForNewContext(): void {
 }
 
 function onMsg(msg: Msg): void {
-  lastMsg.value = msg
   switch (msg.command) {
     case 'refreshReleaseDate':
       rs.releaseDate = msg.today

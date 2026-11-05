@@ -130,7 +130,7 @@ export function parseTable(src: string): TableModel {
 
 const cellText = (c: string) => c.replace(/\r\n?/g, '\n').replace(/\|/g, '\\|').replace(/\n/g, '<br>').trim()
 /** A cell as it comes back from the file (its edges trimmed, its line breaks — \n): what a filled table's hash is of. */
-export const normCell = (c: string) => c.replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n').trim()
+const normCell = (c: string) => c.replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n').trim()
 /** A table as Markdown, its columns lined up (it reads as a table in any editor). */
 export function tableMd(t: TableModel): string {
   const n = t.head.length

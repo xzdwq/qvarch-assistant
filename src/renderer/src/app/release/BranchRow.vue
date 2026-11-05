@@ -46,7 +46,7 @@ function toggleExpand(): void {
         </div>
         <button class="lnk tw:p-0 tw:border-0 tw:[background:none] tw:text-(--link) tw:text-[11px] tw:underline tw:cursor-pointer tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" @click="toggleExpand">{{ expanded ? '▾ скрыть коммиты' : `▸ показать коммиты (относительно ${rs.devBranch}-ветки)` }}</button>
         <template v-if="expanded">
-          <div v-if="rs.commits.get(b.ref) === 'loading'" class="bcs mut tw:text-muted tw:text-[12px] tw:my-4 tw:mx-0 tw:pl-8 tw:border-l-2 tw:border-l-border"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>Загрузка коммитов…</div>
+          <div v-if="rs.commits.get(b.ref) === 'loading'" class="bcs mut tw:text-muted tw:text-[12px] tw:my-4 tw:mx-0 tw:pl-8 tw:border-l-2 tw:border-l-border"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>Загрузка коммитов…</div>
           <template v-else-if="commits">
             <div v-if="commits.forkedFrom" class="bcs mut tw:text-muted tw:text-[12px] tw:my-4 tw:mx-0 tw:pl-8 tw:border-l-2 tw:border-l-border">Ветка заведена не от {{ rs.devBranch }}, а от <b>{{ commits.forkedFrom }}</b> — коммиты показаны относительно неё</div>
             <div v-if="!commits.commits.length" class="bcs mut tw:text-muted tw:text-[12px] tw:my-4 tw:mx-0 tw:pl-8 tw:border-l-2 tw:border-l-border">Нет коммитов, отсутствующих в {{ rs.devBranch }}-ветке</div>
@@ -72,7 +72,7 @@ function toggleExpand(): void {
         <span v-if="diff.deletions" class="del tw:text-(--c-red)">-{{ compactCount(diff.deletions) }}</span>
         <span v-if="diff.filesChanged" class="mut fc tw:text-muted tw:font-[inherit] tw:text-[10px]">({{ diff.filesChanged }} файл(ов))</span>
       </template>
-      <span v-else class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>
+      <span v-else class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>
     </div>
   </div>
 </template>

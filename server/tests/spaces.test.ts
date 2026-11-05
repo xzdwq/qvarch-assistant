@@ -7,6 +7,8 @@ import { Db } from '../src/db'
 import { startTransport, type Transport } from '../src/hub'
 import { MODULES } from '../src/modules'
 import { DocStore, docText } from '../src/modules/doc/docStore'
+import { DELETED_DOC_DAYS } from '../src/modules/space/spaceStore'
+import { CHAT_PLACE_MIGRATION } from '../src/modules/chat/chatStore'
 import { startPg } from './pg'
 import { SharedMedia } from '../../src/main/transport/sharedMedia'
 import { SpacePasses } from '../../src/main/transport/spacePasses'
@@ -35,7 +37,7 @@ beforeAll(async () => {
   pg = await startPg()
   const url = pg.url
   db = new Db(url)
-  server = await startTransport({ port: 0, databaseUrl: url, accessCode: '', version: 'test' }, db, MODULES)
+  server = await startTransport({ port: 0, databaseUrl: url, accessCode: '', version: 'test', mediaSecret: '' }, db, MODULES)
   // (a database started while the whole run loads the machine may take a while)
 }, 120_000)
 afterAll(async () => {
@@ -153,14 +155,16 @@ describe('a shared document', () => {
     await expect(c.client.request('chat.history', { room: room.id })).rejects.toMatchObject({ code: 'denied' })
     await expect(c.client.request('doc.open', { doc, sv: '' })).rejects.toMatchObject({ code: 'denied' })
 
-    // the owner leaves — the space is gone for everyone
+    // the owner leaves — the space is gone for everyone, its chats with it
     await a.client.request('space.leave', { space: space.id })
     await until(() => b.events.some((e) => e.e === 'space.gone'))
     expect(await b.client.request('space.list', {})).toEqual([])
+    expect(await db.rows('select id from chat_rooms where space = $1', [space.id])).toEqual([])
+    await expect(b.client.request('chat.history', { room: room.id })).rejects.toMatchObject({ code: 'denied' })
     for (const x of [a, b, c]) x.client.stop()
   }, 30_000)
 
-  it('a shared folder: notes added (a taken name — « (2)»), moved, deleted and brought back; everyone told', async () => {
+  it('a shared folder: notes added (a taken name — « (2)»), moved, deleted; deleted ones gone after their keep period', async () => {
     const a = await app('Альфа-папка')
     const b = await app('Бета-папка')
     const first = (t: string) => {
@@ -184,9 +188,14 @@ describe('a shared document', () => {
     await a.client.request('space.deleteDoc', { doc: one.doc })
     const listed = (await b.client.request('space.list', {})).find((s) => s.id === space.id)!
     expect(listed.docs.map((d) => [d.path, !!d.deleted])).toEqual([['Архив/План.md', false], ['Идеи/План.md', true]])
-    // deleted, yet it may be opened (to bring it back) — and brought back to its place
+    // deleted, yet it may be opened (its copies are being deleted)
     expect((await b.open(one.doc)).role).toBe('editor')
-    expect(await b.client.request('space.restoreDoc', { doc: one.doc })).toEqual({ path: 'Идеи/План.md' })
+    // a comment on it; its keep period over — the document and its comment gone at the next listing
+    const comment = await a.client.request('space.comment', { doc: one.doc, anchor: { start: 'AAEC', end: 'AAED', quote: 'план' }, text: 'Старое', clientId: 'old-1' })
+    await db.rows(`update space_docs set deleted_at = now() - make_interval(days => $2 + 1) where id = $1`, [one.doc, DELETED_DOC_DAYS])
+    const after = (await a.client.request('space.list', {})).find((s) => s.id === space.id)!
+    expect(after.docs.map((d) => d.path)).toEqual(['Архив/План.md'])
+    expect(await db.rows('select id from chat_rooms where id = $1', [comment.id])).toEqual([])
     a.client.stop()
     b.client.stop()
   }, 30_000)
@@ -422,6 +431,13 @@ describe('a shared document', () => {
     expect(room).toMatchObject({ doc, anchor, resolved: false, title: 'вторая строка', lastSeq: 1 })
     await until(() => a.events.some((e) => e.e === 'chat.room' && e.p.id === room.id))
     await until(() => a.events.some((e) => e.e === 'chat.message' && e.p.room === room.id))
+    // sent again (the answer lost) — the same comment, not a second one
+    expect((await b.client.request('space.comment', { doc, anchor, text: 'Уточнить формулировку', clientId: 'k1' })).id).toBe(room.id)
+    expect((await a.client.request('chat.rooms', {})).filter((r) => r.doc === doc)).toHaveLength(1)
+    // the same sender's id in another room — another message
+    const other = await b.client.request('space.comment', { doc, anchor: { ...anchor, quote: 'первая строка' }, text: 'Ещё', clientId: 'k1b' })
+    const again = await b.client.request('chat.send', { room: other.id, text: 'Повтор id', clientId: 'k1' })
+    expect([again.room, again.seq]).toEqual([other.id, 2])
     await a.client.request('chat.send', { room: room.id, text: 'Согласен', clientId: 'k2' })
     expect((await c.client.request('chat.history', { room: room.id })).map((m) => m.text)).toEqual(['Уточнить формулировку', 'Согласен'])
     await expect(c.client.request('space.comment', { doc, anchor, text: 'x', clientId: 'k3' })).rejects.toMatchObject({ code: 'denied' })
@@ -451,4 +467,26 @@ describe('a shared document', () => {
     await expect(a.client.request('space.share', { title: '  ', update: b64(Y.encodeStateAsUpdate(new Y.Doc())) })).rejects.toMatchObject({ code: 'bad' })
     a.client.stop()
   }, 20_000)
+
+  it('invitations: the expired ones taken away when a new one is made; a member joining keeps the higher role', async () => {
+    const a = await app('Эта-приглашения')
+    const b = await app('Тета-приглашения')
+    const { space } = await shareNote(a, 'Приглашения')
+    await db.rows(`insert into space_invites (code, space, role, expires_at) values ('EXPIRED1', $1, 'reader', now() - interval '1 day')`, [space.id])
+    await expect(b.client.request('space.join', { code: 'EXPIRED1' })).rejects.toMatchObject({ code: 'missing' })
+    const editor = await a.client.request('space.invite', { space: space.id, role: 'editor' })
+    expect(await db.rows(`select code from space_invites where code = 'EXPIRED1'`)).toEqual([])
+    await b.client.request('space.join', { code: editor.code })
+    const reader = await a.client.request('space.invite', { space: space.id, role: 'reader' })
+    expect((await b.client.request('space.join', { code: reader.code })).role).toBe('editor')
+    a.client.stop()
+    b.client.stop()
+  }, 20_000)
+
+  it('the chat rooms\' place migration: run over a database of before (keys to the space tables) — the keys go, the rest stays', async () => {
+    await db.rows('alter table chat_rooms add constraint chat_rooms_space_fkey foreign key (space) references spaces (id) on delete cascade')
+    await db.rows(CHAT_PLACE_MIGRATION)
+    const keys = await db.rows(`select conname from pg_constraint where conrelid = 'chat_rooms'::regclass and contype = 'f' and confrelid = 'spaces'::regclass`)
+    expect(keys).toEqual([])
+  })
 })

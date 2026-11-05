@@ -1,4 +1,4 @@
-import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion, MyTaskStatus } from '../../shared/jira'
+import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion } from '../../shared/jira'
 import { JiraApi } from './jiraApi'
 import { JiraAuth } from './jiraAuth'
 import { JIRA_ISSUE_FIELDS, jiraIssueFrom, parentFieldsOf, validProjectKeys } from './jiraIssueMapping'
@@ -69,8 +69,6 @@ export class Jira {
       errorAt: this.error ? this.errorAt : undefined,
       // the windows get the list without the descriptions (they are asked for one task at a time)
       issues: this.lite(),
-      starred: this.cache.starred,
-      myStatus: this.cache.myStatus,
     }
   }
   /** The tasks without descriptions (made again only when the list changed). */
@@ -110,18 +108,7 @@ export class Jira {
   }
   /** A page of the open tasks that match a search — by project, then due date and state; without the descriptions. */
   find(q: string, offset: number, limit: number, mode: 'list' | 'pick' = 'list', query?: JiraListQuery): { items: JiraListItem[]; total: number; found: number; facets: JiraFacets } {
-    return findIssues(this.cache.issues, { q, offset, limit, mode, query, starred: this.cache.starred, today: new Date().toLocaleDateString('sv-SE'), parents: this.cache.parents ?? [] })
-  }
-  star(key: string, on: boolean): void {
-    this.cache.starred = on ? [...new Set([...this.cache.starred, key])] : this.cache.starred.filter((k) => k !== key)
-    this.storage.writeCache(this.cache)
-    this.changed()
-  }
-  setMyStatus(key: string, status: MyTaskStatus | null): void {
-    if (status) this.cache.myStatus[key] = status
-    else delete this.cache.myStatus[key]
-    this.storage.writeCache(this.cache)
-    this.changed()
+    return findIssues(this.cache.issues, { q, offset, limit, mode, query, today: new Date().toLocaleDateString('sv-SE'), parents: this.cache.parents ?? [] })
   }
 
   // ---------- the sync timer ----------
@@ -180,7 +167,7 @@ export class Jira {
   }
   logout(): void {
     this.auth.forgetTokens()
-    this.cache = { issues: [], starred: this.cache.starred, myStatus: this.cache.myStatus }
+    this.cache = { issues: [] }
     this.storage.writeCache(this.cache)
     this.error = undefined
     this.changed()
@@ -195,7 +182,7 @@ export class Jira {
     return this.parentFieldsCache
   }
 
-  /** Every task of the projects that is not done (mine among them), and everything picked by hand. */
+  /** Every task of the projects that is not done (mine among them). */
   async sync(): Promise<void> {
     if (this.syncing || !this.cache.cloudId) return
     const projects = validProjectKeys(this.config().projects)
@@ -209,8 +196,6 @@ export class Jira {
       const open = await this.api.search(`project in (${projects.join(',')}) AND statusCategory != Done ORDER BY updated DESC`, fields, ALL_LIMIT, toIssue)
       const byKey = new Map<string, JiraIssue>()
       for (const i of open) byKey.set(i.key, i)
-      const missing = this.cache.starred.filter((k) => !byKey.has(k))
-      if (missing.length) for (const i of await this.api.search(`key in (${missing.join(',')})`, fields, missing.length, toIssue)) byKey.set(i.key, i)
       this.cache.issues = [...byKey.values()]
       // the tree's upper levels: the parents not among the tasks (done, of other projects, above the epics)
       this.cache.parents = (

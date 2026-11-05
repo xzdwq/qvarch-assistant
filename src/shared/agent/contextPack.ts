@@ -51,7 +51,6 @@ export interface Pack {
   omitted: number
 }
 
-export const DEFAULT_BUDGET = 120_000
 /** At most this share of the budget for the discussion (the rest — the note, its links). */
 const TALK_SHARE = 0.5
 const MESSAGE_MAX = 4000

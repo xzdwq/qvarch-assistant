@@ -24,7 +24,7 @@ export interface TableVar {
 }
 
 /** `base`, `base2`, `base3`… — the first one not taken. */
-export function freeVarName(base: string, taken: ReadonlySet<string>): string {
+function freeVarName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 1; ; n++) {
     const name = n === 1 ? base : `${base}${n}`
     if (!taken.has(name)) return name

@@ -114,6 +114,22 @@ export function parseQuick(text: string, ctx: QuickCtx): Quick {
   return out
 }
 
+/**
+ * The line with its time set to `from`–`to` (HH:MM): the time it names is replaced in place (a duration goes — the
+ * range says it), a line without a time gets it in front. The rest of the line (the title, a task, a kind) stays.
+ */
+export function withTime(text: string, ctx: QuickCtx, from: string, to: string): string {
+  const parts = parseQuick(text, ctx).parts
+  const time = `${from}-${to}`
+  const was = parts.find((p) => p.type === 'time')
+  const dur = parts.find((p) => p.type === 'dur')
+  let out = text
+  if (dur) out = out.replace(dur.text, '')
+  out = was ? out.replace(was.text, time) : `${time} ${out}`
+  // (one space between the words; the end kept as typed — a trailing space waits for the title)
+  return out.replace(/^\s+/, '').replace(/ {2,}/g, ' ')
+}
+
 /** A kind by its id, its name or the start of its name. */
 function findKind(kinds: QuickCtx['kinds'], q: string): QuickCtx['kinds'][number] | undefined {
   const t = q.toLowerCase()

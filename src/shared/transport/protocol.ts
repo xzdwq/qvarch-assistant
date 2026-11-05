@@ -1,4 +1,4 @@
-import type { ChatAttach, ChatHistoryItem, ChatMessage, ChatRoom, CommentAnchor } from './chat'
+import type { ChatAddMode, ChatAttach, ChatHistoryItem, ChatMessage, ChatRoom, CommentAnchor } from './chat'
 import type { Space, SpaceKind, SpaceRole } from './space'
 import type { PeerSel } from './places'
 
@@ -7,18 +7,20 @@ export const MEDIA_PATH = '/media/'
 export const TICKET_HEADER = 'x-qa-ticket'
 /** A media file's size at most. */
 export const MEDIA_MAX = 60 * 1024 * 1024
+/** At most this many files asked about in one `media.missing` (more — asked in parts). */
+export const MEDIA_RELS_MAX = 500
 
 /**
  * The run results of a shared note: `GET /results/<space>/<doc>?since=<seq>` — what changed after that number,
- * `PUT` — this device's results (`{ entries: { key: value | null } }`, null — gone). The same pass as the media's.
+ * `PUT` — this device's results (`ResultsPut`: `{ changes: { key: { value, base } } }`, value null — gone). The same
+ * pass as the media's.
  */
 export const RESULTS_PATH = '/results/'
 /**
- * The files of a chat: `PUT /chat-files/<room>/<id>` (its name — the `x-qa-name` header, encoded), `GET` — its bytes.
- * A member's pass of the room (`chat.fileTicket`).
+ * The files of a chat: `PUT /chat-files/<room>/<id>`, `GET` — its bytes. A member's pass of the room
+ * (`chat.fileTicket`). The file's name travels in the message's attachment (the `x-qa-name` header is not kept).
  */
 export const CHAT_FILES_PATH = '/chat-files/'
-export const FILE_NAME_HEADER = 'x-qa-name'
 export const RESULTS_MAX = 32 * 1024 * 1024
 /**
  * One result as the others get it: its value (none — taken away), who ran it, when the server took it (the server's
@@ -70,18 +72,20 @@ export interface DeviceInfo {
 }
 
 /** Why the server refused a connection. */
-export const FAIL_CODES = ['version', 'auth', 'code', 'busy'] as const
+export const FAIL_CODES = ['version', 'auth', 'code'] as const
 export type FailCode = (typeof FAIL_CODES)[number]
 
+/** Why a request was refused (or broke). */
+export const RPC_ERROR_CODES = ['bad', 'denied', 'missing', 'limit', 'internal'] as const
+export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number]
 /** A request's error (a refused or broken one). */
 export interface RpcError {
-  code: 'bad' | 'denied' | 'missing' | 'limit' | 'internal'
+  code: RpcErrorCode
   message: string
 }
 
 /** The methods: what each takes (`p`) and answers (`r`). */
 export interface TransportMethods {
-  'core.rename': { p: { name: string }; r: DeviceInfo }
   'chat.rooms': { p: Record<string, never>; r: ChatRoom[] }
   'chat.history': { p: { room: string; before?: number; limit?: number }; r: ChatMessage[] }
   /** `mentions` — the members the text mentions (`@Имя`; others are dropped); `attach` — a block's result (the text may be empty then). */
@@ -90,7 +94,7 @@ export interface TransportMethods {
   'chat.addAgent': { p: { room: string; id: string; name: string }; r: ChatRoom }
   /** This device's agent taken out of a chat. */
   'chat.removeAgent': { p: { room: string; id: string }; r: ChatRoom }
-  /** Whether anyone may call anyone's agent in a chat (its maker decides). */
+  /** Whether the room's others may call this device's agent (each agent's owner decides). */
   'chat.agentOpen': { p: { room: string; id: string; on: boolean }; r: ChatRoom }
   /** A chat of one's own (no one else yet — add people to it). */
   'chat.create': { p: { title?: string; id?: string; /** A chat kept on this computer brought here: its agents, its messages in order. */ agents?: Array<{ id: string; name: string }>; history?: ChatHistoryItem[] }; r: ChatRoom }
@@ -105,7 +109,7 @@ export interface TransportMethods {
    * made when none); `main` — the main conversation goes on instead (this chat, still one's own alone, is taken away).
    * The chat the block shows now.
    */
-  'chat.add': { p: { room: string; device: string; as: 'branch' | 'main' }; r: ChatRoom }
+  'chat.add': { p: { room: string; device: string; as: ChatAddMode }; r: ChatRoom }
   /**
    * One leaves a chat (and takes one's agents): nobody left — it is gone whole (messages, files). A shared note's chat
    * and a comment are not left one by one (they go with the note). `gone` — the chat is no more.
@@ -126,9 +130,8 @@ export interface TransportMethods {
   /** A note of a shared folder: its path (a taken one gets « (2)») and first state. */
   'space.addDoc': { p: { space: string; path: string; update: string }; r: { doc: string; path: string } }
   'space.moveDoc': { p: { doc: string; path: string }; r: { path: string } }
-  /** Deleted for everyone (kept a while — `space.restoreDoc` brings it back). */
+  /** Deleted for everyone (listed as deleted a while — the others delete their copies — then gone from the server). */
   'space.deleteDoc': { p: { doc: string }; r: null }
-  'space.restoreDoc': { p: { doc: string }; r: { path: string } }
   /** Which of these media files the space's server copy lacks. */
   'media.missing': { p: { space: string; rels: string[] }; r: string[] }
   /** A pass for the media and run results of a space over HTTP (header `x-qa-ticket`): minutes long. */
@@ -235,5 +238,4 @@ export const FAIL_TEXT: Record<FailCode, string> = {
   version: 'Версия приложения и сервера несовместимы — обновите приложение',
   auth: 'Сервер не принял ключ этого устройства',
   code: 'Неверный код доступа к серверу',
-  busy: 'Сервер перегружен — попробуйте позже',
 }

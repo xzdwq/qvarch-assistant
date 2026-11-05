@@ -77,9 +77,9 @@ export function computeRail(merged: Row[], absorbed: string[]): Rail {
   return { laneOf, ranges }
 }
 
-export const LANE_W = 16
+const LANE_W = 16
 const DOT_R = 4
-export const laneX = (lane: number) => lane * LANE_W + LANE_W / 2
+const laneX = (lane: number) => lane * LANE_W + LANE_W / 2
 export function railWidth(rail: Rail): number {
   let max = 0
   for (const l of rail.laneOf.values()) max = Math.max(max, l)

@@ -1,5 +1,6 @@
 import type { DeviceInfo } from './protocol'
 import { isEmoji } from '../emoji'
+import { isUuid } from './ids'
 
 /** A message of a room: `seq` — its place in the room (the server gives them in a row, from 1). */
 export interface ChatMessage {
@@ -83,6 +84,15 @@ export interface ChatHistoryItem {
 }
 /** A chat's history brought at once — this many messages at most. */
 export const HISTORY_MAX = 2000
+/** The sender's own id of a message (`clientId`) — this long at most. */
+export const CLIENT_ID_MAX = 64
+/**
+ * How a person joins a chat (`chat.add`): the chat becomes a branch of the main conversation with them, or the main
+ * conversation goes on instead.
+ */
+export const CHAT_ADD_MODES = ['branch', 'main'] as const
+export type ChatAddMode = (typeof CHAT_ADD_MODES)[number]
+export const isChatAddMode = (x: unknown): x is ChatAddMode => (CHAT_ADD_MODES as readonly unknown[]).includes(x)
 
 /** The reactions offered first (any emoji may be put — the full list is a click away). */
 export const REACTIONS = ['👍', '❤️', '😄', '😮', '🎉', '✅'] as const
@@ -122,7 +132,7 @@ export const fileKindOf = (mime: string): FileKind => (SHOWN_IMAGES.test(mime) ?
 export const isFileKind = (k: AttachKind): k is FileKind => (FILE_KINDS as readonly string[]).includes(k)
 export const isChatFile = (x: unknown): x is ChatFile => {
   const f = x as ChatFile
-  return !!f && typeof f === 'object' && /^[0-9a-f-]{36}$/i.test(f.id) && typeof f.name === 'string' && !!f.name && f.name.length <= NAME_MAX && Number.isInteger(f.size) && f.size >= 0 && f.size <= CHAT_FILE_MAX && typeof f.mime === 'string' && f.mime.length <= 120 && (f.sec === undefined || (Number.isFinite(f.sec) && f.sec >= 0 && f.sec <= VOICE_MAX_SEC))
+  return !!f && typeof f === 'object' && isUuid(f.id) &&typeof f.name === 'string' && !!f.name && f.name.length <= NAME_MAX && Number.isInteger(f.size) && f.size >= 0 && f.size <= CHAT_FILE_MAX && typeof f.mime === 'string' && f.mime.length <= 120 && (f.sec === undefined || (Number.isFinite(f.sec) && f.sec >= 0 && f.sec <= VOICE_MAX_SEC))
 }
 /** A file's name as kept: no folders, no control characters, not too long (none — «файл»). */
 export const cleanFileName = (name: string): string =>

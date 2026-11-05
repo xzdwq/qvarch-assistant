@@ -7,7 +7,7 @@ import { PaperTexture, TOOTH } from './paperTexture'
 import type { PictureCache } from './pictureCache'
 
 /** An ink item's flat points as [x, y, pressure] triples. */
-export const inkPoints = (i: InkItem): number[][] => {
+const inkPoints = (i: InkItem): number[][] => {
   const pts: number[][] = []
   for (let k = 0; k < i.pts.length; k += 3) pts.push([i.pts[k], i.pts[k + 1], i.pts[k + 2]])
   return pts

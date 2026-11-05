@@ -2,6 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CDPSession, Page } from 'playwright-core'
 import { PAGE_MARK } from '../../../shared/browser/pageMarks'
+import { UI } from '../../../shared/browser/uiKits'
 import type { QaCheck } from '../../../shared/qaChecks'
 import { MUT, Traffic, type Exchange } from '../traffic'
 import { hintProbe, layoutProbe, pageFieldsProbe, type Flaw } from './pageProbes'
@@ -62,6 +63,15 @@ export class QaContext {
     // the statuses come a moment after «finished»
     await this.page.waitForTimeout(150)
   }
+  /** Waits until `ready` holds (looked at every `every` ms, at most `max` ms); whether it came. */
+  async until(ready: () => boolean | Promise<boolean>, max: number, every = 100): Promise<boolean> {
+    const t0 = Date.now()
+    while (Date.now() - t0 < max) {
+      if (await ready()) return true
+      await this.page.waitForTimeout(every)
+    }
+    return false
+  }
   /** The changes (POST / PUT / PATCH / DELETE) to the API sent since `from`. */
   mutations(from: number): Exchange[] {
     return this.sent.slice(from).filter((x) => MUT.test(x.method) && this.api(x))
@@ -73,11 +83,11 @@ export class QaContext {
   }
   /** What the page shows: its fields (by their labels) and its tables' rows. */
   snap(): Promise<Record<string, string>> {
-    return this.page.evaluate(pageFieldsProbe)
+    return this.page.evaluate(pageFieldsProbe, UI)
   }
   /** What the page tells now: field errors, alerts, notifications. */
   async hints(): Promise<string[]> {
-    return (await this.page.evaluate(hintProbe).catch(() => [])) as string[]
+    return (await this.page.evaluate(hintProbe, UI).catch(() => [])) as string[]
   }
   /** The tables' rows seen now. */
   rowsNow(): Promise<number> {
@@ -89,7 +99,7 @@ export class QaContext {
    */
   async shoot(cdp: CDPSession, file: string, where: string, seen: SeenFlaws): Promise<Flaw[]> {
     const page = this.page
-    const r = ((await page.evaluate(layoutProbe).catch(() => undefined)) as { hscroll: number; items: Flaw[] } | undefined) ?? { hscroll: 0, items: [] }
+    const r = ((await page.evaluate(layoutProbe, UI).catch(() => undefined)) as { hscroll: number; items: Flaw[] } | undefined) ?? { hscroll: 0, items: [] }
     const flaws = [...r.items, ...(r.hscroll ? [{ kind: 'Прокрутка вбок', text: `страница шире окна на ${r.hscroll}px`, x: 0, y: 0, w: 0, h: 0 }] : [])]
     for (const x of flaws) {
       // (a page wider than the window — one finding, its widest overrun)

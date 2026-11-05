@@ -121,7 +121,7 @@ export function sortDeep(v: unknown): unknown {
 }
 
 /** XML laid out one element per line (text-only elements stay on their line); comments / CDATA kept. */
-export function formatXml(xml: string, indent = 2): string {
+function formatXml(xml: string, indent = 2): string {
   const doc = new DOMParser().parseFromString(xml.trim(), 'application/xml')
   const err = doc.querySelector('parsererror')
   if (err) throw new Error((err.textContent ?? 'не XML').split('\n')[0].trim().slice(0, 160))

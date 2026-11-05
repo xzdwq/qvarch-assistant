@@ -1,14 +1,13 @@
 import { dayEnd, dayStart, MINUTE } from '../timeline'
 import type { Quick } from '../quickadd'
-import type { Entry, Ms, Note, PlanBlock } from '../types'
+import type { Entry, Ms, Note } from '../types'
 import { isMeeting } from '../work'
 
-/** A day of the board: what is recorded, noted and planned (as useRange loads it). */
+/** A day of the board: what is recorded and noted (as useRange loads it). */
 export interface BoardDay {
   day: string
   entries: Entry[]
   notes: Note[]
-  plan: PlanBlock[]
 }
 type Span = { start: Ms; end: Ms }
 
@@ -30,7 +29,7 @@ export function unionWithin(list: Span[], lo = -Infinity, hi = Infinity): number
 
 const WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 
-/** A day cell of the week strip: done and planned time, the kinds' shares, counts. */
+/** A day cell of the week strip: done and planned (blocks ahead of now) time, the kinds' shares, counts. */
 export interface DayCell {
   day: string
   n: number
@@ -53,7 +52,7 @@ export function dayCell(d: BoardDay, now: Ms, workDays: number[]): DayCell {
     wd: WD[date.getDay()],
     off: !workDays.includes(date.getDay()),
     done: unionWithin(d.entries, -Infinity, now),
-    plan: unionWithin(d.entries, now) + unionWithin(d.plan.filter((p) => !p.doneEntryId), now),
+    plan: unionWithin(d.entries, now),
     kinds: [...byKind].sort((a, b) => b[1] - a[1]).map(([kind, ms]) => ({ kind, pct: (ms / sum) * 100 })),
     count: d.entries.length,
     notes: d.notes.length,
@@ -72,10 +71,9 @@ export function periodTotals(days: BoardDay[], now: Ms): { done: number; plan: n
   }
 }
 
-/** A row of the day's feed: a block, a plan, a note, a free gap, or the "now" line. */
+/** A row of the day's feed: a block, a note, a free gap, or the "now" line (`plan` — ahead of now). */
 export type FeedRow =
   | { t: 'e'; key: string; e: Entry; at: Ms; plan: boolean }
-  | { t: 'p'; key: string; p: PlanBlock; at: Ms }
   | { t: 'n'; key: string; n: Note; at: Ms }
   | { t: 'gap'; key: string; start: Ms; end: Ms; at: Ms; plan: boolean }
   | { t: 'now'; key: string; at: Ms }
@@ -83,20 +81,18 @@ export type FeedRow =
 export const GAP_MIN = 15 * MINUTE
 
 /**
- * The day as a feed: blocks, plans and notes in time order with the free gaps (inside the working day, or
- * around what there is) between them; today also gets the "now" line and a gap through it is cut in two.
+ * The day as a feed: blocks and notes in time order with the free gaps (inside the working day, or around
+ * what there is) between them; today also gets the "now" line and a gap through it is cut in two.
  */
 export function dayFeed(d: BoardDay, a: { now: Ms; today: string; work?: [Ms, Ms]; order: 'asc' | 'desc' }): FeedRow[] {
   const n = a.now
   const isToday = d.day === a.today
   const future = d.day > a.today
-  const plans = d.plan.filter((p) => !p.doneEntryId)
   const rows: FeedRow[] = [
     ...d.entries.map((e) => ({ t: 'e' as const, key: e.id, e, at: e.start, plan: future || (isToday && e.start >= n) })),
-    ...plans.map((p) => ({ t: 'p' as const, key: `p${p.id}`, p, at: p.start })),
     ...d.notes.map((x) => ({ t: 'n' as const, key: `n${x.id}`, n: x, at: x.at })),
   ]
-  const busy = [...d.entries, ...plans].sort((x, y) => x.start - y.start)
+  const busy = [...d.entries].sort((x, y) => x.start - y.start)
   const lo = Math.min(a.work?.[0] ?? Infinity, busy[0]?.start ?? Infinity)
   const hi = Math.max(a.work?.[1] ?? -Infinity, busy.reduce((m, b) => Math.max(m, b.end), -Infinity))
   if (Number.isFinite(lo) && Number.isFinite(hi)) {

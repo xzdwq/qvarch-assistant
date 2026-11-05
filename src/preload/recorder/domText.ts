@@ -1,9 +1,14 @@
+import { UI } from '../../shared/browser/uiKits'
+
 /** The recorder's reading of the page: an element's text, role, name, label — and how many elements share them. */
 
 /** A JS string literal in single quotes (for the code a locator is). */
 export const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`
 export const visible = (el: Element) => (el as HTMLElement).getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
-export const HIDDEN = 'i.q-icon, .material-icons, .material-symbols-outlined, svg, [aria-hidden="true"], script, style'
+/** What is never read as words: icons (their ligatures are names of pictures), hidden parts, code. */
+export const HIDDEN = `${UI.icon}, svg, [aria-hidden="true"], script, style`
+/** What may be a field: a kit's field wrapper or a native control. */
+export const FIELDS = `${UI.field}, input, textarea, select`
 /** A regular expression's source matching the text literally. */
 export const reSrc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 
@@ -35,9 +40,9 @@ export function ownText(el: Element): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
-export const ROLE_OF_TAG: Record<string, string> = { BUTTON: 'button', SELECT: 'combobox', TEXTAREA: 'textbox' }
+const ROLE_OF_TAG: Record<string, string> = { BUTTON: 'button', SELECT: 'combobox', TEXTAREA: 'textbox' }
 /** Where the elements of a role can be (not every element of the page is looked at). */
-export const ROLE_SEL: Record<string, string> = {
+const ROLE_SEL: Record<string, string> = {
   button: 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"], input[type="image"]',
   link: 'a[href], [role="link"]',
   textbox: 'input, textarea, [role="textbox"]',
@@ -65,7 +70,7 @@ const ROLE_OF_INPUT: Record<string, string> = {
 }
 /** Roles named by their label (a field, a flag), not by their text. */
 const LABELLED_ROLES: ReadonlySet<string> = new Set(['textbox', 'combobox', 'checkbox', 'radio'])
-/** The label of a field: <label for>, a wrapping <label> (Quasar's q-field is one), aria. */
+/** The label of a field: <label for>, a wrapping <label> (a kit's field wrapper may be one), aria. */
 export function labelOf(el: Element): string {
   const a = el.getAttribute('aria-label')
   if (a) return a.trim()
@@ -80,9 +85,9 @@ export function labelOf(el: Element): string {
   }
   const wrap = el.closest('label')
   if (wrap) {
-    const ql = wrap.querySelector('.q-field__label')
-    // a Quasar field without a label of its own: what it shows is its value, not a label
-    return ql ? textOf(ql) : wrap.matches('.q-field') ? '' : textOf(wrap)
+    const ql = wrap.querySelector(UI.fieldLabel)
+    // a kit's field without a label of its own: what it shows is its value, not a label
+    return ql ? textOf(ql) : wrap.matches(UI.field) ? '' : textOf(wrap)
   }
   return ''
 }
@@ -118,7 +123,7 @@ export function countText(text: string, root: Node = document): number {
   }
   return c
 }
-/** How many fields a block holds: a Quasar field is one, with the input inside it (not two). */
-export const fieldsIn = (root: Element) => [...root.querySelectorAll('.q-field, input, textarea, select')].filter((x) => x.matches('.q-field') || !x.parentElement?.closest('.q-field')).length
+/** How many fields a block holds: a kit's field is one, with the input inside it (not two). */
+export const fieldsIn = (root: Element) => [...root.querySelectorAll(FIELDS)].filter((x) => x.matches(UI.field) || !x.parentElement?.closest(UI.field)).length
 /** An element holding exactly this text (as Playwright's getByText exact: the whole text, any spaces). */
 export const hasExact = (root: Element, text: string) => [root, ...root.querySelectorAll('*')].some((e) => !e.matches(HIDDEN) && textOf(e, 200) === text)

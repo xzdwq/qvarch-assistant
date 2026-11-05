@@ -9,13 +9,14 @@ import type { Db } from '../../db'
 export class ChatPeople {
   constructor(private readonly db: Db) {}
 
-  async peopleOf(dev: string): Promise<DeviceInfo[]> {
+  /** Those one shares a chat with, and `peers` (one's people elsewhere: the shared notes'). */
+  async peopleOf(dev: string, peers: readonly string[]): Promise<DeviceInfo[]> {
     return this.db.rows<DeviceInfo>(
       `select d.id, d.name from qa_devices d where d.id <> $1 and (
          d.id in (select x.device from chat_members x where x.room in (select room from chat_members where device = $1))
-         or d.id in (select y.device from space_members y where y.space in (select space from space_members where device = $1)))
+         or d.id = any($2::text[]))
        order by d.name`,
-      [dev],
+      [dev, [...peers]],
     )
   }
   /** The main conversation of two (none — they never talked just the two of them). */

@@ -70,11 +70,6 @@ export class Terminals {
     this.watches.setWatches(this.cfg.watches, false)
   }
 
-  /** Why the reactions are paused (a regex too slow / broken). */
-  get watchError(): string {
-    return this.watches.watchError
-  }
-
   setConfig(c: Partial<TermConfig>): TermConfig {
     this.cfg = { ...this.cfg, ...c }
     this.cfgFile.write(this.cfg)

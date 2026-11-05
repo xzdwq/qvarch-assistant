@@ -3,8 +3,8 @@ import { computed, ref, watch } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import { bodyVars, findLoops, LOOP_CLOSE_MD, LOOP_MAX, LOOP_PARALLEL_LIMIT, LOOP_TIMEOUT, loopKey, loopOpenMd, loopStartAt, parsePause, pauseText, type LoopInfo, type LoopPause } from '@nb/domain/loop'
 import { summary } from '@nb/domain/values'
-import { loopHasPw, loopReport, noteRun, passTitle, pickPass, runLoopAt, stopLoopAt, type BlockRun, type RunState } from '@nb/engine'
-import { doc } from '@renderer/lib/notebook'
+import { loopGoesSerial, loopReport, noteRun, passTitle, pickPass, runLoopAt, stopLoopAt, type BlockRun, type RunState } from '@nb/engine'
+import { doc } from '@nb/workspace/noteDocs'
 import { useFold } from '@renderer/lib/foldState'
 import { asGrid, useGrid } from '@renderer/lib/grid'
 import { LOOP_PRESETS, type LoopPreset } from '@shared/loopPresets'
@@ -61,7 +61,7 @@ const closed = computed(() => range.value?.end !== undefined)
 const lr = computed(() => noteRun(props.path).loops[key.value])
 const asRun = computed(() => lr.value as unknown as BlockRun | undefined)
 const vars = computed(() => bodyVars(head.value))
-const hasPw = computed(() => !!range.value && loopHasPw(doc(props.path).text, range.value))
+const goesSerial = computed(() => !!range.value && loopGoesSerial(doc(props.path).text, range.value))
 /** Runs the loop (its head written into the note first): every pass of its blocks. */
 async function go(): Promise<void> {
   write(undefined, undefined, true)
@@ -122,8 +122,8 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !parsed.ts }" @mousedown.prevent @click="write(info, false, true)">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: parsed.ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="write(info, true, true)">TS</button>
       </span>
-      <label class="nm tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" :title="hasPw ? 'В цикле есть сценарий Playwright — проходы идут по одному' : `Сколько проходов одновременно (до ${LOOP_PARALLEL_LIMIT}). Работает, когда заголовок не ждёт каждый проход: await Promise.all(items.map((x) => body({ x })))`"
-        >параллельно<input class="tw:w-52 tw:h-22 tw:py-0 tw:px-4 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" type="number" min="1" :max="LOOP_PARALLEL_LIMIT" :value="info.parallel" :disabled="hasPw" @change="set({ parallel: num(($event.target as HTMLInputElement).value, 1, LOOP_PARALLEL_LIMIT, 1) })"
+      <label class="nm tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" :title="goesSerial ? 'В цикле есть сценарий Playwright — проходы идут по одному' : `Сколько проходов одновременно (до ${LOOP_PARALLEL_LIMIT}). Работает, когда заголовок не ждёт каждый проход: await Promise.all(items.map((x) => body({ x })))`"
+        >параллельно<input class="tw:w-52 tw:h-22 tw:py-0 tw:px-4 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" type="number" min="1" :max="LOOP_PARALLEL_LIMIT" :value="info.parallel" :disabled="goesSerial" @change="set({ parallel: num(($event.target as HTMLInputElement).value, 1, LOOP_PARALLEL_LIMIT, 1) })"
       /></label>
       <label class="nm tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11.5px] tw:whitespace-nowrap" title="Больше проходов — цикл останавливается: защита от бесконечного while"
         >макс.<input class="tw:w-52 tw:h-22 tw:py-0 tw:px-4 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" type="number" min="1" :value="info.max" @change="set({ max: num(($event.target as HTMLInputElement).value, 1, 100000, LOOP_MAX) })"

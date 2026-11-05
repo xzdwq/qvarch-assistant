@@ -7,9 +7,9 @@ import { durationText } from '../../engine/reportText'
  * last ones, the rest counted; its ready checks — a line each for their rows (a matrix's value each), within a size.
  */
 export const STEPS_SHOWN = 30
-export const CHECK_ROWS_SHOWN = 80
-export const CHECK_ROW_MAX = 220
-export const CHECKS_TEXT_MAX = 12_000
+const CHECK_ROWS_SHOWN = 80
+const CHECK_ROW_MAX = 220
+const CHECKS_TEXT_MAX = 12_000
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
 const mark = (s: string) => (s === 'ok' ? '✅' : s === 'run' ? '⏳' : s === 'warn' ? '⚠️' : '❌')

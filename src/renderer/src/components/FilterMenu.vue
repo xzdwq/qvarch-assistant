@@ -10,7 +10,7 @@ export interface FilterOption {
   color?: string
   hint?: string
 }
-const props = defineProps<{ label: string; icon: string; options: FilterOption[]; title?: string }>()
+const props = defineProps<{ label: string; icon: string; options: readonly FilterOption[]; title?: string }>()
 const model = defineModel<string[]>({ default: () => [] })
 
 const open = ref(false)

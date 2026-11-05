@@ -35,6 +35,14 @@ const messages = shallowRef(new Map<string, ChatMessage[]>())
 const complete = ref(new Set<string>())
 const outbox = shallowRef<Outgoing[]>(readOutbox())
 const typing = shallowRef(new Map<string, { name: string; until: number }>())
+/** «… печатает» shown in a room for a while; once it runs out the room's line goes (expired ones are dropped). */
+function setTyping(room: string, name: string): void {
+  typing.value = new Map(typing.value).set(room, { name, until: Date.now() + TYPING_MS })
+  setTimeout(() => {
+    const now = Date.now()
+    typing.value = new Map([...typing.value].filter(([, t]) => t.until > now))
+  }, TYPING_MS + 50)
+}
 /** The rooms shown now (a block on screen, the window in front): their messages are read as they come. */
 const watched = new Map<string, number>()
 export const chatPrefs = ref<ChatPrefs>(DEFAULT_CHAT)
@@ -150,7 +158,7 @@ const sentSeqs = new Map<number, number>()
 /** One's agent working in a room: told to the room (a local one, or no server — shown here). */
 export function tellAgentWorking(room: string, agent: { id: string; name: string }): void {
   if (!isLocal(room) && chatOnline.value) return void serverCall('chat.typing', { room, agent: agent.id }).catch(() => undefined)
-  typing.value = new Map(typing.value).set(room, { name: `${agent.name} работает…`, until: Date.now() + TYPING_MS })
+  setTyping(room, `${agent.name} работает…`)
 }
 /**
  * A chat taken away from this person: one kept here — gone; the server's — left (the others keep it; nobody left —
@@ -236,7 +244,7 @@ export function showInIsland(id: string): void {
 /** A room is in front of the person: shown in the island, or by a block with this window in front. */
 const inSight = (id: string) => islandShows === id || (!document.hidden && watched.has(id))
 /** A room read up to its last message — while it is in sight. */
-export async function markRead(id: string): Promise<void> {
+async function markRead(id: string): Promise<void> {
   const r = roomOf(id)
   if (!r || r.readSeq >= r.lastSeq || !inSight(id)) return
   setRoom({ ...r, readSeq: r.lastSeq })
@@ -332,7 +340,7 @@ function edited(m: ChatMessage): void {
 }
 
 /** A message come (an event or the answer to a send): into its room, the room's last message. */
-export function received(m: ChatMessage): void {
+function received(m: ChatMessage): void {
   if (messages.value.has(m.room)) setMessages(m.room, mergeMessages(messages.value.get(m.room)!, [m]))
   const r = roomOf(m.room)
   if (!r) return void loadRooms().catch(() => undefined)
@@ -350,11 +358,7 @@ const EVENTS: ServerEventHandlers = {
   'chat.message': received,
   'chat.edited': edited,
   'chat.room': setRoom,
-  'chat.typing': (p) => {
-    const said = p.agent ? `${p.agent.name} работает…` : `${p.device.name} печатает…`
-    typing.value = new Map(typing.value).set(p.room, { name: said, until: Date.now() + TYPING_MS })
-    setTimeout(() => (typing.value = new Map(typing.value)), TYPING_MS + 50)
-  },
+  'chat.typing': (p) => setTyping(p.room, p.agent ? `${p.agent.name} работает…` : `${p.device.name} печатает…`),
   // a shared space gone for this device: its chats go with it
   'space.gone': (p) => (chatRooms.value = chatRooms.value.filter((r) => r.space !== p.space)),
 }

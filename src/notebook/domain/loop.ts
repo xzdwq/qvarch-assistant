@@ -17,7 +17,7 @@ import { isName } from './blockInfo'
 import { keepOf } from './emits'
 import { FENCE_OPEN, findFenceClose } from './fence'
 
-export const LOOP_OPEN = /^<!--\s*qa:loop\b(.*?)-->\s*$/
+const LOOP_OPEN = /^<!--\s*qa:loop\b(.*?)-->\s*$/
 export const LOOP_CLOSE = /^<!--\s*\/qa:loop\s*-->\s*$/
 
 export interface LoopInfo {
@@ -46,7 +46,7 @@ export interface LoopPause {
   min: number
   max: number
 }
-export const LOOP_PAUSE_LIMIT = 3600
+const LOOP_PAUSE_LIMIT = 3600
 /** «5», «2-8», «0.5-1,5» (seconds; a range the other way round — turned) → the pause; none, zero, anything else — none. */
 export function parsePause(v: string): LoopPause | undefined {
   const m = /^\s*(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*$/.exec(v)
@@ -179,13 +179,6 @@ export function loopDepths(loops: readonly LoopRange[], lineCount: number): Uint
   const d = new Uint8Array(lineCount + 2)
   for (const l of loops) if (l.end !== undefined) for (let i = l.line0; i <= l.end; i++) d[i] = Math.min(255, d[i] + 1)
   return d
-}
-/** The key is taken twice (two loops, two blocks of one name): the second one's name said. */
-export function duplicateKeys(keys: string[]): string[] {
-  const seen = new Set<string>()
-  const dup = new Set<string>()
-  for (const k of keys) (seen.has(k) ? dup : seen).add(k)
-  return [...dup]
 }
 
 /**

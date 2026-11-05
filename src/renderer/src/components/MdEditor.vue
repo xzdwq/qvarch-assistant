@@ -5,7 +5,7 @@ import { peerCursors, setPeerCursors, setPeerSlots } from '@nb/editor/peerCursor
 import { componentOrigins } from '@nb/editor/components/componentOrigins'
 import { lineAuthors, setLineAuthors } from '@nb/editor/lineAuthors'
 import { lineAuthorsOf } from '@nb/workspace/noteAuthors'
-import { NOTE_PLACE_EVENT, placeShown, placeWanted } from '@nb/workspace/noteGoto'
+import { NOTE_GOTO_EVENT, NOTE_PLACE_EVENT, placeShown, placeWanted } from '@nb/workspace/noteGoto'
 import { placeLine } from '@shared/notebook/links'
 import { blockIdentity } from '@nb/editor/components/blockIdentity'
 import { peerCursorsIn, peerSlotsOf, tellCursor } from '@nb/workspace/sharedCursors'
@@ -152,7 +152,10 @@ onMounted(() => {
   })
   if (props.text.includes('qvarch://')) void eventsNow()
 })
-onBeforeUnmount(() => view?.destroy())
+onBeforeUnmount(() => {
+  clearTimeout(syncTimer)
+  view?.destroy()
+})
 
 // ---------- the note's values ----------
 // the note's data blocks and templates in its context (those off screen too), a moment after typing stops
@@ -247,13 +250,14 @@ function onGoto(e: Event): void {
   view.dispatch({ selection: { anchor: Math.min(d.from, len), head: Math.min(d.to, len) }, scrollIntoView: true })
   view.focus()
 }
-onMounted(() => window.addEventListener('qa:note-goto', onGoto))
-onBeforeUnmount(() => window.removeEventListener('qa:note-goto', onGoto))
+onMounted(() => window.addEventListener(NOTE_GOTO_EVENT, onGoto))
+onBeforeUnmount(() => window.removeEventListener(NOTE_GOTO_EVENT, onGoto))
 /** A place a link asked for (noteGoto): its line selected, in the middle of the view — once the text is in. */
 function showPlace(): void {
   const place = props.path ? placeWanted(props.path) : undefined
   if (!view || !place || !props.text) return
   placeShown(props.path!)
+  if (typeof place === 'object') return revealAt(place.line, place.col, place.len)
   const at = placeLine(view.state.doc.toString(), place)
   if (at === undefined) return
   const line = view.state.doc.line(at + 1)
@@ -266,6 +270,14 @@ onMounted(() => {
   setTimeout(showPlace)
 })
 onBeforeUnmount(() => window.removeEventListener(NOTE_PLACE_EVENT, showPlace))
+/** Goes to a place (a search hit): selects it and scrolls it into the middle. */
+function revealAt(line: number, col = 0, len = 0): void {
+  if (!view) return
+  const l = view.state.doc.line(Math.min(view.state.doc.lines, line + 1))
+  const from = Math.min(l.to, l.from + col)
+  view.dispatch({ selection: { anchor: from, head: Math.min(l.to, from + len) }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+  view.focus()
+}
 
 defineExpose({
   focus: () => view?.focus(),
@@ -334,14 +346,6 @@ defineExpose({
     // a blank line before: the recording is not glued to a list or a paragraph
     const ins = (line.length ? '\n\n' : '') + text + '\n'
     view.dispatch({ changes: { from: at, insert: ins }, selection: { anchor: at + ins.length }, scrollIntoView: true })
-    view.focus()
-  },
-  /** Goes to a place (a search hit): selects it and scrolls it into the middle. */
-  reveal(line: number, col = 0, len = 0): void {
-    if (!view) return
-    const l = view.state.doc.line(Math.min(view.state.doc.lines, line + 1))
-    const from = Math.min(l.to, l.from + col)
-    view.dispatch({ selection: { anchor: from, head: Math.min(l.to, from + len) }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
     view.focus()
   },
 })

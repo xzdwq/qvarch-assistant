@@ -36,6 +36,7 @@ export type TaskType = (typeof TASK_TYPES)[number]
 export const ENTRY_ORIGINS = ['outlook', 'call', 'manual'] as const
 export type EntryOrigin = (typeof ENTRY_ORIGINS)[number]
 
+
 /** How a report groups its time. */
 export const GROUP_BYS = ['kind', 'task', 'day', 'week'] as const
 export type GroupBy = (typeof GROUP_BYS)[number]

@@ -12,6 +12,9 @@ export const pwSpec: RunnableBlockSpec<'pw'> = {
   estimateHeight: heightPerLine(180, 20),
   runnable: true,
   chip: 'pw',
+  // (its files — trace, screenshots — are the block's own)
+  serialInLoop: true,
+  test: { tally: 'Тесты в браузере' },
   rawEditable: true,
   commands: [
     {

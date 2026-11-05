@@ -1,18 +1,18 @@
 import { PAGE_LOOK_HEADINGS, PAGE_LOOK_MAX, type PageLook, type PageLookItem } from '../../shared/browser/pageLook'
+import { UI } from '../../shared/browser/uiKits'
 import { nameOf, roleOf, textOf, visible } from './domText'
 import { locatorFor } from './locators'
 
 /** What may be acted on (the roles a recording finds elements by). */
 const ACTABLE = 'a[href], button, input:not([type="hidden"]), textarea, select, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="combobox"], [role="switch"], [role="option"]'
-/** An open dialog (its elements are what may be acted on now). */
-const DIALOG = '[role="dialog"], dialog[open], .q-dialog'
 
 /**
  * The page looked at for an agent: its visible actable elements (an open dialog's only — the page under it waits),
  * each with the locator the recorder would write; the same element twice — once.
  */
 export function lookAtPage(): PageLook {
-  const dialogs = [...document.querySelectorAll(DIALOG)].filter(visible)
+  // an open dialog: its elements are what may be acted on now
+  const dialogs = [...document.querySelectorAll(UI.dialog)].filter(visible)
   const root: ParentNode = dialogs.at(-1) ?? document
   const items: PageLookItem[] = []
   const seen = new Set<string>()
@@ -36,5 +36,5 @@ export function lookAtPage(): PageLook {
     .filter(Boolean)
     .slice(0, PAGE_LOOK_HEADINGS)
   const dialog = dialogs.at(-1)
-  return { url: location.href, title: document.title, headings, ...(dialog ? { dialog: textOf(dialog.querySelector('h1, h2, h3, [class*="title"]') ?? dialog, 60) } : {}), items, more }
+  return { url: location.href, title: document.title, headings, ...(dialog ? { dialog: textOf(dialog.querySelector(UI.dialogTitle) ?? dialog, 60) } : {}), items, more }
 }

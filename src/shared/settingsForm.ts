@@ -47,12 +47,11 @@ export function settingsPatchFrom(f: SettingsForm): SettingsPatch {
 export type UiPreset = 'full' | 'minimal'
 /** The interface presets: everything, or only what is needed day to day (the timeline, the look and the menu stay). */
 const UI_PRESETS: Record<UiPreset, (ui: UiPrefs) => UiPrefs> = {
-  full: (ui) => ({ ...DEFAULT_UI, main: { ...DEFAULT_UI.main, allStats: true }, timeline: { ...ui.timeline }, theme: ui.theme, menu: ui.menu }),
+  full: (ui) => ({ ...DEFAULT_UI, timeline: { ...ui.timeline }, theme: ui.theme, menu: ui.menu }),
   minimal: (ui) => ({
-    pill: { app: true, date: false, combo: false, wave: false, chips: true, stats: false, dayBar: true, plan: false },
+    pill: { app: true, date: false, combo: false, wave: false, chips: true, stats: false },
     dock: { orb: true, time: true, next: true, wave: false },
-    island: { date: false, wave: false, totals: true, plan: false },
-    main: { allStats: false, plan: true },
+    island: { date: false, wave: false, totals: true },
     timeline: { ...ui.timeline },
     theme: ui.theme,
     menu: ui.menu,

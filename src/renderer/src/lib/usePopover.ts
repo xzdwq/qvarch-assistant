@@ -40,10 +40,15 @@ export interface PopoverOptions {
   esc?: boolean | (() => boolean)
   /** A panel one works in: closed only by its own button — never by a press outside or Esc; its element out of sight — hidden till it is back. */
   stay?: boolean
+  /**
+   * A point that can follow what it stands by (a «@» in the text): on a scroll or a resize it is asked to move — true:
+   * moved (its anchor gives the new point), the popover stays; false — gone from sight, closed. None — closed.
+   */
+  follow?: () => boolean
 }
 
 /** Beside its element (placeFloat): above or under it, wherever there is more room. */
-export function floatPlace(el: HTMLElement, o: PopoverOptions): Placed {
+function floatPlace(el: HTMLElement, o: PopoverOptions): Placed {
   const f = placeFloat(el, typeof o.width === 'function' ? o.width(el) : (o.width ?? 220), o.alignLeft, o.chrome)
   const style = o.maxHeight === 'none' ? f.style : { ...f.style, maxHeight: `${o.maxHeight ? o.maxHeight(f.maxH) : f.maxH}px` }
   return { style, up: f.up, room: f.maxH }
@@ -175,9 +180,10 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
     return t instanceof Node && (!!(isElement(a) ? a.contains(t) : a?.from?.contains(t)) || layer.holds(t))
   }
   const onDown = (e: PointerEvent) => !options.stay && !inside(e.target) && close()
-  // (at a point: what it stood by has moved — its own list scrolling is not that)
-  const onScroll = (e: Event) => !isElement(anchorNow()) && !inside(e.target) && close()
-  const onResize = () => !isElement(anchorNow()) && close()
+  // (at a point: what it stood by has moved — followed, if the point can, else closed; its own list scrolling is not that)
+  const pointMoved = () => !isElement(anchorNow()) && !options.follow?.() && close()
+  const onScroll = (e: Event) => !inside(e.target) && pointMoved()
+  const onResize = () => pointMoved()
   const self: OpenPopover = { close, esc: () => (typeof options.esc === 'function' ? options.esc() : options.esc !== false) }
 
   function setOpen(on: boolean): void {

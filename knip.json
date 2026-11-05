@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/main/index.ts",
+    "src/main/release/worker.ts",
+    "src/main/runner/codeWorker.ts",
+    "src/main/runner/loopWorker.ts",
+    "src/main/runner/pwWorker.ts",
+    "src/main/runner/hookWorker.ts",
+    "src/main/sql/worker.ts",
+    "src/preload/index.ts",
+    "src/preload/browser.ts",
+    "src/renderer/index.html",
+    "src/renderer/island.html",
+    "src/renderer/src/app/main.ts",
+    "src/renderer/src/island/main.ts",
+    "tests/**/*.test.ts",
+    "tests/globalSetup.ts",
+    "scripts/**/*.mjs"
+  ],
+  "project": ["src/**/*.{ts,vue}", "tests/**/*.ts", "scripts/**/*.mjs"],
+  "ignore": ["server/**", "out/**", "dist/**"],
+  "paths": { "@shared/*": ["./src/shared/*"], "@nb/*": ["./src/notebook/*"], "@renderer/*": ["./src/renderer/src/*"] },
+  "vitest": { "config": ["vitest.config.ts"] }
+}

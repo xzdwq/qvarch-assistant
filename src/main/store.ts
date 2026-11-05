@@ -1,6 +1,7 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { Db } from './db'
+import { readJsonFile, writeAtomic } from './fsAtomic'
 import { join } from 'node:path'
 import { DEFAULT_KINDS } from '../shared/kinds'
 import { DEFAULT_UI, mergeUi } from '../shared/ui'
@@ -8,7 +9,7 @@ import { attrRemovals, cleanAttrs, withoutRemoved } from '../shared/tracker/attr
 import { cleanChat, cleanTransport, DEFAULT_CHAT, DEFAULT_TRANSPORT } from '../shared/transport/constants'
 import { dayKey, unnest } from '../shared/timeline'
 import { nextTaskKey, taskNo } from '../shared/board'
-import type { DayData, KindDef, LocalTask, PublicSettings, SearchHit, Settings, SettingsPatch } from '../shared/types'
+import type { DayData, KindDef, LocalTask, PublicSettings, Settings, SettingsPatch } from '../shared/types'
 
 const DEFAULT_SETTINGS: Settings = {
   schedule: { start: '09:00', end: '18:00', lunchStart: '13:00', lunchEnd: '14:00', workDays: [1, 2, 3, 4, 5] },
@@ -16,9 +17,9 @@ const DEFAULT_SETTINGS: Settings = {
   attributes: [],
   captureTitles: false,
   countKeys: true,
-  jira: { projects: ['DOS', 'RND', 'AI'], site: 'https://aoavant.atlassian.net', syncMin: 10 },
-  // the user's own app registration "Qvarch Assistant" (ids are not secrets; no client secret is used)
-  outlook: { source: 'local', clientId: '5c35351a-f465-4638-9b90-dce342691ad3', tenantId: 'fe57acdf-2f79-4073-bfea-a0011702442f', syncMin: 10, meetings: true, presence: true },
+  // the projects, the site and the app registration are the user's own — entered in the settings
+  jira: { projects: [], syncMin: 10 },
+  outlook: { source: 'local', syncMin: 10, meetings: true, presence: true },
   voice: { enabled: true, autoTranscribe: true, model: 'small' },
   transport: DEFAULT_TRANSPORT,
   chat: DEFAULT_CHAT,
@@ -34,20 +35,6 @@ const LEGACY_SETTINGS = ['openai', 'graph', 'ai'] as const
 /** The current Jira settings; anything else under "jira" is the old API-token integration and is dropped. */
 const JIRA_KEYS = ['clientId', 'projects', 'site', 'syncMin']
 
-function writeAtomic(file: string, data: string): void {
-  const tmp = `${file}.tmp`
-  writeFileSync(tmp, data, 'utf8')
-  renameSync(tmp, file)
-}
-
-function readJson<T>(file: string): T | undefined {
-  if (!existsSync(file)) return undefined
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as T
-  } catch {
-    return undefined
-  }
-}
 
 export class Store {
   readonly root = join(app.getPath('userData'), 'data')
@@ -63,7 +50,7 @@ export class Store {
     this.dropRemovedData()
     this.importJsonDays()
     this.numberTasks()
-    const raw = (readJson<Settings>(this.settingsFile) ?? {}) as Settings & Record<string, unknown>
+    const raw = (readJsonFile<Settings>(this.settingsFile) ?? {}) as Settings & Record<string, unknown>
     let hadLegacy = LEGACY_SETTINGS.some((k) => k in raw)
     for (const k of LEGACY_SETTINGS) delete raw[k]
     const jira = raw.jira as Record<string, unknown> | undefined
@@ -106,7 +93,7 @@ export class Store {
     const dir = join(this.root, 'days')
     if (!existsSync(dir)) return
     const files = readdirSync(dir).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
-    const days = files.map((f) => readJson<DayData>(join(dir, f))).filter((d): d is DayData => !!d?.day)
+    const days = files.map((f) => readJsonFile<DayData>(join(dir, f))).filter((d): d is DayData => !!d?.day)
     if (days.length) this.db.importDays(days)
     let backup = join(this.root, 'days-json-backup')
     for (let i = 2; existsSync(backup); i++) backup = join(this.root, `days-json-backup-${i}`)
@@ -155,12 +142,17 @@ export class Store {
         d.entries = un.entries
         this.dirty.add(day)
       }
-      const legacy = d as DayData & { calendar?: unknown; aiSummary?: unknown }
+      const legacy = d as DayData & { calendar?: unknown; aiSummary?: unknown; plan?: unknown }
       // data of removed integrations
       if (legacy.calendar || legacy.aiSummary) {
         delete legacy.calendar
         delete legacy.aiSummary
         d.calls = d.calls.filter((c) => c.source === 'mic' || c.source === 'teams')
+        this.dirty.add(day)
+      }
+      // the day plan is gone: its blocks drop out when the day is saved next
+      if ('plan' in legacy) {
+        delete legacy.plan
         this.dirty.add(day)
       }
       this.days.set(day, d)
@@ -246,11 +238,6 @@ export class Store {
     return [...new Set([...this.db.listDays(), ...this.dirty])].sort()
   }
 
-  search(q: string): SearchHit[] {
-    this.flush()
-    return this.db.search(q)
-  }
-
   tasks(): LocalTask[] {
     return this.db.tasks()
   }
@@ -269,14 +256,10 @@ export class Store {
   }
   /** The last own task number given out (meta.json) — numbers are never reused. */
   private lastTaskNo(): number {
-    return readJson<{ lastTaskNo?: number }>(join(this.root, 'meta.json'))?.lastTaskNo ?? 0
+    return readJsonFile<{ lastTaskNo?: number }>(join(this.root, 'meta.json'))?.lastTaskNo ?? 0
   }
   private setLastTaskNo(n: number): void {
-    writeAtomic(join(this.root, 'meta.json'), JSON.stringify({ ...readJson<object>(join(this.root, 'meta.json')), lastTaskNo: n }, null, 2))
-  }
-
-  deleteTask(id: string): void {
-    this.db.deleteTask(id)
+    writeAtomic(join(this.root, 'meta.json'), JSON.stringify({ ...readJsonFile<object>(join(this.root, 'meta.json')), lastTaskNo: n }, null, 2))
   }
 
   close(): void {

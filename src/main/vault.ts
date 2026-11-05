@@ -166,18 +166,22 @@ export class Vault {
     const want = cleanName(name ?? (isDir ? basename(src) : basename(src, ext)))
     const same = join(dst, want + ext)
     if (same.toLowerCase() === src.toLowerCase()) {
-      if (same !== src) renameSync(src, same) // only the letter case changed
-      this.graph.moved(this.files.rel(src), this.files.rel(same))
-      return this.files.rel(same)
+      // only the letter case changed (or nothing): the same file, renamed in place
+      if (same === src) return this.files.rel(src)
+      renameSync(src, same)
+      return this.followMove(this.files.rel(src), this.files.rel(same))
     }
     const file = this.files.freeFile(dst, want, ext)
     mkdirSync(dst, { recursive: true })
     renameSync(src, file)
-    const before = this.files.rel(src)
+    return this.followMove(this.files.rel(src), this.files.rel(file))
+  }
+  /** What hangs on a moved path follows it: the read cache, the marks and runs (and their listeners), the graph. */
+  private followMove(before: string, after: string): string {
     this.files.forgetUnder(before)
-    this.remapMeta(before, this.files.rel(file))
-    this.graph.moved(before, this.files.rel(file))
-    return this.files.rel(file)
+    this.remapMeta(before, after)
+    this.graph.moved(before, after)
+    return after
   }
 
   /** To the recycle bin (can be restored from there). */
@@ -222,10 +226,6 @@ export class Vault {
   /** Every event mentioned in the notes (qvarch://event/<day>/<id>): its id → the notes (paths). */
   eventMentions(): Record<string, string[]> {
     return eventMentions(this.tree(), (p) => this.read(p))
-  }
-  /** The notes that link to this one (`[[…]]`, a shared note's link). */
-  backlinks(rel: string): string[] {
-    return this.graph.backlinks(rel)
   }
   /** «Связи»: the notes linking here, and the related ones with why. */
   related(rel: string): { backlinks: string[]; related: RelatedNote[] } {

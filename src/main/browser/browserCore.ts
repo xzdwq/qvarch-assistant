@@ -1,11 +1,10 @@
-import { app, session, WebContentsView, type BrowserWindow, type Session, type WebContents } from 'electron'
-import { existsSync } from 'node:fs'
+import { app, WebContentsView, type BrowserWindow, type Session, type WebContents } from 'electron'
 import { release } from 'node:os'
 import { chromeMetadata, identityHeaders, windowsPlatformVersion, type UaMetadata, type UaSystem } from '../../shared/browser/chromeIdentity'
 import { tellIdentity } from './pageIdentity'
-import { basename, extname, join } from 'node:path'
-import { browserId, type BrowserTab } from '../../shared/browser'
+import { browserId, type BrowserEmit, type BrowserTab, type NavAction } from '../../shared/browser'
 import { Hooks } from '../hooks'
+import { browserSession, guardPermissions, keepDownloads } from './profileSession'
 import { SOURCE_SCHEME, sourcePage } from '../viewSource'
 import { BrowserStore } from './browserStore'
 import { CheckTabs } from './checkTabs'
@@ -19,11 +18,17 @@ import { PasswordVault } from './passwordVault'
 import { RequestRecorder } from './requestRecorder'
 import { ScenarioRecorder } from './scenarioRecorder'
 import { SiteCertificates } from './siteCertificates'
-import { safeHost, type Rect, type Tab } from './tab'
+import { KEEPS_AWAKE, safeHost, type Rect, type Tab } from './tab'
 import { TabCdp } from './tabCdp'
 import { wireTab, type TabEventsHost } from './tabEvents'
 
-const PARTITION = 'persist:qa-browser'
+/** The built files the browser runs (paths from the app's build folder — ctx.mainDir). */
+export interface BrowserFiles {
+  /** Its pages' preload (sign-in forms, rulers, a scenario's recorder). */
+  preload: string
+  /** The hooks' search process. */
+  hookWorker: string
+}
 
 /**
  * The browser's core: the tabs (each a WebContentsView of its own over the main window), one persistent profile apart
@@ -45,17 +50,19 @@ export class BrowserCore implements TabEventsHost {
   protected pages: PageLayout
   protected recorder: RequestRecorder
   protected devices: DeviceEmulation
-  protected passwordVault: PasswordVault
-  protected rulers: PageRulers
+  readonly passwordVault: PasswordVault
+  readonly rulers: PageRulers
   protected certs = new SiteCertificates()
-  private logins = new Map<string, (u?: string, p?: string) => void>()
+  /** The sign-in questions asked (one shown at a time): their tab and Chromium's callback. */
+  private logins = new Map<string, { tabId: string; cb: (u?: string, p?: string) => void }>()
 
   constructor(
     root: string,
-    private emitEvent: (type: string, payload: unknown) => void,
+    private readonly files: BrowserFiles,
+    private emitEvent: BrowserEmit,
   ) {
-    this.ses = session.fromPartition(PARTITION)
-    this.store = new BrowserStore(root, () => this.tabs.values(), (type, payload) => this.emit(type, payload))
+    this.ses = browserSession()
+    this.store = new BrowserStore(root, () => this.tabs.values(), this.emit)
     this.cdp = new TabCdp((tab) => {
       tab.rec = false
       tab.dbg.clear()
@@ -67,10 +74,10 @@ export class BrowserCore implements TabEventsHost {
     })
     // (the parts that listen to the pages' protocol, in the order they hear it)
     this.recorder = new RequestRecorder(this)
-    this.hooks = new Hooks(root, join(__dirname, 'hookWorker.js'), (type, payload) => {
+    this.hooks = new Hooks(root, files.hookWorker, (type, payload) => {
       this.emit(type, payload)
-      // a hook changed / the search paused or not: the pages follow
-      if (type === 'hooks' || type === 'hookPaused') this.hookSearch.syncAll()
+      // a hook changed: the pages follow (a pause is followed by its caller — Browser.hookPause)
+      if (type === 'hooks') this.hookSearch.syncAll()
     })
     this.hookSearch = new HookSearch(this, this.hooks)
     this.checkTabs = new CheckTabs(root, this)
@@ -115,16 +122,8 @@ export class BrowserCore implements TabEventsHost {
     this.ses.protocol.handle(SOURCE_SCHEME, (req) => sourcePage(req.url.slice(SOURCE_SCHEME.length + 1), (u) => this.ses.fetch(u)))
     // the corporate sign-in (Windows auth) works as in Chrome
     this.ses.allowNTLMCredentialsForDomains('*')
-    this.ses.setPermissionRequestHandler((_wc, perm, cb) => cb(['clipboard-sanitized-write', 'clipboard-read', 'notifications', 'media'].includes(perm)))
-    this.ses.on('will-download', (_e, item) => {
-      const dir = app.getPath('downloads')
-      const name = item.getFilename() || 'download'
-      let path = join(dir, name)
-      for (let n = 1; existsSync(path); n++) path = join(dir, `${basename(name, extname(name))} (${n})${extname(name)}`)
-      item.setSavePath(path)
-      this.emit('download', { name: basename(path), path, state: 'progress' })
-      item.once('done', (_ev, state) => this.emit('download', { name: basename(path), path, state }))
-    })
+    guardPermissions(this.ses, () => this.store.settings.sitePermissions)
+    keepDownloads(this.ses, this.emit)
     app.on('certificate-error', (e, wc, url, error, _cert, cb, isMainFrame) => {
       const tab = this.byContents(wc)
       if (!tab) return
@@ -145,9 +144,8 @@ export class BrowserCore implements TabEventsHost {
   }
 
   // ---------- what the parts share ----------
-  emit(type: string, payload: unknown): void {
-    this.emitEvent(type, payload)
-  }
+  /** The browser's news to the window (bound: the parts take it as a function). */
+  readonly emit: BrowserEmit = (type, payload) => this.emitEvent(type, payload)
   window(): BrowserWindow | undefined {
     return this.win
   }
@@ -187,14 +185,24 @@ export class BrowserCore implements TabEventsHost {
     t.view.webContents.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void this.chromeLike(t, d.url))
   }
   askLogin(tab: Tab, info: { host: string; realm: string }, cb: (user?: string, pass?: string) => void): void {
+    // the window shows the newest question only: the ones before are cancelled (else their requests hang for ever)
+    this.cancelLogins()
     const reqId = browserId()
-    this.logins.set(reqId, cb)
+    this.logins.set(reqId, { tabId: tab.t.id, cb })
     this.emit('login', { reqId, tabId: tab.t.id, host: info.host, realm: info.realm })
   }
   loginReply(reqId: string, user?: string, pass?: string): void {
-    const cb = this.logins.get(reqId)
+    const ask = this.logins.get(reqId)
     this.logins.delete(reqId)
-    cb?.(user, pass)
+    ask?.cb(user, pass)
+  }
+  /** The sign-in questions not answered (of a tab — closed, its page made anew; none — all) cancelled. */
+  protected cancelLogins(tabId?: string): void {
+    for (const [id, a] of [...this.logins])
+      if (tabId === undefined || a.tabId === tabId) {
+        this.logins.delete(id)
+        a.cb()
+      }
   }
 
   // ---------- the window ----------
@@ -220,7 +228,7 @@ export class BrowserCore implements TabEventsHost {
   }
   private makeView(): WebContentsView {
     // the preload only sees sign-in forms (to offer saving / filling a password) — the page cannot reach it
-    const view = new WebContentsView({ webPreferences: { session: this.ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(__dirname, '../preload/browser.js') } })
+    const view = new WebContentsView({ webPreferences: { session: this.ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: this.files.preload } })
     // (the window's dark canvas while a page has nothing to draw yet; its document there — white under it, as browsers
     // give a page that sets no background of its own)
     const dark = this.win?.getBackgroundColor() ?? '#0a0d12'
@@ -236,8 +244,9 @@ export class BrowserCore implements TabEventsHost {
     const min = this.store.settings.sleepMin
     if (!min || this.recorder.recording) return
     const old = Date.now() - min * 60_000
+    let slept = false
     for (const [id, t] of this.tabs) {
-      if (t.asleep || this.pages.isShown(id) || t.seen > old || t.dev || t.t.device || t.t.loading || t.rec || t.dbg.has('run')) continue
+      if (t.asleep || this.pages.isShown(id) || t.seen > old || t.dev || t.t.device || t.t.loading || t.rec || KEEPS_AWAKE.some((o) => t.dbg.has(o))) continue
       try {
         if (t.view.webContents.isCurrentlyAudible() || /^about:blank$/.test(t.t.url)) continue
         this.win?.contentView.removeChildView(t.view)
@@ -248,8 +257,10 @@ export class BrowserCore implements TabEventsHost {
       t.asleep = true
       t.t.asleep = true
       t.t.loading = false
+      slept = true
     }
-    this.changed()
+    // (the tabs' list told only when one went to sleep)
+    if (slept) this.changed()
   }
   /** A tab asleep made again: its page loads at the address it had (the zoom kept). */
   wake(t: Tab): void {
@@ -281,6 +292,7 @@ export class BrowserCore implements TabEventsHost {
   private restartPage(t: Tab): void {
     if (t.asleep) return this.wake(t)
     this.devTools.close(t)
+    this.cancelLogins(t.t.id)
     try {
       this.win?.contentView.removeChildView(t.view)
       t.view.webContents.close()
@@ -324,6 +336,7 @@ export class BrowserCore implements TabEventsHost {
     this.tabs.delete(id)
     this.pages.forget(id)
     this.checkTabs.forget(id)
+    this.cancelLogins(id)
     this.devTools.close(t)
     try {
       if (!t.asleep) {
@@ -353,7 +366,7 @@ export class BrowserCore implements TabEventsHost {
     else void t.view.webContents.loadURL(url).catch(() => undefined)
     this.changed()
   }
-  nav(id: string, action: 'back' | 'fwd' | 'reload' | 'hard' | 'stop' | 'devtools'): void {
+  nav(id: string, action: NavAction): void {
     const t = this.tabs.get(id)
     if (!t) return
     this.wake(t)
@@ -361,7 +374,7 @@ export class BrowserCore implements TabEventsHost {
     if ((action === 'reload' || action === 'hard') && t.t.error?.gone) return this.restartPage(t)
     const wc = t.view.webContents
     const h = wc.navigationHistory
-    const NAV: Record<typeof action, () => void> = {
+    const NAV: Record<NavAction, () => void> = {
       back: () => h.canGoBack() && h.goBack(),
       fwd: () => h.canGoForward() && h.goForward(),
       reload: () => ((t.t.error = undefined), wc.reload()),
@@ -385,7 +398,7 @@ export class BrowserCore implements TabEventsHost {
     const t = this.tabs.get(id)
     if (!t || !this.win) return
     this.wake(t)
-    await savePageAs(this.win, t.view.webContents, (type, payload) => this.emit(type, payload))
+    await savePageAs(this.win, t.view.webContents, this.emit)
   }
   /** «Просмотр кода страницы»: its source in a tab of its own. */
   viewSource(id: string): void {

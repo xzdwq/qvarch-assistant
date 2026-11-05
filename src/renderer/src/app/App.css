@@ -1,7 +1,7 @@
 /* App: what its template cannot carry as utilities (scoped). */
 
 .ico.spin :deep(svg) {
-  animation: App-qa-spin 0.6s linear infinite;
+  animation: Shared-spin 0.6s linear infinite;
 }
 /* the window moves by the logo and the empty stretches only — buttons never sit inside a drag area
    (Electron cuts holes for them, and on Windows some of those holes go missing: clicks were lost) */

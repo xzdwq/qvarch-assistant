@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { HOUR, MINUTE } from '@shared/timeline'
 import type { Ms } from '@shared/types'
 
@@ -142,4 +142,3 @@ export function visible<T extends { start: Ms; end: Ms }>(list: T[], from: Ms, t
   return list.filter((x) => x.end > from && x.start < to)
 }
 
-export type ViewportRef = Ref<number>

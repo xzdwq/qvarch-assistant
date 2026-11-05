@@ -13,7 +13,7 @@ export const createdOf = (path: string) => longDate(findNode(tree.value, path)?.
 
 /** The text's scale: Ctrl + wheel over the note, or the badge in its status line (50…250 %, by 10). */
 export const BASE_PX = 14.5
-export const clampZoom = (z: number) => Math.min(250, Math.max(50, Math.round(z / 10) * 10))
+const clampZoom = (z: number) => Math.min(250, Math.max(50, Math.round(z / 10) * 10))
 export function setZoom(z: number): void {
   layout.zoom = clampZoom(z)
 }

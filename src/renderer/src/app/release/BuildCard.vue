@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import Icon from '../../components/Icon.vue'
 import { formatDateTime, shortSha } from '@shared/releaseView'
-import { requestDateCheck, rs, send, showError, today } from '../../lib/releaseStore'
+import { requestDateCheck, rs, send, showError } from '../../lib/releaseStore'
+import { todayKey } from '../../lib/today'
 import ReleaseCardHead from './ReleaseCardHead.vue'
 import { appliedCount, hasItems, hasPendingBuild, hasRelease, includedItems as included, pendingItems, plan, planItems as items } from './planView'
 import { openLink } from './releaseActions'
@@ -43,10 +44,10 @@ function publish(): void {
       <div class="frow2 tw:flex tw:flex-wrap tw:items-center tw:gap-8 tw:mb-8">
         <label>Дата релиза (для имени релизной ветки):</label>
         <input v-model="rs.releaseDate" class="din tw:h-28 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-(--rad-sm) tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:w-160" type="text" />
-        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[50%] tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:enabled:bg-white/8 tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" title="Сбросить на сегодняшнюю дату" @click="rs.releaseDate = today()"><Icon name="refresh" :size="14" /></button>
+        <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[50%] tw:bg-transparent tw:text-muted tw:cursor-pointer tw:hover:enabled:bg-white/8 tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" title="Сбросить на сегодняшнюю дату" @click="rs.releaseDate = todayKey"><Icon name="refresh" :size="14" /></button>
       </div>
       <div class="brow-btns tw:flex tw:flex-wrap tw:items-center tw:gap-8 tw:mt-8">
-        <button class="b blue tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-accent tw:hover:enabled:border-border-3" :disabled="createDisabled" @click="createBranch"><span v-if="rs.busy.create" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>{{ rs.busy.create ? 'Создаём…' : 'Создать релизную ветку' }}</button>
+        <button class="b blue tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-accent tw:hover:enabled:border-border-3" :disabled="createDisabled" @click="createBranch"><span v-if="rs.busy.create" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>{{ rs.busy.create ? 'Создаём…' : 'Создать релизную ветку' }}</button>
         <span class="mut tw:text-muted tw:text-[12px]">
           <template v-if="hasRelease">Релизная ветка: {{ plan!.releaseBranch }}</template>
           <template v-else-if="rs.dateCheck.exists">Ветка "{{ rs.dateCheck.branchName }}" уже существует — используйте «Начать сборку»</template>
@@ -61,7 +62,7 @@ function publish(): void {
         </template>
       </div>
       <div class="brow-btns gap tw:flex tw:flex-wrap tw:items-center tw:gap-8 tw:mt-12">
-        <button class="b green tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-up tw:hover:enabled:border-border-3" :disabled="!hasPendingBuild || rs.busy.start" @click="startAuto"><span v-if="rs.busy.start" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>{{ rs.busy.start ? 'Собираем…' : appliedCount ? 'Продолжить сборку' : 'Начать сборку' }}</button>
+        <button class="b green tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-up tw:hover:enabled:border-border-3" :disabled="!hasPendingBuild || rs.busy.start" @click="startAuto"><span v-if="rs.busy.start" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>{{ rs.busy.start ? 'Собираем…' : appliedCount ? 'Продолжить сборку' : 'Начать сборку' }}</button>
         <button class="b red tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-down tw:hover:enabled:border-border-3" @click="send({ command: 'abortBuild' })">Отменить сборку</button>
       </div>
       <div class="mut bst tw:text-muted tw:text-[12px] tw:mt-4">
@@ -72,7 +73,7 @@ function publish(): void {
         <template v-else-if="hasItems">Применено {{ appliedCount }} из {{ included.length }} коммитов.</template>
       </div>
       <div v-if="hasItems && included.length && appliedCount === included.length && !rs.published" class="brow-btns tw:flex tw:flex-wrap tw:items-center tw:gap-8 tw:mt-8">
-        <button class="b pri tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:bg-accent tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default" :disabled="rs.busy.publish" @click="publish"><span v-if="rs.busy.publish" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>{{ rs.busy.publish ? 'Публикуем…' : 'Опубликовать релизную ветку' }}</button>
+        <button class="b pri tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:bg-accent tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default" :disabled="rs.busy.publish" @click="publish"><span v-if="rs.busy.publish" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>{{ rs.busy.publish ? 'Публикуем…' : 'Опубликовать релизную ветку' }}</button>
       </div>
     </div>
   </section>

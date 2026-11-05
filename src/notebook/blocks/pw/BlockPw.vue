@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
-import { doc, save, setText } from '@renderer/lib/notebook'
+import { doc, save, setText } from '@nb/workspace/noteDocs'
 import { blockRunKey, fencedBlocksOf } from '@nb/domain/noteBlocks'
 import { summary } from '@nb/domain/values'
 import { isTsLang, PW_OWN_BROWSER, type BlockInfo, type PwBrowser } from '@nb/domain/blockInfo'
@@ -249,9 +249,9 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="patch({ lang: 'ts' })">TS</button>
       </span>
     </RunHead>
-    <div v-if="recording" class="recon tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockPw-prblink_1.2s_ease-in-out_infinite]"></i><span class="tw:min-w-0 tw:truncate">Идёт запись {{ pwRec!.in ? `в «${pwRec!.in}»` : 'в Браузере' }} · строк: {{ pwRec!.count }}</span><span class="grow tw:flex-1"></span><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec()">Стоп — вставить сюда</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec(true)">Отменить</button></div>
+    <div v-if="recording" class="recon tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-35_1.2s_ease-in-out_infinite]"></i><span class="tw:min-w-0 tw:truncate">Идёт запись {{ pwRec!.in ? `в «${pwRec!.in}»` : 'в Браузере' }} · строк: {{ pwRec!.count }}</span><span class="grow tw:flex-1"></span><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec()">Стоп — вставить сюда</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec(true)">Отменить</button></div>
     <div v-else-if="recUrl !== undefined" class="recon ask tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]">
-      <i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockPw-prblink_1.2s_ease-in-out_infinite]"></i><span>С какой страницы начать:</span>
+      <i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-35_1.2s_ease-in-out_infinite]"></i><span>С какой страницы начать:</span>
       <input class="tw:flex-1 tw:min-w-120 tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg tw:text-text tw:font-data tw:text-[12px]" v-model="recUrl" spellcheck="false" placeholder="https://…" @keydown.enter.prevent="rec" @keydown.esc.prevent="recUrl = undefined" />
       <button class="go tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:text-[12px] tw:[&&]:border-stop tw:bg-stop tw:text-white" @mousedown.prevent @click="rec">Записать</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="recUrl = undefined">Отмена</button>
       <span v-if="recErr" class="er tw:mt-4 tw:mr-0 tw:mb-0 tw:ml-0 tw:text-down-fg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap">{{ recErr }}</span>
@@ -346,7 +346,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
     </div>
     <div v-if="run?.steps?.length" class="steps tw:flex tw:flex-col tw:py-4 tw:px-0 tw:border tw:border-border tw:rounded-[6px] tw:bg-bg">
       <div v-for="(s, i) in run.steps" :key="i" class="st tw:flex tw:items-center tw:gap-7 tw:min-w-0 tw:py-2 tw:px-8 tw:text-[12px] tw:[&.error]:text-down-fg" :class="s.state" :style="{ paddingLeft: `${8 + s.depth * 16}px` }" :title="s.error">
-        <i v-if="s.state === 'run'" class="spin tw:w-10 tw:h-10 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[BlockPw-spin_0.8s_linear_infinite]"></i>
+        <i v-if="s.state === 'run'" class="spin tw:w-10 tw:h-10 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[Shared-spin_0.8s_linear_infinite]"></i>
         <Icon v-else :name="s.state === 'ok' ? 'check' : 'x'" :size="12" />
         <span class="sn tw:flex-1 tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">{{ s.name }}</span>
         <span class="sm tw:flex-none tw:text-muted tw:font-data tw:text-[11px]">{{ msText(s.ms) }}</span>

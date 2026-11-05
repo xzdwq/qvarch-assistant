@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
+import { readJsonFile, writeAtomic } from '../fsAtomic'
 import { dirname, join } from 'node:path'
 import { CHAT_CACHE_MAX_BYTES, isChatCacheData, type ChatCacheData } from '../../shared/transport/chatOffline'
 
@@ -12,20 +13,14 @@ export class ChatCache {
     this.file = join(root, 'chat-cache.json')
   }
   load(): ChatCacheData | null {
-    if (!existsSync(this.file)) return null
-    try {
-      const c: unknown = JSON.parse(readFileSync(this.file, 'utf8'))
-      return isChatCacheData(c) ? c : null
-    } catch {
-      return null
-    }
+    const c = readJsonFile<unknown>(this.file)
+    return isChatCacheData(c) ? c : null
   }
   save(c: unknown): void {
     if (!isChatCacheData(c)) throw new Error('Кэш чатов не подходит')
     const text = JSON.stringify(c)
     if (text.length * 2 > CHAT_CACHE_MAX_BYTES * 1.5) throw new Error('Кэш чатов слишком большой')
     mkdirSync(dirname(this.file), { recursive: true })
-    writeFileSync(`${this.file}.tmp`, text)
-    renameSync(`${this.file}.tmp`, this.file)
+    writeAtomic(this.file, text)
   }
 }

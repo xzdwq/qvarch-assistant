@@ -5,6 +5,7 @@ import CodecHash from './codec/CodecHash.vue'
 import CodecJwt from './codec/CodecJwt.vue'
 import CodecUuid from './codec/CodecUuid.vue'
 import { useCopyNote } from './codec/useCopyNote'
+import { readStoredText, writeStoredText } from '../../lib/storedRef'
 
 /**
  * Кодировки: four tabs — JWT, UUID, Base64, Хэш (each in ./codec). A tab keeps what was typed in it while
@@ -19,16 +20,10 @@ const TABS = [
 ] as const satisfies ReadonlyArray<{ id: string; label: string; view: Component }>
 type Tab = (typeof TABS)[number]['id']
 const TAB_KEY = 'qa.tools.codec'
-const savedTab = localStorage.getItem(TAB_KEY)
+const savedTab = readStoredText(TAB_KEY)
 const tab = ref<Tab>(TABS.find((t) => t.id === savedTab)?.id ?? 'jwt')
 const current = computed(() => TABS.find((t) => t.id === tab.value) ?? TABS[0])
-watch(tab, (v) => {
-  try {
-    localStorage.setItem(TAB_KEY, v)
-  } catch {
-    // fine
-  }
-})
+watch(tab, (v) => writeStoredText(TAB_KEY, v))
 const clip = useCopyNote()
 const copied = clip.note
 </script>

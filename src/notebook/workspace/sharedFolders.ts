@@ -9,7 +9,8 @@ import { serverCall, serverOnline } from '@renderer/lib/transport'
 import { onServerEvents } from '@renderer/lib/serverEvents'
 import { docs, setText } from './noteDocs'
 import { closeEverywhere } from './paneLayout'
-import { adopt, fetchText, joinDoc, SHARED_FOLDER, spaces, track, untrack } from './sharedDocs'
+import { adopt, SHARED_FOLDER, spaces, track, untrack } from './sharedDocs'
+import { fetchText, joinDoc } from './sharedJoin'
 import { remap } from './noteSync'
 import { loadTree, tree } from './vaultTreeStore'
 
@@ -220,7 +221,7 @@ export async function shareFolder(dir: string): Promise<Space> {
   return r.space
 }
 /** A shared folder joined: made in «Общие», its documents fetched. Its path. */
-export async function joinFolder(sp: Space): Promise<string> {
+async function joinFolder(sp: Space): Promise<string> {
   const had = (await window.qa.sharedFolders()).find((l) => l.space === sp.id)
   if (had) return had.dir
   const dir = await window.qa.vaultCreate(SHARED_FOLDER, 'folder', sp.title)
@@ -230,7 +231,7 @@ export async function joinFolder(sp: Space): Promise<string> {
   return dir
 }
 /** The folder of a space left / closed: no longer linked; its notes stay as plain notes (their marks go). */
-export async function unlinkFolder(space: string): Promise<void> {
+async function unlinkFolder(space: string): Promise<void> {
   const link = (await window.qa.sharedFolders()).find((l) => l.space === space)
   if (!link) return
   await window.qa.sharedFolderLink(link.dir, null)

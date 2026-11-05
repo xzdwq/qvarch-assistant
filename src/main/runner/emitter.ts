@@ -1,9 +1,9 @@
 import { EMIT_BATCH_SIZE, EMIT_FLUSH_MS, EMIT_VAR_MAX, type EmitBatch, type EmitMode, type EmitPart } from '../../notebook/domain/emits'
+import { isName } from './sandbox'
 
 /** The `emit` a run's code is given: a list (emit), one text (emit.text), one object (emit.merge). */
 export type EmitFn = ((name: string, value: unknown) => void) & { text: (name: string, value: unknown) => void; merge: (name: string, value: unknown) => void }
 
-const isName = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s)
 const WORD: Record<EmitMode, string> = { append: 'emit', text: 'emit.text', merge: 'emit.merge' }
 
 /**

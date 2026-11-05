@@ -110,7 +110,7 @@ export function useCalendarLayout(view: CalendarViewport, data: CalendarData, g:
     visibleNums.value.map((n) => {
       const day = dayKey(n)
       const d = data.days.value.get(day)
-      return { n, day, ...dayStats((d?.entries ?? []).filter(data.visibleEntry), d?.plan ?? [], visibleNotes(d?.notes).length, data.nowMs.value, kinds.value) }
+      return { n, day, ...dayStats((d?.entries ?? []).filter(data.visibleEntry), visibleNotes(d?.notes).length, data.nowMs.value, kinds.value) }
     }),
   )
   const nowY = computed(() => yOf(data.nowMs.value, view.today.value))

@@ -11,7 +11,6 @@ import { ensureMentions, notesOf, noteTitle, openNote } from '../lib/mentions'
  * was made), a note opened from it. Nothing when no note mentions the event.
  */
 const props = defineProps<{ id: string }>()
-const emit = defineEmits<{ opened: [] }>()
 ensureMentions()
 const paths = computed(() => notesOf(props.id))
 const open = ref(false)
@@ -36,7 +35,6 @@ const when = (p: string) => {
 function go(p: string): void {
   open.value = false
   void openNote(p)
-  emit('opened')
 }
 </script>
 

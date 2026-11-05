@@ -10,7 +10,7 @@ import Popover from './Popover.vue'
  * Find a task — own (Q-n, not done) and my Jira ones — or make a new own task from the search text. The trigger is
  * the slot; the list floats over everything (teleported). `marked` — keys shown as already taken.
  */
-const props = defineProps<{ marked?: string[]; placeholder?: string; width?: number }>()
+const props = defineProps<{ marked?: string[]; placeholder?: string }>()
 const emit = defineEmits<{ pick: [task: TaskRef] }>()
 
 const own = useLocalTasks()
@@ -65,7 +65,7 @@ function onKey(e: KeyboardEvent): void {
 
 <template>
   <span ref="root" class="ts tw:inline-flex" @click="toggle"><slot /></span>
-  <Popover v-slot="{ room }" v-model:open="open" :anchor="root" :width="width ?? 420" align-left :chrome="70" max-height="none" class="ts-pop tw:flex tw:flex-col tw:border tw:border-border tw:rounded-[4px] tw:bg-panel tw:[box-shadow:0_16px_40px_rgba(0,0,0,0.5)] tw:overflow-hidden" @pointerdown.stop>
+  <Popover v-slot="{ room }" v-model:open="open" :anchor="root" :width="420" align-left :chrome="70" max-height="none" class="ts-pop tw:flex tw:flex-col tw:border tw:border-border tw:rounded-[4px] tw:bg-panel tw:[box-shadow:0_16px_40px_rgba(0,0,0,0.5)] tw:overflow-hidden" @pointerdown.stop>
       <div class="sbox tw:flex tw:items-center tw:gap-8 tw:py-8 tw:px-10 tw:border-b tw:border-b-border tw:text-muted">
         <Icon name="search" :size="13" />
         <input class="tw:flex-1 tw:min-w-0 tw:border-0 tw:outline-none tw:bg-transparent tw:text-text tw:text-[13px]" ref="input" v-model="q" :placeholder="placeholder ?? 'Найти задачу Jira или свою · Enter — выбрать'" spellcheck="false" @keydown="onKey" />

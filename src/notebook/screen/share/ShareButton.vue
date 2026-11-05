@@ -10,10 +10,12 @@ import { remoteError } from '@shared/remoteError'
 import Icon from '@renderer/components/Icon.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { serverCall, serverOnline, useTransport } from '@renderer/lib/transport'
+import { useFlash } from '@renderer/lib/useFlash'
 import { noteName } from '@nb/domain/notePaths'
 import { openFile } from '@nb/workspace/paneLayout'
 import { loadTree } from '@nb/workspace/vaultTreeStore'
-import { shareNote, sharedDocOfPath, sharedInfo, spaceOfPath } from '@nb/workspace/sharedDocs'
+import { sharedDocOfPath, sharedInfo, spaceOfPath } from '@nb/workspace/sharedDocs'
+import { shareNote } from '@nb/workspace/sharedJoin'
 import { joinByCode } from '@nb/workspace/sharedFolders'
 import { peerColor } from '@nb/editor/peerCursors'
 import { peerSlotsOf } from '@nb/workspace/sharedCursors'
@@ -51,12 +53,11 @@ const share = () => act(() => shareNote(props.path, noteName(props.path)))
 
 const inviteRole = ref<SpaceRole>('editor')
 const code = ref('')
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1500)
 const invite = () => act(async () => (code.value = (await serverCall('space.invite', { space: space.value!.id, role: inviteRole.value })).code))
 async function copyCode(): Promise<void> {
   await navigator.clipboard.writeText(showInvite(code.value))
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
+  flash(true)
 }
 const setRole = (device: string, role: SpaceRole) => act(() => serverCall('space.setRole', { space: space.value!.id, device, role }))
 const remove = (device: string, name: string) => confirm(`Убрать «${name}» из документа? У него останется локальная копия.`) && act(() => serverCall('space.remove', { space: space.value!.id, device }))

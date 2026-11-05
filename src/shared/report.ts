@@ -1,5 +1,5 @@
 import type { Entry, Ms } from './types'
-import { dayKey, dayStart, mergeIntervals, MINUTE, shiftDay, unionMs } from './timeline'
+import { dayStart, mergeIntervals, MINUTE, shiftDay, unionMs } from './timeline'
 import { isOwnTask } from './work'
 import type { ChartUnit, EntryOrigin, GroupBy, TaskType } from './tracker/constants'
 import { attrOfDim, attrValue, type AttrDimension } from './tracker/attributes'
@@ -235,5 +235,3 @@ export function bars(items: ReportItem[], days: string[], unit: ChartUnit, serie
   return order.map((k) => map.get(k)!)
 }
 
-/** Today's key — for the period buttons. */
-export const todayKey = (): string => dayKey(Date.now())

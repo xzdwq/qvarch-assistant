@@ -25,7 +25,7 @@ watch(
 )
 
 /** Each note's signal (the person's turn first: it outweighs the work). */
-export const aiSignals = computed(() => {
+const aiSignals = computed(() => {
   const m = new Map<string, AiSignal>()
   for (const run of harnessRuns.value) {
     if (!run.doc) continue

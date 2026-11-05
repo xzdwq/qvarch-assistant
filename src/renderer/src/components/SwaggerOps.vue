@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useDraft } from '../lib/drafts'
+import { useFlash } from '../lib/useFlash'
 import type { ApiOp, ApiSpec } from '@shared/openapi'
 import { specExamples } from '@shared/openapi'
 import { appendToNote, blocksOf, newNote } from '../lib/apiCopy'
@@ -63,14 +64,13 @@ const opts = () => {
   }
 }
 const examples = () => (props.api ? specExamples(props.api.spec, props.api.url, [...picked.value], opts()) : [])
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1500)
 const err = ref('')
 async function copyPicked(): Promise<void> {
   err.value = ''
   try {
     await navigator.clipboard.writeText(await blocksOf(examples()))
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
+    flash(true)
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e)
   }

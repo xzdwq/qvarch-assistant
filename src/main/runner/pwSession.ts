@@ -1,14 +1,13 @@
-import { session } from 'electron'
+import { browserSession } from '../browser/profileSession'
 
 /**
  * A Playwright scenario run «as the person» (session): the Браузер section's sign-ins handed to it, and what it
  * renewed handed back — a site that rotates its session on every visit would otherwise be signed out there.
  */
-const BROWSER_PARTITION = 'persist:qa-browser'
 
 /** The Браузер section's cookies in Playwright's form (a host-only one goes by its address). */
 export async function browserCookies(): Promise<Array<Record<string, unknown>>> {
-  const list = await session.fromPartition(BROWSER_PARTITION).cookies.get({})
+  const list = await browserSession().cookies.get({})
   const same = { strict: 'Strict', lax: 'Lax', no_restriction: 'None', unspecified: 'Lax' } as const
   return list
     .filter((c) => c.domain && c.name)
@@ -31,7 +30,7 @@ export async function cookiesBack(sent: Array<Record<string, unknown>>, got: unk
     return `${String(c.name)}|${host}|${typeof c.url === 'string' ? new URL(c.url).pathname : String(c.path ?? '/')}`
   }
   const before = new Map(sent.map((c) => [key(c), String(c.value)]))
-  const ses = session.fromPartition(BROWSER_PARTITION)
+  const ses = browserSession()
   const same = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' } as const
   let n = 0
   for (const raw of got as Array<{ name: string; value: string; domain: string; path: string; expires: number; httpOnly: boolean; secure: boolean; sameSite: 'Strict' | 'Lax' | 'None' }>) {

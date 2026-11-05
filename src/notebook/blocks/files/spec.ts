@@ -2,7 +2,7 @@ import type { BlockSpec } from '../../domain/blockSpec'
 import { fenceOfLang, fixedHeight } from '../detectors'
 
 /** The name of a note's own set of test files: the note's name made safe for a folder ('Файлы' — none). */
-export function fileSetName(notePath: string): string {
+function fileSetName(notePath: string): string {
   return (notePath.split('/').pop() || 'Файлы').replace(/\.md$/i, '').replace(/[\\/:*?"<>|]/g, '_') || 'Файлы'
 }
 

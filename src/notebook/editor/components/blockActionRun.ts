@@ -15,7 +15,7 @@ import { componentAt, cutPartsOf, wholeComponent } from './componentOps'
  */
 
 /** The blocks an action of this block's menu is for. */
-export function blockTargets(view: EditorView, dom: HTMLElement): ComponentRange[] {
+function blockTargets(view: EditorView, dom: HTMLElement): ComponentRange[] {
   const r = componentAt(view, dom)
   if (!r) return []
   const sel = blockSel(view)

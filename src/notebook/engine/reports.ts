@@ -1,4 +1,4 @@
-import { blockSpec, isRunnableKind, type RunnableKind } from '../blocks/specs'
+import { blockSpec, isRunnableKind, runnableSpec, type RunnableKind } from '../blocks/specs'
 import type { BlockInfo } from '../domain/blockInfo'
 import { fencedBlocksOf } from '../domain/noteBlocks'
 import { cutText, indentText, momentText, tookText } from './reportText'
@@ -42,16 +42,22 @@ export function noteReport(path: string, noteText: string): string {
   const bad = blocks.filter((b, i) => runs[i]?.state === 'error' && !b.info.soft).length
   const soft = blocks.filter((b, i) => runs[i]?.state === 'error' && b.info.soft).length
   const none = runs.filter((r) => !r).length
-  const tests = blocks.filter((b) => b.kind === 'pw')
+  const isTest = (b: (typeof blocks)[number]) => !!runnableSpec(b.kind).test
+  // (each kind of test counted under its label)
+  const tallies = new Map<string, Array<(typeof blocks)[number]>>()
+  for (const b of blocks) {
+    const t = runnableSpec(b.kind).test
+    if (t) tallies.set(t.tally, [...(tallies.get(t.tally) ?? []), b])
+  }
   const title = (noteText.match(/^#\s+(.+)$/m)?.[1] ?? path.split('/').pop()!.replace(/\.md$/i, '')).trim()
   const last = Math.max(0, ...runs.map((r) => r?.at ?? 0))
   const head = [
     `📋 ${title}`,
     `${bad ? '❌ Есть ошибки' : none === blocks.length ? '⏸ Не запускалось' : '✅ Всё в порядке'} — успешно ${okN} из ${blocks.length}${soft ? `, ожидаемых падений ${soft}` : ''}${bad ? `, ошибок ${bad}` : ''}${none ? `, не запускалось ${none}` : ''}`,
-    ...(tests.length ? [`Тесты в браузере: ${tests.filter((b) => n.runs[b.key]?.state === 'ok').length} из ${tests.length}`] : []),
+    ...[...tallies].map(([label, tests]) => `${label}: ${tests.filter((b) => n.runs[b.key]?.state === 'ok').length} из ${tests.length}`),
     ...(last ? [`Последний запуск: ${momentText(last)}`] : []),
   ]
-  const parts = blocks.map((b, i) => blockReport(path, b.key, b.kind, b.info, b.body, { brief: !(runs[i]?.state === 'error' || b.kind === 'pw') }))
+  const parts = blocks.map((b, i) => blockReport(path, b.key, b.kind, b.info, b.body, { brief: !(runs[i]?.state === 'error' || isTest(b)) }))
   return [...head, '', ...parts.flatMap((p) => [p, ''])].join('\n').trim()
 }
 

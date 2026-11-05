@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import type { ClipItem, ClipState } from '@shared/clip'
+import { dayKey, shiftDay } from '@shared/timeline'
+import { todayKey } from '../../lib/today'
+import { useFlash } from '../../lib/useFlash'
 import Icon from '../Icon.vue'
 
 /**
@@ -16,12 +19,8 @@ const shown = computed(() => {
   const w = q.value.trim().toLowerCase()
   return w ? state.value.items.filter((x) => x.text.toLowerCase().includes(w)) : state.value.items
 })
-const dayKey = (t: number) => new Date(t).toLocaleDateString('sv-SE')
-const dayName = (k: string) => {
-  const today = new Date().toLocaleDateString('sv-SE')
-  const y = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE')
-  return k === today ? 'Сегодня' : k === y ? 'Вчера' : new Date(`${k}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
-}
+const dayName = (k: string) =>
+  k === todayKey.value ? 'Сегодня' : k === shiftDay(todayKey.value, -1) ? 'Вчера' : new Date(`${k}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
 const groups = computed(() => {
   const m = new Map<string, ClipItem[]>()
   for (const x of shown.value) m.set(dayKey(x.at), [...(m.get(dayKey(x.at)) ?? []), x])
@@ -36,11 +35,10 @@ function toggle(id: string): void {
   else s.add(id)
   open.value = s
 }
-const copied = ref('')
+const { shown: copied, flash } = useFlash<string>(1200)
 async function copy(x: ClipItem): Promise<void> {
   await window.qa.clipCopy(x.id)
-  copied.value = x.id
-  setTimeout(() => copied.value === x.id && (copied.value = ''), 1200)
+  flash(x.id)
 }
 async function setOn(on: boolean): Promise<void> {
   state.value = await window.qa.clipSet(on)

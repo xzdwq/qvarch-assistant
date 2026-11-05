@@ -8,8 +8,7 @@ import Icon from '@renderer/components/Icon.vue'
  * A diagram (Mermaid): flowcharts, sequences, states, ER, Gantt… drawn from its text. «Код» opens the text
  * next to the picture — it redraws as you type; a broken text keeps the last good picture and says why.
  */
-const props = defineProps<{ src: string; autofocus?: boolean }>()
-const emit = defineEmits<{ change: [src: string] }>()
+const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void }>()
 const code = ref(mermaidBody(props.src))
 let mine = props.src
 watch(
@@ -59,7 +58,7 @@ function onCode(v: string): void {
     const md = mermaidMd(code.value)
     if (md !== mine) {
       mine = md
-      emit('change', md)
+      props.onChange?.(md)
     }
   }, 400)
 }

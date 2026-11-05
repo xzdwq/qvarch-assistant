@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { formatDuration, formatHM, overlapPairs, scheduleRanges } from '@shared/timeline'
 import type { JiraIssue, TaskRef } from '@shared/jira'
-import type { Entry, Ms, PlanBlock } from '@shared/types'
+import type { Entry, Ms } from '@shared/types'
 import Icon from '../../components/Icon.vue'
 import TaskSearch from '../../components/TaskSearch.vue'
 import NoteLinks from '../../components/NoteLinks.vue'
@@ -17,7 +17,7 @@ import { useRecording } from '../entry/useRecording'
 import RecDot from '../../components/RecDot.vue'
 import AttrChips from '../../components/AttrChips.vue'
 
-/** The chosen day as a feed (done → now → plan, free gaps in between) — or the period's sheet. */
+/** The chosen day as a feed (done → now → ahead, free gaps in between) — or the period's sheet. */
 const emit = defineEmits<{ openDay: [day: string] }>()
 const { settings, day, weekStart, weekEnd, weekTitle, reload, now, isToday, cur, fail, flash, flashFor, top, feedTab, feedOrder, openId, hoverId, addTaskToDay, quick } = useWorkBoard()
 
@@ -32,7 +32,7 @@ const overlapsOf = (id: string) => overlaps.value.filter((o) => o.b.id === id)
 /** A free gap → the quick line gets its time. */
 const fillGap = (r: { start: Ms; end: Ms }) => quick.value?.focus(`${formatHM(r.start)}-${formatHM(r.end)} `)
 
-// ---------- a block: give a task, delete; a plan: done, dropped ----------
+// ---------- a block: give a task, delete ----------
 async function giveTask(e: Entry, t: TaskRef | null): Promise<void> {
   try {
     await window.qa.setEntryTask(day.value, e.id, t)
@@ -64,15 +64,7 @@ async function toggleRecording(e: Entry): Promise<void> {
 async function onCopied(c: Entry, d: string): Promise<void> {
   if (d !== day.value) day.value = d
   await reload()
-  flashFor(c.id, 2500)
-}
-async function planDone(p: PlanBlock): Promise<void> {
-  await window.qa.planDone(day.value, p.id)
-  await reload()
-}
-async function planDrop(p: PlanBlock): Promise<void> {
-  await window.qa.deletePlan(day.value, p.id)
-  await reload()
+  flashFor(c.id)
 }
 
 // ---------- a Jira task of an event, unfolded in the list ----------
@@ -102,7 +94,7 @@ async function toggleJira(e: Entry): Promise<void> {
         <button class="tw:h-24 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:border-accent/60 tw:[&.on]:bg-accent/16 tw:[&.on]:text-accent-fg tw:[.seg_&]:not-[.quick_&]:h-22 tw:[.seg_&]:not-[.quick_&]:py-0 tw:[.seg_&]:not-[.quick_&]:px-10 tw:[.seg_&]:not-[&.on]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:not-[&.on]:bg-transparent tw:[.seg_&]:not-[&.on]:not-[.quick_&]:text-muted tw:[.seg_&]:not-[.quick_&]:font-data tw:[.seg_&]:not-[.quick_&]:text-[10.5px] tw:[.seg_&]:uppercase tw:[.seg_&]:[&.on]:bg-accent-soft tw:[.seg_&]:[&.on]:text-accent-fg tw:[.quick_&]:h-22 tw:[.quick_&]:py-0 tw:[.quick_&]:px-6 tw:[.quick_&]:font-data tw:[.quick_&]:text-[10.5px] tw:[.quick_&]:not-[&.on]:text-text-2 tw:[&&]:[.quick_&]:hover:border-accent tw:[&&]:[.quick_&]:hover:text-accent-fg" :class="{ on: feedTab === 'sheet' }" title="Табель периода: часы по задачам и дням" @click="feedTab = 'sheet'">Заполнение</button>
       </span>
     </div>
-    <SheetView v-if="feedTab === 'sheet'" class="wsheet tw:flex-1 tw:[&&]:min-h-0" :settings="settings" widget store="work" :range="{ from: weekStart, to: weekEnd }" @go="(_v, d, id) => d && ((day = d), (feedTab = 'list'), id && (openId = id))" />
+    <SheetView v-if="feedTab === 'sheet'" class="wsheet tw:flex-1 tw:[&&]:min-h-0" :settings="settings" widget store="work" :range="{ from: weekStart, to: weekEnd }" @go="(d, id) => ((day = d), (feedTab = 'list'), id && (openId = id))" />
     <template v-else>
     <template v-for="r in feed" :key="r.key">
       <div v-if="r.t === 'now'" class="nowline tw:relative tw:h-0 tw:m-6 tw:border-t tw:border-t-down"><span class="num tw:font-data tw:tabular-nums tw:absolute tw:left-0 tw:-top-9 tw:py-1 tw:px-6 tw:rounded-r2 tw:bg-down tw:text-white tw:text-[10.5px] tw:font-bold">{{ formatHM(r.at) }}</span></div>
@@ -116,26 +108,16 @@ async function toggleJira(e: Entry): Promise<void> {
         <span class="kic tw:inline-flex tw:flex-none tw:text-(--c)"><Icon name="note" :size="13" /></span>
         <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:overflow-hidden tw:text-ellipsis tw:text-text tw:text-[13px]">{{ r.n.text.split('\n')[0] || 'Заметка' }}</span></span>
       </div>
-      <div v-else-if="r.t === 'p'" class="row plan pblock tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-40 tw:my-0 tw:mx-6 tw:pt-4 tw:pr-8 tw:pb-4 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:hover:bg-hover tw:[&&]:[border-left-style:dashed]" :style="{ '--c': kindColor(r.p.kind) }">
-        <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(r.p.start) }}–{{ formatHM(r.p.end) }}</span>
-        <span class="kic tw:inline-flex tw:flex-none tw:text-(--c)"><Icon :name="entryIcon(r.p)" :size="13" /></span>
-        <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col"><span class="ttl tw:text-text-2 tw:overflow-hidden tw:text-ellipsis tw:text-[13px]">{{ r.p.label || kindLabel(r.p.kind) }}</span><span class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">план дня</span></span>
-        <span class="du num tw:font-data tw:tabular-nums tw:flex-none tw:min-w-52 tw:text-right tw:text-text-2 tw:text-[12px]">{{ formatDuration(r.p.end - r.p.start) }}</span>
-        <span class="acts tw:inline-flex tw:flex-none tw:gap-2 tw:opacity-0 tw:group-hover/row:opacity-100">
-          <button class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text-hi tw:[.seg_&]:not-[.quick_&]:h-22 tw:[.seg_&]:not-[.quick_&]:py-0 tw:[.seg_&]:not-[.quick_&]:px-10 tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:not-hover:not-[.quick_&]:text-muted tw:[.seg_&]:not-[.quick_&]:font-data tw:[.seg_&]:not-[.quick_&]:text-[10.5px] tw:[.seg_&]:uppercase tw:[.quick_&]:h-22 tw:[.quick_&]:py-0 tw:[.quick_&]:px-6 tw:[.quick_&]:font-data tw:[.quick_&]:text-[10.5px] tw:[.quick_&]:not-hover:text-text-2 tw:[.quick_&]:hover:border-accent tw:[.quick_&]:hover:text-accent-fg" title="Сделано по плану" @click.stop="planDone(r.p)"><Icon name="check" :size="13" /></button>
-          <button class="tw:inline-flex tw:p-4 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text-hi tw:[.seg_&]:not-[.quick_&]:h-22 tw:[.seg_&]:not-[.quick_&]:py-0 tw:[.seg_&]:not-[.quick_&]:px-10 tw:[.seg_&]:border-0 tw:[.seg_&]:rounded-none tw:[.seg_&]:bg-transparent tw:[.seg_&]:not-hover:not-[.quick_&]:text-muted tw:[.seg_&]:not-[.quick_&]:font-data tw:[.seg_&]:not-[.quick_&]:text-[10.5px] tw:[.seg_&]:uppercase tw:[.quick_&]:h-22 tw:[.quick_&]:py-0 tw:[.quick_&]:px-6 tw:[.quick_&]:font-data tw:[.quick_&]:text-[10.5px] tw:[.quick_&]:not-hover:text-text-2 tw:[.quick_&]:hover:border-accent tw:[.quick_&]:hover:text-accent-fg" title="Убрать из плана" @click.stop="planDrop(r.p)"><Icon name="x" :size="13" /></button>
-        </span>
-      </div>
-      <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-40 tw:my-0 tw:mx-6 tw:pt-4 tw:pr-8 tw:pb-4 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:hover:not-[&.on]:not-[&.live]:bg-hover tw:[&.on]:not-[&.live]:bg-accent-soft tw:[&.flash]:animate-[WorkBoard-flash_1.6s_ease-out] tw:[&.plan]:[border-left-style:dashed] tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[WorkBoard-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ plan: r.plan && !isLive(r.e), on: openId === r.e.id, flash: flash === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @mouseenter="hoverId = r.e.id" @click="openId = openId === r.e.id ? undefined : r.e.id">
+      <div v-else class="row tw:group/row tw:flex tw:items-center tw:gap-10 tw:min-h-40 tw:my-0 tw:mx-6 tw:pt-4 tw:pr-8 tw:pb-4 tw:pl-6 tw:border-l-3 tw:border-l-(--c,var(--border-3)) tw:border-b tw:border-b-border tw:whitespace-nowrap tw:cursor-default tw:hover:not-[&.on]:not-[&.live]:bg-hover tw:[&.on]:not-[&.live]:bg-accent-soft tw:[&.flash]:animate-[WorkBoard-flash_1.6s_ease-out] tw:[&.plan]:[border-left-style:dashed] tw:[&.live]:relative tw:[&.live]:overflow-hidden tw:[&.live]:[background:linear-gradient(90deg,color-mix(in_srgb,var(--c)_16%,transparent),transparent_70%)] tw:[&.live]:after:content-[''] tw:[&.live]:after:absolute tw:[&.live]:after:top-0 tw:[&.live]:after:bottom-0 tw:[&.live]:after:left-0 tw:[&.live]:after:w-[35%] tw:[&.live]:after:[background:linear-gradient(90deg,transparent,color-mix(in_srgb,var(--c)_22%,transparent),transparent)] tw:[&.live]:after:animate-[Shared-live-sweep_2.6s_linear_infinite] tw:[&.live]:after:pointer-events-none" :class="{ plan: r.plan && !isLive(r.e), on: openId === r.e.id, flash: flash === r.e.id, live: isLive(r.e) }" :style="{ '--c': kindColor(r.e.kind) }" @mouseenter="hoverId = r.e.id" @click="openId = openId === r.e.id ? undefined : r.e.id">
         <span class="tm num tw:font-data tw:tabular-nums tw:flex-none tw:w-92 tw:text-text-2 tw:text-[12px]">{{ formatHM(r.e.start) }}–{{ formatHM(r.e.end) }}</span>
-        <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[WorkBoard-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="13" /></span>
+        <span class="kic tw:inline-flex tw:flex-none tw:text-(--c) tw:group-[.live]/row:animate-[Shared-live-pulse_1.4s_ease-in-out_infinite]" :title="kindLabel(r.e.kind)"><Icon :name="entryIcon(r.e)" :size="13" /></span>
         <RecDot v-if="r.e.recording" />
         <AttrChips :attrs="r.e.attrs" />
         <span class="tt tw:flex-1 tw:min-w-0 tw:flex tw:flex-col">
           <span class="ttl tw:group-[.plan]/row:text-text-2 tw:overflow-hidden tw:text-ellipsis tw:text-text tw:text-[13px]">{{ r.e.label || kindLabel(r.e.kind) }}</span>
           <span v-if="r.e.description" class="sub tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">{{ r.e.description.split('\n')[0] }}</span>
         </span>
-        <span v-if="isLive(r.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:[.cells_&]:[outline:1px_solid_var(--border)] tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[WorkBoard-live-blink_1s_steps(2)_infinite]"></i>идёт</span>
+        <span v-if="isLive(r.e)" class="lv tw:inline-flex tw:items-center tw:gap-5 tw:flex-none tw:py-0 tw:px-7 tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_20%,transparent)] tw:text-text-hi tw:font-data tw:text-[10.5px] tw:tracking-[0.04em] tw:uppercase"><i class="tw:[.cells_&]:[outline:1px_solid_var(--border)] tw:w-6 tw:h-6 tw:rounded-[50%] tw:[background:var(--c)] tw:[box-shadow:0_0_6px_var(--c)] tw:animate-[Shared-blink-30_1s_steps(2)_infinite]"></i>идёт</span>
         <span v-if="r.e.outlook" class="badge tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:text-[10.5px]">Outlook</span>
         <span v-if="r.plan && !isLive(r.e)" class="badge pl tw:flex-none tw:py-0 tw:px-6 tw:rounded-r2 tw:text-[10.5px] tw:bg-accent-soft tw:text-accent-fg">план</span>
         <span v-if="r.e.task" class="tchip tw:[&.open]:border-accent/60 tw:inline-flex tw:items-center tw:gap-3 tw:flex-none tw:h-20 tw:pt-0 tw:pr-2 tw:pb-0 tw:pl-7 tw:rounded-r2 tw:bg-info/16 tw:text-info-fg tw:font-data tw:text-[11px]" :class="{ open: jiraOpen.has(r.e.id) }" :title="r.e.task.summary" @click.stop>

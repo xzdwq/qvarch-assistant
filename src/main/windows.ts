@@ -6,9 +6,10 @@ import { emit } from './ipc/router'
 import { ISLAND_PILL, ISLAND_WINDOW, nextDock, type Dock } from '../shared/island'
 import { makeIcon } from './icon'
 
-function load(win: BrowserWindow, page: 'index' | 'island'): void {
+/** A window's page: the dev server's, else the built one next to the main process's folder (`mainDir` — ctx.mainDir). */
+function load(win: BrowserWindow, page: 'index' | 'island', mainDir: string): void {
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}.html`)
-  else void win.loadFile(join(__dirname, `../renderer/${page}.html`))
+  else void win.loadFile(join(mainDir, `../renderer/${page}.html`))
 }
 
 /** Renderer warnings/errors end up in the main-process log. */
@@ -18,8 +19,8 @@ function forwardConsole(win: BrowserWindow, name: string): void {
   })
 }
 
-function common(): Electron.WebPreferences {
-  return { preload: join(__dirname, '../preload/index.js'), sandbox: false, contextIsolation: true, nodeIntegration: false }
+function common(mainDir: string): Electron.WebPreferences {
+  return { preload: join(mainDir, '../preload/index.js'), sandbox: false, contextIsolation: true, nodeIntegration: false }
 }
 
 export const TITLEBAR_HEIGHT = 38
@@ -35,7 +36,7 @@ const TITLEBAR_SYMBOLS = '#adb7c6'
 const TRANSPARENT = '#00000000'
 
 /** Frameless main window with a custom title bar (VS Code style); native min/max/close via titleBarOverlay. */
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(mainDir: string): BrowserWindow {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -46,7 +47,7 @@ export function createMainWindow(): BrowserWindow {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: WINDOW_BG, symbolColor: TITLEBAR_SYMBOLS, height: TITLEBAR_HEIGHT },
     // the notes' browser component is a <webview> (held to the browser's profile — see noteBrowser.ts)
-    webPreferences: { ...common(), webviewTag: true },
+    webPreferences: { ...common(mainDir), webviewTag: true },
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -55,7 +56,7 @@ export function createMainWindow(): BrowserWindow {
   // the app never leaves its own page (a file dropped on it would open in its place)
   // (it is one page: a navigation is never its own — loading and reloading are not navigations)
   win.webContents.on('will-navigate', (e) => e.preventDefault())
-  load(win, 'index')
+  load(win, 'index', mainDir)
   forwardConsole(win, 'main')
   // pinned to the taskbar: it must start the portable exe itself (the copy it unpacks into %TEMP% is not the app)
   const exe = process.env.PORTABLE_EXECUTABLE_FILE
@@ -129,6 +130,8 @@ export class Island {
   private timers: NodeJS.Timeout[] = []
 
   constructor(
+    /** The main process's build folder (ctx.mainDir): the page and its preload are found from it. */
+    mainDir: string,
     saved: { x?: number; y?: number; dock?: Dock },
     private persist: (pos: { x: number; y: number; dock?: Dock }) => void,
     /** Shown once it is ready (the app starting — not: the tray / the hotkey show it). */
@@ -151,12 +154,12 @@ export class Island {
       hasShadow: false,
       show: false,
       backgroundColor: TRANSPARENT,
-      webPreferences: common(),
+      webPreferences: common(mainDir),
     })
     this.win.setAlwaysOnTop(true, 'screen-saver')
     this.win.setVisibleOnAllWorkspaces(true)
     this.win.setIgnoreMouseEvents(true, { forward: true })
-    load(this.win, 'island')
+    load(this.win, 'island', mainDir)
     forwardConsole(this.win, 'island')
     this.win.once('ready-to-show', () => show && !Island.hidden && this.win.showInactive())
     // the native drag ends with "moved" (Windows sends it once, on release)

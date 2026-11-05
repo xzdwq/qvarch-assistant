@@ -53,7 +53,6 @@ export function overlap(a0: Ms, a1: Ms, b0: Ms, b1: Ms): number {
   return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0))
 }
 
-
 export function sortByStart<T extends { start: Ms }>(list: T[]): T[] {
   return [...list].sort((a, b) => a.start - b.start)
 }
@@ -162,19 +161,6 @@ export function scheduleRanges(day: string, s: WorkSchedule): { work?: [Ms, Ms];
     work: [atTime(day, s.start), atTime(day, s.end)],
     lunch: s.lunchStart && s.lunchEnd ? [atTime(day, s.lunchStart), atTime(day, s.lunchEnd)] : undefined,
   }
-}
-
-/** Splits [start, end] at local midnights: [[day, start, end], ...]. */
-export function splitByDay(start: Ms, end: Ms): Array<[string, Ms, Ms]> {
-  const out: Array<[string, Ms, Ms]> = []
-  let s = start
-  while (s < end) {
-    const day = dayKey(s)
-    const e = Math.min(end, dayEnd(day))
-    out.push([day, s, e])
-    s = e
-  }
-  return out
 }
 
 /** Merges intervals that touch or overlap (gap ≤ tolerance). */

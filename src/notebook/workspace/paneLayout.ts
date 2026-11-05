@@ -61,7 +61,7 @@ watch(
   { deep: true },
 )
 export const curPane = () => layout.panes[layout.cur] ?? layout.panes[0]
-export const activePath = () => curPane()?.active
+const activePath = () => curPane()?.active
 const newPaneId = () => `p${Date.now()}`
 
 /** A note opened: in the current pane (or a given one, or a new one alongside), next to the active tab. */

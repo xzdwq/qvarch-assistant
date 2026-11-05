@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { activeArea, clampPrefs, DEFAULT_TABLET, mapToScreen, monitorsBounds, pressureCurve, rotate } from '../src/shared/tablet'
+import { activeArea, clampPrefs, DEFAULT_TABLET, monitorsBounds, pressureCurve } from '../src/shared/tablet'
 
 describe('tablet', () => {
-  it('rotation keeps the corners where a turned tablet has them', () => {
-    // turned clockwise: the raw top-left is now the top-right
-    expect(rotate(0, 0, 90)).toEqual([1, 0])
-    expect(rotate(0, 0, 180)).toEqual([1, 1])
-    expect(rotate(0, 0, 270)).toEqual([0, 1])
-    expect(rotate(0.25, 0.5, 0)).toEqual([0.25, 0.5])
-  })
   it('the area is cropped to the screen proportions, centred', () => {
     // 1.6 tablet on a 16:9 screen → full width, a band of the height
     const [x0, y0, x1, y1] = activeArea(0, true, 1920, 1080)
@@ -20,15 +13,6 @@ describe('tablet', () => {
     const [a0, , a1] = activeArea(0, true, 800, 1000)
     expect(a1 - a0).toBeCloseTo(0.8 / 1.6004, 3)
     expect(activeArea(0, false, 800, 1000)).toEqual([0, 0, 1, 1])
-  })
-  it('maps into the target, the left monitor has negative coordinates', () => {
-    const left = { x: -1920, y: 200, w: 1920, h: 1080 }
-    const p = { rotation: 0 as const, keepAspect: false }
-    expect(mapToScreen(0, 0, p, left)).toEqual([-1920, 200])
-    expect(mapToScreen(1, 1, p, left)).toEqual([-1, 1279])
-    // outside the cropped band → the edge, not past it
-    const [, y] = mapToScreen(0.5, 0, { rotation: 0, keepAspect: true }, { x: 0, y: 0, w: 1920, h: 1080 })
-    expect(y).toBe(0)
   })
   it('pressure: dead zone, saturation, curve', () => {
     const p = { pmin: 0.1, pmax: 0.6, curve: 0 }

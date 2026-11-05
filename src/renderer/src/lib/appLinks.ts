@@ -1,7 +1,7 @@
 import { parseNoteLink } from '@shared/noteEvents'
 import { openDocLink } from '@nb/workspace/docLinks'
 import { onAppLink, openUrl } from './links'
-import { openEventInWork } from './mentions'
+import { openDay } from './views'
 import { jiraSite } from './noteEvents'
 
 /**
@@ -19,6 +19,6 @@ export function startAppLinks(): void {
   })
   onAppLink('event', (url) => {
     const l = parseNoteLink(url)
-    if (l?.kind === 'event') openEventInWork(l.day, l.id)
+    if (l?.kind === 'event') openDay(l.day, l.id)
   })
 }

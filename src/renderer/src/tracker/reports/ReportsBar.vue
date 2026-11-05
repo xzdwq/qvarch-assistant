@@ -8,7 +8,8 @@ import { kindLabel, kinds } from '../../lib/palette'
 import { PERIODS } from '@shared/tracker/reportPeriod'
 import { reportCsv } from '@shared/tracker/reportStats'
 import { ENTRY_ORIGINS, ORIGIN_LOOK, TASK_TYPE_LOOK, TASK_TYPES } from '@shared/tracker/constants'
-import { todayDay as today, useReports } from './useReportsState'
+import { useReports } from './useReportsState'
+import { todayKey } from '../../lib/today'
 import { NO_VALUE, NO_VALUE_LABEL } from '@shared/tracker/attributes'
 import { attrDefs } from '../../lib/attributes'
 import { useSavedViews } from './useSavedViews'
@@ -74,7 +75,7 @@ function exportCsv(): void {
       </button>
       <DateRangePicker v-if="rangeOpen" :from="range[0]" :to="range[1]" :anchor="rangeEl" @apply="(a, b) => ((st.from = a), (st.to = b), (rangeOpen = false))" @close="rangeOpen = false" />
       <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" title="Вперёд" @click="shift(1)"><Icon name="chevronRight" :size="14" /></button>
-      <button v-if="!isCurrent && st.period !== 'custom'" class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" title="Сейчас" @click="st.anchor = today()"><Icon name="clock" :size="13" /></button>
+      <button v-if="!isCurrent && st.period !== 'custom'" class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-40 tw:hover:enabled:border-border-3" title="Сейчас" @click="st.anchor = todayKey"><Icon name="clock" :size="13" /></button>
     </div>
     <span class="sp tw:flex-1"></span>
     <div class="filters tw:inline-flex tw:items-center tw:gap-5 tw:flex-wrap">

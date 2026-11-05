@@ -6,11 +6,11 @@ import type { Entry, Ms } from '@shared/types'
 export type BlockView = { start: Ms; end: Ms; lane?: number }
 
 /** Height of one lane of the «Работа» row, px. */
-export const LANE_H = 36
+const LANE_H = 36
 /** Gap between lanes, px. */
 export const LANE_GAP = 4
 /** Lanes visible at most; more scroll (Ctrl + the wheel). */
-export const MAX_LANES = 8
+const MAX_LANES = 8
 
 /**
  * The «Работа» row's lanes: parallel blocks get their own lanes, the row grows with them (up to MAX_LANES)
@@ -56,4 +56,3 @@ export function useTimelineLanes(entries: () => Entry[], preview: (e: Entry) => 
   return { lanes, laneOf, mainLane, laneH, totalLanes, shownLanes, mainH, mainInnerH, laneScroll, hiddenBelow, hiddenAbove, laneStyle, scrollLanes }
 }
 
-export type TimelineLanes = ReturnType<typeof useTimelineLanes>

@@ -5,10 +5,11 @@ import { HOUR } from '@shared/timeline'
 import { barCaption, barSegments, barTooltip, chartUnit, isWeekendBar, seriesOrder, seriesScheme, yScale, yTicks as ticksOf, type Bar, type ChartColor } from '@shared/tracker/reportChart'
 import { attrDim } from '@shared/tracker/attributes'
 import { attrDefs } from '../../lib/attributes'
-import { KIND_LOOK, todayDay as today, useReports } from './useReportsState'
+import { KIND_LOOK, useReports } from './useReportsState'
+import { todayKey } from '../../lib/today'
 
 /** The report's chart: a bar per day / week / month, split by kind or by the top tasks. */
-const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
+const emit = defineEmits<{ go: [day: string] }>()
 const { st, allDays, items } = useReports()
 
 /** The 9 biggest tasks get their colours, the rest are "другое". */
@@ -33,7 +34,7 @@ const isOff = (key: string) => isWeekendBar(key, unit.value)
 const barTitle = (b: Bar) => barTooltip(b, unit.value, series.value, seriesLabel)
 /** A day bar opens the day; a week / month bar narrows the report to it. */
 function openBar(key: string): void {
-  if (unit.value === 'day') emit('go', 'day', key)
+  if (unit.value === 'day') emit('go', key)
   else {
     st.value.period = unit.value === 'week' ? 'week' : 'month'
     st.value.anchor = unit.value === 'week' ? key : `${key}-01`
@@ -56,7 +57,7 @@ function openBar(key: string): void {
       </div>
       <div class="plot tw:relative tw:flex-1 tw:min-w-0 tw:flex tw:items-stretch tw:gap-3">
         <div class="gridlines tw:absolute tw:inset-[0_0_30px_0] tw:pointer-events-none"><div v-for="v in yTicks" :key="`g${v}`" class="gl tw:absolute tw:left-0 tw:right-0 tw:border-t tw:[border-top-style:dashed] tw:border-t-white/6" :style="{ bottom: `${(v / yMax.top) * 100}%` }"></div></div>
-        <button v-for="b in chart" :key="b.key" class="col tw:group/col tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:cursor-pointer tw:hover:bg-white/4 tw:hover:enabled:border-border-3" :class="{ off: isOff(b.key), today: b.key === today() }" :title="barTitle(b)" @click="openBar(b.key)">
+        <button v-for="b in chart" :key="b.key" class="col tw:group/col tw:flex-1 tw:min-w-0 tw:flex tw:flex-col tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:cursor-pointer tw:hover:bg-white/4 tw:hover:enabled:border-border-3" :class="{ off: isOff(b.key), today: b.key === todayKey }" :title="barTitle(b)" @click="openBar(b.key)">
           <span class="stack tw:flex-1 tw:flex tw:flex-col-reverse tw:items-center">
             <i class="tw:w-[min(70%,34px)] tw:min-h-0 tw:first:not-last:rounded-[0_0_var(--r2)_var(--r2)] tw:last:rounded-tl-[4px] tw:last:rounded-tr-[4px]" v-for="p in segs(b)" :key="p.s" :style="{ height: `${p.h}%`, background: seriesColor(p.s) }"></i>
           </span>

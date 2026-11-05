@@ -73,8 +73,6 @@ export function registerIntegrationsIpc(app: AppContext): void {
   handle('jiraLogout', () => jira.logout())
   handle('jiraSync', () => jira.sync())
   handle('jiraSetSecret', (_e, secret) => jira.setSecret(String(secret ?? '')))
-  handle('jiraStar', (_e, key, on) => jira.star(key, on))
-  handle('jiraSetMyStatus', (_e, key, status) => jira.setMyStatus(key, status))
   handle('jiraFind', (_e, q, offset, limit, mode, query) => jira.find(String(q ?? ''), Number(offset) || 0, Number(limit) || 50, mode === 'pick' ? 'pick' : 'list', query && typeof query === 'object' ? query : undefined))
   handle('jiraIssue', (_e, key) => jira.issue(String(key)))
   handle('jiraVersions', (_e, q, offset, limit) => jira.findVersions(String(q ?? ''), Number(offset) || 0, Number(limit) || 40))

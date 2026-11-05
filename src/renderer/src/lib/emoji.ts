@@ -13,7 +13,6 @@ export interface Emoji {
 type Raw = { hexcode: string; label: string; unicode: string; group?: number; order?: number; tags?: string[]; skins?: unknown }
 let list: Emoji[] | undefined
 let loading: Promise<Emoji[]> | undefined
-export const EMOJI_GROUPS = ['Смайлики и эмоции', 'Люди', '', 'Животные и природа', 'Еда и напитки', 'Путешествия и места', 'Занятия', 'Предметы', 'Символы', 'Флаги']
 export function loadEmoji(): Promise<Emoji[]> {
   if (list) return Promise.resolve(list)
   loading ??= Promise.all([import('emojibase-data/ru/compact.json'), import('emojibase-data/en/compact.json')]).then(([ru, en]) => {
@@ -33,7 +32,7 @@ export function loadEmoji(): Promise<Emoji[]> {
   return loading
 }
 const RECENT = 'qa.notebook.emoji'
-export function recentEmoji(): string[] {
+function recentEmoji(): string[] {
   try {
     return (JSON.parse(localStorage.getItem(RECENT) ?? '[]') as string[]).slice(0, 24)
   } catch {

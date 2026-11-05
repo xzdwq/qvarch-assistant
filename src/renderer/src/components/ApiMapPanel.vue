@@ -257,7 +257,7 @@ const setOn = () => window.qa.browser('checkSet', { on: true })
           <span class="n t tw:flex-none tw:font-data tw:text-[11px] tw:w-52 tw:text-right tw:text-muted" title="Среднее время ответа">{{ ms(avgMs(e)) }}</span>
           <span v-if="cmp" class="sp tw:flex-none tw:font-data tw:text-[11px] tw:font-bold tw:text-up-fg tw:[&.no]:text-down-fg tw:[&.no]:opacity-80" :class="{ no: !cmp.byKey[e.key] }" :title="cmp.byKey[e.key] ? `Swagger: ${cmp.byKey[e.key].method.toUpperCase()} ${cmp.byKey[e.key].path}${cmp.byKey[e.key].summary ? ` — ${cmp.byKey[e.key].summary}` : ''}` : 'Нет в Swagger'">{}</span>
         </div>
-        <ApiEndpointDetails v-if="open === e.key" v-model:tab="tab" :e="e" :summary="cmp?.byKey[e.key]?.summary" :copied="copied" @copy="copy" @copy-one="copyOne(e)" />
+        <ApiEndpointDetails v-if="open === e.key" v-model:tab="tab" :e="e" :summary="cmp?.byKey[e.key]?.summary" :copied="copied ?? ''" @copy="copy" @copy-one="copyOne(e)" />
       </div>
     </div>
     </template>

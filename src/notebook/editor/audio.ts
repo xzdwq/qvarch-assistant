@@ -1,6 +1,6 @@
 import { createApp, type App } from 'vue'
 import { EditorView, WidgetType } from '@codemirror/view'
-import { fixDuration } from '@renderer/lib/notebook'
+import { fixDuration } from '@renderer/lib/recorder'
 import { followAudio } from '@nb/workspace/mediaFollow'
 import { mediaWaitText } from '@shared/transport/space'
 import ThinkingOrb from '@renderer/components/ThinkingOrb.vue'

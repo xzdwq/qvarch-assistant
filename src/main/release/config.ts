@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -15,19 +16,7 @@ export function setReleaseDataDir(dir: string): void {
 const projectsFile = () => join(dataDir, 'release.json')
 const stateFile = () => join(dataDir, 'release-state.json')
 
-function readJson<T>(file: string): T | undefined {
-  if (!existsSync(file)) return undefined
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as T
-  } catch {
-    return undefined
-  }
-}
-function writeJson(file: string, v: unknown): void {
-  const tmp = `${file}.tmp`
-  writeFileSync(tmp, JSON.stringify(v, null, 2), 'utf8')
-  renameSync(tmp, file)
-}
+const writeJson = (file: string, v: unknown) => writeJsonAtomic(file, v, 2)
 
 export const DEFAULT_CONFIG: ReleaseConfig = {
   mainBranch: 'main',
@@ -44,18 +33,13 @@ export const DEFAULT_CONFIG: ReleaseConfig = {
   bitbucketRepoSlug: '',
 }
 
-/** No "current workspace" in the app — the release is always built for a saved project. */
-export function readConfig(): ReleaseConfig {
-  return { ...DEFAULT_CONFIG }
-}
-
 export function readProjects(): ProjectProfile[] {
-  const list = readJson<{ projects?: ProjectProfile[] }>(projectsFile())?.projects ?? []
+  const list = readJsonFile<{ projects?: ProjectProfile[] }>(projectsFile())?.projects ?? []
   return list.map((p) => ({ ...DEFAULT_CONFIG, ...p, hideDuplicateRemoteBranches: p.hideDuplicateRemoteBranches ?? true, staleBranchesLookbackReleases: p.staleBranchesLookbackReleases ?? 4 }))
 }
 
 export async function saveProjects(projects: ProjectProfile[]): Promise<void> {
-  writeJson(projectsFile(), { ...readJson<object>(projectsFile()), projects })
+  writeJson(projectsFile(), { ...readJsonFile<object>(projectsFile()), projects })
 }
 
 /** Saves one profile (a new one gets an id); a name and a repository path are required. */
@@ -85,11 +69,11 @@ export function saveProject(p: Partial<ProjectProfile>): ProjectProfile {
   const i = list.findIndex((x) => x.id === profile.id)
   if (i >= 0) list[i] = profile
   else list.push(profile)
-  writeJson(projectsFile(), { ...readJson<object>(projectsFile()), projects: list })
+  writeJson(projectsFile(), { ...readJsonFile<object>(projectsFile()), projects: list })
   return profile
 }
 export function deleteProject(id: string): void {
-  writeJson(projectsFile(), { ...readJson<object>(projectsFile()), projects: readProjects().filter((p) => p.id !== id) })
+  writeJson(projectsFile(), { ...readJsonFile<object>(projectsFile()), projects: readProjects().filter((p) => p.id !== id) })
 }
 
 /** The VS Code user settings files: the default one and every profile's (the extension's settings may live in a profile). */
@@ -133,10 +117,10 @@ export function importVscodeProjects(): number {
 /** workspaceState of the extension: one JSON file with a key per repository. */
 export const releaseState = {
   get<T>(key: string): T | undefined {
-    return readJson<Record<string, T>>(stateFile())?.[key]
+    return readJsonFile<Record<string, T>>(stateFile())?.[key]
   },
   update(key: string, value: unknown): Promise<void> {
-    const all = readJson<Record<string, unknown>>(stateFile()) ?? {}
+    const all = readJsonFile<Record<string, unknown>>(stateFile()) ?? {}
     if (value === undefined) delete all[key]
     else all[key] = value
     writeJson(stateFile(), all)

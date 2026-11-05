@@ -9,7 +9,7 @@ import { totalsColumnDeleted, totalsColumnPut } from './modelTotals'
 /** A cell's text: row -1 — the head. */
 export const cellAt = (t: TableModel, r: number, c: number) => (r < 0 ? t.head[c] : (t.rows[r]?.[c] ?? ''))
 /** A cell's text set: row -1 — the head. */
-export function setCellAt(t: TableModel, r: number, c: number, v: string): void {
+function setCellAt(t: TableModel, r: number, c: number, v: string): void {
   if (r < 0) t.head[c] = v
   else if (t.rows[r]) t.rows[r][c] = v
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { formatDuration, formatHM } from '@shared/timeline'
 import type { Entry } from '@shared/types'
 import Icon from '../../components/Icon.vue'
-import LabelInput from '../../components/LabelInput.vue'
 import TaskPicker from '../../components/TaskPicker.vue'
 import TimeRange from '../../components/TimeRange.vue'
 import { kindColor, kindIcon, kindLabel } from '../../lib/palette'
@@ -14,10 +14,19 @@ import { useIsland } from '../islandState'
  */
 defineProps<{ entry: Entry }>()
 const state = useIsland()
-const { recent, shownKinds } = state.day
+const { shownKinds } = state.day
 const { entryId } = state.pick
 const { edit, startEdit, saveEdit, removeEntry } = state.edit
 const { openMain } = state
+
+/** The title field grows with its text (up to 4 lines). */
+const labelRows = computed(() => Math.min(4, Math.max(1, (edit.value?.label ?? '').split('\n').length)))
+/** Shift+Enter — a new line; Enter with Ctrl / Alt saves here (plain Enter is the edit box's own). */
+function onLabelEnter(e: KeyboardEvent): void {
+  if (e.shiftKey) return
+  e.preventDefault()
+  if (e.ctrlKey || e.altKey || e.metaKey) void saveEdit()
+}
 </script>
 
 <template>
@@ -45,7 +54,19 @@ const { openMain } = state
         <TimeRange class="tw:[.abar_&]:block tw:[.abar_&]:not-[&.boxed]:h-full tw:[.abar_&]:not-[&.boxed]:rounded-r2" boxed :start="edit.start" :end="edit.end" @change="(r) => ((edit!.start = r.start), (edit!.end = r.end))" />
       </div>
       <div class="editrow tw:flex tw:items-start tw:gap-8">
-        <LabelInput v-model="edit.label" drop-up no-recent multiline :recent="recent" placeholder="Shift+Enter — новая строка" @submit="saveEdit" />
+        <div class="label-input tw:relative tw:flex-1 tw:min-w-0">
+          <div class="field tw:flex tw:items-center tw:gap-6 tw:bg-field tw:border tw:border-border tw:rounded-[4px] tw:py-0 tw:px-8 tw:focus-within:border-accent">
+            <textarea
+              v-model="edit.label"
+              class="ml tw:flex-1 tw:min-w-0 tw:resize-none tw:overflow-y-hidden tw:py-8 tw:px-0 tw:bg-transparent tw:border-0 tw:outline-none tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.4] tw:[&.scroll]:overflow-y-auto tw:first-line:font-semibold"
+              :class="{ scroll: labelRows >= 4 }"
+              :rows="labelRows"
+              placeholder="Shift+Enter — новая строка"
+              spellcheck="false"
+              @keydown.enter="onLabelEnter"
+            ></textarea>
+          </div>
+        </div>
         <TaskPicker v-model="edit.tasks" single compact />
       </div>
       <div class="actions tw:flex tw:gap-8 tw:items-stretch">

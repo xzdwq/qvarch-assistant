@@ -12,6 +12,8 @@ export const httpSpec: RunnableBlockSpec<'http'> = {
   estimateHeight: heightPerLine(140, 20),
   runnable: true,
   chip: 'http',
+  serialInLoop: false,
+  test: false,
   rawEditable: true,
   commands: [
     {

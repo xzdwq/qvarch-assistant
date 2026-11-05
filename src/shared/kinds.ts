@@ -1,5 +1,5 @@
 import type { Entry, KindDef, Ms, WorkSchedule } from './types'
-import { atTime, mergeIntervals, subtractRanges, unionMs } from './timeline'
+import { atTime, mergeIntervals, subtractRanges } from './timeline'
 import { BUILTIN_KINDS, isBuiltinKind, kindColorVar, type BuiltinKind } from './tracker/constants'
 
 /** How each built-in kind starts out: its name, icon and whether it is work. */
@@ -28,11 +28,6 @@ export function isProductive(kinds: KindDef[], id: string): boolean {
   const k = kinds.find((x) => x.id === id)
   if (k?.productive !== undefined) return k.productive
   return isBuiltinKind(id) ? BUILTIN_KIND_LOOK[id].productive : true
-}
-
-/** Productive time: union of productive blocks (parallel blocks counted once). */
-export function productiveMs(entries: Entry[], kinds: KindDef[]): number {
-  return unionMs(entries.filter((e) => isProductive(kinds, e.kind)))
 }
 
 /** Official working time of a day without lunch (0 on days off). */
@@ -66,10 +61,3 @@ export function productiveSplit(
   return { total, within, over: total - within }
 }
 
-/** QA-on time that no block covers (parallel blocks counted once). */
-export function unlabelledMs(entries: Entry[], spans: Array<{ start: Ms; end: Ms }>): number {
-  const covered = mergeIntervals(entries.map((e) => ({ start: e.start, end: e.end })))
-  let sum = 0
-  for (const s of spans) for (const [a, b] of subtractRanges(s.start, s.end, covered)) sum += b - a
-  return sum
-}

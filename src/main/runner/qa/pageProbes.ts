@@ -1,7 +1,8 @@
 /**
  * What the `qa` checks look at inside the page — each a function Playwright sends there and runs as it is (so each
- * is whole in itself: no imports, nothing from outside it).
+ * is whole in itself: no imports, nothing from outside it). The UI kits' selectors by role come as its argument.
  */
+import type { UiSelectors } from '../../../shared/browser/uiKits'
 
 /** What the page shows wrong in its geometry now (the layout check), each with its box in the page. */
 export interface Flaw {
@@ -13,7 +14,7 @@ export interface Flaw {
   h: number
 }
 /** The page's geometry looked at (runs in the page). */
-export const layoutProbe = () => {
+export const layoutProbe = (ui: UiSelectors) => {
   const out: Array<{ kind: string; text: string; x: number; y: number; w: number; h: number }> = []
   const W = innerWidth
   const vis = (e: Element) => {
@@ -77,7 +78,7 @@ export const layoutProbe = () => {
     if (txt(el) && (tr.right > cr.right + 2 || tr.left < cr.left - 2)) add('Текст вылезает из ячейки', el, txt(el))
   }
   // text cut off (a button, a label, a tab — hidden overflow, no ellipsis)
-  const labels = document.querySelectorAll('button, .q-btn, label, .q-field__label, .q-tab, [role="tab"], a')
+  const labels = document.querySelectorAll(`label, a, ${ui.button}, ${ui.fieldLabel}, ${ui.tab}`)
   for (let i = 0; i < labels.length && i < 1500; i++) {
     const el = labels[i]
     if (el.scrollWidth <= el.clientWidth + 2 || !vis(el)) continue
@@ -93,7 +94,7 @@ export const layoutProbe = () => {
     for (let p: Element | null = el; p && p !== document.documentElement; p = p.parentElement) if (Number(getComputedStyle(p).opacity) < 0.05) return true
     return false
   }
-  const ctl = [...document.querySelectorAll('button, .q-btn, a[href], input:not([type="hidden"]), select, textarea, .q-field, [role="button"], [role="tab"]')]
+  const ctl = [...document.querySelectorAll(`a[href], input:not([type="hidden"]), select, textarea, ${ui.button}, ${ui.field}, ${ui.tab}`)]
     .filter((el) => vis(el) && !ghost(el))
     .map((el) => ({ el, r: shown(el) }))
     .filter((x): x is { el: Element; r: NonNullable<ReturnType<typeof shown>> } => !!x.r)
@@ -115,17 +116,17 @@ export const layoutProbe = () => {
 }
 
 /** A field as the page has it (runs in the page, on the field's element or its wrapper). */
-export const fieldProbe = (el: Element) => {
+export const fieldProbe = (el: Element, ui: UiSelectors) => {
   const txt = (e: Element | null | undefined) => (e ? ((e as HTMLElement).innerText ?? e.textContent ?? '').replace(/\s+/g, ' ').trim() : '')
   const inp = (el.matches('input, textarea, select, [contenteditable="true"]') ? el : el.querySelector('input, textarea, select, [contenteditable="true"]')) as HTMLInputElement | null
-  const fld = el.closest('.q-field') ?? el.querySelector('.q-field') ?? el
-  // its label: Quasar's own, aria, else the words beside it in its row
-  let label = txt(fld.querySelector('.q-field__label')) || inp?.getAttribute('aria-label') || ''
+  const fld = el.closest(ui.field) ?? el.querySelector(ui.field) ?? el
+  // its label: the kit's own, aria, else the words beside it in its row
+  let label = txt(fld.querySelector(ui.fieldLabel)) || inp?.getAttribute('aria-label') || ''
   if (!label) {
     let b: Element = fld
     for (let up = 0; up < 3 && b.parentElement && !label; up++) {
       for (let p = b.previousElementSibling; p && !label; p = p.previousElementSibling) {
-        if (p.querySelector('input, textarea, select, .q-field')) break
+        if (p.querySelector(`input, textarea, select, ${ui.field}`)) break
         const t = txt(p)
         if (t && t.length < 80) label = t
       }
@@ -140,19 +141,17 @@ export const fieldProbe = (el: Element) => {
     maxlength: inp && inp.maxLength > 0 ? inp.maxLength : num(fld.querySelector('[maxlength]')?.getAttribute('maxlength')),
     min: num(inp?.getAttribute('min')),
     max: num(inp?.getAttribute('max')),
-    required: !!inp?.required || inp?.getAttribute('aria-required') === 'true' || /\*/.test(label) || !!fld.closest('.required, .is-required'),
+    required: !!inp?.required || inp?.getAttribute('aria-required') === 'true' || /\*/.test(label) || !!fld.closest(ui.required),
     readonly: !!inp && (inp.readOnly || inp.disabled),
-    select: !!el.closest('.q-select') || !!el.querySelector('.q-select') || inp?.tagName === 'SELECT',
+    select: !!el.closest(ui.selectWrap) || !!el.querySelector(ui.selectWrap) || inp?.tagName === 'SELECT',
     label: label.replace(/[:*]\s*$/, ''),
   }
 }
 /** What the page tells now: field errors, alerts, notifications (their words; at most a few). */
-export const hintProbe = () => {
+export const hintProbe = (ui: UiSelectors) => {
   const out: string[] = []
   const vis = (e: Element) => (e as HTMLElement).getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
-  const sel =
-    '.q-field--error .q-field__messages, .q-field__bottom .text-negative, .q-notification, [role="alert"], .el-form-item__error, .el-message--error, .invalid-feedback, .ant-form-item-explain-error, .Vue-Toastification__toast--error, .toast-error, .error-message'
-  for (const e of document.querySelectorAll(sel)) {
+  for (const e of document.querySelectorAll(`${ui.fieldError}, ${ui.notice}`)) {
     const t = ((e as HTMLElement).innerText ?? '').replace(/\s+/g, ' ').trim()
     if (t && vis(e) && !out.includes(t)) out.push(t.slice(0, 160))
     if (out.length >= 5) break
@@ -160,14 +159,14 @@ export const hintProbe = () => {
   // a field marked wrong without words: its label
   for (const e of document.querySelectorAll('[aria-invalid="true"]')) {
     if (!vis(e) || out.length >= 5) continue
-    const lbl = e.closest('.q-field')?.querySelector('.q-field__label')?.textContent?.trim() || e.getAttribute('aria-label') || e.getAttribute('name') || 'поле'
+    const lbl = e.closest(ui.field)?.querySelector(ui.fieldLabel)?.textContent?.trim() || e.getAttribute('aria-label') || e.getAttribute('name') || 'поле'
     const t = `поле «${lbl}» отмечено как неверное`
     if (!out.includes(t)) out.push(t)
   }
   return out
 }
 /** What the page shows: its fields (by their labels) and its tables' rows (runs in the page). */
-export const pageFieldsProbe = () => {
+export const pageFieldsProbe = (ui: UiSelectors) => {
   const out: Record<string, string> = {}
   const vis = (e: Element) => (e as HTMLElement).getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
   const txt = (e: Element | null | undefined) => (e ? ((e as HTMLElement).innerText ?? e.textContent ?? '').replace(/\s+/g, ' ').trim() : '')
@@ -177,8 +176,8 @@ export const pageFieldsProbe = () => {
     out[key] = v
   }
   const labelOf = (el: Element, i: number): string => {
-    const fld = el.closest('.q-field')
-    const ql = fld?.querySelector('.q-field__label')
+    const fld = el.closest(ui.field)
+    const ql = fld?.querySelector(ui.fieldLabel)
     if (ql && txt(ql)) return txt(ql)
     const aria = el.getAttribute('aria-label')
     if (aria) return aria
@@ -186,7 +185,7 @@ export const pageFieldsProbe = () => {
     let b: Element = fld ?? el
     for (let up = 0; up < 3 && b.parentElement; up++) {
       for (let p = b.previousElementSibling; p; p = p.previousElementSibling) {
-        if (p.querySelector('input, textarea, select, .q-field')) break
+        if (p.querySelector(`input, textarea, select, ${ui.field}`)) break
         const t = txt(p)
         if (t && t.length < 60) return t.replace(/[:*]\s*$/, '')
       }
@@ -195,13 +194,13 @@ export const pageFieldsProbe = () => {
     return (el as HTMLInputElement).placeholder || el.getAttribute('name') || `поле ${i + 1}`
   }
   let i = 0
-  for (const el of document.querySelectorAll('input, textarea, select, .q-select')) {
+  for (const el of document.querySelectorAll(`input, textarea, select, ${ui.selectWrap}`)) {
     if (!vis(el)) continue
     if (el instanceof HTMLInputElement && /^(hidden|password|file|submit|button|image|reset)$/.test(el.type)) continue
-    // a Quasar select: its shown value (its own input is a search box)
-    if (el.closest('.q-select') && el.tagName === 'INPUT') continue
-    const v = el.matches('.q-select')
-      ? txt(el.querySelector('.q-field__native'))
+    // a kit's select: its shown value (its own input is a search box)
+    if (el.closest(ui.selectWrap) && el.tagName === 'INPUT') continue
+    const v = el.matches(ui.selectWrap)
+      ? txt(el.querySelector(ui.selectValue))
       : el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')
         ? el.checked ? 'да' : 'нет'
         : el instanceof HTMLSelectElement

@@ -100,4 +100,3 @@ export function useIslandChat(island: IslandSettings, expanded: Ref<boolean>, ho
 
   return { state, open, room, current, ready, picking, error, unread, orb, panelView, chosen, inSight, openChat, close, step, choose, setOrb, setPanelView, openInApp, remove }
 }
-export type IslandChat = ReturnType<typeof useIslandChat>

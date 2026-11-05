@@ -1,9 +1,12 @@
 import type { Locator } from 'playwright-core'
+import { UI } from '../../../shared/browser/uiKits'
 import { UNSAVED_TEXT } from '../../../shared/check'
 import type { Exchange } from '../traffic'
 import { ok2, type QaContext } from './qaContext'
 import { line, pathOf, plural } from './qaText'
 
+/** How long a «leave the page?» window may take to show after leaving (a page's own one is rendered by its code). */
+const LEAVE_PROMPT_MS = 1200
 /** Only the fields of a snapshot (its tables' rows left out). */
 const fieldsOnly = (x: Record<string, string>) => Object.fromEntries(Object.entries(x).filter(([k]) => !/^Таблица \d+, строка/.test(k)))
 
@@ -33,6 +36,19 @@ export function formChecks(ctx: QaContext) {
         }
         page.on('dialog', onDialog)
         const at = page.url()
+        /** The page's own «unsaved changes» window (a kit's dialog with those words), its text; none — ''. */
+        const unsavedShown = () =>
+          page
+            .evaluate(({ src, sel }) => {
+              const rx = new RegExp(src, 'i')
+              for (const d of document.querySelectorAll(sel)) {
+                const t = (d.textContent ?? '').replace(/\s+/g, ' ').trim()
+                if (rx.test(t)) return t.slice(0, 200)
+              }
+              return ''
+            }, { src: UNSAVED_TEXT.source, sel: UI.dialog })
+            .catch(() => '')
+        let shown = ''
         try {
           if (leave) await leave()
           else if (await page.evaluate(() => history.length > 1).catch(() => false)) {
@@ -42,20 +58,12 @@ export function formChecks(ctx: QaContext) {
             // nowhere back: away from the site (its own «leave the site?» prompt comes here)
             await page.goto('about:blank', { timeout: 5000 }).catch(() => undefined)
           }
-          await page.waitForTimeout(1200)
+          // the window, the browser's or the page's, comes at once if at all: waited for this long, no more
+          await ctx.until(async () => !!native || !!(shown = await unsavedShown()), LEAVE_PROMPT_MS)
+          if (!native && !shown) shown = await unsavedShown()
         } finally {
           page.off('dialog', onDialog)
         }
-        const shown = await page
-          .evaluate((src) => {
-            const rx = new RegExp(src, 'i')
-            for (const d of document.querySelectorAll('.q-dialog, [role="dialog"], [role="alertdialog"], .el-message-box, .modal.show, .ant-modal')) {
-              const t = (d.textContent ?? '').replace(/\s+/g, ' ').trim()
-              if (rx.test(t)) return t.slice(0, 200)
-            }
-            return ''
-          }, UNSAVED_TEXT.source)
-          .catch(() => '')
         const saved = good.map(line).join(', ')
         const dialog = shown || native
         // left to an empty tab (back from the scenario's first page — a new tab's history starts at about:blank — or

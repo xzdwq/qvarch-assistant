@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch, type ComputedRef } from 'vue'
-import type { BrowserTab, PasswordInfo } from '@shared/browser'
+import type { BrowserEvents, BrowserTab, PasswordInfo, PwAnswer } from '@shared/browser'
 import { hostOf } from '../../lib/browser'
 
 export const originOf = (url?: string) => {
@@ -18,8 +18,8 @@ export function usePasswords(deps: { byId: (id?: string) => BrowserTab | undefin
   const passwords = ref<PasswordInfo[]>([])
   void window.qa.browser('passwords').then((l) => (passwords.value = l))
   /** A page's login sent: keep it? */
-  const pwAsk = ref<{ askId: string; origin: string; username: string; update: boolean }>()
-  function pwReply(a: 'save' | 'no' | 'never'): void {
+  const pwAsk = ref<BrowserEvents['pwAsk']>()
+  function pwReply(a: PwAnswer): void {
     const x = pwAsk.value
     pwAsk.value = undefined
     if (x) void window.qa.browser('pwAnswer', x.askId, a)

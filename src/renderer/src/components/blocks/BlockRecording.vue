@@ -8,7 +8,7 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).p
 
 <template>
   <div class="rc tw:inline-flex tw:items-center tw:gap-10 tw:max-w-full tw:pt-6 tw:pr-8 tw:pb-6 tw:pl-12 tw:border tw:border-stop/50 tw:rounded-[10px] tw:bg-stop/8 tw:text-[12.5px] tw:whitespace-nowrap">
-    <span class="dot tw:w-9 tw:h-9 tw:rounded-[50%] tw:bg-stop tw:animate-[BlockRecording-blink_1s_infinite]"></span>
+    <span class="dot tw:w-9 tw:h-9 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-25_1s_infinite]"></span>
     <b class="tw:min-w-36 tw:text-text-hi tw:font-data">{{ fmt(props.sec) }}</b>
     <span class="meter tw:w-90 tw:h-6 tw:rounded-[3px] tw:bg-panel-3 tw:overflow-hidden"><i class="tw:block tw:h-full tw:bg-stop tw:[transition:width_0.08s]" :style="{ width: `${Math.round(props.level * 100)}%` }"></i></span>
     <span class="muted tw:overflow-hidden tw:text-muted tw:text-ellipsis">Идёт запись — запись встанет здесь</span>

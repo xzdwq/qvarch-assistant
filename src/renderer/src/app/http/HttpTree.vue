@@ -9,7 +9,7 @@ import { vFocusSelect as vFocus } from '../../lib/focusSelect'
 import { useHttpView } from './httpViewContext'
 
 const { collection, side, helpOpen } = useHttpView()
-const { doc, loaded, sel, rows, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode } = collection
+const { doc, loaded, failure, sel, rows, renaming, addRequest, addFolder, remove, duplicate, paste, importPostman, onRowClick, dropNode } = collection
 /** Postman files picked: brought in, what came over told. */
 const pickFiles = ref<HTMLInputElement>()
 async function onFiles(e: Event): Promise<void> {
@@ -84,6 +84,7 @@ function onDrop(target?: HttpNode): void {
             <button class="tw:inline-flex tw:p-3 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text-hi tw:[.seg_button+&]:border-l tw:[.seg_button+&]:border-l-border-2" title="Удалить" @click="remove(r.node)"><Icon name="trash" :size="12" /></button>
           </span>
         </div>
+        <p v-if="failure" class="tw:m-12 tw:text-down-fg tw:text-[12px]">{{ failure }}</p>
         <p v-if="loaded && !rows.length" class="none tw:m-12 tw:text-muted tw:text-[12px]">Пусто — создайте запрос или папку</p>
       </div>
       <!-- the variables -->

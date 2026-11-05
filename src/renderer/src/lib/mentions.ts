@@ -1,10 +1,11 @@
 import { shallowRef } from 'vue'
+import { openPlace } from './views'
 
 /**
  * Events ↔ notes: which notes mention an event (by its id) — loaded when asked, again after a note with an event
  * link is saved; and the ways across: a note opened from an event, an event opened in Моя работа from a note.
  */
-export const mentions = shallowRef<Record<string, string[]>>({})
+const mentions = shallowRef<Record<string, string[]>>({})
 let timer: ReturnType<typeof setTimeout> | undefined
 export function refreshMentions(soon = false): void {
   clearTimeout(timer)
@@ -30,7 +31,5 @@ export const noteTitle = (path: string) => (path.split('/').pop() ?? path).repla
 export async function openNote(path: string): Promise<void> {
   const { openFile } = await import('./notebook')
   openFile(path)
-  window.dispatchEvent(new CustomEvent('qa:view', { detail: 'notebook' }))
+  openPlace('notebook')
 }
-/** An event shown in Моя работа (its day, the event picked). */
-export const openEventInWork = (day: string, id: string) => window.dispatchEvent(new CustomEvent('qa:open-day', { detail: { day, id } }))

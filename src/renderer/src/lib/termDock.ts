@@ -48,7 +48,7 @@ export function toggleDock(): void {
   else Object.assign(termDock, { open: true, asked: 'dock' })
 }
 /** Ctrl+` — by the key's place (Ctrl+Ё in a Russian layout too), as in VS Code. */
-export const isTermKey = (e: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; code: string }): boolean => (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'Backquote'
+const isTermKey = (e: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; code: string }): boolean => (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'Backquote'
 /** The panel shown or hidden by its key; shown — the typing goes into the terminal. */
 export function toggleDockByKey(): void {
   toggleDock()

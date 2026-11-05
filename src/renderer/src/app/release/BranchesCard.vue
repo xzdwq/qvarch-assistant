@@ -72,7 +72,7 @@ const listRail = useBranchListRail(listEl, () => collapsed.value)
 <template>
   <section class="card tw:mb-14 tw:py-12 tw:px-14 tw:rounded-(--rad) tw:border tw:border-border tw:bg-panel">
     <ReleaseCardHead :num="1" title="Выберите ветки для релиза" desc="Отметьте ветки, которые хотите включить в релиз." :collapsed="collapsed" @toggle="collapsed = !collapsed">
-      <button class="b sec sm tw:inline-flex tw:items-center tw:border-0 tw:rounded-(--rad-sm) tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-white/8 tw:text-text tw:h-22 tw:py-0 tw:px-8 tw:text-[11px] tw:hover:enabled:border-border-3" :disabled="rs.busy.refresh" @click.stop="refresh"><span v-if="rs.busy.refresh" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>{{ rs.busy.refresh ? 'Обновляем…' : 'Обновить список веток' }}</button>
+      <button class="b sec sm tw:inline-flex tw:items-center tw:border-0 tw:rounded-(--rad-sm) tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default tw:bg-white/8 tw:text-text tw:h-22 tw:py-0 tw:px-8 tw:text-[11px] tw:hover:enabled:border-border-3" :disabled="rs.busy.refresh" @click.stop="refresh"><span v-if="rs.busy.refresh" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>{{ rs.busy.refresh ? 'Обновляем…' : 'Обновить список веток' }}</button>
     </ReleaseCardHead>
     <div v-show="!collapsed">
       <div class="frow tw:flex tw:flex-wrap tw:items-center tw:gap-14 tw:mt-8 tw:text-[12px]">
@@ -105,12 +105,12 @@ const listRail = useBranchListRail(listEl, () => collapsed.value)
         <div class="lrail tw:absolute tw:top-0 tw:left-0 tw:w-22 tw:pointer-events-none" :style="{ height: `${listRail.h}px` }"><svg width="22" :height="listRail.h" style="overflow: visible" v-html="listRail.svg"></svg></div>
         <BranchRow v-for="b in rs.branches" :key="b.ref" :b="b" />
         <div v-if="!rs.branches.length" class="empty mut tw:text-muted tw:text-[12px] tw:flex tw:items-center tw:p-8">
-          <template v-if="rs.listInfo === null"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>Загрузка веток…</template>
+          <template v-if="rs.listInfo === null"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>Загрузка веток…</template>
           <template v-else>Ничего не найдено (проверьте фильтр или переключатели выше)</template>
         </div>
       </div>
       <div class="info mut tw:text-muted tw:text-[12px] tw:mt-6">
-        <template v-if="searching"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>Обновление списка веток…</template>
+        <template v-if="searching"><span class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>Обновление списка веток…</template>
         <template v-else>{{ rs.listInfo ?? 'Загрузка веток…' }}</template>
       </div>
       <div class="selsum tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:mt-6">
@@ -122,7 +122,7 @@ const listRail = useBranchListRail(listEl, () => collapsed.value)
         <span v-else class="mut tw:text-muted tw:text-[12px]">Ветки не выбраны</span>
       </div>
       <div class="brow-btns tw:flex tw:flex-wrap tw:items-center tw:gap-8 tw:mt-8">
-        <button class="b pri tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:bg-accent tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default" :disabled="rs.busy.plan" @click="buildPlan"><span v-if="rs.busy.plan" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[ReleaseView-qspin_0.8s_linear_infinite]"></span>{{ rs.busy.plan ? 'Строим хронологию и проверяем конфликты…' : 'Построить хронологию выбранных веток' }}</button>
+        <button class="b pri tw:inline-flex tw:items-center tw:h-30 tw:py-0 tw:px-12 tw:border-0 tw:rounded-(--rad-sm) tw:bg-accent tw:text-on-accent tw:text-[12.5px] tw:whitespace-nowrap tw:cursor-pointer tw:hover:enabled:filter-[brightness(1.12)] tw:disabled:opacity-50 tw:disabled:cursor-default" :disabled="rs.busy.plan" @click="buildPlan"><span v-if="rs.busy.plan" class="ld tw:inline-block tw:flex-none tw:w-10 tw:h-10 tw:mr-6 tw:[vertical-align:-1px] tw:rounded-[50%] tw:border-2 tw:border-white/18 tw:[&&]:border-t-current tw:animate-[Shared-spin_0.8s_linear_infinite]"></span>{{ rs.busy.plan ? 'Строим хронологию и проверяем конфликты…' : 'Построить хронологию выбранных веток' }}</button>
       </div>
     </div>
   </section>

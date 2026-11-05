@@ -1,5 +1,5 @@
-import type { BlockView } from '../../ui/blockView'
+import { blockView } from '../../ui/blockView'
 import BlockChart from './BlockChart.vue'
 
 /** A chart and its data table. */
-export const chartView: BlockView = { component: BlockChart, props: ['src', 'autofocus', 'onChange'] }
+export const chartView = blockView(BlockChart, ['src', 'autofocus', 'onChange'])

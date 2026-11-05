@@ -1,5 +1,5 @@
 import { RESULT_KINDS, resultKindOf, type ResultKind } from '../../shared/transport/results'
-import type { BlockRun, CtxItem, LoopRun, NoteRun } from './runTypes'
+import type { BlockRun, CtxItem, LoopRun, NoteRun, PassRun } from './runTypes'
 
 /**
  * A shared note's run results as entries the others get: each block's last run (`run:<key>`), each loop's
@@ -52,13 +52,28 @@ export function scrubRun(r: BlockRun): BlockRun {
     ...(r.response ? { response: { ...r.response, url: hideInQuery(r.response.url), body: hideInBody(r.response.body), headers: hideHeaders(r.response.headers)! } } : {}),
   }
 }
+const scrubEach = <T>(m: Record<string, T> | undefined, fn: (v: T) => T) => m && Object.fromEntries(Object.entries(m).map(([k, v]) => [k, fn(v)]))
+/** A loop's run as the others get it: every pass's block runs (an HTTP one's headers…), its values and the head's. */
+export function scrubLoop(l: LoopRun): LoopRun {
+  return {
+    ...l,
+    value: hideFields(l.value),
+    passes: l.passes.map((p) => ({
+      ...p,
+      vars: hideFields(p.vars) as PassRun['vars'],
+      values: hideFields(p.values) as PassRun['values'],
+      runs: scrubEach(p.runs, scrubRun),
+      loops: scrubEach(p.loops, scrubLoop),
+    })),
+  }
+}
 /** Each kind of entry: where it is in a note's runs, its secrets taken off. */
 const KINDS = {
   run: { of: (n: NoteRun) => n.runs, out: (v: BlockRun) => scrubRun(v), ended: (v: BlockRun) => v.state !== 'run' },
-  loop: { of: (n: NoteRun) => n.loops, out: (v: LoopRun) => v, ended: (v: LoopRun) => v.state !== 'run' },
-  ctx: { of: (n: NoteRun) => n.ctx, out: (v: CtxItem) => v, ended: () => true },
+  loop: { of: (n: NoteRun) => n.loops, out: (v: LoopRun) => scrubLoop(v), ended: (v: LoopRun) => v.state !== 'run' },
+  // a published value (an HTTP answer: its headers and body fields)
+  ctx: { of: (n: NoteRun) => n.ctx, out: (v: CtxItem) => ({ ...v, value: hideFields(v.value) }), ended: () => true },
 } as const satisfies Record<ResultKind, unknown>
-const kindOf = resultKindOf
 
 /** This device's results in a note now, by entry (still running ones and the others' left out). */
 export function runEntries(n: NoteRun): RunEntries {
@@ -71,7 +86,7 @@ export function runEntries(n: NoteRun): RunEntries {
 }
 /** The note's own entry by its key (none — not there, or a key of no kind). */
 export function localEntry(n: NoteRun, key: string): { at: number; state?: string; by?: string } | undefined {
-  const kind = kindOf(key)
+  const kind = resultKindOf(key)
   return kind ? (KINDS[kind].of(n) as Record<string, { at: number; state?: string; by?: string }>)[key.slice(kind.length + 1)] : undefined
 }
 /**
@@ -79,7 +94,7 @@ export function localEntry(n: NoteRun, key: string): { at: number; state?: strin
  * without; null — taken away. Whether it goes in is the server's order's to say (resultSync). Returns whether it changed.
  */
 export function putEntry(n: NoteRun, key: string, value: unknown, by?: string): boolean {
-  const kind = kindOf(key)
+  const kind = resultKindOf(key)
   if (!kind) return false
   const into = KINDS[kind].of(n) as Record<string, unknown>
   const name = key.slice(kind.length + 1)

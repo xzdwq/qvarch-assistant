@@ -1,12 +1,13 @@
 import { computed, inject, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch, type InjectionKey, type Ref } from 'vue'
 import { remoteError } from '../../../../shared/remoteError'
 import type { TaskRef } from '@shared/jira'
-import type { PublicSettings } from '@shared/types'
+import type { PublicSettings, Selection } from '@shared/types'
 import type QuickAdd from '../../components/QuickAdd.vue'
 import type Timeline from '../../components/Timeline.vue'
 import { refreshMentions } from '../../lib/mentions'
 import { todayKey } from '../../lib/today'
 import { useDay, useNow } from '../../lib/useDay'
+import { useFlash } from '../../lib/useFlash'
 import { useRange, type RangeDay } from '../../lib/useRange'
 import { rememberedChoice, useBoardPeriod } from './useBoardPeriod'
 
@@ -24,7 +25,7 @@ export interface WorkBoardProps {
  * choices, the block opened / hovered, the quick line and the timeline. Created once by WorkBoard, read by
  * its parts through `useWorkBoard()`.
  */
-export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstance | undefined>) {
+function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstance | undefined>) {
   const period = useBoardPeriod()
   const { day, per } = period
   const range = useRange(period.weekStart, period.weekEnd)
@@ -35,16 +36,12 @@ export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstan
   const reload = async (): Promise<void> => void (await Promise.all([range.reload(), chosen.reload()]))
   const now = useNow(5_000)
   const isToday = computed(() => day.value === todayKey.value)
-  const empty = (d: string): RangeDay => ({ day: d, entries: [], notes: [], plan: [], dayTasks: [] })
+  const empty = (d: string): RangeDay => ({ day: d, entries: [], notes: [], dayTasks: [] })
   const cur = computed(() => days.value.find((d) => d.day === day.value) ?? empty(day.value))
   const err = ref('')
   const fail = (e: unknown) => (err.value = remoteError(e))
   /** The block just added / opened from elsewhere — lit for a moment. */
-  const flash = ref<string>()
-  const flashFor = (id: string, ms: number) => {
-    flash.value = id
-    setTimeout(() => flash.value === id && (flash.value = undefined), ms)
-  }
+  const { shown: flash, flash: flashFor } = useFlash<string>(2500)
   // the notes the events are mentioned in
   refreshMentions()
 
@@ -75,7 +72,7 @@ export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstan
       if (f.entryId) {
         openId.value = f.entryId
         feedTab.value = 'list'
-        flashFor(f.entryId, 2500)
+        flashFor(f.entryId)
       }
     },
     { immediate: true },
@@ -104,6 +101,14 @@ export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstan
   /** Following the time on the timeline (the same switch as the Таймлайн section's — a setting). */
   const tlRef = shallowRef<TimelineInstance>()
   const following = computed(() => !!props.settings.ui.timeline.follow)
+  /**
+   * The span chosen on the timeline — and the time the quick line names: one band, kept in step both ways (a span
+   * dragged writes its time into the line; a time typed or set in the line's preview moves the band).
+   */
+  const tlSel = ref<Selection | null>(null)
+  watch(day, () => (tlSel.value = null))
+  /** The quick line's time changed: the band follows it (no time in the line — no band). */
+  const onQuickRange = (r: { start: number; end: number } | null) => (tlSel.value = r && { day: day.value, start: r.start, end: r.end })
 
   return {
     ...period,
@@ -129,6 +134,8 @@ export function createWorkBoard(props: WorkBoardProps, quick: Ref<QuickAddInstan
     quick,
     tlRef,
     following,
+    tlSel,
+    onQuickRange,
   }
 }
 

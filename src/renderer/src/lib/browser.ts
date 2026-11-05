@@ -1,5 +1,5 @@
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import type { Bookmark, BrowserTab, RecItem, RecState } from '@shared/browser'
+import type { Bookmark, BrowserEventArgs, BrowserTab, RecItem, RecState } from '@shared/browser'
 import { DEFAULT_CHECK, type CheckProblem, type CheckState } from '@shared/check'
 
 /** The browser's state from the main process: tabs, the recording, bookmarks — shared by the section and the status bar. */
@@ -14,7 +14,8 @@ export const checkProblems = shallowRef<CheckProblem[]>([])
 /** «Карта API»: its sites (host, endpoints, calls), news of it (a change) as a counter. */
 export const apiMapHosts = shallowRef<Array<{ host: string; endpoints: number; calls: number; last: number }>>([])
 export const apiMapTick = ref(0)
-type Listener = (type: string, payload: unknown) => void
+/** A handler of the browser's news: its name, then its payload (typed by BrowserEvents). */
+type Listener = (...e: BrowserEventArgs) => void
 const listeners = new Set<Listener>()
 let started = false
 export function startBrowser(): void {
@@ -27,9 +28,10 @@ export function startBrowser(): void {
   void window.qa.browser('checkState').then((s) => (checkState.value = s))
   void window.qa.browser('checkList').then((l) => (checkProblems.value = l))
   void window.qa.browser('apiMapHosts').then((h) => (apiMapHosts.value = h))
-  window.qa.onBrowser((type, p) => {
+  window.qa.onBrowser((...e) => {
+    const [type, p] = e
     if (Object.hasOwn(STATE_EVENTS, type)) STATE_EVENTS[type](p)
-    for (const l of listeners) l(type, p)
+    for (const l of listeners) l(...e)
   })
 }
 /** The main process's news this module keeps the state of: the event → where it goes. */

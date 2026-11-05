@@ -185,7 +185,12 @@ export function useIslandExpand(els: IslandElements, hooks: ExpandHooks) {
       engaged.value = false
       if (!hovering.value) setExpanded(false)
     }
-    await window.qa.updateSettings({ island: { pinned: pinned.value } })
+    const want = pinned.value
+    // not kept: the pin goes back (else it would be pinned now and not after a restart)
+    await window.qa.updateSettings({ island: { pinned: want } }).catch((e: unknown) => {
+      if (pinned.value === want) pinned.value = !want
+      throw e
+    })
   }
 
   // the panel's height follows its content (up to the window)
@@ -206,7 +211,7 @@ export function useIslandExpand(els: IslandElements, hooks: ExpandHooks) {
     ro?.disconnect()
   })
 
-  return { expanded, pinned, hovering, engaged, panelH, setExpanded, cancelExpand, collapse, togglePin, onFocusIn, onFocusOut }
+  return { expanded, pinned, hovering, panelH, setExpanded, cancelExpand, collapse, togglePin, onFocusIn, onFocusOut }
 }
 
 export type IslandExpand = ReturnType<typeof useIslandExpand>

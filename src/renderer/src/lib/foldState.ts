@@ -1,4 +1,5 @@
 import { ref, watch, type Ref } from 'vue'
+import { isRecord, readStored } from './storedRef'
 
 /**
  * A block's part folded or open (a result, an answer) — kept per note and block: back from another tab, after a
@@ -7,12 +8,7 @@ import { ref, watch, type Ref } from 'vue'
  */
 const KEY = 'qa.folds'
 const MAX = 3000
-let folds: Record<string, boolean> = {}
-try {
-  folds = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, boolean>
-} catch {
-  folds = {}
-}
+let folds = readStored(KEY, {} as Record<string, boolean>, (v): v is Record<string, boolean> => isRecord(v))
 let timer: ReturnType<typeof setTimeout> | undefined
 function persist(): void {
   clearTimeout(timer)

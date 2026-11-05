@@ -4,6 +4,7 @@ import { asText, b64encode, b64ToBytes, bytesToB64, sniffMime } from '@shared/co
 import Icon from '../../Icon.vue'
 import { describeBytes, MAX_FILE, pngBlobOf, type Bin } from './binaryFile'
 import { fmtSize } from '@shared/codecText'
+import { readStoredText, writeStoredText } from '../../../lib/storedRef'
 import type { CopyNote } from './useCopyNote'
 
 /** Base64: text or a file (a picture shown) ↔ Base64 both ways; URL-safe; a file's Base64 as a data: URL. */
@@ -13,14 +14,8 @@ const plain = ref('')
 const encoded = ref('')
 const urlSafe = ref(false)
 /** A file's Base64 starts with data:<type>;base64, (to put into HTML / CSS as it is). */
-const dataUrl = ref(localStorage.getItem(DATA_URL_KEY) !== '0')
-watch(dataUrl, (v) => {
-  try {
-    localStorage.setItem(DATA_URL_KEY, v ? '1' : '0')
-  } catch {
-    // fine
-  }
-})
+const dataUrl = ref(readStoredText(DATA_URL_KEY) !== '0')
+watch(dataUrl, (v) => writeStoredText(DATA_URL_KEY, v ? '1' : '0'))
 const b64Error = ref('')
 /** A file (not a text) on the left: a picture shown, anything else — its type and size. */
 const bin = shallowRef<Bin>()

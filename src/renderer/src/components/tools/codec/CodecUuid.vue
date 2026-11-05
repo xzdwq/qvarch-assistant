@@ -3,12 +3,13 @@ import { computed, ref } from 'vue'
 import { uuid, uuidInfo } from '@shared/codec'
 import Icon from '../../Icon.vue'
 import { fmtTime } from '@shared/codecText'
+import { readStoredText, writeStoredText } from '../../../lib/storedRef'
 import type { CopyNote } from './useCopyNote'
 
 /** UUID: made (v4 / v7 / v1, upper case, without dashes), any one read (valid, version, variant, its time). */
 const props = defineProps<{ clip: CopyNote }>()
 const VER_KEY = 'qa.tools.uuidv'
-const savedVer = Number(localStorage.getItem(VER_KEY))
+const savedVer = Number(readStoredText(VER_KEY))
 const ver = ref<1 | 4 | 7>(savedVer === 7 ? 7 : savedVer === 1 ? 1 : 4)
 const count = ref(5)
 const upper = ref(false)
@@ -21,11 +22,7 @@ const style = (u: string) => {
 }
 /** A new batch (1…500) of the chosen version (the version remembered). */
 function generate(): void {
-  try {
-    localStorage.setItem(VER_KEY, String(ver.value))
-  } catch {
-    // fine
-  }
+  writeStoredText(VER_KEY, String(ver.value))
   made.value = Array.from({ length: Math.min(500, Math.max(1, count.value || 1)) }, () => uuid(ver.value))
 }
 generate()

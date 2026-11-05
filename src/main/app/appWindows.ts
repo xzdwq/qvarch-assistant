@@ -38,7 +38,7 @@ export class AppWindows {
   }
   /** The main window made (not shown yet): the browser lives in it, the tablet follows it, closing hides it. */
   makeMain(): BrowserWindow {
-    const win = createMainWindow()
+    const win = createMainWindow(this.app.mainDir)
     this.main = win
     this.app.browser?.attach(win)
     this.applyTheme()
@@ -62,7 +62,7 @@ export class AppWindows {
   // ---------- the island ----------
   /** The island made (shown once ready — or not: the app starting keeps it closed until it is asked for). */
   createIsland(show = true): void {
-    this.island = new Island(this.app.store.cfg.island, (pos) => this.app.store.update({ island: pos }), show)
+    this.island = new Island(this.app.mainDir, this.app.store.cfg.island, (pos) => this.app.store.update({ island: pos }), show)
   }
   toggleIsland(): void {
     if (!this.island || this.island.win.isDestroyed()) this.createIsland()

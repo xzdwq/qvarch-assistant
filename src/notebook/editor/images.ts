@@ -1,6 +1,8 @@
+import { h, render } from 'vue'
 import { EditorView, WidgetType } from '@codemirror/view'
+import ImageLightbox from '../ui/ImageLightbox.vue'
 import { imageEmbed } from '@shared/vault'
-import { draggedImageUrl, hasImages, takeImages } from '@renderer/lib/notebook'
+import { draggedImageUrl, hasImages, takeImages } from '@nb/workspace/noteMedia'
 import { followImage } from '@nb/workspace/mediaFollow'
 import { mediaWaitText } from '@shared/transport/space'
 import { editorHost } from './editorHost'
@@ -8,27 +10,15 @@ import { ICON_EXPAND, ICON_TRASH, widgetButton } from './icons'
 
 /** Pictures of a note: drawn in place of their embed line, opened full size, pasted or dropped into the note. */
 
-/** A picture over everything, as big as the window lets it (a click / Esc closes it). */
+/** A picture over everything, as big as the window lets it (a click / Esc — in the popovers' order — closes it). */
 function showFullSize(src: string): void {
-  const back = document.createElement('div')
-  back.className = 'qa-lightbox'
-  const img = document.createElement('img')
-  img.src = src
-  img.alt = ''
-  back.append(img)
+  const host = document.createElement('div')
+  document.body.append(host)
   const close = () => {
-    back.remove()
-    window.removeEventListener('keydown', onKey, true)
+    render(null, host)
+    host.remove()
   }
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return
-    e.preventDefault()
-    e.stopPropagation()
-    close()
-  }
-  back.onclick = close
-  window.addEventListener('keydown', onKey, true)
-  document.body.append(back)
+  render(h(ImageLightbox, { src, onClose: close }), host)
 }
 /** The line of a picture removed (and a blank line it leaves doubled). */
 function removeLineOf(v: EditorView, text: string): void {

@@ -16,7 +16,7 @@ export interface LinkRow {
 
 /** A direct link weighs as much as the strongest thing two notes can share. */
 const LINK_WEIGHT = 3
-export const RELATED_MAX = 40
+const RELATED_MAX = 40
 
 /**
  * The notes related to one, the strongest first: linked to it or from it, or having what it has. What many notes

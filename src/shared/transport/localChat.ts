@@ -1,4 +1,5 @@
 import { mergeMessages, type ChatAgent, type ChatHistoryItem, type ChatMessage, type ChatRoom } from './chat'
+import { isUuid } from './ids'
 import type { DeviceInfo } from './protocol'
 
 /**
@@ -15,7 +16,7 @@ export interface LocalChat {
 }
 export const isLocalChat = (x: unknown): x is LocalChat => {
   const c = x as LocalChat
-  return !!c && typeof c === 'object' && /^[0-9a-f-]{36}$/i.test(c.id) && typeof c.title === 'string' && Array.isArray(c.agents) && Array.isArray(c.messages) && typeof c.readSeq === 'number'
+  return !!c && typeof c === 'object' && isUuid(c.id) &&typeof c.title === 'string' && Array.isArray(c.agents) && Array.isArray(c.messages) && typeof c.readSeq === 'number'
 }
 /** The room it is shown as (its owner its only member). */
 export function roomOfLocal(c: LocalChat, me: DeviceInfo): ChatRoom {

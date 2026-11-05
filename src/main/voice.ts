@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { cpus, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { WHISPER_MODELS, type WhisperModelId } from '../shared/voice'
 import type { VoiceState } from '../shared/types'
 
@@ -70,21 +70,13 @@ export class Voice {
   private audioPath(rel: string): string {
     const file = join(this.root, rel)
     // only files inside data/audio
-    if (!file.startsWith(join(this.root, 'audio'))) throw new Error('Недопустимый путь')
+    // (with the separator: «audioX/…» next to it is outside)
+    if (!file.startsWith(join(this.root, 'audio') + sep)) throw new Error('Недопустимый путь')
     return file
   }
 
   readAudio(rel: string): Uint8Array {
     return readFileSync(this.audioPath(rel))
-  }
-
-  /** When the recording was saved (its file time) — to recover a note's moment. */
-  audioTime(rel: string): number | undefined {
-    try {
-      return statSync(this.audioPath(rel)).mtimeMs
-    } catch {
-      return undefined
-    }
   }
 
   removeAudio(rel: string): void {

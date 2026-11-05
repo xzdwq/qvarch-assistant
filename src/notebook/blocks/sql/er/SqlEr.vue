@@ -21,6 +21,7 @@ import Icon from '@renderer/components/Icon.vue'
 import MenuButton, { type MenuItem } from '@renderer/components/MenuButton.vue'
 import Popover from '@renderer/components/Popover.vue'
 import { cssColor } from '@renderer/lib/cssColor'
+import { useFlash } from '@renderer/lib/useFlash'
 import ErPicker from './ErPicker.vue'
 import ErTableNode from './ErTableNode.vue'
 import { provideEr } from './erContext'
@@ -37,12 +38,11 @@ const DEPTH_WORD = (d: number) => (d === 0 ? 'без соседей' : `связ
 const depthItems = computed<MenuItem[]>(() =>
   ER_DEPTHS.map((d) => ({ label: `${er.depth.value === d ? '✓ ' : ''}${d === 0 ? 'Только сами таблицы' : `Соседи на ${d} ${d === 1 ? 'связь' : 'связи'}`}`, run: () => ((er.depth.value = d), void er.draw(false)) })),
 )
-const copied = ref(false)
+const { shown: copied, flash } = useFlash(1500)
 async function copyMermaid(): Promise<void> {
   if (!er.schema.value) return
   await navigator.clipboard.writeText(`\`\`\`mermaid\n${erMermaid(er.schema.value, er.keys.value)}\n\`\`\``)
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
+  flash(true)
 }
 
 // ---------- what is lit: the pick (a click) and what is pointed at ----------

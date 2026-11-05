@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { fromExcel, isoIn, isoWeek, offsetIn, parseMoment, relative, sqlIn, toExcel, type TsUnit } from '@shared/timestamp'
+import { useFlash } from '../../lib/useFlash'
+import { useNow } from '../../lib/useDay'
 import Icon from '../Icon.vue'
 
 /**
@@ -44,9 +46,7 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => clearInterval(timer))
-const now = ref(Date.now())
-const tick = setInterval(() => (now.value = Date.now()), 10_000)
-onBeforeUnmount(() => clearInterval(tick))
+const now = useNow(10_000)
 
 // ---------- the main field: anything ----------
 const input = ref('')
@@ -114,11 +114,10 @@ const facts = computed(() => {
   ]
 })
 const inZone = computed(() => (ms.value === undefined ? '' : `${fmtRu(ms.value, tz.value)}  ·  ${isoIn(ms.value, tz.value)}`))
-const copied = ref('')
+const { shown: copied, flash } = useFlash<string>(1200)
 async function copy(t: string): Promise<void> {
   await navigator.clipboard.writeText(t)
-  copied.value = t
-  setTimeout(() => copied.value === t && (copied.value = ''), 1200)
+  flash(t)
 }
 function setNow(): void {
   input.value = ''

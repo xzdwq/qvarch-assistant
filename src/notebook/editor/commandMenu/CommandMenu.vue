@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toRef } from 'vue'
 import { durText, periodText, statusOf, statusText } from '@shared/noteEvents'
 import { events, kindOf } from '@renderer/lib/noteEvents'
 import Icon from '@renderer/components/Icon.vue'
@@ -7,20 +8,40 @@ import { remoteError } from '@shared/remoteError'
 import { deleteChat } from '@renderer/lib/chat'
 import { homeless } from '@nb/workspace/treeFacts'
 import { chipClock, issueStatusClass, shortDate } from '../eventChips'
-import type { CommandMenuState, MenuRow } from './useCommandMenu'
+import { usePopover, type Placement } from '@renderer/lib/usePopover'
+import type { CommandMenuState } from './useCommandMenu'
+import type { MenuRow } from './menuRows'
 
 /**
  * The «@» menu drawn by the cursor's «@» (over everything): the general list (commands, emoji, boards, events, Jira
- * tasks) or a sub-menu of its own — the emoji grid, a table's size. Its state and keys — useCommandMenu.
+ * tasks) or a sub-menu of its own — the emoji grid, a table's size. Its state and keys — useCommandMenu. A popover at
+ * the «@»'s point: it moves with the «@» when the text scrolls (gone from sight — closed); a press outside or Esc (the
+ * last thing opened first) closes it.
  */
 const props = defineProps<{ menu: CommandMenuState }>()
+/** At the «@»: the corner the menu worked out (under it, or over it when there is no room under). */
+const atMenuCorner: Placement = () => {
+  const p = props.menu.place
+  // (kept inside the note's pane: no taller than the room there — 360 px at most, as its sheet says)
+  const style: Record<string, string> = p ? { left: `${p.x}px`, [p.up ? 'bottom' : 'top']: `${p.y}px`, maxHeight: `${Math.min(360, p.room)}px` } : {}
+  return { style, up: !!p?.up }
+}
+const { panelRef, style } = usePopover(
+  () => (props.menu.place ? { x: props.menu.place.x, y: props.menu.place.y } : undefined),
+  { place: atMenuCorner, esc: () => props.menu.dismiss(), follow: () => props.menu.keepAtAt() },
+  toRef(props.menu, 'open'),
+)
 const rowIndex = (r: MenuRow) => props.menu.pickable.indexOf(r)
 const kindIcon = (k: string) => kindOf(k)?.icon ?? 'tag'
 const kindColor = (k: string) => kindOf(k)?.color ?? 'var(--muted)'
 const kindLabel = (k: string) => kindOf(k)?.label ?? k
 const boardName = (p: string) => (p.split('/').pop() ?? p).replace(/\.qboard$/i, '')
 const boardDir = (p: string) => p.split('/').slice(0, -1).join(' / ')
-const setList = (el: unknown) => (props.menu.listEl = (el as HTMLElement | null) ?? undefined)
+/** The menu's element: the popover's panel and the list scrolled to the row picked. */
+const setPanel = (el: unknown) => {
+  panelRef(el)
+  props.menu.listEl = (el as HTMLElement | null) ?? undefined
+}
 /** A chat in none of one's notes taken away (asked first). */
 async function removeChat(r: ChatRoom): Promise<void> {
   const alone = r.members.length <= 1
@@ -32,7 +53,7 @@ async function removeChat(r: ChatRoom): Promise<void> {
 
 <template>
   <Teleport to="body">
-    <div v-if="menu.place && menu.mode?.mode === 'emoji'" :ref="setList" class="mde-pick" :style="{ left: `${menu.place.x}px`, [menu.place.up ? 'bottom' : 'top']: `${menu.place.y}px` }" @mousedown.prevent>
+    <div v-if="menu.place && menu.mode?.mode === 'emoji'" :ref="setPanel" class="mde-pick" :style="style" @mousedown.prevent>
       <div class="pk-h">Эмодзи<span class="pk-more">{{ menu.mode.q ? `по запросу «${menu.mode.q}»` : 'пишите название — по-русски или по-английски' }}</span></div>
       <div class="em-grid">
         <button v-for="(e, i) in menu.emojiShown" :key="e.u" class="em" :class="{ on: i === menu.emojiIdx }" :title="`${e.ru} · ${e.en}`" @mouseenter="menu.emojiIdx = i" @click="menu.pickEmoji(e)">{{ e.u }}</button>
@@ -40,7 +61,7 @@ async function removeChat(r: ChatRoom): Promise<void> {
       <p v-if="!menu.emojiShown.length" class="pk-empty">{{ menu.emojiAll.length ? 'Такого эмодзи нет' : 'Загружаю эмодзи…' }}</p>
       <div class="pk-f">{{ menu.emojiShown[menu.emojiIdx] ? `${menu.emojiShown[menu.emojiIdx].u}  ${menu.emojiShown[menu.emojiIdx].ru} · ${menu.emojiShown[menu.emojiIdx].en}` : 'Стрелки — выбрать · Enter — вставить · Esc — закрыть' }}</div>
     </div>
-    <div v-else-if="menu.place && menu.mode?.mode === 'table'" :ref="setList" class="mde-pick narrow" :style="{ left: `${menu.place.x}px`, [menu.place.up ? 'bottom' : 'top']: `${menu.place.y}px` }" @mousedown.prevent>
+    <div v-else-if="menu.place && menu.mode?.mode === 'table'" :ref="setPanel" class="mde-pick narrow" :style="style" @mousedown.prevent>
       <div class="pk-h">Таблица<span class="pk-more">наведите или стрелки, Enter — вставить</span></div>
       <div class="ts-grid">
         <template v-for="r in 12" :key="r">
@@ -49,7 +70,7 @@ async function removeChat(r: ChatRoom): Promise<void> {
       </div>
       <div class="ts-n">{{ menu.size.c }} × {{ menu.size.r }}</div>
     </div>
-    <div v-else-if="menu.place" :ref="setList" class="mde-pick" :class="{ up: menu.place.up }" :style="{ left: `${menu.place.x}px`, [menu.place.up ? 'bottom' : 'top']: `${menu.place.y}px` }" @mousedown.prevent>
+    <div v-else-if="menu.place" :ref="setPanel" class="mde-pick" :class="{ up: menu.place.up }" :style="style" @mousedown.prevent>
       <template v-for="(r, i) in menu.rows" :key="i">
         <div v-if="'head' in r" class="pk-h">{{ r.head }}<span v-if="r.more" class="pk-more">ещё {{ r.more }} — уточните поиск</span></div>
         <button v-else-if="'cmd' in r" class="pk cmd" :class="{ on: rowIndex(r) === menu.pickIdx }" @mouseenter="menu.pickIdx = rowIndex(r)" @click="menu.pickAt(rowIndex(r))">

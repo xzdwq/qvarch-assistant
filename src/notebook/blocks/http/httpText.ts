@@ -29,10 +29,6 @@ export function parseHttpText(text: string): HttpText {
   const body = lines.slice(i + 1).join('\n').replace(/\s+$/, '')
   return { method, url, headers, body }
 }
-/** A request → its .http text. */
-export function httpTextOf(r: HttpText): string {
-  return [`${r.method} ${r.url}`, ...r.headers.map(([k, v]) => `${k}: ${v}`), ...(r.body ? ['', r.body] : [])].join('\n')
-}
 /** The answer as the context keeps it: { status, ok, statusText, headers (lower case), body (JSON parsed), time, size, url }. */
 export function publishedAnswer(r: { status: number; statusText: string; headers: Array<[string, string]>; body: string; time: number; size: number; url: string }): Record<string, unknown> {
   let body: unknown = r.body

@@ -84,21 +84,6 @@ export function resolveWiki(target: string, files: string[]): string | undefined
   return files.find((f) => (f.split('/').pop() ?? '').toLowerCase() === `${t}.md`)
 }
 
-/** Markdown with the audio lines cut out (they are shown as players): text and audio parts in order. */
-export function splitAudio(text: string): Array<{ md: string } | { audio: string; line: number }> {
-  const out: Array<{ md: string } | { audio: string; line: number }> = []
-  let buf: string[] = []
-  text.split('\n').forEach((l, i) => {
-    const m = l.match(AUDIO_EMBED)
-    if (!m) return void buf.push(l)
-    if (buf.length) out.push({ md: buf.join('\n') })
-    buf = []
-    out.push({ audio: m[1], line: i })
-  })
-  if (buf.length) out.push({ md: buf.join('\n') })
-  return out
-}
-
 /** All note paths of a tree. */
 export function filesOf(nodes: VaultNode[]): string[] {
   const out: string[] = []

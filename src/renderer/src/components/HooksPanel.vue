@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { HOOK_TYPES, siteMatch, type BrowserHook, type HookHit, type HookResType, type HookStatus } from '@shared/hooks'
+import { useFlash } from '../lib/useFlash'
 import CodeArea from './CodeArea.vue'
 import Icon from './Icon.vue'
 
@@ -15,7 +16,7 @@ const status = ref<HookStatus>({ paused: false, queued: 0, scanned: 0, skipped: 
 const hits = shallowRef<HookHit[]>([])
 const openId = ref<string>()
 const draft = ref<BrowserHook>()
-const msg = ref('')
+const { shown: msg, flash } = useFlash<string>(2500)
 
 void window.qa.browser('hooksList').then((l) => (hooks.value = l))
 void window.qa.browser('hookStatus').then((s) => (status.value = s))
@@ -78,10 +79,6 @@ async function remove(): Promise<void> {
   draft.value = undefined
   openId.value = undefined
 }
-function flash(t: string): void {
-  msg.value = t
-  setTimeout(() => msg.value === t && (msg.value = ''), 2500)
-}
 function setType(t: HookResType, on: boolean): void {
   const s = draft.value!.search
   s.types = on ? [...new Set([...s.types, t])] : s.types.filter((x) => x !== t)
@@ -115,7 +112,7 @@ watch(
     <!-- the search, always in sight -->
     <div class="hst tw:group/hst tw:flex tw:flex-col tw:gap-5 tw:py-7 tw:px-9 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-bg" :class="{ run: !!status.current, paused: status.paused }">
       <div class="hst-r tw:flex tw:items-center tw:gap-7 tw:min-w-0 tw:whitespace-nowrap">
-        <i class="dot tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-muted tw:group-[.run]/hst:not-group-[.paused]/hst:bg-hook-live tw:group-[.run]/hst:animate-[HooksPanel-hblink_1s_ease-in-out_infinite] tw:group-[.paused]/hst:bg-hook-paused"></i>
+        <i class="dot tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-muted tw:group-[.run]/hst:not-group-[.paused]/hst:bg-hook-live tw:group-[.run]/hst:animate-[Shared-blink-30_1s_ease-in-out_infinite] tw:group-[.paused]/hst:bg-hook-paused"></i>
         <b>{{ status.paused ? 'Поиск остановлен' : status.current ? 'Ищу' : 'Поиск ждёт ответов' }}</b>
         <span class="muted tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:text-muted tw:text-[11.5px]">в очереди {{ status.queued }} · проверено {{ status.scanned }} · пропущено {{ status.skipped }} · найдено {{ status.hits }}</span>
         <span class="grow tw:flex-1"></span>

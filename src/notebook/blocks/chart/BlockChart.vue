@@ -7,8 +7,7 @@ import Icon from '@renderer/components/Icon.vue'
  * A chart of the notebook: columns, bars, lines, areas or a pie from a small table (the first column — the
  * labels, the others — the series). «Данные» opens the table to edit; the file keeps a ```chart fence.
  */
-const props = defineProps<{ src: string; autofocus?: boolean }>()
-const emit = defineEmits<{ change: [src: string] }>()
+const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void }>()
 const m = ref<ChartModel>(parseChart(props.src))
 let mine = props.src
 watch(
@@ -26,7 +25,7 @@ function save(now = false): void {
     const md = chartMd(m.value)
     if (md === mine) return
     mine = md
-    emit('change', md)
+    props.onChange?.(md)
   }
   if (now) go()
   else timer = setTimeout(go, 300)

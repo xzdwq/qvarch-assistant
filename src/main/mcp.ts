@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { ToolAccess } from '../shared/agent/turn'
@@ -52,12 +53,8 @@ export class Mcp {
   ) {
     this.file = join(root, 'mcp.json')
     this.bridgeFile = join(root, 'mcp-bridge.cjs')
-    let c: Partial<McpConfig> = {}
-    try {
-      if (existsSync(this.file)) c = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<McpConfig>
-    } catch {
-      // a new one
-    }
+    // none — a new one; a broken one is set aside (its token was given to the clients)
+    const c = readJsonFile<Partial<McpConfig>>(this.file) ?? {}
     this.cfg = {
       on: c.on ?? true,
       port: Number(c.port) > 1023 && Number(c.port) < 65536 ? Number(c.port) : 7843,
@@ -66,7 +63,7 @@ export class Mcp {
     this.save()
   }
   private save(): void {
-    writeFileSync(this.file, JSON.stringify(this.cfg, null, 1))
+    writeJsonAtomic(this.file, this.cfg, 1)
   }
   /** A turn's token: its tools served to whoever brings it, until let go. */
   openTurn(tools: () => McpTool[]): { token: string; url: string; close: () => void } {
@@ -86,7 +83,13 @@ export class Mcp {
     return this.info()
   }
 
-  async restart(): Promise<void> {
+  /** The restarts one after another (the start's and the settings' at once would leave a server on the port unheld). */
+  private restarting: Promise<void> = Promise.resolve()
+  restart(): Promise<void> {
+    this.restarting = this.restarting.then(() => this.restartNow())
+    return this.restarting
+  }
+  private async restartNow(): Promise<void> {
     this.stop()
     this.writeBridge()
     if (!this.cfg.on) return
@@ -108,9 +111,17 @@ export class Mcp {
     this.server?.close()
     this.server = undefined
     this.listening = false
+    this.port = 0
   }
   private listen(port: number): Promise<void> {
-    const server = createServer((req, res) => void this.handle(req, res))
+    // a request that broke the handler still gets an answer (and is not an unhandled rejection in main)
+    const server = createServer((req, res) =>
+      this.handle(req, res).catch((e: unknown) => {
+        console.error('[mcp] request failed', e)
+        if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'Internal error' } }))
+      }),
+    )
     return new Promise((ok, fail) => {
       server.once('error', fail)
       server.listen(port, '127.0.0.1', () => {
@@ -146,7 +157,9 @@ export class Mcp {
       return json(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
     }
     const list = Array.isArray(msg) ? msg : [msg]
-    const out = (await Promise.all(list.map((m) => this.rpc(m as Rpc, tools)))).filter((x) => x !== undefined)
+    // (null, numbers… in a batch are not calls)
+    const calls = list.filter((m): m is Rpc => !!m && typeof m === 'object')
+    const out = (await Promise.all(calls.map((m) => this.rpc(m, tools)))).filter((x) => x !== undefined)
     if (!out.length) return json(202)
     json(200, Array.isArray(msg) ? out : out[0])
   }

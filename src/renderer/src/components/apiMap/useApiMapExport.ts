@@ -4,6 +4,7 @@ import { httpRequestText, type HttpExample } from '@shared/httpBlock'
 import type { ApiOp } from '@shared/openapi'
 import { appendToNote, authFor, blocksOf } from '../../lib/apiCopy'
 import { openNote } from '../../lib/mentions'
+import { useFlash } from '../../lib/useFlash'
 import { exampleOf } from './apiMapFormat'
 
 /** The folder of the notes made from the map. */
@@ -24,11 +25,10 @@ export function useApiMapExport(o: {
 }) {
   const { host, list, picked } = o
   /** What was just copied (its key) — its button says so for a moment. */
-  const copied = ref('')
+  const { shown: copied, flash } = useFlash<string>(1500)
   async function copy(text: string, what: string): Promise<void> {
     await navigator.clipboard.writeText(text)
-    copied.value = what
-    setTimeout(() => copied.value === what && (copied.value = ''), 1500)
+    flash(what)
   }
   /** One endpoint's request — with the site's login — to the clipboard. */
   async function copyOne(e: ApiEndpoint): Promise<void> {

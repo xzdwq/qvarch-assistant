@@ -1,5 +1,6 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 import { fixedHeight } from '../detectors'
+import { dataValueOf } from './model'
 
 /** Data of the note (```json name=… / ```yaml name=…): published as soon as it parses. */
 export const dataSpec: BlockSpec<'data'> = {
@@ -8,6 +9,7 @@ export const dataSpec: BlockSpec<'data'> = {
   detect: { by: 'fence', matches: ({ info }) => (info.lang === 'json' || info.lang === 'yaml') && !!info.name && !info.ref },
   estimateHeight: fixedHeight(90),
   rawEditable: true,
+  publishWithoutRun: { source: 'data', usesValues: false, valueOf: (body, info) => dataValueOf(info.lang, body) },
   commands: [
     {
       id: 'data',

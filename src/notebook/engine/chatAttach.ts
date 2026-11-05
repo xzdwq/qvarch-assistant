@@ -50,21 +50,33 @@ export interface ShotFrom {
 }
 /** The kinds a block is sent as (files go their own way; an agent's steps are not a block). */
 export type ShotKind = Exclude<AttachKind, FileKind | 'trace'>
-/** Each kind: whether it needs a run done, and its shot (none — nothing of that kind to send). */
-const SHOTS: Record<ShotKind, { needsRun: boolean; shot: (f: { run: BlockRun; src: string }) => unknown }> = {
+/** How an attachment is made to fit a message: as it is or not at all; or cut down (a table's rows). */
+type Fit = (a: ChatAttach) => ChatAttach | undefined
+const fitWhole: Fit = (a) => (attachBytes(a) <= ATTACH_MAX ? a : undefined)
+/** A table too big: its rows halved until it fits. */
+const fitRows: Fit = (a) => {
+  const shot = a.data as SqlShot
+  let rows = shot.rows
+  while (rows.length && attachBytes({ ...a, data: { ...shot, rows } }) > ATTACH_MAX) rows = rows.slice(0, Math.floor(rows.length / 2))
+  return { ...a, data: { ...shot, rows } }
+}
+/** Each kind: whether it needs a run done, its shot (none — nothing of that kind to send), how it fits a message. */
+const SHOTS: Record<ShotKind, { needsRun: boolean; shot: (f: { run: BlockRun; src: string }) => unknown; fit: Fit }> = {
   sql: {
     needsRun: true,
     shot: ({ run: r }) => r.table && ({ columns: r.table.columns.map((c) => c.name), rows: r.table.rows, total: r.table.rows.length, more: r.table.more, ms: r.table.ms, sql: clip(r.sql?.text ?? '', 4000) } satisfies SqlShot),
+    fit: fitRows,
   },
   http: {
     needsRun: true,
     shot: ({ run: r }) =>
       r.request &&
       r.response && { method: r.request.method, url: r.request.url, status: r.response.status, statusText: r.response.statusText, ms: r.response.time, body: clip(r.response.body, BODY_MAX), cut: r.response.body.length > BODY_MAX } satisfies HttpShot,
+    fit: fitWhole,
   },
-  code: { needsRun: false, shot: ({ run: r, src }) => (src.trim() ? ({ source: src, hasValue: !!r.hasValue, ...(r.hasValue ? { value: r.value } : {}) } satisfies CodeShot) : undefined) },
-  value: { needsRun: true, shot: ({ run: r }) => ({ value: r.value }) satisfies ValueShot },
-  pw: { needsRun: false, shot: ({ src }) => (src.trim() ? ({ source: src } satisfies PwShot) : undefined) },
+  code: { needsRun: false, shot: ({ run: r, src }) => (src.trim() ? ({ source: src, hasValue: !!r.hasValue, ...(r.hasValue ? { value: r.value } : {}) } satisfies CodeShot) : undefined), fit: fitWhole },
+  value: { needsRun: true, shot: ({ run: r }) => ({ value: r.value }) satisfies ValueShot, fit: fitWhole },
+  pw: { needsRun: false, shot: ({ src }) => (src.trim() ? ({ source: src } satisfies PwShot) : undefined), fit: fitWhole },
 }
 /** A kind sent with no run done (what is written, not what came of it). */
 export const sendsUnrun = (kind: ShotKind) => !SHOTS[kind].needsRun
@@ -75,11 +87,5 @@ export function attachOf(kind: ShotKind, from: ShotFrom, title: string): ChatAtt
   if (s.needsRun && !from.run) return undefined
   const data = s.shot({ run: from.run ? scrubRun(from.run) : { state: 'ok', at: 0 }, src: from.src })
   if (data === undefined) return undefined
-  const a: ChatAttach = { kind, title: clip(title, 200), data }
-  if (kind !== 'sql') return attachBytes(a) <= ATTACH_MAX ? a : undefined
-  // a table too big: its rows halved until it fits
-  const shot = data as SqlShot
-  let rows = shot.rows
-  while (rows.length && attachBytes({ ...a, data: { ...shot, rows } }) > ATTACH_MAX) rows = rows.slice(0, Math.floor(rows.length / 2))
-  return { ...a, data: { ...shot, rows } }
+  return s.fit({ kind, title: clip(title, 200), data })
 }

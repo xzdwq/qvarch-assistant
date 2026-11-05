@@ -72,4 +72,3 @@ export function useHttpRunner({ doc, req, folder }: HttpCollection) {
 
   return { running, result, rtab, run, abortSingle, folderReqs, myChain, chainBusy, runFolder, stepState }
 }
-export type HttpRunner = ReturnType<typeof useHttpRunner>

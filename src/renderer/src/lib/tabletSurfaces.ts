@@ -28,7 +28,7 @@ const HEADING_MS = 150
 const MIN_PX = 4
 
 /** An element's part on screen: clipped by every ancestor that cuts its content and by the window; none — out of sight. */
-export function visibleBox(el: HTMLElement): Box | undefined {
+function visibleBox(el: HTMLElement): Box | undefined {
   const r = el.getBoundingClientRect()
   let [x0, y0, x1, y1] = [r.left, r.top, r.right, r.bottom]
   for (let p = el.parentElement; p; p = p.parentElement) {

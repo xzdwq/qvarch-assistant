@@ -128,7 +128,6 @@ export class Transport {
     if (s.skew !== undefined) this.skew = s.skew
     this.app.emitToAll('onTransport', this.state())
   }
-  /** Each event's handling here (all of them go on to the main window). */
   /** What the app itself does with an event (the window handles its own: every event goes on to it). */
   private readonly EVENTS: { [K in TransportEvent['e']]?: (p: Extract<TransportEvent, { e: K }>['p']) => void } = {
     // (one's own agent's answer — told too: it is not one's own message)

@@ -17,7 +17,7 @@ const BEFORE_FENCE = LINE_SPECS.filter((s) => s.detect.order < FENCE_SCAN_ORDER)
 const AFTER_FENCE = LINE_SPECS.filter((s) => s.detect.order >= FENCE_SCAN_ORDER)
 
 /** The kind of a fence by its opening line (undefined — plain code). */
-export function fenceKindOf(header: FenceHeader): BlockKind | undefined {
+function fenceKindOf(header: FenceHeader): BlockKind | undefined {
   return FENCE_SPECS.find((s) => s.detect.matches(header))?.kind
 }
 /** A fence's opening line split into what the fence specs look at. */

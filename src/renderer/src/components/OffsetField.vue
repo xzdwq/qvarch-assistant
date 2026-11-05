@@ -6,27 +6,26 @@ import { formatOffset, parseOffset, stepOffset } from '@shared/offset'
  * How long and which way: + forward from the moment, − back (the last N minutes).
  * The wheel turns it (step 10 min, through zero to the other side), or it is typed: "-30", "1:30", "-1ч 30м".
  */
-/** unsigned — a plain length (no minus): from `step` up. */
-const props = withDefaults(defineProps<{ modelValue: number; step?: number; max?: number; compact?: boolean; unsigned?: boolean }>(), { step: 10, max: 720 })
+const props = withDefaults(defineProps<{ modelValue: number; max?: number; compact?: boolean }>(), { max: 720 })
 const emit = defineEmits<{ 'update:modelValue': [v: number]; commit: [] }>()
+/** Minutes per wheel notch / arrow press. */
+const STEP = 10
 
 const editing = ref(false)
 const text = ref('')
 const input = ref<HTMLInputElement>()
 const bad = ref(false)
 
-const shown = computed(() => (props.unsigned ? formatOffset(props.modelValue).slice(1) : formatOffset(props.modelValue)))
-const back = computed(() => !props.unsigned && props.modelValue < 0)
+const shown = computed(() => formatOffset(props.modelValue))
+const back = computed(() => props.modelValue < 0)
 
 function set(v: number): void {
-  const c = props.unsigned ? Math.max(Math.min(props.step, 5), Math.min(props.max, Math.abs(v))) : Math.max(-props.max, Math.min(props.max, v))
+  const c = Math.max(-props.max, Math.min(props.max, v))
   if (c && c !== props.modelValue) emit('update:modelValue', c)
 }
 function onWheel(e: WheelEvent): void {
   if (!e.deltaY) return
-  const dir = e.deltaY < 0 ? 1 : -1
-  // a length does not go through zero: it stops at one step
-  set(props.unsigned && dir < 0 && props.modelValue <= props.step ? props.step : stepOffset(props.modelValue, dir, props.step, props.max))
+  set(stepOffset(props.modelValue, e.deltaY < 0 ? 1 : -1, STEP, props.max))
   emit('commit')
 }
 async function startEdit(): Promise<void> {
@@ -50,11 +49,11 @@ function finish(apply: boolean): void {
   }
   editing.value = false
 }
-/** The typed value one step further (up — more, down — less; an unsigned one never goes below a step). */
+/** The typed value one step further (up — more, down — less). */
 function stepTyped(e: KeyboardEvent, dir: 1 | -1): void {
   e.preventDefault()
   const cur = parseOffset(text.value) ?? props.modelValue
-  const v = props.unsigned && dir < 0 && Math.abs(cur) <= props.step ? props.step : stepOffset(Math.abs(cur) * (props.unsigned ? 1 : Math.sign(cur) || 1), dir, props.step, props.max)
+  const v = stepOffset(Math.abs(cur) * (Math.sign(cur) || 1), dir, STEP, props.max)
   text.value = formatOffset(v).replace('+', '')
   set(v)
 }
@@ -78,7 +77,7 @@ function onKey(e: KeyboardEvent): void {
   <span
     class="off tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:min-w-64 tw:justify-center tw:box-border tw:py-0 tw:px-9 tw:rounded-r2 tw:border tw:border-accent/45 tw:bg-accent/12 tw:text-text tw:text-[12px] tw:cursor-ns-resize tw:select-none tw:[transition:border-color_0.15s,background_0.15s] tw:hover:not-[&.back]:border-accent/85 tw:[&.back]:border-info/45 tw:[&.back]:bg-info/10 tw:[&.back]:hover:border-info/85 tw:[&.compact]:h-30 tw:[&.compact]:min-w-64 tw:[&.editing]:cursor-text"
     :class="{ back, compact, editing }"
-    :title="unsigned ? 'Длительность' : back ? 'Назад' : 'Вперёд'"
+    :title="back ? 'Назад' : 'Вперёд'"
     @wheel.prevent.stop="onWheel"
     @click="!editing && startEdit()"
   >

@@ -1,5 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+
+/** The text being saved, kept whole beside its note until the note is written (`.tmp`: the watcher and tree skip it). */
+const sideOf = (file: string) => `${file}.tmp`
 
 /**
  * The vault's files on disk: a vault path ("/" separated, relative) ↔ the file, nothing outside the vault; texts read
@@ -28,6 +31,7 @@ export class VaultFiles {
 
   read(rel: string): string {
     const file = this.abs(rel)
+    this.recover(file)
     const st = statSync(file)
     const c = this.cache.get(rel)
     if (c && c.mtime === st.mtimeMs) return c.text
@@ -40,9 +44,21 @@ export class VaultFiles {
     const file = this.abs(rel)
     mkdirSync(dirname(file), { recursive: true })
     this.own.set(rel, text)
-    // in place: a temp file + rename would make a new file each time — and lose its creation date
+    // in place: a temp file + rename would make a new file each time — and lose its creation date. The new text is
+    // kept whole beside it first (itself written whole): a write cut short in place is put right on the next read
+    const side = sideOf(file)
+    writeFileSync(`${side}.part.tmp`, text, 'utf8')
+    renameSync(`${side}.part.tmp`, side)
     writeFileSync(file, text, 'utf8')
+    rmSync(side, { force: true })
     this.cache.set(rel, { mtime: statSync(file).mtimeMs, text })
+  }
+  /** A save that did not finish (the app or the computer went down): the note gets the text that was being saved. */
+  private recover(file: string): void {
+    const side = sideOf(file)
+    if (!existsSync(side)) return
+    writeFileSync(file, readFileSync(side, 'utf8'), 'utf8')
+    rmSync(side, { force: true })
   }
 
   /** The cached texts of a path and everything under it forgotten (moved / deleted). */

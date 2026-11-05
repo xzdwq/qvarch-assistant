@@ -1,12 +1,11 @@
-import { computed, shallowRef } from 'vue'
+import { computed } from 'vue'
 import { productiveSplit, workDayMs } from '@shared/kinds'
 import { noteEntry } from '@shared/notes'
-import { clipEntries, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges, shiftDay } from '@shared/timeline'
-import type { Entry, Note } from '@shared/types'
+import { clipEntries, dayStart, formatDuration, formatHM, MINUTE, scheduleRanges } from '@shared/timeline'
+import type { Note } from '@shared/types'
 import { noteIcon } from '@shared/tracker/constants'
 import { countdownText, islandDateText, kindTotals, pillItems, chipText, taskTotals } from '@shared/tracker/islandPill'
 import { kindLabel, kinds } from '../lib/palette'
-import { recentLabels } from '../lib/recent'
 import { todayKey } from '../lib/today'
 import { useDay } from '../lib/useDay'
 import type { IslandSettings } from './useIslandSettings'
@@ -15,13 +14,9 @@ import type { IslandSettings } from './useIslandSettings'
  * Today as the island shows it: the day's data, the schedule, productive time against the work day, totals,
  * the pill's chips, the next meeting, note titles.
  */
-export function useIslandDay({ settings, ui }: IslandSettings) {
+export function useIslandDay({ settings }: IslandSettings) {
   const today = todayKey
   const { data, live, now, cursor } = useDay(today)
-
-  const yesterday = shallowRef<Entry[]>([])
-  void window.qa.getDay(shiftDay(today.value, -1)).then((d) => (yesterday.value = d.entries))
-  const recent = computed(() => recentLabels(data.value.entries, yesterday.value))
 
   const schedule = computed(() => (settings.value ? scheduleRanges(today.value, settings.value.schedule) : {}))
   /** Kinds offered as buttons (hidden ones stay in settings and on old blocks). */
@@ -57,9 +52,7 @@ export function useIslandDay({ settings, ui }: IslandSettings) {
   const nextIn = computed(() => (nextMeeting.value ? countdownText(nextMeeting.value.start - now.value) : ''))
 
   /** The collapsed pill's chips (all blocks as equal chips, independent of the expanded timeline's zoom). */
-  const chips = computed(() =>
-    pillItems({ entries: data.value.entries, notes: data.value.notes, plan: data.value.plan, showPlan: ui.value.pill.plan, now: now.value, workMs: workMs.value }),
-  )
+  const chips = computed(() => pillItems({ entries: data.value.entries, notes: data.value.notes, workMs: workMs.value }))
   const chipLabel = (ms: number) => chipText(ms, workMs.value)
   /** One-line summary for the collapsed pill (the call app and its duration). */
   const pillInfo = computed(() => {
@@ -81,7 +74,6 @@ export function useIslandDay({ settings, ui }: IslandSettings) {
     live,
     now,
     cursor,
-    recent,
     schedule,
     shownKinds,
     workMs,

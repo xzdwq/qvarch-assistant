@@ -5,9 +5,9 @@ import { AgentStore } from '../agent/agentStore'
 import { HarnessStore } from '../agent/harnessStore'
 import { GuideStore } from '../agent/guideStore'
 import { guideIdOf } from '../../shared/agent/harness/guides'
-import { contentsOf, type AppContext } from '../app/appContext'
+import type { AppContext } from '../app/appContext'
 import type { McpHost } from './mcpIpc'
-import { emit, handle, listen } from './router'
+import { handle, listen } from './router'
 
 /** The AI agents: their profiles (keys kept encrypted) and their turns, asked by the window's chats. */
 export function registerAgentIpc(app: AppContext, host: McpHost): void {
@@ -18,12 +18,7 @@ export function registerAgentIpc(app: AppContext, host: McpHost): void {
   handle('agentSave', (_e, profile, key) => store.save(profile, typeof key === 'string' ? key : undefined))
   handle('agentRemove', (_e, id) => store.remove(String(id)))
   handle('agentModels', (_e, id) => runner.models(String(id)))
-  handle('agentRun', (_e, req: TurnRequest) =>
-    runner.run(req, (line) => {
-      const w = contentsOf(app.windows.main)
-      if (w) emit(w, 'onAgentTrace', req.turn, line)
-    }),
-  )
+  handle('agentRun', (_e, req: TurnRequest) => runner.run(req))
   listen('agentStop', (_e, turn) => runner.stop(String(turn)))
   const harness = new HarnessStore(app.store.root)
   handle('harnessState', () => harness.state())

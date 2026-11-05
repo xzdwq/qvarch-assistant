@@ -1,5 +1,5 @@
 import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraVersion } from '../../shared/jira'
-import { listTasks, priorityRank } from '../../shared/jira'
+import { listTasks, pickOrder, priorityRank } from '../../shared/jira'
 import { taskTree } from '../../shared/jiraTree'
 
 /** A page of a list: `offset` from 0, `limit` within 1…200. */
@@ -17,11 +17,10 @@ export interface IssueSearch {
   q: string
   offset: number
   limit: number
-  /** 'pick' — choosing a task: mine and starred first, then by due date; 'list' — by project, due date, state. */
+  /** 'pick' — choosing a task: mine first, then by due date; 'list' — by project, due date, state. */
   mode: 'list' | 'pick'
   /** The task list's own filters and sort (instead of the mode's order). */
   query?: JiraListQuery
-  starred: string[]
   /** Today, YYYY-MM-DD (the list's «overdue» and similar). */
   today: string
   /** The tasks' ancestors fetched apart (the tree's upper levels). */
@@ -35,7 +34,6 @@ export interface IssueSearch {
 /** `total` — the rows (pages are of them; in the tree the ancestors too), `found` — the tasks themselves. */
 export function findIssues(issues: JiraIssue[], s: IssueSearch): { items: JiraListItem[]; total: number; found: number; facets: JiraFacets } {
   const words = wordsOf(s.q)
-  const top = (i: JiraIssue) => (i.mine || s.starred.includes(i.key) ? 0 : 1)
   const hit = (i: JiraIssue) => {
     if (!words.length) return true
     const hay = `${i.key} ${i.summary} ${(i.labels ?? []).join(' ')} ${(i.components ?? []).join(' ')} ${i.status} ${i.assignee ?? ''} ${i.parent?.key ?? ''} ${i.description ?? ''}`.toLowerCase()
@@ -47,8 +45,8 @@ export function findIssues(issues: JiraIssue[], s: IssueSearch): { items: JiraLi
     ? listTasks(found, s.query, s.today)
     : found.sort(
         s.mode === 'pick'
-          ? (a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated
-          : (a, b) => a.project.key.localeCompare(b.project.key) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category] || b.updated - a.updated,
+          ? pickOrder
+          :(a, b) => a.project.key.localeCompare(b.project.key) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category] || b.updated - a.updated,
       )
   const rankOf = (priority: string) => priorityRank({ priority, priorityId: openOnes.find((i) => i.priority === priority)?.priorityId })
   const facets: JiraFacets = {

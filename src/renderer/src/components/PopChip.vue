@@ -8,7 +8,7 @@ import Popover from './Popover.vue'
  * everything — choices never push the card's layout around.
  */
 /** `square` — the card's row of small square buttons. */
-defineProps<{ icon: string; label?: string; title: string; active?: boolean; width?: number; square?: boolean }>()
+defineProps<{ icon: string; label?: string; title: string; active?: boolean; square?: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
 const btn = ref<HTMLElement>()
 </script>
@@ -19,7 +19,7 @@ const btn = ref<HTMLElement>()
       <Icon :name="icon" :size="square ? 13 : 14" />
       <span v-if="label" class="pl tw:font-semibold">{{ label }}</span>
     </button>
-    <Popover v-model:open="open" :anchor="btn" :width="width ?? 220" align-left :chrome="8" class="pcdd tw:flex tw:flex-col tw:gap-1 tw:p-5 tw:overflow-y-auto tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)] tw:text-[12.5px] tw:text-text">
+    <Popover v-model:open="open" :anchor="btn" :width="220" align-left :chrome="8" class="pcdd tw:flex tw:flex-col tw:gap-1 tw:p-5 tw:overflow-y-auto tw:rounded-[4px] tw:border tw:border-white/10 tw:bg-panel-2 tw:[box-shadow:var(--shadow-menu)] tw:text-[12.5px] tw:text-text">
       <slot :close="() => (open = false)" />
     </Popover>
   </div>

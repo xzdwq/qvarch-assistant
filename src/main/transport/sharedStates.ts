@@ -4,9 +4,8 @@ import { SPACE_LINK_FILE } from '../../shared/transport/space'
 import { SHARED_FORMATS } from '../../shared/transport/sharedFormats'
 import type { SharedFolderLink } from '../../shared/transport/sharedFolder'
 import type { KeptState } from '../../shared/transport/sharedText'
+import { isUuid } from '../../shared/transport/ids'
 import { docAiOf, NO_DOC_AI, type DocAi } from '../../shared/agent/docAi'
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** A file's first bytes as text (its mark is there). */
 function readHead(file: string): string {
@@ -38,7 +37,7 @@ export class SharedStates {
    * and turns, JSON — the notes' search reads it); an id that is not one — refused.
    */
   private file(doc: string, ext: 'ystate' | 'ytext' | 'yai' = 'ystate'): string {
-    if (!UUID.test(doc)) throw new Error('Неверный идентификатор документа')
+    if (!isUuid(doc)) throw new Error('Неверный идентификатор документа')
     return join(this.dir, `${doc}.${ext}`)
   }
   /** A document as kept: its state and the text it was kept with (none kept — null). */
@@ -91,7 +90,7 @@ export class SharedStates {
       if (names.includes(SPACE_LINK_FILE)) {
         try {
           const l = JSON.parse(readFileSync(join(abs, SPACE_LINK_FILE), 'utf8')) as Omit<SharedFolderLink, 'dir'>
-          if (UUID.test(l.space)) out.push({ space: l.space, docs: l.docs ?? {}, dir: relative(this.vaultRoot, abs).split(sep).join('/') })
+          if (isUuid(l.space)) out.push({ space: l.space, docs: l.docs ?? {}, dir: relative(this.vaultRoot, abs).split(sep).join('/') })
         } catch {
           // a broken link — not a shared folder
         }
@@ -106,7 +105,7 @@ export class SharedStates {
    * never by its name: someone may have a file of the same name of their own). None — ''.
    */
   find(doc: string): string {
-    if (!UUID.test(doc)) return ''
+    if (!isUuid(doc)) return ''
     const marks = Object.values(SHARED_FORMATS).map((f) => f.head(doc))
     const walk = (abs: string): string => {
       let names: string[]

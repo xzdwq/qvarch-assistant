@@ -6,7 +6,7 @@ import { JIRA_STATUS_CATEGORIES } from '../../src/shared/jira'
 import { CONTRASTS } from '../../src/shared/theme'
 import { bars, groupItems, groupKey, sourceOf, taskType, type ReportItem } from '../../src/shared/report'
 import { REPEAT_RULES, shiftBy } from '../../src/shared/repeat'
-import { clampPrefs, comboOf, isModifiersOnly, isQuarterTurn, rotate, type TabletRotation } from '../../src/shared/tablet'
+import { clampPrefs, comboOf, isModifiersOnly, isQuarterTurn, type TabletRotation } from '../../src/shared/tablet'
 import { orbMood } from '../../src/shared/tracker/islandPill'
 import { seriesScheme } from '../../src/shared/tracker/reportChart'
 import { dayStart, HOUR } from '../../src/shared/timeline'
@@ -98,9 +98,7 @@ describe('repeats', () => {
 })
 
 describe('tablet tables', () => {
-  it('rotations', () => {
-    const r: Array<[TabletRotation, [number, number]]> = [[0, [0.2, 0.3]], [90, [0.7, 0.2]], [180, [0.8, 0.7]], [270, [0.3, 0.8]]]
-    for (const [rot, out] of r) expect(rotate(0.2, 0.3, rot)).toEqual(out)
+  it('rotations: a quarter turn swaps the sides', () => {
     expect([0, 90, 180, 270].map((x) => isQuarterTurn(x as TabletRotation))).toEqual([false, true, false, true])
   })
   it('targets: a known kind kept, a monitor keeps its name, anything else — the primary monitor', () => {

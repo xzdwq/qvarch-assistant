@@ -96,11 +96,20 @@ export function followEmits(runId: string, env: RunEnv, from: ValueSource, block
       }
     }
     for (const name of grown) show(env.notePath, name, vars.get(name)!, from, block)
+    if (late && order.done >= late.sent) late.done()
   }
+  /** The run's end waiting for its batches still on their way. */
+  let late: { sent: number; done: () => void } | undefined
+  /** Resolves when `sent` batches are in, or after LATE_MS. */
+  const allIn = (sent: number) =>
+    new Promise<void>((resolve) => {
+      const t = setTimeout(() => late?.done(), LATE_MS)
+      late = { sent, done: () => (clearTimeout(t), (late = undefined), resolve()) }
+    })
   followers.set(runId, add)
   return {
     async end(sent, ok) {
-      for (const until = Date.now() + LATE_MS; sent !== undefined && order.done < sent && Date.now() < until; ) await new Promise((r) => setTimeout(r, 10))
+      if (sent !== undefined && order.done < sent) await allIn(sent)
       if (followers.get(runId) === add) followers.delete(runId)
       const lost = sent !== undefined && order.done < sent ? `потеряны порции emit: дошло ${order.done} из ${sent}` : undefined
       for (const name of mine) {

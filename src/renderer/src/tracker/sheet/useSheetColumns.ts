@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import { readStored, writeStored } from './sheetStorage'
+import { readStored, writeStored } from '../../lib/storedRef'
 
 /** Column widths, px: the row label, a day, the total. */
 export type SheetColWidths = { rl: number; dc: number; tc: number }

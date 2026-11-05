@@ -13,7 +13,7 @@ import { provideReports } from '../tracker/reports/useReportsState'
  * deep, down to the blocks). Filters and the view are remembered;
  * a view can be saved under a name.
  */
-const emit = defineEmits<{ go: [view: 'day', day?: string, entryId?: string] }>()
+const emit = defineEmits<{ go: [day: string, entryId?: string] }>()
 provideReports()
 </script>
 
@@ -28,13 +28,13 @@ provideReports()
       <ReportsAnalytics />
 
       <!-- the chart -->
-      <ReportsChart @go="(v, d, id) => emit('go', v, d, id)" />
+      <ReportsChart @go="(d) => emit('go', d)" />
 
       <!-- by the events' attributes -->
       <ReportsAttrs />
 
       <!-- the breakdown -->
-      <ReportsBreakdown @go="(v, d, id) => emit('go', v, d, id)" />
+      <ReportsBreakdown @go="(d, id) => emit('go', d, id)" />
     </div>
   </div>
 </template>

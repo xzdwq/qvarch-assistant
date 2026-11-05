@@ -1,4 +1,5 @@
-import { MEDIA_PATH, TICKET_HEADER, type TransportMethods } from '../../shared/transport/protocol'
+import { MEDIA_MAX, MEDIA_PATH, MEDIA_RELS_MAX, TICKET_HEADER, type TransportMethods } from '../../shared/transport/protocol'
+import { TRANSFER_TIMEOUT_MS, withTimeout } from '../netLimits'
 import { isSpaceFile, mediaWhy, type MediaReport } from '../../shared/transport/space'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -70,11 +71,15 @@ export class SharedMedia {
     }
     const url = (rel: string) => `${base}${MEDIA_PATH}${space}/${rel.split('/').map(encodeURIComponent).join('/')}`
     const said = async (r: Response) => `${r.status} ${(await r.text().catch(() => '')).slice(0, 120)}`.trim()
-    const serverLacks = new Set(await this.ask('media.missing', { space, rels: wanted }))
+    // asked in parts: the server answers for at most so many at a time
+    const serverLacks = new Set<string>()
+    for (let i = 0; i < wanted.length; i += MEDIA_RELS_MAX) for (const rel of await this.ask('media.missing', { space, rels: wanted.slice(i, i + MEDIA_RELS_MAX) })) serverLacks.add(rel)
     for (const rel of wanted) {
       const local = readLocal(this.vault, rel)
-      if (send && local && serverLacks.has(rel)) {
-        const r = await this.passes.request(space, (pass) => fetch(url(rel), { method: 'PUT', body: Buffer.from(local), headers: { [TICKET_HEADER]: pass } })).catch((e: Error) => e)
+      // too big for the server: told here (not sent whole each sync only to be refused)
+      if (send && local && serverLacks.has(rel) && local.byteLength > MEDIA_MAX) report.failed[rel] = `не отправлено: файл больше ${Math.round(MEDIA_MAX / 1024 / 1024)} МБ`
+      else if (send && local && serverLacks.has(rel)) {
+        const r = await this.passes.request(space, (pass) => fetch(url(rel), withTimeout({ method: 'PUT', body: Buffer.from(local), headers: { [TICKET_HEADER]: pass } }, TRANSFER_TIMEOUT_MS))).catch((e: Error) => e)
         if (r instanceof Error) report.failed[rel] = `не отправлено: ${r.message}`
         else if (!r.ok) report.failed[rel] = `сервер не принял: ${await said(r)}`
         else this.log(`media ${space.slice(0, 8)} ${rel}: отправлено`)
@@ -84,7 +89,7 @@ export class SharedMedia {
         report.absent.push(rel)
         continue
       }
-      const r = await this.passes.request(space, (pass) => fetch(url(rel), { headers: { [TICKET_HEADER]: pass } })).catch((e: Error) => e)
+      const r = await this.passes.request(space, (pass) => fetch(url(rel), withTimeout({ headers: { [TICKET_HEADER]: pass } }, TRANSFER_TIMEOUT_MS))).catch((e: Error) => e)
       if (r instanceof Error || !r.ok) {
         report.failed[rel] = r instanceof Error ? `не загружено: ${r.message}` : `не загружено: ${await said(r)}`
         continue

@@ -1,28 +1,51 @@
 /* The components' animations (moved from their styles: <Component>-<name>). */
 
-@keyframes App-qa-spin {
+/* ---------- shared motions (one keyframe each, used by many components: Shared-<name>) ---------- */
+
+/* a busy sign turning */
+@keyframes Shared-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-@keyframes BrowserView-prblink {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@keyframes BrowserView-bv-blink {
+/* a live / recording mark blinking: deep, middle, light */
+@keyframes Shared-blink-25 {
   50% {
     opacity: 0.25;
   }
 }
 
-@keyframes BrowserView-bv-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes Shared-blink-30 {
+  50% {
+    opacity: 0.3;
   }
 }
+
+@keyframes Shared-blink-35 {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* the event going on now: a light running over its bar, its dot breathing */
+@keyframes Shared-live-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes Shared-live-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.88);
+  }
+}
+
+/* ---------- one component's own ---------- */
 
 @keyframes BrowserView-bv-load {
   from {
@@ -30,36 +53,6 @@
   }
   to {
     background-position: 150% 0;
-  }
-}
-
-@keyframes HttpView-hv-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes NotebookView-blink {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-@keyframes ReleaseView-qspin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes ReportsView-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes SheetView-spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 
@@ -72,18 +65,6 @@
   }
 }
 
-@keyframes TaskList-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes TerminalView-tv-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-
 @keyframes WorkBoard-flash {
   0% {
     background: rgb(var(--accent-rgb) / 0.4);
@@ -93,82 +74,9 @@
   }
 }
 
-@keyframes WorkBoard-live-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
-}
-
-@keyframes WorkBoard-live-pulse {
-  50% {
-    opacity: 0.45;
-    transform: scale(0.88);
-  }
-}
-
-@keyframes RecDot-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-@keyframes WorkBoard-live-blink {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-@keyframes WorkList-live-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
-}
-
-@keyframes WorkList-live-pulse {
-  50% {
-    opacity: 0.45;
-    transform: scale(0.88);
-  }
-}
-
-@keyframes WorkList-live-blink {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-@keyframes AudioNote-sp {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes BlockRecording-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-
-@keyframes CheckPanel-ckblink {
-  50% {
-    opacity: 0.25;
-  }
-}
-
 @keyframes EventStream-es-pulse {
   50% {
     opacity: 0.4;
-  }
-}
-
-@keyframes HooksPanel-hblink {
-  50% {
-    opacity: 0.3;
   }
 }
 
@@ -179,22 +87,9 @@
   }
 }
 
-@keyframes LabelInput-drop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
 @keyframes StatusBar-blink-fast {
   50% {
     opacity: 0.15;
-  }
-}
-
-@keyframes StatusBar-blink {
-  50% {
-    opacity: 0.35;
   }
 }
 
@@ -206,12 +101,6 @@
       0 -10px,
       100% 10px,
       0 0;
-  }
-}
-
-@keyframes TermPane-tp-blink {
-  50% {
-    opacity: 0.3;
   }
 }
 
@@ -267,36 +156,6 @@
 @keyframes Island-recpulse {
   50% {
     box-shadow: 0 0 0 6px rgba(255, 61, 61, 0.25);
-  }
-}
-
-@keyframes Island-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-
-@keyframes BlockBrowser-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes BlockPw-prblink {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@keyframes BlockPw-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes RunHead-pulse {
-  50% {
-    opacity: 0.3;
   }
 }
 

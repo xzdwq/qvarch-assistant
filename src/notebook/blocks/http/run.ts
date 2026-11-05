@@ -1,10 +1,10 @@
 import { kv, newRequest, type HttpMethod } from '../../../shared/http'
 import { statusHint } from '../../../shared/httpStatusHints'
 import { interpolate } from '../../domain/values'
-import { LatestRuns, type BlockRunner } from '../../engine/blockRunner'
+import type { BlockRunner } from '../../engine/blockRunner'
 import { cutText, indentText, RUN_STATE_TEXT, tookText } from '../../engine/reportText'
-import { errorText, runApi } from '../../engine/runApi'
-import { saveRunsSoon } from '../../engine/runStore'
+import { runApi } from '../../engine/runApi'
+import { LatestRuns, trackedRun } from '../../engine/trackedRun'
 import { parseHttpText, publishedAnswer } from './httpText'
 
 /** Requests going on (a request run again before the first answered — the first answer is dropped). */
@@ -33,25 +33,16 @@ export const httpRunner: BlockRunner = {
     req.headers = headers.map(([k, v]) => kv(k, v))
     const ctype = headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? ''
     if (body) req.body = /json/i.test(ctype) || (!ctype && /^\s*[[{]/.test(body)) ? { mode: 'json', text: body, rawType: 'application/json', rows: [] } : { mode: 'raw', text: body, rawType: ctype || 'text/plain', rows: [] }
-    const slot = env.runSlot(item.key)
-    const runId = latest.begin(slot)
-    const r = env.recordRun(item.key, { state: 'run', at: Date.now(), request: { method: req.method, url, headers, body, missing } })
-    try {
+    return trackedRun(latest, env, item.key, { state: 'run', at: Date.now(), request: { method: req.method, url, headers, body, missing } }, async ({ runId }) => {
       const doc = await runApi().httpLoad()
       const out = await runApi().httpRun(req, doc, runId)
-      if (!latest.isLatest(slot, runId)) return false
-      const ok = !out.error && !!out.response
-      env.recordRun(item.key, { ...r, state: ok ? 'ok' : 'error', ms: out.response?.time, response: out.response, error: out.error, logs: out.logs.map((t) => ({ level: 'log', text: t })) })
-      if (out.response && item.info.name) env.publish(item.info.name, publishedAnswer(out.response), 'http', item.key)
-      saveRunsSoon(env.notePath)
-      return ok
-    } catch (e) {
-      env.recordRun(item.key, { ...r, state: 'error', error: errorText(e) })
-      saveRunsSoon(env.notePath)
-      return false
-    } finally {
-      latest.end(slot, runId)
-    }
+      const answer = out.response
+      return {
+        ok: !out.error && !!answer,
+        run: { ms: answer?.time, response: answer, error: out.error, logs: out.logs.map((t) => ({ level: 'log', text: t })) },
+        publish: () => answer && item.info.name && env.publish(item.info.name, publishedAnswer(answer), 'http', item.key),
+      }
+    })
   },
   stop(env, key) {
     const id = latest.current(env.runSlot(key))

@@ -103,7 +103,6 @@ describe('the list as a tree', () => {
       limit: 50,
       mode: 'list',
       query: { view: 'tree', statuses: ['Open'] },
-      starred: [],
       today: '2026-10-29',
       parents: [story, task('AI-113')],
     })

@@ -8,7 +8,7 @@ import Popover from './Popover.vue'
  * «В блокнот ▾»: where something goes — a new note, or any note there is (the recent first; a search over names and
  * folders; ↑ ↓ Enter). Over everything, kept by its button.
  */
-const props = withDefaults(defineProps<{ label?: string; title?: string; newLabel?: string; disabled?: boolean }>(), { label: 'В блокнот', newLabel: 'Новая заметка' })
+const props = withDefaults(defineProps<{ title?: string; newLabel?: string }>(), { newLabel: 'Новая заметка' })
 // two roots (the button, its list): the classes it is given (`primary`, `sm`) go onto the button
 defineOptions({ inheritAttrs: false })
 const emit = defineEmits<{ pick: [path: string | null] }>()
@@ -62,7 +62,7 @@ function onKey(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <button ref="btn" v-bind="$attrs" class="np tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-28 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-10 tw:whitespace-nowrap" :class="{ on: open }" :disabled="disabled" :title="title" @mousedown.prevent @click="toggle"><Icon name="note" :size="12" />{{ props.label }}<Icon name="chevronDown" :size="10" /></button>
+  <button ref="btn" v-bind="$attrs" class="np tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-28 tw:pt-0 tw:pr-8 tw:pb-0 tw:pl-10 tw:whitespace-nowrap" :class="{ on: open }" :title="title" @mousedown.prevent @click="toggle"><Icon name="note" :size="12" />В блокнот<Icon name="chevronDown" :size="10" /></button>
   <Popover v-model:open="open" :anchor="btn" :width="340" :chrome="0" :max-height="fitHeight" class="np-pop tw:flex tw:flex-col tw:overflow-hidden tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:text-[12.5px]" @keydown="onKey">
       <input class="tw:h-28 tw:m-6 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" ref="input" v-model="q" placeholder="Найти заметку…" spellcheck="false" @input="idx = 0" />
       <div class="np-list tw:flex tw:min-h-0 tw:flex-col tw:pt-0 tw:pr-4 tw:pb-4 tw:pl-4 tw:overflow-y-auto">

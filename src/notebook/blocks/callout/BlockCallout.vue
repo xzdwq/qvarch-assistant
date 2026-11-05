@@ -4,8 +4,7 @@ import { CALLOUTS, calloutMd, parseCallout, type CalloutModel } from './model'
 import Icon from '@renderer/components/Icon.vue'
 
 /** A callout: a coloured box (заметка, информация, совет, готово, внимание, опасно) with a title and text. */
-const props = defineProps<{ src: string; autofocus?: boolean }>()
-const emit = defineEmits<{ change: [src: string]; exit: [dir: 1 | -1] }>()
+const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
 const c = ref<CalloutModel>(parseCallout(props.src))
 let mine = props.src
 watch(
@@ -23,7 +22,7 @@ function save(now = false): void {
     const md = calloutMd(c.value)
     if (md === mine) return
     mine = md
-    emit('change', md)
+    props.onChange?.(md)
   }
   if (now) go()
   else timer = setTimeout(go, 250)
@@ -42,7 +41,7 @@ function onTitleKey(e: KeyboardEvent): void {
       break
     case 'ArrowUp':
       e.preventDefault()
-      emit('exit', -1)
+      props.onExit?.(-1)
       break
   }
 }
@@ -53,7 +52,7 @@ function onBodyKey(e: KeyboardEvent): void {
     case 'ArrowDown':
       if (el.value.slice(el.selectionEnd).includes('\n')) return
       e.preventDefault()
-      emit('exit', 1)
+      props.onExit?.(1)
       break
     case 'ArrowUp':
       if (el.value.slice(0, el.selectionStart).includes('\n')) return
@@ -61,7 +60,7 @@ function onBodyKey(e: KeyboardEvent): void {
       titleEl.value?.focus()
       break
     case 'Escape':
-      emit('exit', 1)
+      props.onExit?.(1)
       break
   }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { dayEnd, dayStart, formatDuration, formatHM, scheduleRanges } from '@shared/timeline'
+import { computed } from 'vue'
+import { dayEnd, dayStart, formatDuration, scheduleRanges } from '@shared/timeline'
 import type { Entry, Ms, Selection } from '@shared/types'
 import Icon from '../../components/Icon.vue'
 import Timeline from '../../components/Timeline.vue'
@@ -12,7 +12,7 @@ import { useWorkBoard, type TimelineInstance } from './useWorkBoard'
 import { saveCopy } from '../entry/copyEntry'
 
 /** The board's top: the chosen day's timeline (with its chain of events) or the period's day cells. */
-const { settings, day, days, dayData, reload, now, isToday, top, openId, quick, fail, tlRef } = useWorkBoard()
+const { settings, day, days, dayData, reload, now, isToday, top, openId, quick, fail, tlRef, tlSel } = useWorkBoard()
 
 // ---------- the period's day cells ----------
 const week = computed(() => days.value.map((d) => dayCell(d, now.value, settings.value.schedule.workDays)))
@@ -23,13 +23,11 @@ const setFollow = (on: boolean) => void window.qa.updateSettings({ ui: { timelin
 const sched = computed(() => scheduleRanges(day.value, settings.value.schedule))
 const tlBounds = computed<[Ms, Ms]>(() => [dayStart(day.value), dayEnd(day.value)])
 const tlInitial = computed<[Ms, Ms]>(() => timelineWindow(day.value, dayData.value.entries, sched.value.work, isToday.value ? now.value : undefined))
-const tlSel = ref<Selection | null>(null)
-watch(day, () => (tlSel.value = null))
 const reloadAll = reload
-/** A span chosen on the timeline: the quick line gets its time. */
+/** A span chosen on the timeline: its time written into the quick line (what is typed there stays). */
 function onTlSelection(sel: Selection | null, commit: boolean): void {
   tlSel.value = sel
-  if (commit && sel?.end !== undefined) quick.value?.focus(`${formatHM(sel.start)}-${formatHM(sel.end)} `)
+  if (commit && sel?.end !== undefined) quick.value?.setTime(sel.start, sel.end)
 }
 async function tlSave(id: string, patch: Partial<Entry>): Promise<void> {
   const e = dayData.value.entries.find((x) => x.id === id)
@@ -115,7 +113,6 @@ async function tlMerge(ids: string[]): Promise<void> {
       @cut-as="tlCut"
       @delete-entry="tlDelete"
       @merge="tlMerge"
-      @plan-changed="reloadAll"
     />
     <!-- the day as a chain of events -->
     <DayStrip class="wchain tw:[&&]:border-t tw:[&&]:border-t-border" :entries="dayData.entries" :now="now" :countdown="settings.ui.timeline.countdown" />

@@ -7,7 +7,6 @@
   font-variant-numeric: tabular-nums;
   font-family: var(--font-data);
 }
-/* planned — dashed, see-through: a plan, not what happened */
 /* under a fanned-out group of notes: the pointer may cross it without the group folding back */
 /* an invisible end for a linked block / note out of view */
 /* outside the official hours — dimmed, so the work day stands out */

@@ -8,7 +8,7 @@ import { dayKey } from '@shared/tracker/calendarDays'
 import type { CalendarViewport } from './useCalendarViewport'
 
 /** What a calendar day needs of the stored day. */
-export type CalendarDay = Pick<DayData, 'day' | 'entries' | 'notes' | 'plan'>
+export type CalendarDay = Pick<DayData, 'day' | 'entries' | 'notes'>
 
 const CHUNK = 30
 

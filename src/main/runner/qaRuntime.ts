@@ -1,4 +1,4 @@
-import type { Page } from 'playwright-core'
+import type { CDPSession, Page } from 'playwright-core'
 import type { QaCheck } from '../../shared/qaChecks'
 import { fieldMatrixCheck, type MatrixOpts } from './qa/fieldMatrixCheck'
 import { fileChecks } from './qa/fileChecks'
@@ -20,6 +20,7 @@ export function makeQa(page: Page, step: Step, checks: QaCheck[], dir: string, f
   const files = fileChecks(ctx)
   const form = formChecks(ctx)
   const layout = layoutChecks(ctx)
+  let windowSession: CDPSession | undefined
   return {
     /**
      * The window as it was when recorded: its size in CSS px and its pixel density (the browser's zoom changes
@@ -28,7 +29,8 @@ export function makeQa(page: Page, step: Step, checks: QaCheck[], dir: string, f
     window: async (o: { width: number; height: number; dpr?: number }) => {
       await page.setViewportSize({ width: Math.round(o.width), height: Math.round(o.height) })
       if (o.dpr && Math.abs(o.dpr - 1) > 0.001) {
-        const cdp = await page.context().newCDPSession(page)
+        // one session for the run (the override lives as long as it; a new one per call would pile up)
+        const cdp = (windowSession ??= await page.context().newCDPSession(page))
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: Math.round(o.width), height: Math.round(o.height), deviceScaleFactor: o.dpr, mobile: false })
       }
     },

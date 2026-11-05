@@ -1,11 +1,12 @@
+import { ICON_CLASS_PREFIXES, UI } from '../../shared/browser/uiKits'
 import { labelOf, ownText, textOf } from './domText'
-import { rowLabelOf } from './fieldLocators'
+import { dialogOf, rowLabelOf } from './fieldLocators'
 import { testIdHolder, testIdOf } from './testIdLocators'
 
 /** A step in words (written at once, while the page is there: the element's kind, name, place). */
 
-/** Material icons' names (Quasar, Vuetify…) in words — what the button does. */
-export const ICON_WORDS: Record<string, string> = {
+/** Material icons' names (the icon fonts kits use) in words — what the button does. */
+const ICON_WORDS: Record<string, string> = {
   edit: 'Изменить', mode_edit: 'Изменить', edit_note: 'Изменить', create: 'Изменить', content_copy: 'Копировать', copy_all: 'Копировать', file_copy: 'Копировать',
   delete: 'Удалить', delete_outline: 'Удалить', delete_forever: 'Удалить', remove: 'Убрать', remove_circle: 'Убрать', close: 'Закрыть', clear: 'Очистить', cancel: 'Отменить',
   add: 'Добавить', add_circle: 'Добавить', add_circle_outline: 'Добавить', add_box: 'Добавить', playlist_add: 'Добавить', save: 'Сохранить', check: 'Подтвердить', done: 'Готово', done_all: 'Готово',
@@ -17,22 +18,29 @@ export const ICON_WORDS: Record<string, string> = {
   star: 'Избранное', star_border: 'Избранное', lock: 'Заблокировать', lock_open: 'Разблокировать', fullscreen: 'Во весь экран', fullscreen_exit: 'Выйти из полноэкранного', list: 'Список', view_list: 'Список',
   calendar_today: 'Календарь', event: 'Календарь', schedule: 'Время', publish: 'Опубликовать', archive: 'В архив', unarchive: 'Из архива', restore: 'Восстановить', swap_horiz: 'Поменять местами', drag_indicator: 'Перетащить',
 }
-export const ICON_SEL = 'i.q-icon, .material-icons, .material-icons-outlined, .material-symbols-outlined, .v-icon'
+/** An icon's name by its class (`mdi-pencil` — «pencil»), by the kits' icon class prefixes. */
+function iconClassName(i: Element): string {
+  for (const c of i.classList) {
+    const p = ICON_CLASS_PREFIXES.find((x) => c.startsWith(x))
+    if (p) return c.slice(p.length)
+  }
+  return ''
+}
 /** A button's icon: its name and that in words (an unknown icon — its name only). */
-export function iconOf(el: Element): { name: string; word?: string } | undefined {
-  const i = el.matches(ICON_SEL) ? el : el.querySelector(ICON_SEL)
-  const name = (i?.textContent ?? '').trim() || [...(i?.classList ?? [])].find((c) => /^mdi-/.test(c))?.slice(4) || ''
+function iconOf(el: Element): { name: string; word?: string } | undefined {
+  const i = el.matches(UI.icon) ? el : el.querySelector(UI.icon)
+  const name = (i?.textContent ?? '').trim() || (i ? iconClassName(i) : '')
   if (!name || !/^[a-z0-9_-]+$/.test(name)) return undefined
   return { name, word: ICON_WORDS[name.replace(/-/g, '_')] }
 }
-/** A Quasar field's label (its own words — a badge after it is not the label). */
-export function qLabel(el: Element): string {
-  const l = el.closest('.q-field')?.querySelector('.q-field__label')
+/** A kit's field's label (its own words — a badge after it is not the label). */
+function fieldLabelOf(el: Element): string {
+  const l = el.closest(UI.field)?.querySelector(UI.fieldLabel)
   const own = l ? ownText(l) || textOf(l, 60) : ''
   return own || rowLabelOf(el)?.text || ''
 }
 /** The header of a cell's column. */
-export function columnOf(cell: Element): string {
+function columnOf(cell: Element): string {
   const tr = cell.closest('tr')
   const table = cell.closest('table')
   if (!tr || !table) return ''
@@ -42,7 +50,7 @@ export function columnOf(cell: Element): string {
   return th ? textOf(th, 50) : ''
 }
 /** A row by its most telling value (the first cell with words in it). */
-export function rowName(tr: Element): string {
+function rowName(tr: Element): string {
   for (const c of tr.children) {
     const t = textOf(c, 60)
     if (t && t.length >= 2 && !/^\d{1,3}$/.test(t)) return t
@@ -60,20 +68,16 @@ export function placeOf(el: Element, column = true): string {
     const col = cell && column ? columnOf(cell) : ''
     if (col) parts.push(`колонка «${col}»`)
   }
-  const dlg = el.closest('.q-dialog, [role="dialog"], dialog')
-  if (dlg) {
-    const t = dlg.querySelector('.q-card__section .text-h6, .v-card-title, [class*="title"], h1, h2, h3')
-    const tt = t ? textOf(t, 60) : ''
-    if (tt) parts.push(`в окне «${tt}»`)
-  }
+  const dlg = dialogOf(el)?.title
+  if (dlg) parts.push(`в окне «${dlg}»`)
   return parts.length ? ` ${parts.join(', ')}` : ''
 }
 /** The last cell / field clicked — an input without a label of its own that opens after it (an editing popup) is that one. */
-export let lastPlace: { what: string; at: number } | undefined
+let lastPlace: { what: string; at: number } | undefined
 /** The list being picked from (its field's name). */
-export let lastList: string | undefined
+let lastList: string | undefined
 /** What an element clicked is (its kind decides the step's words). */
-export const ELEMENT_KINDS = ['button', 'field', 'list', 'item', 'check', 'tab', 'link', 'cell', 'other'] as const
+const ELEMENT_KINDS =['button', 'field', 'list', 'item', 'check', 'tab', 'link', 'cell', 'other'] as const
 export type ElementKind = (typeof ELEMENT_KINDS)[number]
 /** Kinds whose place in a table is its row only (a button / a link / a flag in a column is not the column's value). */
 const ROW_ONLY_KINDS: ReadonlySet<ElementKind> = new Set(['button', 'link', 'check'])
@@ -83,22 +87,20 @@ const EDIT_OPENER_KINDS: ReadonlySet<ElementKind> = new Set(['button', 'field'])
 export function whatOf(el: Element): { kind: ElementKind; text: string } {
   const aria = (el.getAttribute('aria-label') ?? '').trim()
   const title = (el.getAttribute('title') ?? '').trim()
-  if (el.closest('.q-menu, [role="menu"], [role="listbox"]') && (el.matches('.q-item, [role="option"], [role="menuitem"]') || el.closest('.q-item, [role="option"], [role="menuitem"]'))) {
-    const item = el.closest('.q-item, [role="option"], [role="menuitem"]') ?? el
-    return { kind: 'item', text: textOf(item, 60) || aria || title }
-  }
-  if (el.matches('[role="tab"], .q-tab')) return { kind: 'tab', text: textOf(el, 60) || aria || title }
-  if (el.matches('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"], [role="switch"], .q-checkbox, .q-radio, .q-toggle')) {
-    const host = el.closest('.q-checkbox, .q-radio, .q-toggle, label') ?? el
+  const item = el.closest(UI.menu) && el.closest(UI.option)
+  if (item) return { kind: 'item', text: textOf(item, 60) || aria || title }
+  if (el.matches(UI.tab)) return { kind: 'tab', text: textOf(el, 60) || aria || title }
+  if (el.matches(UI.check)) {
+    const host = el.closest(UI.checkLabel) ?? el
     return { kind: 'check', text: aria || labelOf(el) || textOf(host, 60) || title }
   }
-  if (el.closest('.q-select, [role="combobox"]') || el instanceof HTMLSelectElement) return { kind: 'list', text: qLabel(el) || labelOf(el) || aria || title || (el as HTMLInputElement).placeholder || '' }
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.closest('.q-field')) {
-    const own = qLabel(el) || labelOf(el) || aria || (el as HTMLInputElement).placeholder?.trim() || title
+  if (el.closest(UI.listField) || el instanceof HTMLSelectElement) return { kind: 'list', text: fieldLabelOf(el) || labelOf(el) || aria || title || (el as HTMLInputElement).placeholder || '' }
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.closest(UI.field)) {
+    const own = fieldLabelOf(el) || labelOf(el) || aria || (el as HTMLInputElement).placeholder?.trim() || title
     return { kind: 'field', text: own }
   }
   if (el.matches('a[href], [role="link"]')) return { kind: 'link', text: textOf(el, 60) || aria || title }
-  if (el.matches('button, [role="button"], .q-btn, input[type="button"], input[type="submit"]')) {
+  if (el.matches(UI.button)) {
     const t = aria || textOf(el, 60) || title
     if (t) return { kind: 'button', text: t }
     const ic = iconOf(el)
@@ -146,5 +148,6 @@ export function fieldWords(el: Element): string {
 }
 export const say = (code: string, words: string) => `${code} // шаг: ${words.replace(/\s+/g, ' ').trim()}`
 
-export const CLICKABLE = 'button, a, input, select, textarea, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="combobox"], .q-item, .q-btn, .q-chip, .q-tab, .q-checkbox, .q-radio, .q-toggle, [onclick], [tabindex]'
+/** What a click is on: the nearest element one acts on (a kit's button, option, tab, flag, chip — or a native one). */
+const CLICKABLE = `a, input, select, textarea, label, summary, [role="link"], [onclick], [tabindex], ${UI.button}, ${UI.option}, ${UI.tab}, ${UI.check}, ${UI.listField}, ${UI.chip}`
 export const targetOf = (e: Event) => ((e.target as Element)?.closest?.(CLICKABLE) ?? (e.target as Element)) as Element

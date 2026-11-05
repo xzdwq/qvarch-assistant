@@ -67,9 +67,6 @@ export interface JiraVersion {
   description?: string
 }
 
-/** My own mark for a task (set in the app, not in Jira). */
-export type MyTaskStatus = 'review' | 'done'
-
 /** What the renderers see of the Jira connection. */
 export interface JiraState {
   /** Client ID entered and the secret saved. */
@@ -84,9 +81,6 @@ export interface JiraState {
   /** When the error came. */
   errorAt?: number
   issues: JiraIssue[]
-  /** Tasks picked by hand from the whole list. */
-  starred: string[]
-  myStatus: Record<string, MyTaskStatus>
 }
 
 /** The task a block of time is linked to. */
@@ -110,14 +104,11 @@ export function labelWithoutKey(label: string, key?: string): string {
   return key && label.startsWith(key) ? label.slice(key.length).replace(/^[\s:·—-]+/, '') : label
 }
 
-/** Tasks offered when labelling time: mine (not done) + picked by hand. */
-export function pickableTasks(s: Pick<JiraState, 'issues' | 'starred' | 'myStatus'>): JiraIssue[] {
-  // every task that is not done; mine and starred first, then by due date and the latest change
-  const top = (i: JiraIssue) => (i.mine || s.starred.includes(i.key) ? 0 : 1)
-  return s.issues
-    .filter((i) => i.category !== 'done')
-    .sort((a, b) => top(a) - top(b) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated)
-}
+/** The order of tasks to choose from: mine first, then by due date (none — last), then the latest change. */
+export const pickOrder = (a: JiraIssue, b: JiraIssue): number => Number(!a.mine) - Number(!b.mine) || (a.due ?? '9999').localeCompare(b.due ?? '9999') || b.updated - a.updated
+
+/** Tasks offered when labelling time: every one not done, in the order to choose from. */
+export const pickableTasks = (issues: readonly JiraIssue[]): JiraIssue[] => issues.filter((i) => i.category !== 'done').sort(pickOrder)
 
 /** How the task list is filtered and sorted (several values of one filter — any of them). */
 export const JIRA_SORTS = ['created', 'due', 'priority', 'status', 'updated'] as const

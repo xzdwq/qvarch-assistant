@@ -1,3 +1,4 @@
+import { remoteError } from '../../../shared/remoteError';
 import { buildPlanItems, findAnchorCommit, findContextCommits } from '../core/planner';
 import { earliestDate } from '../core/isoDates';
 import { MergeEventInfo, PlanItem } from '../core/types';
@@ -77,9 +78,9 @@ export class PlanBuilder {
     let dryRunWarning: string | null = null;
     try {
       await this.checks.runFastDryRun();
-    } catch (err: any) {
+    } catch (err) {
       // items stay 'untested'; the user learns it from the warning
-      dryRunWarning = `Проверка на конфликты не выполнена: ${err?.message ?? err}`;
+      dryRunWarning = `Проверка на конфликты не выполнена: ${remoteError(err)}`;
     }
     if (generation !== s.planGeneration || !s.isActive()) return;
 

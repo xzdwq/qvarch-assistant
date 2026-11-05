@@ -42,31 +42,3 @@ export interface BlockRunner {
   /** A row of a loop's «Вместе» table from a pass's result (none — the value's own fields). */
   loopRow?(value: unknown): Record<string, unknown>
 }
-
-/**
- * The latest run of each slot (a block in an env): a run started again before the first answered — the first one's
- * answer is dropped. Runs whose answer is awaited by id (requests, queries) go through it.
- */
-export class LatestRuns {
-  private readonly bySlot = new Map<string, string>()
-  private lastStamp = 0
-  /** A new run of the slot: its id (the slot and the time — never the same twice, two runs in one millisecond too). */
-  begin(slot: string): string {
-    this.lastStamp = Math.max(Date.now(), this.lastStamp + 1)
-    const id = `${slot}#${this.lastStamp}`
-    this.bySlot.set(slot, id)
-    return id
-  }
-  /** The run is still the slot's latest one. */
-  isLatest(slot: string, id: string): boolean {
-    return this.bySlot.get(slot) === id
-  }
-  /** The slot's run going on (its id), if any. */
-  current(slot: string): string | undefined {
-    return this.bySlot.get(slot)
-  }
-  /** The run ended (a newer one, if any, stays). */
-  end(slot: string, id: string): void {
-    if (this.bySlot.get(slot) === id) this.bySlot.delete(slot)
-  }
-}

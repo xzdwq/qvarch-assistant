@@ -8,7 +8,7 @@ export interface ReindexTiming {
   quietMs: number
   maxWaitMs: number
 }
-export const REINDEX_TIMING: ReindexTiming = { quietMs: 3000, maxWaitMs: 60_000 }
+const REINDEX_TIMING: ReindexTiming = { quietMs: 3000, maxWaitMs: 60_000 }
 
 export class ReindexQueue {
   /** A marked note: its first unindexed save and its last one. */
@@ -32,9 +32,6 @@ export class ReindexQueue {
       this.marked.delete(p)
       this.marked.set(to + p.slice(from.length), m)
     }
-  }
-  has(path: string): boolean {
-    return this.marked.has(path)
   }
   get size(): number {
     return this.marked.size

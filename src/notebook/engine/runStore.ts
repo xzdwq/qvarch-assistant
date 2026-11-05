@@ -34,9 +34,22 @@ export function loadedRuns(path: string): Promise<NoteRun> {
 }
 /** A note's runs if they are in memory already (nothing made or loaded). */
 export const loadedNoteRun = (path: string): NoteRun | undefined => notes.get(path)
+
+/**
+ * The path a run's results go to: a note's runs object keeps its identity when the note is renamed (moveRuns), so a
+ * run going on follows it; a deleted note's object is no one's — its run writes to a path never kept on disk.
+ */
+const GONE = '\u0000gone:'
+export function pathOfRun(n: NoteRun, startPath: string): string {
+  const raw = toRaw(n)
+  for (const [p, x] of notes) if (toRaw(x) === raw) return p
+  return GONE + startPath
+}
+const isGone = (path: string) => path.startsWith(GONE)
 /** The runs file read into a note's runs: what was going on when the app closed failed; what a run already wrote wins. */
 async function loadSavedRuns(path: string, into: NoteRun): Promise<void> {
   try {
+    if (isGone(path)) return
     const json = await runApi().runLoad(path)
     if (!json) return
     const d = JSON.parse(json) as Partial<NoteRun>
@@ -67,15 +80,18 @@ function markInterrupted(l: LoopRun): void {
  * The note's context as plain values (what templates, code and queries see). Read through Vue first: a computed
  * that asks for the values follows every value of the note (a block run again changes its time).
  */
-export function noteValues(path: string): Values {
-  const ctx = noteRun(path).ctx
+export const noteValues = (path: string): Values => valuesOfRun(noteRun(path))
+export function valuesOfRun(n: NoteRun): Values {
+  const ctx = n.ctx
   for (const k in ctx) void ctx[k].at
   // (the raw values: Vue's proxies cannot be sent to another process)
   return Object.fromEntries(Object.entries(toRaw(ctx)).map(([k, v]) => [k, toRaw(v).value]))
 }
 /** A value put into the note's context (a copy of it), the runs saved soon. */
-export function publishToNote(path: string, name: string, value: unknown, from: ValueSource, block: string): void {
-  noteRun(path).ctx[name] = { value: jsonClone(value), at: Date.now(), from, block }
+export const publishToNote = (path: string, name: string, value: unknown, from: ValueSource, block: string): void => publishIntoRun(noteRun(path), path, name, value, from, block)
+/** The same into a note's runs object (`path` — where they are kept now). */
+export function publishIntoRun(n: NoteRun, path: string, name: string, value: unknown, from: ValueSource, block: string): void {
+  n.ctx[name] = { value: jsonClone(value), at: Date.now(), from, block }
   saveRunsSoon(path)
 }
 /**
@@ -154,7 +170,9 @@ export async function flushRuns(): Promise<void> {
 function writeRuns(path: string): Promise<void> {
   saveTimers.delete(path)
   unsavedSince.delete(path)
-  const n = noteRun(path)
+  // (never made here: a note deleted meanwhile is not written back)
+  const n = notes.get(path)
+  if (!n || isGone(path)) return Promise.resolve()
   let json: string
   try {
     json = JSON.stringify({ ctx: n.ctx, runs: n.runs, loops: n.loops, sync: n.sync })

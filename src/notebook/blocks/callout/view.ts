@@ -1,5 +1,5 @@
-import type { BlockView } from '../../ui/blockView'
+import { blockView } from '../../ui/blockView'
 import BlockCallout from './BlockCallout.vue'
 
 /** A coloured callout with its text. */
-export const calloutView: BlockView = { component: BlockCallout, props: ['src', 'autofocus', 'onChange', 'onExit'] }
+export const calloutView = blockView(BlockCallout, ['src', 'autofocus', 'onChange', 'onExit'])

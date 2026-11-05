@@ -17,8 +17,11 @@ export function registerReleaseIpc(app: AppContext): void {
     w.on('message', (m: { type: string; msg?: { command: string } & Record<string, unknown> }) => {
       if (m?.type === 'msg' && m.msg) emit(contentsOf(app.windows.main), 'onRelease', m.msg)
     })
-    w.on('exit', () => {
-      if (releaseWorker === w) releaseWorker = undefined
+    w.on('exit', (code) => {
+      if (releaseWorker !== w) return
+      releaseWorker = undefined
+      // fell (git, memory): the section is told — it must not wait for the timeline for ever
+      if (code !== 0) emit(contentsOf(app.windows.main), 'onRelease', { command: 'error', message: `Процесс сборки релиза завершился с ошибкой (код ${code}) — откройте проект снова` })
     })
     w.postMessage({ type: 'init', dataDir: app.store.root })
     releaseWorker = w

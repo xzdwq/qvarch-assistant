@@ -41,7 +41,7 @@ const statusBar = ref<HTMLElement>()
       <button class="tw:[.zoom_&]:justify-center tw:[.zoom_&]:h-20 tw:[.zoom_&]:min-w-20 tw:flex tw:flex-col tw:items-center tw:gap-4 tw:my-0 tw:mx-2 tw:py-7 tw:px-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-accent-fg tw:text-[10.5px] tw:cursor-pointer tw:hover:bg-accent/18 tw:hover:text-text-hi" title="Открыть рядом (в другой колонке)" @click="showPair(pi, true)"><Icon name="columns" :size="12" /></button>
     </div>
     <div v-if="recInto?.pane === p.id && !recInto.inline" class="recbar tw:group-[.paired]/pbody:[&:not(.pairsw)]:mr-26 tw:flex-none tw:flex tw:items-center tw:gap-10 tw:mt-8 tw:mr-auto tw:mb-0 tw:ml-auto tw:py-6 tw:px-10 tw:rounded-[4px] tw:border tw:border-down/40 tw:bg-down/8 tw:text-[12.5px]">
-      <span class="rdot tw:w-9 tw:h-9 tw:rounded-[50%] tw:bg-down tw:animate-[NotebookView-blink_1s_infinite]"></span>
+      <span class="rdot tw:w-9 tw:h-9 tw:rounded-[50%] tw:bg-down tw:animate-[Shared-blink-30_1s_infinite]"></span>
       <span class="meter tw:w-90 tw:h-5 tw:rounded-r2 tw:bg-white/10 tw:overflow-hidden"><span class="tw:block tw:h-full tw:bg-down-fg" :style="{ width: `${recorder.level.value * 100}%` }"></span></span>
       <b class="tw:tabular-nums tw:font-data">{{ fmtSec(recorder.sec.value) }}</b>
       <span class="muted">запись в заметку…</span>

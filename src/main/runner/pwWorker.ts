@@ -1,7 +1,6 @@
 import { gen } from '../../shared/gen'
 import vm from 'node:vm'
-import { inspect } from 'node:util'
-import { stripTypeScriptTypes } from 'node:module'
+import { isName, plain, sandboxConsole, wrapBody, type SandboxLog } from './sandbox'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
@@ -15,6 +14,7 @@ import { fingerprint, matrixScenarioSig } from '../../shared/qaMatrixQuery'
 import { Emitter } from './emitter'
 import type { QaCheck } from '../../shared/qaChecks'
 import type { PwBrowser } from '../../notebook/domain/blockInfo'
+import { checkFailed, pageClosed, PW_LAUNCH } from './pwBrowsers'
 
 /**
  * A notebook's Playwright block, run in a process of its own (one per run): the installed Edge / Chrome is
@@ -62,7 +62,7 @@ function matrixRunOf(job: Job): MatrixOpts {
   const memo = Array.isArray(job.memo) ? (job.memo as MatrixOutcome[]) : undefined
   return { sig: matrixScenarioSig(job.code), ...(keys ? { keys } : {}), ...(memo ? { memo } : {}), ...(job.recheck?.length ? { recheck: job.recheck } : {}) }
 }
-type Log = { level: 'log' | 'info' | 'warn' | 'error'; text: string }
+type Log = SandboxLog
 export interface PwStep {
   name: string
   depth: number
@@ -73,24 +73,7 @@ export interface PwStep {
 }
 
 const port = process.parentPort
-const show = (a: unknown) => (typeof a === 'string' ? a : inspect(a, { depth: 5, breakLength: 110, maxArrayLength: 200, maxStringLength: 4000 }))
-function plain(v: unknown): unknown {
-  try {
-    return structuredClone(v)
-  } catch {
-    try {
-      return JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : typeof x === 'function' ? `[function ${x.name || ''}]` : x)))
-    } catch {
-      return show(v)
-    }
-  }
-}
-const isName = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s)
 const ansi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '')
-function body(code: string, ts: boolean): string {
-  const src = `async function __block() {\n${code}\n}`
-  return ts ? stripTypeScriptTypes(src, { mode: 'transform' } as unknown as { mode: 'strip' }) : src
-}
 
 let browser: Browser | undefined
 let context: BrowserContext | undefined
@@ -127,10 +110,7 @@ async function run(job: Job): Promise<void> {
     lastSent = performance.now()
     port.postMessage({ type: 'progress', steps })
   }
-  const log = (level: Log['level']) => (...a: unknown[]) => {
-    if (logs.length < 2000) logs.push({ level, text: a.map(show).join(' ').slice(0, 20000) })
-  }
-  const cons = { log: log('log'), info: log('info'), debug: log('log'), warn: log('warn'), error: log('error'), table: (d: unknown) => logs.push({ level: 'log', text: show(d) }), dir: log('log') }
+  const cons = sandboxConsole(logs)
   /** A named step: shown while it goes, in the trace (a group) and in Allure. */
   async function step<T>(name: string, fn: () => Promise<T> | T): Promise<T> {
     const s: PwStep = { name: String(name).slice(0, 300), depth, start: Date.now(), state: 'run' }
@@ -164,7 +144,7 @@ async function run(job: Job): Promise<void> {
   try {
     mkdirSync(job.dir, { recursive: true })
     const own = job.own
-    await step(own ? own.label : `Запуск ${job.browser === 'msedge' ? 'Edge' : job.browser === 'chrome' ? 'Chrome' : 'Chromium'}${job.headed ? ' (с окном)' : ''}`, async () => {
+    await step(own ? own.label : `Запуск ${PW_LAUNCH[job.browser].label}${job.headed ? ' (с окном)' : ''}`, async () => {
       const got = own ? await lentPage(own.url) : await installed(job, logs)
       browser = got.browser
       context = got.context
@@ -210,19 +190,19 @@ async function run(job: Job): Promise<void> {
     })
     const libs = job.libs.map((l) => l.code).join('\n')
     const libLines = libs ? libs.split('\n').length : 0
-    const main = body(libs ? `${libs}\n${job.code}` : job.code, job.ts || job.libs.some((l) => l.ts))
+    const main = wrapBody(libs ? `${libs}\n${job.code}` : job.code, job.ts || job.libs.some((l) => l.ts), '__block')
     value = await vm.runInContext(`${main}\n__block()`, sandbox, { filename: 'блок', lineOffset: -1 - libLines })
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err)
     // the app's page gone from under the run (its note closed, its tab closed)
-    const lost = !!job.own && /has been closed|Target closed|Вкладка закрыта/i.test(raw)
+    const lost = !!job.own && pageClosed(err, raw)
     const msg = stopped ? 'Остановлено' : lost ? `Страница, в которой шёл сценарий, закрыта (заметка или вкладка закрыты): ${ansi(raw).split('\n')[0]}` : ansi(err instanceof Error && err.name !== 'Error' ? `${err.name}: ${raw}` : raw)
     const at = err instanceof Error ? /блок:(\d+)/.exec(err.stack ?? '')?.[1] : undefined
     // (a ready check failing says what and where itself — its line in the runtime is not the scenario's)
     error = at && !stopped && !/^Проверка «/.test(msg) ? `${msg}\n(строка ${at})` : msg
     stack = err instanceof Error ? ansi(err.stack ?? '') : undefined
     // an expect that failed — the test failed; anything else — it broke
-    failed = !stopped && /expect\(|toHave|toBe|toEqual|toContain|toMatch|^Проверка «/.test(raw) ? 'failed' : 'broken'
+    failed = !stopped && checkFailed(err, raw) ? 'failed' : 'broken'
     for (const s of steps) if (s.state === 'run') ((s.state = 'error'), (s.ms = Date.now() - s.start))
   }
 
@@ -268,13 +248,14 @@ async function run(job: Job): Promise<void> {
 
 /** An installed Edge / Chrome (or the downloaded Chromium) started, a context of its own — with the Браузер's sign-ins if asked. */
 async function installed(job: Job, logs: Log[]): Promise<{ browser: Browser; context: BrowserContext; page?: Page }> {
+  const how = PW_LAUNCH[job.browser]
   let b: Browser
   try {
-    b = await chromium.launch({ channel: job.browser === 'chromium' ? undefined : job.browser, headless: !job.headed })
+    b = await chromium.launch({ channel: how.channel, headless: !job.headed })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    if (/executable doesn't exist|is not found|not installed|Chromium distribution/i.test(msg))
-      throw new Error(job.browser === 'msedge' ? 'Не найден Microsoft Edge — укажите browser=chrome в строке блока' : job.browser === 'chrome' ? 'Не найден Google Chrome — уберите browser=chrome (будет Edge)' : 'Chromium не скачан — используйте Edge или Chrome')
+    // (Playwright says «not installed» only in its message: no error class of its own)
+    if (/executable doesn't exist|is not found|not installed|Chromium distribution/i.test(msg)) throw new Error(how.missing)
     throw err
   }
   // (known at once: a stop meanwhile closes it)

@@ -7,12 +7,11 @@ import { useIsland } from '../islandState'
 import { LANE_GAP, LANE_H, TRACK_W } from '../useIslandTrack'
 
 /**
- * The day's track: schedule bands, the plan, blocks on lanes (drag to move / resize), the selection band, now,
+ * The day's track: schedule bands, blocks on lanes (drag to move / resize), the selection band, now,
  * note pins (fanning out), hidden-side counters, the time divider. Gestures: useTrackPointer.
  */
-const { els, island, day, track, pointer, pick, menu } = useIsland()
-const { ui } = island
-const { data, now, schedule, noteTitle, noteIcon } = day
+const { els, day, track, pointer, pick, menu } = useIsland()
+const { now, schedule, noteTitle, noteIcon } = day
 const { vp, from, to, box, pct, px, resized, segs, shownLanes, rowStyle, rowInnerStyle, laneStyle } = track
 const { hidden, revealSide, notePins, fan, pinPlaces, fanZone, hoverT } = track
 const { onTrackDown, onTrackMove, onTrackUp, onPinDown, onEdgeDown, onResizeDown } = pointer
@@ -41,16 +40,6 @@ const { onTrackContext } = menu
     <div class="row-scroll tw:relative tw:overflow-y-auto tw:overflow-x-hidden tw:[transition:height_0.25s_cubic-bezier(0.32,0.72,0,1)] tw:[&::-webkit-scrollbar]:w-4" :style="rowStyle">
     <div :ref="els.rowMain" class="row-main tw:relative" :style="rowInnerStyle">
       <div v-for="l in shownLanes" :key="`lane${l}`" class="lane-bg tw:left-0 tw:right-0 tw:rounded-r2 tw:bg-white/2.5 tw:pointer-events-none tw:absolute tw:top-0 tw:bottom-0" :style="{ top: `${(l - 1) * (LANE_H + LANE_GAP)}px`, height: `${LANE_H}px` }"></div>
-      <!-- the day plan, dashed under the blocks (settings → interface) -->
-      <template class="tw:absolute tw:top-0 tw:bottom-0" v-if="ui.island.plan">
-        <div
-          v-for="p in data.plan ?? []"
-          :key="`pl${p.id}`"
-          class="planseg tw:border tw:border-dashed tw:border-(--c) tw:rounded-r2 tw:bg-[color-mix(in_srgb,var(--c)_12%,transparent)] tw:pointer-events-none tw:absolute tw:top-0 tw:bottom-0"
-          :style="{ ...box(p.start, p.end), top: '0px', height: `${LANE_H}px`, bottom: 'auto', '--c': kindColor(p.kind) }"
-          :title="`План: ${p.task ? p.task.key + ' ' : ''}${p.label} · ${formatHM(p.start)}–${formatHM(p.end)}`"
-        ></div>
-      </template>
       <div
         v-for="(s, i) in segs"
         :key="`s${i}`"

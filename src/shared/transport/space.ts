@@ -72,8 +72,19 @@ export function freeDocPath(path: string, taken: (p: string) => boolean): string
 /** The file of a shared folder that holds its space's id (a dot file: the notebook's tree does not list it). */
 export const SPACE_LINK_FILE = '.qa-space'
 
+/** The media folders of a notebook and the files each holds: extension → MIME type. */
+export const MEDIA_TYPES = {
+  images: { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' },
+  audio: { webm: 'audio/webm' },
+} as const satisfies Record<string, Record<string, string>>
+const MEDIA_EXT: Record<string, string> = Object.assign({}, ...Object.values(MEDIA_TYPES))
 /** A note's or a recording's media file as notes embed it (`.images/…`, `.audio/…`). */
-export const MEDIA_REL = /^\.(images\/[\w.-]+\.(?:png|jpe?g|gif|webp|bmp)|audio\/[\w.-]+\.webm)$/i
+export const MEDIA_REL = new RegExp(`^\\.(${Object.entries(MEDIA_TYPES).map(([dir, exts]) => `${dir}\\/[\\w.-]+\\.(?:${Object.keys(exts).join('|')})`).join('|')})$`, 'i')
+/** A file's MIME type by its extension (not a media one — none). */
+export function mediaMimeOf(rel: string): string | undefined {
+  const ext = rel.split('.').pop()!.toLowerCase()
+  return Object.hasOwn(MEDIA_EXT, ext) ? MEDIA_EXT[ext] : undefined
+}
 /**
  * What a sync of a space's files did: the files fetched to this computer; the ones the server has not yet (the one
  * who added them has not sent them — they come when the server is told: an event); the ones that failed (why — tried

@@ -53,7 +53,7 @@ const { kind, label, saving, cutTasks, cutParsed, detectedCalls, pickKind, useCa
       />
       <DictateButton class="tw:[.seg2_&]:not-[&.on]:border-0 tw:[.seg2_&]:rounded-none tw:[.seg2_&]:not-[&.compact]:py-3 tw:[.seg2_&]:not-[&.compact]:px-8 tw:[.seg2_&]:text-[11px] tw:[.seg2_&]:not-[&.on]:bg-transparent tw:[.seg2_&]:[&.on]:bg-accent tw:[&&]:[.seg2_&]:[&.on]:text-on-accent" @recorded="(r) => cut(r)" />
       <TaskPicker v-model="cutTasks" compact />
-      <OffsetField compact class="dialoff tw:flex-none tw:[&&&]:h-44 tw:[&&]:rounded-[4px] tw:[.abar_&]:block" :max="240" :model-value="dial" @update:model-value="onDial" @commit="onDial(dial)" />
+      <OffsetField compact class="dialoff tw:flex-none tw:[&&&]:h-36 tw:[&&]:rounded-[4px] tw:[.abar_&]:block" :max="240" :model-value="dial" @update:model-value="onDial" @commit="onDial(dial)" />
     </div>
 
     <div class="actions tw:flex tw:gap-8 tw:items-stretch">

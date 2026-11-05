@@ -16,7 +16,7 @@ const isChartType = (s: string): s is ChartType => CHART_TYPES.some((t) => t.id 
 /** A chart type's entry. */
 export const chartTypeOf = (type: ChartType) => CHART_TYPES.find((t) => t.id === type) ?? CHART_TYPES[0]
 /** The series' colours, in turn (styles/colors/notebook.css). */
-export const SERIES_COLORS = Array.from({ length: 8 }, (_, i) => `var(--chart-series-${i + 1})`)
+const SERIES_COLORS = Array.from({ length: 8 }, (_, i) => `var(--chart-series-${i + 1})`)
 export const seriesColor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length]
 export interface ChartModel {
   type: ChartType

@@ -21,7 +21,6 @@ export interface PlanGuides {
   work: string[]
   check: string[]
 }
-export const NO_GUIDES: PlanGuides = { work: [], check: [] }
 
 export const GUIDE_TITLE_MAX = 80
 export const GUIDE_SUMMARY_MAX = 160

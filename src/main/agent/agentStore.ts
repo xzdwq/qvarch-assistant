@@ -1,5 +1,5 @@
 import { safeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readJsonFile, writeJsonAtomic } from '../fsAtomic'
 import { join } from 'node:path'
 import { cleanProfile, type AgentProfile, type AgentProfileView } from '../../shared/agent/profiles'
 
@@ -70,17 +70,11 @@ export class AgentStore {
   private write(list: AgentProfile[]): void {
     this.writeJson(this.file, { v: 1, agents: list })
   }
+  // (a broken file is set aside: the profiles in it are not overwritten by the next save)
   private readJson(file: string): unknown {
-    if (!existsSync(file)) return undefined
-    try {
-      return JSON.parse(readFileSync(file, 'utf8'))
-    } catch {
-      return undefined
-    }
+    return readJsonFile<unknown>(file)
   }
   private writeJson(file: string, v: unknown): void {
-    const tmp = `${file}.tmp`
-    writeFileSync(tmp, JSON.stringify(v, null, 2))
-    renameSync(tmp, file)
+    writeJsonAtomic(file, v, 2)
   }
 }

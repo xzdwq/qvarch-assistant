@@ -1,46 +1,54 @@
-import { load as yamlLoad } from 'js-yaml'
 import type { SqlMode } from '../../shared/sql'
 import type { RunTrigger } from '../../shared/cronJobs'
 import type { RunnableKind } from '../blocks/specs'
-import { TRIGGER_NAME, type BlockInfo, type ValueSource } from '../domain/blockInfo'
+import { TRIGGER_NAME, type BlockInfo } from '../domain/blockInfo'
 import { findLoops } from '../domain/loop'
-import { blockRunKey, fencedBlocksOf } from '../domain/noteBlocks'
-import { tableVars } from '../domain/tableVars'
-import { tableValue } from '../blocks/table/model'
-import { interpolate } from '../domain/values'
-import { errorText } from './runApi'
+import { blockRunKey } from '../domain/noteBlocks'
 import { envAtLine, NoteEnv, type RunEnv } from './runEnv'
 import { runItem, stopItem } from './runItem'
 import { itemError, itemIsSoft, itemName, runItemsIn, type BlockItem, type RunItem } from './runItems'
 import { stopLoopRun } from './runLoop'
-import { noteRun, noteValues, publishToNote, saveRunsSoon } from './runStore'
+import { noteRun } from './runStore'
+import { syncNoteData } from './unrunValues'
 
 /**
  * A note's runs as the app asks for them: «Выполнить всё», one block or loop run where it stands (in the pass shown
- * when it is in a loop), stopped; the data blocks, tables and templates kept published.
+ * when it is in a loop), stopped.
  */
 
 /** «Выполнить всё» going on: the note → the item being run and its env (what «Стоп» stops). */
 const runAllCurrent = new Map<string, { item: RunItem; env: RunEnv }>()
-/** The notes whose «Выполнить всё» was asked to stop. */
-const stopAllAsked = new Set<string>()
+/** A note's «Выполнить всё» runs, one after another (by hand, by the AI, by a schedule at once — never mixed). */
+const runAllQueue = new Map<string, Promise<void>>()
+/** Each note's «Стоп» count: a run stops when it changed since the run was asked for (the queued ones too). */
+const stopEpoch = new Map<string, number>()
+const epochOf = (path: string) => stopEpoch.get(path) ?? 0
 
 /**
  * Everything from the top, in order (a loop — with all its passes); the first failing one (not soft) stops it. What
  * started it is the note's `trigger` value (by hand, by the AI, by a schedule) — its blocks and templates see it.
+ * Asked while another run of the note goes — it runs after that one.
  */
-export async function runAll(path: string, text: string, trigger: RunTrigger = { by: 'hand', at: Date.now() }): Promise<void> {
+export function runAll(path: string, text: string, trigger: RunTrigger = { by: 'hand', at: Date.now() }): Promise<void> {
+  const epoch = epochOf(path)
+  const run = (runAllQueue.get(path) ?? Promise.resolve()).then(() => runAllNow(path, text, trigger, epoch))
+  const settled = run.catch(() => undefined)
+  runAllQueue.set(path, settled)
+  void settled.then(() => runAllQueue.get(path) === settled && runAllQueue.delete(path))
+  return run
+}
+async function runAllNow(path: string, text: string, trigger: RunTrigger, epoch: number): Promise<void> {
   const n = noteRun(path)
+  const stopped = () => epochOf(path) !== epoch
+  if (stopped()) return
   syncNoteData(path, text)
   const list = runItemsIn(text)
   const env = new NoteEnv(path)
   env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
-  stopAllAsked.delete(path)
   n.all = { at: '', done: 0, total: list.length }
   try {
     for (const [i, x] of list.entries()) {
-      if (stopAllAsked.has(path)) {
-        stopAllAsked.delete(path)
+      if (stopped()) {
         n.all = { ...n.all, error: 'Остановлено' }
         return
       }
@@ -58,9 +66,9 @@ export async function runAll(path: string, text: string, trigger: RunTrigger = {
     runAllCurrent.delete(path)
   }
 }
-/** «Выполнить всё» stopped: no next item, the current one stopped. */
+/** «Выполнить всё» stopped: no next item, the current one stopped, the queued ones not started. */
 export function stopRunAll(path: string): void {
-  stopAllAsked.add(path)
+  stopEpoch.set(path, epochOf(path) + 1)
   const cur = runAllCurrent.get(path)
   if (cur) stopItem(cur.item, cur.env)
 }
@@ -116,58 +124,4 @@ export function runItemWhereItStands(path: string, noteText: string, item: RunIt
   const env = envAtLine(path, item.line, noteText)
   env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
   return runItem(item, env, noteText, recheck?.length ? { recheck } : {})
-}
-
-// ---------- data and templates: published without a run ----------
-/** A data block's value (JSON / YAML) put into the context — as soon as it parses; the parse error, if any. */
-export function publishData(path: string, name: string, lang: string, body: string): string | undefined {
-  try {
-    const v = lang === 'yaml' ? yamlLoad(body) : JSON.parse(body || 'null')
-    const cur = noteRun(path).ctx[name]
-    if (!cur || JSON.stringify(cur.value) !== JSON.stringify(v)) publishToNote(path, name, v, 'data', name)
-    return undefined
-  } catch (e) {
-    return errorText(e).split('\n')[0]
-  }
-}
-/** A value put into the note's context from outside a run (the browser component's requests). */
-export function publishValue(path: string, name: string, value: unknown, from: ValueSource, block: string): void {
-  publishToNote(path, name, value, from, block)
-}
-/** The note's data published (the blocks not on screen too): its data blocks, its tables. */
-export function syncNoteData(path: string, text: string): void {
-  for (const b of fencedBlocksOf(text)) if (b.kind === 'data' && b.info.name) publishData(path, b.info.name, b.info.lang, b.body)
-  syncTables(path, text)
-}
-/**
- * Every table published under its variable (its rows as objects) when its content changed; a variable a table gave
- * that no table gives now (renamed, deleted) taken away — the values of other blocks are never touched.
- */
-function syncTables(path: string, text: string): void {
-  const ctx = noteRun(path).ctx
-  const live = new Set<string>()
-  for (const v of tableVars(text)) {
-    if (v.clash) continue
-    live.add(v.name)
-    const value = tableValue(v.table)
-    const cur = ctx[v.name]
-    if (!cur || cur.from !== 'table' || JSON.stringify(cur.value) !== JSON.stringify(value)) publishToNote(path, v.name, value, 'table', v.name)
-  }
-  const gone = Object.keys(ctx).filter((k) => ctx[k].from === 'table' && !live.has(k))
-  for (const k of gone) delete ctx[k]
-  if (gone.length) saveRunsSoon(path)
-}
-/**
- * The note's templates (not in a loop) published under their names whenever they can be filled — the ones not on
- * screen too: run after the text changes and after the note's values do (a template over a template settles in a
- * round or two — a value published only when it changed).
- */
-export function syncTemplates(path: string, text: string): void {
-  const ctx = noteValues(path)
-  for (const x of runItemsIn(text)) {
-    if (x.kind !== 'tpl' || !x.info.name) continue
-    const r = interpolate(x.body, ctx)
-    const cur = noteRun(path).ctx[x.info.name]
-    if (!r.missing.length && cur?.value !== r.text) publishToNote(path, x.info.name, r.text, 'tpl', x.key)
-  }
 }

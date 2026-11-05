@@ -87,6 +87,19 @@ export interface TermConfig {
   profile: boolean
 }
 
+/** A change of the settings as a window sent it: only the known fields, of the right shape (the rest dropped). */
+export function cleanTermConfigPatch(v: unknown): Partial<TermConfig> {
+  if (!v || typeof v !== 'object') return {}
+  const c = v as Record<string, unknown>
+  const out: Partial<TermConfig> = {}
+  if (Array.isArray(c.presets)) out.presets = c.presets.filter((x): x is TermPreset => !!x && typeof x === 'object')
+  if (Array.isArray(c.vars)) out.vars = c.vars.filter((x): x is TermVar => !!x && typeof x === 'object')
+  if (Array.isArray(c.watches)) out.watches = c.watches.filter((x): x is TermWatch => !!x && typeof x === 'object')
+  if (typeof c.lastCwd === 'string') out.lastCwd = c.lastCwd
+  if (typeof c.profile === 'boolean') out.profile = c.profile
+  return out
+}
+
 export const presetId = () => Math.random().toString(36).slice(2, 10)
 
 /** The colours offered for a reaction (CSS variables, in integrations.css); a new one takes them in turn. */

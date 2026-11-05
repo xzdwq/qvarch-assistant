@@ -6,7 +6,8 @@ import { ATTACH_MAX, attachBytes, authorName, CHAT_TEXT_MAX, mentionable, mentio
 import { docTurnOf } from '@shared/agent/docAi'
 import { addDocTurn } from '@nb/workspace/docAiStore'
 import { useTransport } from './transport'
-import { agentIdOfProfile, loadAgents, profileOfAgentId, tidyAgentsIn } from './agents'
+import { isRecord, readStored, writeStored } from './storedRef'
+import { loadAgents, profileOfAgentId, tidyAgentsIn } from './agents'
 import { turnRequestFor } from './agentContext'
 import { takeTurnWrites } from './agentWrites'
 import { parseDocLink, withPlaces, type NoteLinkRef } from '@shared/notebook/links'
@@ -64,31 +65,29 @@ function consider(m: ChatMessage): void {
 // ---------- the calls missed while the app was closed or offline ----------
 /** Each room's last message the agents looked at (kept over a restart). */
 const HANDLED_KEY = 'qa.agents.handled'
-const handled: Record<string, number> = readHandled()
+const handled = readStored(HANDLED_KEY, {} as Record<string, number>, (v): v is Record<string, number> => isRecord(v))
 /** A call older than this is not answered late (the talk went on without it). */
 const LATE_MAX = 24 * 3600_000
 function handle(room: string, seq: number): void {
   if ((handled[room] ?? 0) >= seq) return
   handled[room] = seq
-  try {
-    localStorage.setItem(HANDLED_KEY, JSON.stringify(handled))
-  } catch {
-    // (kept for this run)
-  }
+  writeStored(HANDLED_KEY, handled)
 }
-function readHandled(): Record<string, number> {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(HANDLED_KEY) ?? '{}')
-    return v && typeof v === 'object' ? (v as Record<string, number>) : {}
-  } catch {
-    return {}
-  }
+/** The rooms that are no more (left, deleted) forgotten; an empty list (not loaded yet) forgets nothing. */
+function forgetGoneRooms(rooms: readonly ChatRoom[]): void {
+  if (!rooms.length) return
+  const ids = new Set(rooms.map((r) => r.id))
+  const gone = Object.keys(handled).filter((id) => !ids.has(id))
+  if (!gone.length) return
+  for (const id of gone) delete handled[id]
+  writeStored(HANDLED_KEY, handled)
 }
 /**
  * The rooms with one's agents caught up: calls that came while the app was away — each agent answers once per room,
  * the latest call (with all the talk since in its context). A room met first — from now on only.
  */
 async function catchUp(rooms: readonly ChatRoom[]): Promise<void> {
+  forgetGoneRooms(rooms)
   for (const r of rooms) {
     if (isHeld(r.id) || !myAgentsIn(r).length) continue
     const from = handled[r.id]
@@ -200,8 +199,7 @@ export function stopAgentIn(room: string): void {
   if (w) window.qa.agentStop(w.turn)
 }
 /** Whether one of this device's agents is in a room. */
-export const myAgentsIn = (room: ChatRoom) => (room.agents ?? []).filter((a) => a.owner === chatMe.value)
-export { agentIdOfProfile }
+const myAgentsIn = (room: ChatRoom) => (room.agents ?? []).filter((a) => a.owner === chatMe.value)
 
 let started = false
 /** The agents listen to the chats (once, in the main window). */

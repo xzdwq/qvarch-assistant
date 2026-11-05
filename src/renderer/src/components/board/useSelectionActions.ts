@@ -76,6 +76,6 @@ export function useSelectionActions(b: BoardCtx, images: BoardImages) {
     b.frames.schedule()
   }
 
-  return { deleteSelected, copySelected, pasteClip, pasteAny, duplicate, nudge, selectAll, clearSelection }
+  return { deleteSelected, copySelected, pasteAny, duplicate, nudge, selectAll, clearSelection }
 }
 export type SelectionActions = ReturnType<typeof useSelectionActions>

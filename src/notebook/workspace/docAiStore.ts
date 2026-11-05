@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { memoryRewrite, NO_DOC_AI, withTurn, type DocAi, type DocMemory, type DocTurn } from '@shared/agent/docAi'
-import { doc } from './noteDocs'
+import { loadedDoc } from './noteDocs'
 import { readonlyPath, sharedDocOfPath, sharedTextOf, sharedTick } from './sharedDocs'
 
 /**
@@ -27,9 +27,7 @@ export function docAiNow(path: string): DocAi {
 
 /** The note loaded, and — a shared one — its document in step (an agent may work in a note not open). */
 async function ready(path: string): Promise<'shared' | 'personal'> {
-  const d = doc(path)
-  for (let i = 0; i < 200 && !d.loaded; i++) await new Promise((r) => setTimeout(r, 25))
-  if (d.error) throw new Error(`Заметка «${path}»: ${d.error}`)
+  await loadedDoc(path)
   if (!sharedDocOfPath(path)) return 'personal'
   for (let i = 0; i < 200 && !sharedTextOf(path); i++) await new Promise((r) => setTimeout(r, 25))
   if (!sharedTextOf(path)) throw new Error('Общая заметка ещё не связана с сервером — попробуйте позже')

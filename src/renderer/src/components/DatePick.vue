@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { shiftDay } from '@shared/timeline'
+import { dayKey, shiftDay } from '@shared/timeline'
 import { todayKey } from '../lib/today'
 import Icon from './Icon.vue'
 import Popover from './Popover.vue'
@@ -8,25 +8,13 @@ import Popover from './Popover.vue'
 /**
  * The one date field of the app: a click opens the month calendar, a second click closes it; the wheel over
  * the field moves the day (over the calendar — the month). Today is lit; any other day gets a button back to
- * today. `clearable` — the date may be empty (a "×" and «Без даты»).
+ * today.
  */
-const props = withDefaults(
-  defineProps<{
-    modelValue: string
-    clearable?: boolean
-    placeholder?: string
-    /** 'long' — «Пт, 16 октября»; 'short' — «16 окт»; 'num' — «16.10.2026». */
-    format?: 'long' | 'short' | 'num'
-    /** No wheel over the field (it sits in a scrolling list). */
-    noWheel?: boolean
-    /** Red when the date has passed (a due date). */
-    late?: boolean
-    title?: string
-    /** Day, month and year as separate parts: the wheel over each changes that part (the year is always shown). */
-    parts?: boolean
-  }>(),
-  { format: 'long', placeholder: 'Без даты' },
-)
+const props = defineProps<{
+  modelValue: string
+  /** Day, month and year as separate parts: the wheel over each changes that part (the year is always shown). */
+  parts?: boolean
+}>()
 const emit = defineEmits<{ 'update:modelValue': [day: string] }>()
 
 const open = ref(false)
@@ -37,17 +25,12 @@ watch(open, (o) => o && (month.value = (props.modelValue || todayKey.value).slic
 
 const isToday = computed(() => props.modelValue === todayKey.value)
 const at = (d: string) => new Date(`${d}T12:00:00`)
-type DateFormat = NonNullable<typeof props.format>
-/** How a day (YYYY-MM-DD) is written in each format. */
-const FORMATTERS: Record<DateFormat, (d: string) => string> = {
-  num: (d) => at(d).toLocaleDateString('ru-RU'),
-  short: (d) => at(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', ''),
-  long: (d) => {
-    const s = at(d).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', ...(d.slice(0, 4) !== todayKey.value.slice(0, 4) ? { year: 'numeric' } : {}) })
-    return s.charAt(0).toUpperCase() + s.slice(1)
-  },
+/** «Пт, 16 октября» (the year only when it is not this one). */
+function longDate(d: string): string {
+  const s = at(d).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', ...(d.slice(0, 4) !== todayKey.value.slice(0, 4) ? { year: 'numeric' } : {}) })
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
-const text = computed(() => (props.modelValue ? FORMATTERS[props.format](props.modelValue) : props.placeholder))
+const text = computed(() => (props.modelValue ? longDate(props.modelValue) : 'Без даты'))
 
 /** The parts: «Ср, » + «21» + «октября» + «2026» — each its own wheel. */
 const segs = computed(() => {
@@ -73,7 +56,6 @@ function pick(d: string): void {
 }
 /** The wheel over the field: down / right — the next day. */
 function onWheel(e: WheelEvent): void {
-  if (props.noWheel) return
   e.preventDefault()
   // up — the next day, down — the previous one (like the times)
   const dir = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1
@@ -83,7 +65,7 @@ function onWheel(e: WheelEvent): void {
 }
 
 // ---------- the calendar ----------
-const iso = (d: Date) => d.toLocaleDateString('sv-SE')
+const iso = (d: Date) => dayKey(d.getTime())
 const monthTitle = computed(() => {
   const s = at(`${month.value}-01`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '')
   return s[0].toUpperCase() + s.slice(1)
@@ -113,15 +95,13 @@ function onCalWheel(e: WheelEvent): void {
 </script>
 
 <template>
-  <span ref="root" class="dp tw:group/dp tw:[-webkit-app-region:no-drag] tw:inline-flex tw:items-center tw:flex-none tw:h-28 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:whitespace-nowrap tw:[&.today]:border-accent-line" :class="{ today: isToday, empty: !modelValue, late }" @wheel="onWheel">
-    <button class="dpb tw:inline-flex tw:items-center tw:gap-6 tw:h-full tw:py-0 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text tw:text-[12.5px] tw:cursor-default tw:hover:bg-hover tw:[&.on]:not-hover:bg-accent-soft" :class="{ on: open }" :title="title ?? (parts ? 'Выбрать дату · колесо над днём, месяцем или годом меняет его' : 'Выбрать дату · колесо — день')" @click="open = !open">
-      <Icon class="tw:text-muted tw:group-[.today]/dp:not-group-[.late]/dp:text-accent-fg tw:group-[.late]/dp:text-down-fg" name="calendar" :size="13" /><span v-if="parts && modelValue" class="parts tw:font-data tw:text-[12px] tw:group-[.today]/dp:not-group-[.empty]/dp:not-group-[.late]/dp:text-accent-fg tw:group-[.empty]/dp:not-group-[.late]/dp:text-muted tw:group-[.late]/dp:text-down-fg"
+  <span ref="root" class="dp tw:group/dp tw:[-webkit-app-region:no-drag] tw:inline-flex tw:items-center tw:flex-none tw:h-28 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-field tw:whitespace-nowrap tw:[&.today]:border-accent-line" :class="{ today: isToday, empty: !modelValue }" @wheel="onWheel">
+    <button class="dpb tw:inline-flex tw:items-center tw:gap-6 tw:h-full tw:py-0 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text tw:text-[12.5px] tw:cursor-default tw:hover:bg-hover tw:[&.on]:not-hover:bg-accent-soft" :class="{ on: open }" :title="parts ? 'Выбрать дату · колесо над днём, месяцем или годом меняет его' : 'Выбрать дату · колесо — день'" @click="open = !open">
+      <Icon class="tw:text-muted tw:group-[.today]/dp:text-accent-fg" name="calendar" :size="13" /><span v-if="parts && modelValue" class="parts tw:font-data tw:text-[12px] tw:group-[.today]/dp:not-group-[.empty]/dp:text-accent-fg tw:group-[.empty]/dp:text-muted"
         ><i class="tw:not-italic" data-p="d">{{ segs.wd }},&nbsp;</i><i data-p="d" class="seg tw:not-italic tw:py-1 tw:px-2 tw:rounded-[3px] tw:hover:bg-accent-soft tw:hover:text-accent-fg">{{ segs.d }}</i>&nbsp;<i data-p="m" class="seg tw:not-italic tw:py-1 tw:px-2 tw:rounded-[3px] tw:hover:bg-accent-soft tw:hover:text-accent-fg">{{ segs.m }}</i>&nbsp;<i data-p="y" class="seg tw:not-italic tw:py-1 tw:px-2 tw:rounded-[3px] tw:hover:bg-accent-soft tw:hover:text-accent-fg">{{ segs.y }}</i></span
-      ><span class="tw:font-data tw:text-[12px] tw:group-[.today]/dp:not-group-[.empty]/dp:not-group-[.late]/dp:text-accent-fg tw:group-[.empty]/dp:not-group-[.late]/dp:text-muted tw:group-[.late]/dp:text-down-fg" v-else>{{ text }}</span>
+      ><span class="tw:font-data tw:text-[12px] tw:group-[.today]/dp:not-group-[.empty]/dp:text-accent-fg tw:group-[.empty]/dp:text-muted" v-else>{{ text }}</span>
     </button>
-    <button v-if="modelValue && !isToday" class="dpi tw:inline-flex tw:items-center tw:gap-6 tw:h-full tw:border-0 tw:rounded-none tw:bg-transparent tw:text-[12.5px] tw:cursor-default tw:hover:bg-hover tw:w-26 tw:justify-center tw:p-0! tw:[&&]:border-l! tw:[&&]:border-l-border! tw:text-muted! tw:hover:text-accent-fg!" title="Сегодня" @click="set(todayKey)"><Icon name="calToday" :size="13" /></button>
-    <button v-if="clearable && modelValue" class="dpi tw:inline-flex tw:items-center tw:gap-6 tw:h-full tw:border-0 tw:rounded-none tw:bg-transparent tw:text-[12.5px] tw:cursor-default tw:hover:bg-hover tw:w-26 tw:justify-center tw:p-0! tw:[&&]:border-l! tw:[&&]:border-l-border! tw:text-muted! tw:hover:text-accent-fg!" title="Убрать дату" @click="set('')"><Icon name="x" :size="12" /></button>
-  </span>
+    <button v-if="modelValue && !isToday" class="dpi tw:inline-flex tw:items-center tw:gap-6 tw:h-full tw:border-0 tw:rounded-none tw:bg-transparent tw:text-[12.5px] tw:cursor-default tw:hover:bg-hover tw:w-26 tw:justify-center tw:p-0! tw:[&&]:border-l! tw:[&&]:border-l-border! tw:text-muted! tw:hover:text-accent-fg!" title="Сегодня" @click="set(todayKey)"><Icon name="calToday" :size="13" /></button>  </span>
   <Popover v-model:open="open" :anchor="root" :width="252" align-left :chrome="0" max-height="none" class="dp-pop tw:p-8 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop tw:select-none" @wheel="onCalWheel">
       <div class="dp-head tw:flex tw:items-center tw:justify-between tw:mb-6">
         <button class="tw:inline-flex tw:items-center tw:py-4 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[12px] tw:cursor-default tw:hover:bg-hover tw:hover:text-text" title="Предыдущий месяц" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="13" /></button>
@@ -139,8 +119,6 @@ function onCalWheel(e: WheelEvent): void {
         >{{ c.n }}</button>
       </div>
       <div class="dp-foot tw:flex tw:justify-between tw:mt-6 tw:pt-6 tw:border-t tw:border-t-border">
-        <button class="tw:inline-flex tw:items-center tw:py-4 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[12px] tw:cursor-default tw:hover:bg-hover tw:hover:text-text" @click="pick(todayKey)">Сегодня</button>
-        <button class="tw:inline-flex tw:items-center tw:py-4 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[12px] tw:cursor-default tw:hover:bg-hover tw:hover:text-text" v-if="clearable" @click="pick('')">Без даты</button>
-      </div>
+        <button class="tw:inline-flex tw:items-center tw:py-4 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[12px] tw:cursor-default tw:hover:bg-hover tw:hover:text-text" @click="pick(todayKey)">Сегодня</button>      </div>
   </Popover>
 </template>

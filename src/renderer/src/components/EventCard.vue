@@ -6,7 +6,8 @@ import { formatDuration, formatHM } from '@shared/timeline'
 import EntryModal from './EntryModal.vue'
 import Icon from './Icon.vue'
 import AttrChips from './AttrChips.vue'
-import { notesOf, noteTitle, openEventInWork, openNote, refreshMentions } from '../lib/mentions'
+import { notesOf, noteTitle, openNote, refreshMentions } from '../lib/mentions'
+import { openDay } from '../lib/views'
 
 /**
  * An event mentioned in a note, opened from its chip: what it is (kind, time, task, its description), the other
@@ -37,7 +38,7 @@ const { panelRef, style } = usePopover(() => ({ x: Math.max(8, Math.min(props.x,
   esc: () => !editing.value,
 }, open)
 function toWork(): void {
-  openEventInWork(props.day, props.id)
+  openDay(props.day, props.id)
   emit('close')
 }
 </script>

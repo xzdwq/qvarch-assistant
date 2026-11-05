@@ -1,9 +1,10 @@
 import { bindSql, rowsAsObjects } from '../../../shared/sql'
 import { missingValuesError, resolvePath } from '../../domain/values'
-import { LatestRuns, type BlockRunner } from '../../engine/blockRunner'
+import type { BlockRunner } from '../../engine/blockRunner'
 import { cutText, indentText, RUN_STATE_TEXT, tookText } from '../../engine/reportText'
-import { errorText, runApi } from '../../engine/runApi'
+import { runApi } from '../../engine/runApi'
 import { saveRunsSoon } from '../../engine/runStore'
+import { LatestRuns, trackedRun } from '../../engine/trackedRun'
 
 /** Queries going on (a query run again before the first answered — the first answer is dropped). */
 const latest = new LatestRuns()
@@ -26,24 +27,15 @@ export const sqlRunner: BlockRunner = {
       saveRunsSoon(env.notePath)
       return false
     }
-    const slot = env.runSlot(item.key)
-    const runId = latest.begin(slot)
-    const r = env.recordRun(item.key, { state: 'run', at: Date.now(), sql })
-    try {
+    return trackedRun(latest, env, item.key, { state: 'run', at: Date.now(), sql }, async ({ runId }) => {
       const out = await runApi().sql('run', runId, db, b.text, b.values, sqlMode)
-      if (!latest.isLatest(slot, runId)) return false
       const x = out.run
-      env.recordRun(item.key, { ...r, state: out.ok ? 'ok' : 'error', ms: out.ms, error: out.error, table: x?.result, plan: x?.plan, planRaw: x?.planRaw, server: x?.server })
-      if (out.ok && x?.result && item.info.name) env.publish(item.info.name, rowsAsObjects(x.result), 'sql', item.key)
-      saveRunsSoon(env.notePath)
-      return out.ok
-    } catch (e) {
-      env.recordRun(item.key, { ...r, state: 'error', error: errorText(e) })
-      saveRunsSoon(env.notePath)
-      return false
-    } finally {
-      latest.end(slot, runId)
-    }
+      return {
+        ok: out.ok,
+        run: { ms: out.ms, error: out.error, table: x?.result, plan: x?.plan, planRaw: x?.planRaw, server: x?.server },
+        publish: () => out.ok && x?.result && item.info.name && env.publish(item.info.name, rowsAsObjects(x.result), 'sql', item.key),
+      }
+    })
   },
   stop(env, key) {
     // (a query: cancelled on its server, its connection closed)

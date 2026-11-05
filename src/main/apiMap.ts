@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { readJsonFile, writeJsonAtomic } from './fsAtomic'
+import { LaterWrite } from './laterWrite'
 import { addCall, apiPath, endpointKey, opOf, wantsBody, type ApiCall, type ApiEndpoint } from '../shared/apiMap'
 
 /**
@@ -11,22 +12,17 @@ import { addCall, apiPath, endpointKey, opOf, wantsBody, type ApiCall, type ApiE
 const OWN_VIEWER = /^https?:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{24}\/trace\//i
 export class ApiMapStore {
   private map = new Map<string, ApiEndpoint>()
-  private saveTimer?: ReturnType<typeof setTimeout>
+  private readonly saving = new LaterWrite(() => writeJsonAtomic(join(this.root, 'apimap.json'), [...this.map.values()]), 2000)
   private emitTimer?: ReturnType<typeof setTimeout>
 
   constructor(
     private root: string,
     private emit: () => void,
   ) {
-    const f = join(root, 'apimap.json')
-    if (!existsSync(f)) return
-    try {
-      const list = JSON.parse(readFileSync(f, 'utf8')) as ApiEndpoint[]
-      // (the Trace Viewer's own requests, kept before they were left out — dropped)
-      if (Array.isArray(list)) for (const e of list) if (e?.key && !(/^127\.0\.0\.1:\d+$/.test(e.host) && /^\/:id\/trace\//.test(e.path))) this.map.set(e.key, e)
-    } catch {
-      // a broken file — a new map
-    }
+    // (a broken file is set aside — a new map)
+    const list = readJsonFile<ApiEndpoint[]>(join(root, 'apimap.json'))
+    // (the Trace Viewer's own requests, kept before they were left out — dropped)
+    if (Array.isArray(list)) for (const e of list) if (e?.key && !(/^127\.0\.0\.1:\d+$/.test(e.host) && /^\/:id\/trace\//.test(e.path))) this.map.set(e.key, e)
   }
   /** The answer's body is worth asking for. */
   wants(method: string, url: string, status: number, reqBody?: string): boolean {
@@ -61,12 +57,7 @@ export class ApiMapStore {
     this.changed()
   }
   private changed(): void {
-    clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      const f = join(this.root, 'apimap.json')
-      writeFileSync(`${f}.tmp`, JSON.stringify([...this.map.values()]), 'utf8')
-      renameSync(`${f}.tmp`, f)
-    }, 2000)
+    this.saving.soon()
     // the panel told at most once a second (a page may send dozens at once)
     this.emitTimer ??= setTimeout(() => {
       this.emitTimer = undefined

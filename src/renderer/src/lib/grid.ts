@@ -3,6 +3,7 @@ import type { MenuItem } from '../components/MenuButton.vue'
 import type { GridData } from '@shared/gridData'
 import { rangeHas, rangeSize, tsvCell as esc } from '@shared/gridRange'
 import type { TableFileFormat } from '@shared/tableData'
+import { useFlash } from './useFlash'
 export { asGrid, type GridData } from '@shared/gridData'
 
 /**
@@ -21,7 +22,7 @@ export const rowsExportItems = (copy: () => unknown, save: (format: TableFileFor
   { label: 'Сохранить в CSV (UTF-8)', icon: 'list', run: () => save('csv') },
 ]
 /** The value as JSON when it is one (an object / an array; a text that parses as one). */
-export function jsonOf(v: unknown): unknown {
+function jsonOf(v: unknown): unknown {
   if (v !== null && typeof v === 'object') return v
   if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return undefined
   try {
@@ -126,14 +127,10 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
     return out.join('\n')
   }
   const selCount = computed(() => rangeSize(sel.value))
-  const copied = ref(false)
-  const flash = () => {
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
-  }
+  const { shown: copied, flash } = useFlash(1500)
   function copySel(): void {
     void navigator.clipboard.writeText(selText())
-    flash()
+    flash(true)
   }
   function onKey(e: KeyboardEvent): void {
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC' && sel.value) {
@@ -198,7 +195,7 @@ export function useGrid(data: Ref<GridData | undefined>, fileName: () => string,
     const t = data.value
     if (!t) return
     await navigator.clipboard.writeText([t.columns.map((c) => esc(c.name)).join('\t'), ...t.rows.map((r) => r.map((v) => esc(cellText(v))).join('\t'))].join('\n'))
-    flash()
+    flash(true)
   }
   const exportItems = computed<MenuItem[]>(() => rowsExportItems(copyTsv, exportAs))
 

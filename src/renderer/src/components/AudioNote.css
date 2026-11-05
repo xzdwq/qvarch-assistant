@@ -19,5 +19,5 @@
   border: 2px solid rgb(var(--accent-rgb) / 0.3);
   border-top-color: var(--accent-fg);
   border-radius: 50%;
-  animation: AudioNote-sp 0.8s linear infinite;
+  animation: Shared-spin 0.8s linear infinite;
 }

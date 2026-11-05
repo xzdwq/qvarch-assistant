@@ -97,8 +97,13 @@ export interface BrowserSettings {
   acceptBadCerts: boolean
   /** A tab not looked at for this many minutes falls asleep — its page process is freed (0 — never). */
   sleepMin: number
+  /**
+   * The camera, the microphone and reading the clipboard given to every site that asks (a scenario of a site that
+   * uses them runs here too); off — refused to every site. Nothing is asked of the person.
+   */
+  sitePermissions: boolean
 }
-export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '', acceptBadCerts: true, sleepMin: 15 }
+export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '', acceptBadCerts: true, sleepMin: 15, sitePermissions: true }
 
 export const browserId = () => Math.random().toString(36).slice(2, 10)
 /** What the address line turns into a URL: a host → https, words → a search. */

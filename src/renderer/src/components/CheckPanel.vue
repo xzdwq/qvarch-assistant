@@ -168,7 +168,7 @@ async function makeBug(): Promise<void> {
     </div>
     <div class="ck-steps tw:flex tw:items-center tw:gap-6">
       <template v-if="stepsOn">
-        <span class="ck-rec tw:inline-flex tw:items-center tw:gap-6 tw:text-down-fg tw:font-semibold"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-down tw:animate-[CheckPanel-ckblink_1s_infinite]"></i>Записываю шаги: {{ pwRec?.count ?? 0 }}</span>
+        <span class="ck-rec tw:inline-flex tw:items-center tw:gap-6 tw:text-down-fg tw:font-semibold"><i class="tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-down tw:animate-[Shared-blink-25_1s_infinite]"></i>Записываю шаги: {{ pwRec?.count ?? 0 }}</span>
         <span class="grow tw:flex-1"></span>
         <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" @click="stopPwRec(true)">Отменить</button>
         <button class="primary tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" @click="stopPwRec()">Стоп</button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Settings · the interface: what the pill, the dock, the island and the main window show; the timeline's behaviour. */
+/** Settings · the interface: what the pill, the dock and the island show; the timeline's behaviour. */
 import type { UiPrefs } from '@shared/types'
 import { uiPresetPrefs, type UiPreset } from '@shared/settingsForm'
 import { useSettingsContext } from './settingsContext'
@@ -12,7 +12,6 @@ const UI_PILL: Array<{ k: keyof UiPrefs['pill']; label: string; hint?: string }>
   { k: 'wave', label: 'Волна активности' },
   { k: 'chips', label: 'Плашки блоков и заметок', hint: 'Вторая строка' },
   { k: 'stats', label: 'Итоги по видам и задачам', hint: 'Третья строка' },
-  { k: 'plan', label: 'Плашки из плана дня', hint: 'Запланированные блоки' },
 ]
 const UI_DOCK: Array<{ k: keyof UiPrefs['dock']; label: string }> = [
   { k: 'orb', label: 'Шар (быстрая заметка)' },
@@ -24,11 +23,6 @@ const UI_ISLAND: Array<{ k: keyof UiPrefs['island']; label: string }> = [
   { k: 'date', label: 'Дата' },
   { k: 'wave', label: 'Волна активности' },
   { k: 'totals', label: 'Итоги под шкалой' },
-  { k: 'plan', label: 'Плашки из плана дня' },
-]
-const UI_MAIN: Array<{ k: keyof UiPrefs['main']; label: string; hint?: string }> = [
-  { k: 'allStats', label: 'Все показатели дня сразу', hint: 'Иначе — основные' },
-  { k: 'plan', label: 'Кнопка «План дня»' },
 ]
 /** A preset applied: everything, or only what is needed day to day. */
 async function uiPreset(p: UiPreset): Promise<void> {
@@ -36,7 +30,6 @@ async function uiPreset(p: UiPreset): Promise<void> {
   Object.assign(ui.pill, next.pill)
   if (next.dock) Object.assign(ui.dock, next.dock)
   Object.assign(ui.island, next.island)
-  Object.assign(ui.main, next.main)
   await applyUi()
 }
 /** The pill's opacity is applied as soon as the slider is released — to see it right away. */
@@ -72,10 +65,6 @@ async function applyOpacity(): Promise<void> {
         <div class="uigroup tw:flex tw:flex-col tw:gap-2 tw:py-10 tw:px-12 tw:rounded-[4px] tw:bg-panel-2">
           <h4 class="tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Остров</h4>
           <label v-for="o in UI_ISLAND" :key="o.k" class="switch tw:flex-row tw:items-center tw:justify-between tw:gap-10 tw:py-5 tw:px-0 tw:text-text tw:text-[13px] tw:cursor-pointer tw:flex"><input class="tw:appearance-none tw:flex-none tw:relative tw:w-32 tw:h-18 tw:m-0 tw:rounded-[4px] tw:bg-white/14 tw:cursor-pointer tw:[transition:background_0.2s] tw:checked:bg-accent tw:[.secret_&]:flex-1 tw:after:content-[''] tw:after:absolute tw:after:top-2 tw:after:left-2 tw:after:w-14 tw:after:h-14 tw:after:rounded-[50%] tw:after:bg-text-hi tw:after:[transition:transform_0.2s_cubic-bezier(0.32,0.72,0,1)] tw:checked:after:[transform:translateX(14px)]" v-model="ui.island[o.k]" type="checkbox" @change="applyUi" /><span class="tw:-order-1">{{ o.label }}</span></label>
-        </div>
-        <div class="uigroup tw:flex tw:flex-col tw:gap-2 tw:py-10 tw:px-12 tw:rounded-[4px] tw:bg-panel-2">
-          <h4 class="tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Основное окно</h4>
-          <label v-for="o in UI_MAIN" :key="o.k" class="switch tw:flex-row tw:items-center tw:justify-between tw:gap-10 tw:py-5 tw:px-0 tw:text-text tw:text-[13px] tw:cursor-pointer tw:flex" :title="o.hint"><input class="tw:appearance-none tw:flex-none tw:relative tw:w-32 tw:h-18 tw:m-0 tw:rounded-[4px] tw:bg-white/14 tw:cursor-pointer tw:[transition:background_0.2s] tw:checked:bg-accent tw:[.secret_&]:flex-1 tw:after:content-[''] tw:after:absolute tw:after:top-2 tw:after:left-2 tw:after:w-14 tw:after:h-14 tw:after:rounded-[50%] tw:after:bg-text-hi tw:after:[transition:transform_0.2s_cubic-bezier(0.32,0.72,0,1)] tw:checked:after:[transform:translateX(14px)]" v-model="ui.main[o.k]" type="checkbox" @change="applyUi" /><span class="tw:-order-1">{{ o.label }}</span></label>
         </div>
         <div class="uigroup tw:flex tw:flex-col tw:gap-2 tw:py-10 tw:px-12 tw:rounded-[4px] tw:bg-panel-2">
           <h4 class="tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-0 tw:text-[11px] tw:font-data tw:font-semibold tw:tracking-[0.08em] tw:uppercase tw:text-text-2">Таймлайн</h4>

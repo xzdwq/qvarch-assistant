@@ -1,9 +1,7 @@
 import { FAIL_TEXT, FRAME_MAX, parseServerFrame, PROTOCOL_VERSION, type ClientFrame, type DeviceInfo, type FailCode, type MethodName, type RpcError, type ServerFrame, type TransportEvent, type TransportMethods } from '../../shared/transport/protocol'
-import type { TransportStatus } from '../../shared/transport/constants'
+import { retryDelay, type TransportStatus } from '../../shared/transport/constants'
 import type { Signer } from './keys'
 
-/** The pauses before reconnecting, one after another (the last one repeats). */
-const BACKOFF_MS = [1000, 2000, 5000, 10_000, 30_000]
 const PING_MS = 25_000
 /** Nothing heard this long — the connection is dead (a dropped network says nothing). */
 const DEAD_MS = 60_000
@@ -51,6 +49,8 @@ export class TransportClient {
   private heard = 0
   private retry?: ReturnType<typeof setTimeout>
   private ping?: ReturnType<typeof setInterval>
+  /** Open but never ready (a hung server, a proxy holding the socket): closed — and tried again. */
+  private handshake?: ReturnType<typeof setTimeout>
   private readonly pending = new Map<number, { ok: (r: unknown) => void; fail: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   state: ClientState = { status: 'off' }
 
@@ -95,6 +95,8 @@ export class TransportClient {
     }
     this.ws = ws
     this.heard = Date.now()
+    clearTimeout(this.handshake)
+    this.handshake = setTimeout(() => this.ws === ws && ws.close(), REQUEST_MS)
     let final = false
     ws.onmessage = (m) => {
       this.heard = Date.now()
@@ -118,6 +120,7 @@ export class TransportClient {
       this.state = { ...this.state, server: f.server }
     },
     ready: (f) => {
+      clearTimeout(this.handshake)
       this.tries = 0
       this.set({ status: 'online', device: f.device, server: this.state.server, ...(typeof f.now === 'number' ? { skew: f.now - Date.now() } : {}) })
       clearInterval(this.ping)
@@ -144,7 +147,7 @@ export class TransportClient {
 
   /** The connection lost: tried again after a pause. */
   private lost(why: string): void {
-    const ms = BACKOFF_MS[Math.min(this.tries++, BACKOFF_MS.length - 1)]
+    const ms = retryDelay(++this.tries)
     this.set({ status: 'error', message: `${why} — повтор через ${Math.round(ms / 1000)} с` })
     clearTimeout(this.retry)
     this.retry = setTimeout(() => !this.stopped && this.connect(), ms)
@@ -152,6 +155,7 @@ export class TransportClient {
   /** The socket closed and forgotten; the questions to it — failed. */
   private drop(): void {
     clearInterval(this.ping)
+    clearTimeout(this.handshake)
     const ws = this.ws
     this.ws = undefined
     if (ws && ws.readyState <= 1) ws.close()

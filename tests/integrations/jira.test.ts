@@ -63,7 +63,7 @@ describe('jira: the task search', () => {
     task('A-3', { category: 'done' }),
     task('C-1', { mine: true, priority: 'High', priorityId: '2' }),
   ]
-  const base = { q: '', offset: 0, limit: 50, mode: 'list' as const, starred: [], today: '2026-01-15' }
+  const base = { q: '', offset: 0, limit: 50, mode: 'list' as const, today: '2026-01-15' }
 
   it('lists the open ones by project, then due date; without descriptions', () => {
     const r = findIssues(issues, base)
@@ -75,9 +75,9 @@ describe('jira: the task search', () => {
     expect(findIssues(issues, { ...base, q: 'PAYMENTS' }).items.map((i) => i.key)).toEqual(['B-1'])
     expect(findIssues(issues, { ...base, q: 'payments ui' }).total).toBe(0)
   })
-  it('picking: mine and starred first', () => {
-    const r = findIssues(issues, { ...base, mode: 'pick', starred: ['B-1'] })
-    expect(r.items.slice(0, 2).map((i) => i.key)).toEqual(['B-1', 'C-1'])
+  it('picking: mine first, then by due date', () => {
+    const r = findIssues(issues, { ...base, mode: 'pick' })
+    expect(r.items.map((i) => i.key)).toEqual(['C-1', 'A-1', 'B-1', 'A-2'])
   })
   it('pages and facets', () => {
     const r = findIssues(issues, { ...base, offset: 1, limit: 2 })
