@@ -58,7 +58,7 @@ export class BrowserCore implements TabEventsHost {
 
   constructor(
     root: string,
-    private readonly files: BrowserFiles,
+    readonly files: BrowserFiles,
     private emitEvent: BrowserEmit,
   ) {
     this.ses = browserSession()

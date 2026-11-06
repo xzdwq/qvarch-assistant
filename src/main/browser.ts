@@ -1,7 +1,7 @@
 import { shell, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import type { ApiEndpoint } from '../shared/apiMap'
-import type { ApiMapHost, Bookmark, BrowserApi, BrowserSettings, BrowserTab, CertInfo, DeviceMode, PasswordInfo, PwAnswer, PwRecState, RecFull, RecItem, RecState, Visit } from '../shared/browser'
+import { cleanSession, type ApiMapHost, type Bookmark, type BrowserApi, type BrowserSession, type BrowserSettings, type BrowserTab, type CertInfo, type DeviceMode, type PasswordInfo, type PwAnswer, type PwRecState, type RecFull, type RecItem, type RecState, type Visit } from '../shared/browser'
 import type { CheckProblem, CheckSettings, CheckState } from '../shared/check'
 import type { BrowserHook, HookHit, HookStatus } from '../shared/hooks'
 import { BrowserCore } from './browser/browserCore'
@@ -159,6 +159,22 @@ export class Browser extends BrowserCore implements BrowserApi {
   /** The built-in User-Agent (what '' means). */
   defaultUa(): string {
     return this.uaDefault
+  }
+  // ---------- the open tabs between runs ----------
+  /** 'kept' — the last run's tabs not taken yet (what the window says is not heard: it would replace them); 'open' —
+   *  taken, the window's tabs kept as they change; 'closing' — the app quits (its tabs going one by one are not kept). */
+  private sessionState: 'kept' | 'open' | 'closing' = 'kept'
+  takeSession(): BrowserSession | undefined {
+    if (this.sessionState !== 'kept') return undefined
+    this.sessionState = 'open'
+    return this.store.session()
+  }
+  saveSession(s: BrowserSession): void {
+    if (this.sessionState === 'open') this.store.setSession(cleanSession(s))
+  }
+  closeAll(): void {
+    this.sessionState = 'closing'
+    super.closeAll()
   }
   bookmarks(): Bookmark[] {
     return this.store.bookmarks()

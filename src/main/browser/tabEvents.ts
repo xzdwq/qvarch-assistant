@@ -6,6 +6,7 @@ import type { CheckTabs } from './checkTabs'
 import type { DockedDevTools } from './dockedDevTools'
 import type { HookSearch } from './hookSearch'
 import { handlePageKeys } from './pageKeys'
+import { wirePopups } from './popupWindows'
 import type { ScenarioRecorder } from './scenarioRecorder'
 import type { BrowserHost, Tab } from './tab'
 
@@ -17,6 +18,8 @@ export interface TabEventsHost extends BrowserHost {
   readonly scenario: ScenarioRecorder
   readonly store: BrowserStore
   readonly devTools: DockedDevTools
+  /** Its pages' preload (a popup of a page gets it too: sign-in forms). */
+  readonly files: { preload: string }
   nav(id: string, action: NavAction): void
   zoom(id: string, percent: number): void
   savePage(id: string): Promise<void>
@@ -105,11 +108,8 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     b.changed()
   })
   wc.on('zoom-changed', (_e, dir) => b.zoom(t.id, t.zoom + (dir === 'in' ? 10 : -10)))
-  // window.open / target=_blank: a new tab next to this one
-  wc.setWindowOpenHandler(({ url }) => {
-    b.create(url, t.id)
-    return { action: 'deny' }
-  })
+  // target=_blank: a new tab next to this one; a popup (a sign-in) — a window of its own that keeps its opener
+  wirePopups(wc, { owner: () => b.window(), toTab: (url) => b.create(url, t.id), chrome: () => b.uaOverride(), preload: b.files.preload })
   wc.on('login', (e, _details, info, cb) => {
     e.preventDefault()
     b.askLogin(tab, info, (u, p) => (u === undefined ? cb() : cb(u, p ?? '')))

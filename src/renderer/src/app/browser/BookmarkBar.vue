@@ -29,6 +29,7 @@ const { openHistory } = view.history
       :data-bm="b.id"
       :title="b.url ?? b.title"
       @pointerdown="onBmDown($event, b)"
+      @mousedown.middle.prevent
       @auxclick.prevent="$event.button === 1 && b.url && openUrl(b.url, true)"
       @contextmenu.prevent="onBmMenu(b, $event)"
     >
@@ -43,10 +44,12 @@ const { openHistory } = view.history
       <button class="tw:h-20 tw:py-0 tw:px-8 tw:text-[11.5px]" @click="pwReply('no')">Не сейчас</button>
       <button class="tw:h-20 tw:py-0 tw:px-8 tw:text-[11.5px]" @click="pwReply('never')">Никогда для сайта</button>
     </span>
-    <span v-if="download" class="dl tw:[&:not(.bms)]:shrink-0 tw:inline-flex tw:items-center tw:gap-6 tw:max-w-340 tw:pt-0 tw:pr-4 tw:pb-0 tw:pl-8 tw:h-24 tw:rounded-r2 tw:bg-up/10 tw:text-up-fg tw:text-[11.5px] tw:overflow-hidden tw:text-ellipsis" :title="download.path">
-      <Icon name="download" :size="12" />{{ download.state === 'progress' ? 'Скачивается' : download.state === 'completed' ? 'Скачано' : 'Не скачано' }}: {{ download.name }}
-      <button class="tw:py-1 tw:px-6 tw:text-[11px]" v-if="download.state === 'completed'" @click="reveal(download.path)">Показать</button>
-      <button class="x tw:text-[11px] tw:inline-flex tw:p-3 tw:border-0 tw:bg-transparent tw:text-muted" @click="download = undefined"><Icon name="x" :size="11" /></button>
+    <!-- the file's name is cut, never the buttons: «Показать» and the close button always whole -->
+    <span v-if="download" class="dl tw:[&:not(.bms)]:shrink-0 tw:inline-flex tw:items-center tw:gap-6 tw:max-w-340 tw:pt-0 tw:pr-4 tw:pb-0 tw:pl-8 tw:h-24 tw:rounded-r2 tw:bg-up/10 tw:text-up-fg tw:text-[11.5px]" :title="download.path">
+      <Icon name="download" :size="12" class="tw:flex-none" />
+      <span class="tw:min-w-0 tw:truncate">{{ download.state === 'progress' ? 'Скачивается' : download.state === 'completed' ? 'Скачано' : 'Не скачано' }}: {{ download.name }}</span>
+      <button class="tw:flex-none tw:py-1 tw:px-6 tw:text-[11px]" v-if="download.state === 'completed'" @click="reveal(download.path), (download = undefined)">Показать</button>
+      <button class="x tw:flex-none tw:text-[11px] tw:inline-flex tw:p-3 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:text-text" title="Закрыть" @click="download = undefined"><Icon name="x" :size="11" /></button>
     </span>
     <button class="ib pbtn tw:[&:not(.bms)]:shrink-0 tw:relative tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: recOpen }" :title="`Панель: проверка, запись запросов, Swagger, хуки${checkNew ? ` · найдено ${checkNew}` : ''}${recState.on ? ' · идёт запись запросов' : ''}`" @click="recOpen = !recOpen">
       <Icon name="list" :size="14" />

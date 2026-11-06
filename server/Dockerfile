@@ -8,6 +8,7 @@ COPY server/package.json server/package-lock.json ./
 RUN npm ci
 COPY server/ ./
 COPY src/shared/transport/ /app/src/shared/transport/
+COPY src/shared/emoji.ts /app/src/shared/emoji.ts
 COPY src/main/transport/keys.ts /app/src/main/transport/keys.ts
 RUN node build.mjs
 

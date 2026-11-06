@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { readJsonFile, writeJsonQuietly } from '../fsAtomic'
-import { browserId, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserEmit, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
+import { browserId, cleanSession, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserSession, type BrowserEmit, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
 import type { Tab } from './tab'
 
 const MAX_HISTORY = 3000
@@ -8,7 +8,7 @@ const MAX_HISTORY = 3000
 const MAX_VISITS = 30000
 const VISITS_DAYS = 90
 
-type BrowserData = { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings }
+type BrowserData = { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings; session?: BrowserSession }
 
 /** The settings as written (anything missing or wrong — the default). */
 function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
@@ -22,8 +22,8 @@ function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
 }
 
 /**
- * The browser's own data on disk: bookmarks, the pages opened (for the address line's suggestions) and the settings
- * in data/browser.json; every opening by days in data/browser-history.json (read when first needed). Written a moment
+ * The browser's own data on disk: bookmarks, the pages opened (for the address line's suggestions), the settings and
+ * the open tabs in data/browser.json; every opening by days in data/browser-history.json (read when first needed). Written a moment
  * after a change, at once on the way out.
  */
 export class BrowserStore {
@@ -48,12 +48,23 @@ export class BrowserStore {
   }
   private read(): BrowserData {
     // a broken file is set aside — the bookmarks in it are not overwritten by the first save
-    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings> }>>(this.file) ?? {}
+    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings>; session: unknown }>>(this.file) ?? {}
     return {
       bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
       history: Array.isArray(d.history) ? d.history : [],
       settings: readSettings(d.settings ?? {}),
+      session: cleanSession(d.session),
     }
+  }
+
+  // ---------- the open tabs (opened again on the next run) ----------
+  session(): BrowserSession | undefined {
+    return this.data.session
+  }
+  setSession(s: BrowserSession | undefined): void {
+    if (JSON.stringify(s) === JSON.stringify(this.data.session)) return
+    this.data.session = s
+    this.save()
   }
   save(): void {
     clearTimeout(this.saveTimer)

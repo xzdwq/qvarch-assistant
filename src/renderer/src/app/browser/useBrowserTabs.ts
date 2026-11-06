@@ -1,8 +1,18 @@
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { cleanSession, type BrowserSession } from '@shared/browser'
 import { bLayout, placeTab, syncLayout, tabs, tabsLoaded } from '../../lib/browser'
 
-/** The open pages are remembered (their addresses by pane) and opened again on the next start. */
-const SESSION = 'qa.browser.session'
+/** Where the open tabs were kept before main kept them: read once (then main has them) and dropped. */
+const LEGACY_SESSION = 'qa.browser.session'
+function legacySession(): BrowserSession | undefined {
+  try {
+    const v = JSON.parse(localStorage.getItem(LEGACY_SESSION) ?? 'null') as { panes?: unknown[]; active?: unknown[] } | null
+    localStorage.removeItem(LEGACY_SESSION)
+    return cleanSession({ panes: v?.panes?.map((urls, i) => ({ urls, active: v.active?.[i] })) })
+  } catch {
+    return undefined
+  }
+}
 export const isBlank = (url?: string) => !url || url === 'about:blank'
 /** How many closed tabs Ctrl+Shift+T can bring back. */
 const CLOSED_KEPT = 25
@@ -58,46 +68,39 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
     () => tabsLoaded.value && !tabs.value.length && !making,
     (empty) => empty && restored && void newTab(0),
   )
+  // the last run's tabs opened again — once a run (main gives them once: a window reloaded finds its tabs open)
   onMounted(async () => {
+    // (the old place read and dropped either way: a window reloaded later must not find it)
+    const legacy = legacySession()
+    const saved = (await window.qa.browser('takeSession')) ?? legacy
     const list = await window.qa.browser('list')
-    if (list.length) return void (restored = true)
-    let saved: { panes: string[][]; active: number[] } | undefined
-    try {
-      saved = JSON.parse(localStorage.getItem(SESSION) ?? 'null') ?? undefined
-    } catch {
-      saved = undefined
-    }
+    if (!saved && list.length) return void (restored = true)
     making++
     try {
       bLayout.panes.splice(0, bLayout.panes.length, { id: 'p1', tabs: [] })
       bLayout.cur = 0
-      const panes = saved?.panes?.filter((p) => p.length).slice(0, 2) ?? []
-      if (!panes.length) panes.push([''])
+      const panes = saved?.panes ?? (list.length ? [] : [{ urls: [''], active: 0 }])
       for (let pi = 0; pi < panes.length; pi++) {
         if (pi > 0) bLayout.panes.push({ id: `p${Date.now()}`, tabs: [] })
-        for (const url of panes[pi]) {
+        for (const url of panes[pi].urls) {
           const t = await window.qa.browser('create', isBlank(url) ? undefined : url)
           placeTab(pi, t.id)
         }
         const p = bLayout.panes[pi]
-        p.active = p.tabs[Math.min(saved?.active?.[pi] ?? 0, p.tabs.length - 1)]
+        p.active = p.tabs[Math.min(panes[pi].active, p.tabs.length - 1)]
       }
+      // tabs the app opened before the section was shown (a link from a note, a trace): after them, the last one shown
+      for (const t of list) placeTab(0, t.id)
       bLayout.cur = 0
     } finally {
       making--
       restored = true
     }
   })
+  // the open tabs kept by main as they change (main hears it only after the last run's were taken, not while quitting)
   watch(
     () => bLayout.panes.map((p) => ({ urls: p.tabs.map((id) => byId(id)?.url ?? ''), active: Math.max(0, p.tabs.indexOf(p.active ?? '')) })),
-    (v) => {
-      if (!restored) return
-      try {
-        localStorage.setItem(SESSION, JSON.stringify({ panes: v.map((x) => x.urls), active: v.map((x) => x.active) }))
-      } catch {
-        // fine
-      }
-    },
+    (panes) => restored && void window.qa.browser('saveSession', { panes }),
     { deep: true },
   )
   function show(pi: number, id: string): void {

@@ -45,7 +45,7 @@ const lineWidth = (el: HTMLElement) => el.getBoundingClientRect().width
         :value="urlShown(p.id, p.active)"
         placeholder="Адрес или поиск"
         spellcheck="false"
-        @focus="(urlEdit[p.id] = urlShown(p.id, p.active)), ($event.target as HTMLInputElement).select()"
+        @focus="urlEdit[p.id] = urlShown(p.id, p.active)"
         @input="onUrlInput(p.id, ($event.target as HTMLInputElement).value)"
         @keydown="onUrlKey($event, pi)"
         @blur="endSuggestSoon()"

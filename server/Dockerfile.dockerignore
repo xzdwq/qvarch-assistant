@@ -5,4 +5,5 @@
 !server/build.mjs
 !server/src/**
 !src/shared/transport/**
+!src/shared/emoji.ts
 !src/main/transport/keys.ts

@@ -4,6 +4,7 @@
  * The pieces live in ./browser/; this entry keeps one import for all of them.
  */
 export * from './browser/tabs'
+export * from './browser/session'
 export * from './browser/devices'
 export * from './browser/recording'
 export { hostKey } from './browser/recordedRequest'

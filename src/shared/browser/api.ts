@@ -4,6 +4,7 @@ import type { BrowserHook, HookHit, HookStatus } from '../hooks'
 import type { DeviceMode } from './devices'
 import type { ImportSource } from './browserImport'
 import type { PwRecState, RecFull, RecItem, RecState } from './recording'
+import type { BrowserSession } from './session'
 import type { Bookmark, BrowserSettings, BrowserTab, CertInfo, PasswordInfo, Visit } from './tabs'
 import type { DownloadState, NavAction, PageKeyCommand, PwAnswer } from './constants'
 
@@ -76,6 +77,10 @@ export interface BrowserApi {
   hookStatus(): HookStatus
   hookReapply(id: string): void
   list(): BrowserTab[]
+  /** The tabs open when the app last closed — given once a run (to open them again), later none. */
+  takeSession(): BrowserSession | undefined
+  /** The open tabs now (kept for the next run; heard only after the last ones were taken, and not while closing). */
+  saveSession(s: BrowserSession): void
   create(url?: string, opener?: string): BrowserTab
   close(id: string): void
   go(id: string, url: string): void
@@ -146,4 +151,4 @@ export interface BrowserApi {
   checkShow(tabId: string, sel: string): Promise<boolean>
   checkShot(tabId: string): Promise<Uint8Array | undefined>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'takeSession', 'saveSession', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { browserId, PW_ANSWERS, type PasswordInfo, type PwAnswer } from '../../shared/browser'
 import type { PageLogin } from '../../shared/browser/pageChannels'
 import { toPage } from '../ipc/browserPageIpc'
+import { isBrowserPopup } from './popupWindows'
 import { originOf, type BrowserHost } from './tab'
 
 interface Saved {
@@ -43,11 +44,10 @@ export class PasswordVault {
   /** A page's sign-in form was sent: offer to keep it (the origin is the page's own, never what it says). */
   onSubmit(wc: WebContents, raw: unknown): void {
     const c = raw as { username?: unknown; password?: unknown } | undefined
-    const t = this.host.byContents(wc)
     const origin = originOf(wc.getURL())
     const password = String(c?.password ?? '')
     const username = String(c?.username ?? '').slice(0, 200)
-    if (!t || !origin || !password || password.length > 500 || this.pw.never.includes(origin)) return
+    if (!this.isBrowserPage(wc) || !origin || !password || password.length > 500 || this.pw.never.includes(origin)) return
     // the same form sent twice (submit + click) — once
     const key = `${origin}|${username}|${password}`
     if (key === this.last) return
@@ -60,9 +60,13 @@ export class PasswordVault {
     this.asks.set(askId, { origin, username, password })
     this.host.emit('pwAsk', { askId, origin, username, update: !!has })
   }
-  /** A sign-in form on a tab's page: its site's saved login, if any (the newest used). */
+  /** A page of the browser: a tab's, or a popup a browser page opened (a sign-in window) — never anything else. */
+  private isBrowserPage(wc: WebContents): boolean {
+    return !!this.host.byContents(wc) || isBrowserPopup(wc)
+  }
+  /** A sign-in form on a browser page: its site's saved login, if any (the newest used). */
   loginFor(wc: WebContents): PageLogin | null {
-    if (!this.host.byContents(wc)) return null
+    if (!this.isBrowserPage(wc)) return null
     const origin = originOf(wc.getURL())
     const hit = this.pw.list.filter((x) => x.origin === origin).sort((a, b) => (b.used ?? b.saved) - (a.used ?? a.saved))[0]
     if (!hit) return null

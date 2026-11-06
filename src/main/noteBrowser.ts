@@ -1,7 +1,8 @@
-import { app, clipboard, Menu, shell, webContents, type MenuItemConstructorOptions, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, shell, webContents, type MenuItemConstructorOptions, type WebContents } from 'electron'
 import type { NetItem, NetPage } from '../shared/noteBrowser'
 import { BROWSER_PARTITION } from '../shared/browser/constants'
 import { tellIdentity, type ChromeOverride } from './browser/pageIdentity'
+import { wirePopups } from './browser/popupWindows'
 
 /**
  * The browser component of the notes: a <webview> in the note (it scrolls with the text), on the Браузер
@@ -61,6 +62,13 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
     })
     wc.on('did-attach-webview', (_ev, guest) => {
       wireGuest(wc, guest, emit)
+      // a new window → a new tab of the same component; a popup (a sign-in) — a window of its own that keeps its opener
+      wirePopups(guest, {
+        owner: () => BrowserWindow.fromWebContents(wc) ?? undefined,
+        toTab: (url) => /^https?:/i.test(url) && emit(wc, 'open', { id: guest.id, url }),
+        chrome,
+        preload: hooks.preload,
+      })
       // told at every main-frame navigation's start (before a page has a document Chromium drops it) — and now
       guest.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void chromeLikeGuest(guest, chrome, d.url))
       void chromeLikeGuest(guest, chrome)
@@ -76,11 +84,6 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
 }
 
 function wireGuest(host: WebContents, guest: WebContents, emit: (host: WebContents, type: string, payload: unknown) => void): void {
-  // a new window → a new tab of the same component
-  guest.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) emit(host, 'open', { id: guest.id, url })
-    return { action: 'deny' }
-  })
   guest.on('will-navigate', (e, url) => {
     if (!/^(https?:|about:)/i.test(url)) e.preventDefault()
   })

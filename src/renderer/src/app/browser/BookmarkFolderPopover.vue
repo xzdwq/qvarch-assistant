@@ -29,6 +29,7 @@ const { panelRef, style } = usePopover(folderAnchor, { place: underChip }, open)
       :data-bm="c.id"
       :title="c.url ?? c.title"
       @pointerdown="onBmDown($event, c)"
+      @mousedown.middle.prevent
       @auxclick.prevent="$event.button === 1 && c.url && openUrl(c.url, true)"
       @contextmenu.prevent="onBmMenu(c, $event)"
     >
