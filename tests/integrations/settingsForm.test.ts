@@ -60,10 +60,23 @@ describe('settings form', () => {
     expect(p.idleThresholdSec).toBe(60)
     expect(p.sampleIntervalMs).toBe(2000)
     expect(p.kinds?.map((k) => k.label)).toEqual(['Работа', 'Перерыв', 'Ревью'])
-    expect(p.jira).toEqual({ clientId: undefined, projects: ['ABC', 'QQ'], syncMin: 15 })
+    expect(p.jira).toEqual({ clientId: undefined, site: undefined, projects: ['ABC', 'QQ'], syncMin: 15 })
     expect(p.island).toEqual({ opacity: 0.85 })
     // the secret never goes into the settings
     expect(JSON.stringify(p)).not.toContain('jiraSecret')
+  })
+
+  it('the Jira site: as typed (a host, a link into it) → its address; nothing typed — none', () => {
+    const f = settingsFormFrom(savedSettings())
+    expect(f.jiraSite).toBe('')
+    for (const typed of ['Company.atlassian.net', 'https://company.atlassian.net/', 'company.atlassian.net/jira/software/projects/ABC/boards/1']) {
+      f.jiraSite = typed
+      expect(settingsPatchFrom(f).jira?.site).toBe('https://company.atlassian.net')
+    }
+    f.jiraSite = '   '
+    expect(settingsPatchFrom(f).jira?.site).toBeUndefined()
+    f.jiraSite = 'не адрес'
+    expect(settingsPatchFrom(f).jira?.site).toBeUndefined()
   })
 
   it('the minimal preset hides the extras but keeps the timeline, the look and the menu', () => {

@@ -192,6 +192,21 @@ export function listTasks(issues: JiraIssue[], q: JiraListQuery, today: string):
   return list.sort((a, b) => a.project.key.localeCompare(b.project.key) || cmp(key(a), key(b)) || b.updated - a.updated)
 }
 
+/**
+ * The Jira site as typed → its address as Atlassian names it ("company.atlassian.net/jira/…" → "https://company.atlassian.net");
+ * empty or not an address — none (the sign-in takes the account's first site).
+ */
+export function jiraSiteUrl(input: string): string | undefined {
+  const t = input.trim()
+  if (!t) return undefined
+  try {
+    const u = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`)
+    return u.hostname.includes('.') ? `https://${u.hostname.toLowerCase()}` : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Board URLs / keys → project keys ("…/projects/ABC/boards/98" → "ABC"). */
 export function projectKeys(input: string): string[] {
   const keys = new Set<string>()

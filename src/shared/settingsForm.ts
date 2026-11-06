@@ -1,6 +1,6 @@
 import type { PublicSettings, SettingsPatch, UiPrefs } from './types'
 import { isProductive } from './kinds'
-import { projectKeys } from './jira'
+import { jiraSiteUrl, projectKeys } from './jira'
 import { DEFAULT_UI } from './ui'
 
 /** The settings screen's form, from the saved settings (what «Сохранить» keeps; some fields apply at once). */
@@ -13,6 +13,7 @@ export function settingsFormFrom(s: PublicSettings) {
     countKeys: s.countKeys,
     pillOpacity: Math.round((s.island.opacity ?? 1) * 100),
     jiraClientId: s.jira.clientId ?? '',
+    jiraSite: s.jira.site ?? '',
     jiraProjects: s.jira.projects.join(', '),
     /** Typed to replace the stored one; it goes to the encrypted store, never into the settings. */
     jiraSecret: '',
@@ -39,7 +40,7 @@ export function settingsPatchFrom(f: SettingsForm): SettingsPatch {
     captureTitles: f.captureTitles,
     countKeys: f.countKeys,
     island: { opacity: f.pillOpacity / 100 },
-    jira: { clientId: f.jiraClientId.trim() || undefined, projects: projectKeys(f.jiraProjects), syncMin: f.jiraSyncMin },
+    jira: { clientId: f.jiraClientId.trim() || undefined, site: jiraSiteUrl(f.jiraSite), projects: projectKeys(f.jiraProjects), syncMin: f.jiraSyncMin },
     voice: { enabled: f.voiceEnabled, autoTranscribe: f.autoTranscribe, model: f.voiceModel, micId: f.micId },
   }
 }
