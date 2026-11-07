@@ -142,7 +142,8 @@ export function usePopover(anchor: MaybeRefOrGetter<PopoverAnchor>, options: Pop
     const rect = isElement(a) ? a.getBoundingClientRect() : { left: a.x, right: a.x, top: a.y, bottom: a.y, width: 0, height: 0 }
     const where = options.place ?? ((from: PopoverFrom, p?: HTMLElement) => (from.el ? floatPlace(from.el, options) : pointPlace()(from, p)))
     const p = where({ rect, el }, panel.value)
-    style.value = p.style
+    // (fixed to the window whatever the placement says: a point's place gives only left / top)
+    style.value = { position: 'fixed', ...p.style }
     up.value = !!p.up
     room.value = p.room ?? 0
   }

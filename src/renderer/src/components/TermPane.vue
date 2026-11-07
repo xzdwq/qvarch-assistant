@@ -5,9 +5,12 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
-import { crumbs, type TermSession } from '@shared/terminal'
+import { crumbs, lineClearKey, type TermSession } from '@shared/terminal'
+import { joinRemote, remoteCrumbs } from '@shared/ssh/remotePath'
+import { shellQuote } from '@shared/ssh/remoteShell'
 import { formatDuration } from '@shared/timeline'
 import { openWhile } from '../lib/usePopover'
+import { ancestorsZoom } from '../lib/zoomFree'
 import { termTheme } from '../lib/terminal'
 import Icon from './Icon.vue'
 import Popover from './Popover.vue'
@@ -16,7 +19,7 @@ import Popover from './Popover.vue'
  * One shell on screen: over it the line of its place (each folder a click away; ›  — the folders inside),
  * the git branch, node / npm / pnpm, how long the last command took; under it the terminal itself.
  */
-const props = defineProps<{ session: TermSession; fontSize: number; active?: boolean }>()
+const props = defineProps<{ session: TermSession; fontSize: number; active?: boolean; restart?: (id: string) => Promise<void> }>()
 const emit = defineEmits<{ focus: []; zoom: [dir: 1 | -1] }>()
 
 const box = ref<HTMLElement>()
@@ -30,10 +33,25 @@ const DELETE_KEYS: ReadonlySet<string> = new Set(['Backspace', 'Delete'])
 /** Keys that only modify others (pressed alone they type nothing). */
 const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Control', 'Shift', 'Alt', 'Meta'])
 
+/**
+ * The zoom the terminal sits under (the app's, the dock's) undone on its box, its font made that much bigger instead:
+ * as big on screen, but xterm's pointer (selection, links) lands on the line under it — under a zoom it drifted up.
+ */
+let zoomUndone = 1
+function undoZoom(): void {
+  const el = box.value
+  if (!el) return
+  const z = ancestorsZoom(el)
+  if (Math.abs(z - zoomUndone) < 0.001) return
+  zoomUndone = z
+  el.style.zoom = String(1 / z)
+  if (term) term.options.fontSize = props.fontSize * z
+}
 function fitNow(): void {
   const el = box.value
   // hidden (another section is open) — nothing to measure
   if (!term || !fit || !el || !el.clientWidth || !el.clientHeight) return
+  undoZoom()
   try {
     fit.fit()
     window.qa.termResize(props.session.id, term.cols, term.rows)
@@ -42,10 +60,11 @@ function fitNow(): void {
   }
 }
 onMounted(async () => {
+  undoZoom()
   term = new Terminal({
     // the oh-my-posh glyphs come from an installed Nerd Font (Chromium falls back glyph by glyph)
     fontFamily: "'JetBrains Mono Variable', 'FantasqueSansMono Nerd Font Mono', 'FantasqueSansMono Nerd Font', 'DaddyTimeMono Nerd Font Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'Cascadia Mono', Consolas, monospace",
-    fontSize: props.fontSize,
+    fontSize: props.fontSize * zoomUndone,
     lineHeight: 1.15,
     cursorBlink: true,
     cursorStyle: 'bar',
@@ -192,7 +211,7 @@ watch(
   () => props.fontSize,
   (s) => {
     if (!term) return
-    term.options.fontSize = s
+    term.options.fontSize = s * zoomUndone
     fitNow()
   },
 )
@@ -205,7 +224,7 @@ defineExpose({
   clear: () => term?.clear(),
   /** Types a text into the shell (a preset): the line typed so far is dropped first. */
   type: (text: string, run: boolean) => {
-    window.qa.termWrite(props.session.id, `\x1b${text}${run ? '\r' : ''}`)
+    window.qa.termWrite(props.session.id, `${lineClearKey(props.session)}${text}${run ? '\r' : ''}`)
     term?.focus()
   },
 })
@@ -217,17 +236,28 @@ function onWheel(e: WheelEvent): void {
 
 // ---------- the line over the terminal ----------
 const info = computed(() => props.session.info)
-const parts = computed(() => crumbs(info.value.cwd))
+/** The path's crumbs: a local folder's (C:\…), a server's (/…) — known there from its prompts. */
+const parts = computed(() => (props.session.ssh ? (info.value.cwd ? remoteCrumbs(info.value.cwd) : []) : crumbs(info.value.cwd)))
+/** A folder as one argument of `cd`: PowerShell's quoting locally, a POSIX shell's on a server. */
+const cdArg = (path: string) => (props.session.ssh ? shellQuote(path) : /^[\w:\\/.-]+$/.test(path) ? path : `'${path.replace(/'/g, "''")}'`)
 /** Into a folder: the line typed so far is dropped, then a plain `cd` (quoted only when the path needs it). */
 function go(path: string): void {
   if (props.session.busy) return
-  const arg = /^[\w:\\/.-]+$/.test(path) ? path : `'${path.replace(/'/g, "''")}'`
-  window.qa.termWrite(props.session.id, `\x1bcd ${arg}\r`)
+  window.qa.termWrite(props.session.id, `${lineClearKey(props.session)}cd ${cdArg(path)}\r`)
   term?.focus()
 }
-/** The shell ended: started again here (its folder, the environment as it is now). */
+/**
+ * The shell ended: started again here (its folder, the environment as it is now; a server's — connected again, by
+ * the section's `restart` when it gives one: it asks for a password when needed).
+ */
+const restartError = ref('')
 function restart(): void {
-  void window.qa.termRestart(props.session.id).then(() => term?.focus())
+  restartError.value = ''
+  const again = props.restart ? props.restart(props.session.id) : window.qa.termRestart(props.session.id)
+  void again.then(
+    () => term?.focus(),
+    (e: unknown) => (restartError.value = e instanceof Error ? e.message : String(e)),
+  )
 }
 /** The folders inside a crumb (its ›): a list under it. */
 const menu = ref<{ path: string; dirs: string[] }>()
@@ -236,12 +266,23 @@ const menuOpen = openWhile(menu)
 async function openDirs(path: string, e: MouseEvent): Promise<void> {
   if (menu.value?.path === path) return void (menu.value = undefined)
   menuAnchor.value = e.currentTarget as HTMLElement
-  menu.value = { path, dirs: await window.qa.termDirs(path) }
+  menu.value = { path, dirs: await dirsIn(path) }
+}
+/** The folders inside a folder: a local one's from the disk, a server's over SFTP (an error — none). */
+async function dirsIn(path: string): Promise<string[]> {
+  const ssh = props.session.ssh
+  if (!ssh) return window.qa.termDirs(path)
+  try {
+    const l = await window.qa.ssh('list', ssh.id, path)
+    return l.entries.filter((e) => e.kind === 'dir' || e.toDir).map((e) => e.name)
+  } catch {
+    return []
+  }
 }
 function pickDir(d: string): void {
   const p = menu.value!.path
   menu.value = undefined
-  go(`${p.replace(/\\$/, '')}\\${d}`)
+  go(props.session.ssh ? joinRemote(p, d) : `${p.replace(/\\$/, '')}\\${d}`)
 }
 const wantOk = computed(() => {
   const w = info.value.project?.nodeWanted
@@ -255,7 +296,9 @@ const wantOk = computed(() => {
 <template>
   <div class="tp tw:flex tw:flex-col tw:min-w-0 tw:min-h-0 tw:border tw:border-border tw:rounded-r3 tw:bg-bg tw:overflow-hidden tw:[&.active]:border-accent-line" :class="{ active }" @mousedown="emit('focus')">
     <div class="tl tw:flex-none tw:flex tw:items-center tw:gap-8 tw:h-30 tw:py-0 tw:px-8 tw:border-b tw:border-b-border tw:bg-panel tw:whitespace-nowrap tw:overflow-hidden tw:font-data tw:text-[11.5px]">
-      <span class="crumbs tw:inline-flex tw:flex-[0_1_auto] tw:justify-end tw:items-center tw:min-w-40 tw:overflow-hidden">
+      <!-- a server's shell: where it is (no local folder there) -->
+      <span v-if="session.ssh" class="seg tw:inline-flex tw:flex-[0_1_auto] tw:items-center tw:gap-5 tw:min-w-0 tw:max-w-[40%] tw:text-info-fg" :title="`SSH: ${session.ssh.host}${info.cwd ? '' : ' · папка неизвестна (оболочка не bash / zsh или слежение за папкой выключено в сессии)'}`"><Icon name="monitor" :size="12" class="tw:flex-none" /><span class="tw:truncate">{{ session.ssh.host }}</span></span>
+      <span v-if="parts.length || !session.ssh" class="crumbs tw:inline-flex tw:flex-[0_1_auto] tw:justify-end tw:items-center tw:min-w-40 tw:overflow-hidden">
         <Icon name="folderOpen" :size="13" class="fi tw:[&&]:flex-none tw:mr-4 tw:text-warn" />
         <template v-for="(c, i) in parts" :key="c.path">
           <button class="cr tw:flex-none tw:inline-flex tw:items-center tw:h-22 tw:py-0 tw:px-4 tw:border-0 tw:rounded-r1 tw:bg-transparent tw:text-text-2 tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:[line-height:inherit] tw:font-[inherit] tw:cursor-default tw:[&.last]:text-text-hi tw:[&.last]:font-semibold tw:hover:enabled:bg-hover tw:hover:enabled:text-accent-fg tw:hover:enabled:border-border-3" :class="{ last: i === parts.length - 1 }" :disabled="session.busy" :title="`Перейти: ${c.path}`" @click="go(c.path)">{{ c.name }}</button>
@@ -274,7 +317,8 @@ const wantOk = computed(() => {
       <span v-if="info.node" class="seg node tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-up/12 tw:text-up-fg tw:[&.bad]:bg-down/16 tw:[&.bad]:text-down-fg" :class="{ bad: !wantOk }" :title="info.project?.nodeWanted ? `Проект просит node ${info.project.nodeWanted}` : 'Версия node в этой оболочке'">⬢ {{ info.node }}<template v-if="!wantOk"> ≠ {{ info.project?.nodeWanted }}</template></span>
       <span v-if="info.npm" class="seg npm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-down/12 tw:text-down-fg" title="npm">npm {{ info.npm }}</span>
       <span v-if="info.pnpm" class="seg pnpm tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:rounded-r2 tw:bg-warn/12 tw:text-warn-fg" title="pnpm">pnpm {{ info.pnpm }}</span>
-      <button v-if="session.exited !== undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:border-0 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg tw:[font:inherit] tw:hover:bg-down/26" title="Оболочка завершилась — запустить её снова в этой вкладке (в той же папке, с переменными окружения, как они сейчас)" @click="restart"><Icon name="refresh" :size="11" />завершён ({{ session.exited }}) · перезапустить</button>
+      <button v-if="session.exited !== undefined" class="seg bad tw:inline-flex tw:items-center tw:gap-4 tw:flex-none tw:py-0 tw:px-7 tw:h-20 tw:border-0 tw:rounded-r2 tw:bg-down/16 tw:text-down-fg tw:[font:inherit] tw:hover:bg-down/26" title="Оболочка завершилась — запустить её снова в этой вкладке (в той же папке, с переменными окружения, как они сейчас)" @click="restart"><Icon name="refresh" :size="11" />{{ session.ssh ? 'отключён · подключить снова' : `завершён (${session.exited}) · перезапустить` }}</button>
+      <span v-if="restartError && session.exited !== undefined" class="seg tw:min-w-0 tw:truncate tw:text-down-fg" :title="restartError">{{ restartError }}</span>
     </div>
     <div ref="box" class="xt tw:flex-1 tw:min-h-0 tw:pt-4 tw:pr-0 tw:pb-0 tw:pl-6" @wheel="onWheel"></div>
     <Popover v-model:open="menuOpen" :anchor="menuAnchor" :width="260" align-left :chrome="60" max-height="none" class="tdirs tw:flex tw:flex-col tw:max-h-340 tw:overflow-y-auto tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">

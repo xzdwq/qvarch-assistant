@@ -8,6 +8,8 @@ import TermPresetDialog from './terminal/TermPresetDialog.vue'
 import TermVarDialog from './terminal/TermVarDialog.vue'
 import TermWatchDialog from './terminal/TermWatchDialog.vue'
 import TermHelpDialog from './terminal/TermHelpDialog.vue'
+import TermSessionDialog from './terminal/TermSessionDialog.vue'
+import SshPasswordDialog from './terminal/SshPasswordDialog.vue'
 import { provideTermView } from './terminal/termViewContext'
 
 /**
@@ -44,6 +46,9 @@ const { sideW, sideHidden } = prefs
       <!-- a reaction -->
       <TermWatchDialog />
       <TermHelpDialog />
+      <!-- an SSH session, a password asked for -->
+      <TermSessionDialog />
+      <SshPasswordDialog />
     </Teleport>
   </div>
 </template>

@@ -4,15 +4,16 @@ import { ref } from 'vue'
 import { shellLight } from '@shared/terminalEdit'
 import Icon from '../../components/Icon.vue'
 import TermPane from '../../components/TermPane.vue'
+import SftpPanel from './SftpPanel.vue'
 import ZoomChip from '../../components/ZoomChip.vue'
 import { vFocusSelect as vFocus } from '../../lib/focusSelect'
 import { termLayout } from '../../lib/terminal'
 import { useTermView } from './termViewContext'
 import { useTermTabDrag } from './useTermTabDrag'
 
-const { prefs, alerts, shells } = useTermView()
+const { prefs, alerts, shells, files } = useTermView()
 const { zoom, sideHidden, fontSize } = prefs
-const { byId, paneRefs, newShell, toggleSplit, closeShell } = shells
+const { byId, paneRefs, newShell, restartShell, toggleSplit, closeShell } = shells
 const panesEl = ref<HTMLElement>()
 const { tabDrag, zone, dragTitle, onTabDown, onTabClick } = useTermTabDrag(panesEl, shells)
 
@@ -77,22 +78,32 @@ function onSplitResize(e: PointerEvent): void {
               <button class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: termLayout.panes.length > 1 }" :title="termLayout.panes.length > 1 ? 'Одна колонка (вкладки соберутся слева)' : 'Разделить: вторая колонка со своими вкладками'" @click="toggleSplit">
                 <Icon name="columns" :size="14" />
               </button>
+              <button v-if="byId(p.active)?.ssh" class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg" :class="{ on: !files.hidden.value }" :title="files.hidden.value ? 'Показать проводник файлов сервера' : 'Скрыть проводник файлов сервера'" @click="files.hidden.value = !files.hidden.value">
+                <Icon name="folderOpen" :size="14" />
+              </button>
               <ZoomChip v-if="pi === termLayout.panes.length - 1" v-model="zoom" :min="60" :max="220" title="Масштаб терминала · колесо, Ctrl+колесо над терминалом · клик — 100%" />
             </div>
-            <div class="pbody tw:flex-1 tw:min-h-0 tw:flex tw:flex-col tw:p-8">
-              <template v-for="id in p.tabs" :key="id">
-                <TermPane class="tw:flex-1"
-                  v-if="byId(id)"
-                  v-show="p.active === id"
-                  :ref="(el) => (el ? paneRefs.set(id, el as InstanceType<typeof TermPane>) : paneRefs.delete(id))"
-                  :session="byId(id)!"
-                  :font-size="fontSize"
-                  :active="p.active === id && termLayout.cur === pi"
-                  @focus="termLayout.cur = pi"
-                  @zoom="(d) => (zoom = Math.min(220, Math.max(60, zoom + d * 10)))"
-                />
+            <div class="pbody tw:flex-1 tw:min-h-0 tw:flex tw:p-8">
+              <div class="tw:flex-1 tw:min-w-0 tw:min-h-0 tw:flex tw:flex-col">
+                <template v-for="id in p.tabs" :key="id">
+                  <TermPane class="tw:flex-1"
+                    v-if="byId(id)"
+                    v-show="p.active === id"
+                    :ref="(el) => (el ? paneRefs.set(id, el as InstanceType<typeof TermPane>) : paneRefs.delete(id))"
+                    :session="byId(id)!"
+                    :font-size="fontSize"
+                    :active="p.active === id && termLayout.cur === pi"
+                    :restart="restartShell"
+                    @focus="termLayout.cur = pi"
+                    @zoom="(d) => (zoom = Math.min(220, Math.max(60, zoom + d * 10)))"
+                  />
+                </template>
+                <div v-if="!p.tabs.length" class="nopane tw:flex-1 tw:flex tw:items-center tw:justify-center tw:gap-8 tw:border tw:border-dashed tw:border-border-2 tw:rounded-r3 tw:text-muted tw:text-[12.5px] tw:cursor-default tw:hover:border-accent tw:hover:text-accent-fg" @click="newShell(pi)"><Icon name="plus" :size="16" />Новая оболочка</div>
+              </div>
+              <!-- an SSH tab's file explorer (kept while its tab lives: its folder and picks stay when hidden) -->
+              <template v-for="id in p.tabs" :key="`f${id}`">
+                <SftpPanel v-if="byId(id)?.ssh" v-show="p.active === id && !files.hidden.value" :session="byId(id)!" />
               </template>
-              <div v-if="!p.tabs.length" class="nopane tw:flex-1 tw:flex tw:items-center tw:justify-center tw:gap-8 tw:border tw:border-dashed tw:border-border-2 tw:rounded-r3 tw:text-muted tw:text-[12.5px] tw:cursor-default tw:hover:border-accent tw:hover:text-accent-fg" @click="newShell(pi)"><Icon name="plus" :size="16" />Новая оболочка</div>
             </div>
             <template v-if="tabDrag">
               <template v-if="termLayout.panes.length === 1">

@@ -17,6 +17,7 @@ import type { PulsePoint } from './pulse'
 import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi, BrowserEventArgs } from './browser'
+import type { SshApi, SshEventArgs } from './ssh/api'
 import type { TestFilesApi } from './testFiles'
 import type { SqlApi } from './sql'
 import type { TableFileApi } from './tableData'
@@ -247,6 +248,12 @@ export interface QaApi {
   jiraFind(q: string, offset: number, limit: number, mode?: 'list' | 'pick', query?: JiraListQuery): Promise<{ items: JiraListItem[]; total: number; found: number; facets: JiraFacets }>
   /** Терминал: shells that live until the app quits. */
   termCreate(cwd?: string): Promise<TermSession>
+  /** A shell on an SSH server in a new tab (its connection made first: `ssh('connect', …)` asks for a password). */
+  termCreateSsh(sessionId: string): Promise<TermSession>
+  /** SSH: the saved sessions, the file explorer, the transfers (see SshApi). */
+  ssh<K extends keyof SshApi>(m: K, ...a: Parameters<SshApi[K]>): Promise<Awaited<ReturnType<SshApi[K]>>>
+  /** SSH's news by name (SshEvents): sessions, transfers, a connection closed. */
+  onSsh(cb: (...e: SshEventArgs) => void): () => void
   termWrite(id: string, data: string): void
   termResize(id: string, cols: number, rows: number): void
   termKill(id: string): Promise<void>

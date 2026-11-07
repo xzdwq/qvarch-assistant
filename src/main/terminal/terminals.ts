@@ -8,6 +8,15 @@ import { commandFailure, COMMAND_ACCEPTED, isCtrlCExit, lastPromptMark, openMark
 import { TermConfigFile } from './termConfigFile'
 import { windowsShellEnv } from './windowsEnv'
 import { newScanState, WatchScanner, type ScanState } from './watchScanner'
+import { ptyProcess, type TermProcess } from './termProcess'
+import { scanOsc7 } from '../../shared/ssh/remoteShell'
+
+/** Where the terminal gets an SSH server's shell from (the SSH service): a session's name and host, its shell. */
+export interface SshShells {
+  label(sessionId: string): { title: string; host: string } | undefined
+  /** The session's shell over its connection (needing a password — refused, the window asks and connects first). */
+  open(sessionId: string, cols: number, rows: number): Promise<TermProcess>
+}
 
 /** The output kept for a pane drawn again (characters; trimmed back to it past a quarter more). */
 const KEEP = 400_000
@@ -20,7 +29,7 @@ const SPAWN_RETRIES = 2
 /** One shell: its public state, its pseudo-console and what is known of the command going on. */
 interface Session {
   s: TermSession
-  p: pty.IPty
+  p: TermProcess
   buf: string
   /** An unfinished mark at the end of the last chunk. */
   carry: string
@@ -62,6 +71,7 @@ export class Terminals {
     private onData: (id: string, data: string, end: number) => void,
     private onState: (list: TermSession[]) => void,
     onAlerts: (list: TermAlert[], watchError: string) => void,
+    private readonly sshShells?: SshShells,
   ) {
     this.cfgFile = new TermConfigFile(root)
     this.cfg = this.cfgFile.read()
@@ -105,10 +115,53 @@ export class Terminals {
     this.changed()
     return ses.s
   }
+  /** A shell on an SSH server in a new tab, named as its session (a number added when that name is taken). */
+  async createSsh(sessionId: string): Promise<TermSession> {
+    const label = this.sshShells?.label(sessionId)
+    if (!this.sshShells || !label) throw new Error('Сессия не найдена')
+    // (asked before the tab is made: a password needed — no tab is left behind)
+    const proc = await this.sshShells.open(sessionId, 120, 30)
+    const used = new Set(this.list().map((s) => s.title))
+    let title = label.title
+    for (let n = 2; used.has(title); n++) title = `${label.title} ${n}`
+    const id = presetId()
+    const ses = { s: { id, title, busy: false, info: { cwd: '' }, ssh: { id: sessionId, host: label.host } }, buf: '', carry: '', out: '', sent: 0, scan: newScanState() } as Session
+    this.sessions.set(id, ses)
+    this.attachSsh(ses, proc)
+    this.changed()
+    return ses.s
+  }
+  /** An SSH shell's output and end heard (no prompt marks there: its output is all the command's). */
+  private attachSsh(ses: Session, p: TermProcess): void {
+    ses.p = p
+    // a new shell: its folder is not known until its first prompt tells it
+    ses.carry = ''
+    ses.s.info = { cwd: '' }
+    ses.startedAt = undefined
+    if (ses.cols && ses.rows) p.resize(ses.cols, ses.rows)
+    p.onData((d) => ses.p === p && this.data(ses, d))
+    p.onExit((code) => {
+      if (ses.p !== p) return
+      this.data(ses, '\r\n\x1b[2m— соединение закрыто —\x1b[0m\r\n')
+      this.flush(ses)
+      ses.s.exited = code
+      ses.s.busy = false
+      this.changed()
+    })
+  }
   /** A shell that ended started again in its tab: in its folder, the environment read anew, its output so far kept. */
   async restart(id: string): Promise<void> {
     const ses = this.sessions.get(id)
     if (!ses || ses.s.exited === undefined) return
+    if (ses.s.ssh) {
+      const proc = await this.sshShells!.open(ses.s.ssh.id, ses.cols ?? 120, ses.rows ?? 30)
+      if (this.sessions.get(id) !== ses) return proc.kill()
+      Object.assign(ses.s, { exited: undefined, failed: undefined, busy: false })
+      this.data(ses, '\r\n\x1b[2m— подключено заново —\x1b[0m\r\n')
+      this.attachSsh(ses, proc)
+      this.changed()
+      return
+    }
     const dir = this.folderFor(ses.s.info.cwd)
     const env = await windowsShellEnv(shellEnv(process.env))
     if (this.sessions.get(id) !== ses || ses.s.exited === undefined) return
@@ -127,7 +180,7 @@ export class Terminals {
    * the computer busy) ends it at once with -1 and no output — started again a couple of times before it is told.
    */
   private spawn(ses: Session, dir: string, env: Record<string, string>, attempt: number): void {
-    const p = pty.spawn(this.shell, shellArgs(this.cfg.profile), { name: 'xterm-256color', cols: ses.cols ?? 120, rows: ses.rows ?? 30, cwd: dir, env })
+    const p = ptyProcess(pty.spawn(this.shell, shellArgs(this.cfg.profile), { name: 'xterm-256color', cols: ses.cols ?? 120, rows: ses.rows ?? 30, cwd: dir, env }))
     ses.p = p
     let said = false
     p.onData((d) => {
@@ -135,7 +188,7 @@ export class Terminals {
       said = true
       this.data(ses, d)
     })
-    p.onExit(({ exitCode }) => {
+    p.onExit((exitCode) => {
       if (ses.p !== p) return
       const mine = this.sessions.get(ses.s.id) === ses
       if (mine && exitCode === -1 && !said && attempt < SPAWN_RETRIES) {
@@ -156,6 +209,22 @@ export class Terminals {
     ses.buf = ses.buf.length + d.length > KEEP * 1.25 ? (ses.buf + d).slice(-KEEP) : ses.buf + d
     ses.out += d
     ses.outTimer ??= setTimeout(() => this.flush(ses), SEND_MS)
+    // a server's shell: the reactions read all it prints; its folder comes with each prompt (OSC 7 — the hook)
+    if (ses.s.ssh) {
+      if (this.watches.active) this.watches.feed(ses, d)
+      const r = scanOsc7(ses.carry, d)
+      ses.carry = r.carry
+      const cwd = r.cwds.at(-1)
+      if (!cwd) return
+      ses.s.info = { cwd }
+      // a prompt: the command (if one ran) ended
+      if (ses.startedAt) ses.s.lastMs = Date.now() - ses.startedAt
+      ses.startedAt = undefined
+      ses.s.busy = false
+      this.watches.commandEnded(ses)
+      this.changed()
+      return
+    }
     // the marks (one may be split between two chunks)
     const text = ses.carry + d
     let from = ses.carry.length
@@ -210,7 +279,8 @@ export class Terminals {
     const ses = this.sessions.get(id)
     if (!ses || ses.s.exited !== undefined) return
     if (ses.s.busy && data.includes('\x03')) ses.interrupted = true
-    if (/[\r\n]/.test(data) && !ses.s.busy) {
+    // (a server's shell tells its prompts only with the folder hook: without it busy is never known there)
+    if (/[\r\n]/.test(data) && !ses.s.busy && (!ses.s.ssh || ses.s.info.cwd)) {
       ses.s.busy = true
       ses.startedAt = Date.now()
       ses.interrupted = false
@@ -293,7 +363,7 @@ export class Terminals {
   /** Where a shell's variables are worked out (no shell — the last folder used). */
   private variableSource(id: string | undefined): VariableSource {
     const ses = id ? this.sessions.get(id) : undefined
-    return { cwd: ses?.s.info.cwd ?? this.cfg.lastCwd ?? homedir(), info: ses?.s.info, vars: this.cfg.vars, shell: this.shell }
+    return { cwd: ses?.s.info.cwd || this.cfg.lastCwd || homedir(), info: ses?.s.info, vars: this.cfg.vars, shell: this.shell }
   }
   /** A preset's command with its `{{ … }}` worked out for a shell, and the inserts that came out empty. */
   render(id: string, cmd: string, answers: Record<string, string>): { text: string; empty: string[] } {

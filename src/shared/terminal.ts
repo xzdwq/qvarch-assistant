@@ -28,6 +28,8 @@ export interface TermSession {
   /** Output the reactions did not check (bytes): the stream outran the check, the excess was skipped. */
   skipped?: number
   info: TermInfo
+  /** A shell on an SSH server (its saved session and where it is): no local folder, git or versions for it. */
+  ssh?: { id: string; host: string }
 }
 export interface TermPreset {
   id: string
@@ -99,6 +101,12 @@ export function cleanTermConfigPatch(v: unknown): Partial<TermConfig> {
   if (typeof c.profile === 'boolean') out.profile = c.profile
   return out
 }
+
+/**
+ * The key that drops the line typed so far before a command is typed in (a preset, a folder clicked): PowerShell
+ * (PSReadLine) — Esc; a server's shell (bash / zsh readline) — Ctrl+U (Esc there starts an Alt+key: Esc l ate the l).
+ */
+export const lineClearKey = (s: Pick<TermSession, 'ssh'>) => (s.ssh ? '\x15' : '\x1b')
 
 export const presetId = () => Math.random().toString(36).slice(2, 10)
 

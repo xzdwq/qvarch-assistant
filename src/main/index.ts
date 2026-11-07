@@ -197,6 +197,7 @@ app.on('before-quit', () => {
   ctx.voice?.stop()
   ctx.vault?.stop()
   ctx.terminals?.killAll()
+  ctx.ssh?.stop()
   ctx.browser?.closeAll()
   ctx.clipLog?.flush()
   // what services were about to write (hooks, the API map, «Проверка»…) — written now

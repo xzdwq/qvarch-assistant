@@ -3,6 +3,7 @@
 import type { Component } from 'vue'
 import Icon from '../../components/Icon.vue'
 import TermPresetList from './TermPresetList.vue'
+import TermSessionList from './TermSessionList.vue'
 import TermVarList from './TermVarList.vue'
 import TermWatchList from './TermWatchList.vue'
 import { useTermView } from './termViewContext'
@@ -12,18 +13,19 @@ const { prefs, alerts, config, runner, helpOpen } = useTermView()
 const { sideTab, sideHidden, dragSide } = prefs
 const { cfg, setProfile } = config
 const { runError } = runner
-/** Each side tab's name and the list it shows. */
-const SIDE_TABS: Record<SideTab, { label: string; list: Component }> = {
-  presets: { label: 'Пресеты', list: TermPresetList },
-  vars: { label: 'Переменные', list: TermVarList },
-  watch: { label: 'Реакции', list: TermWatchList },
+/** Each side tab's icon, its name (the tooltip) and the list it shows. */
+const SIDE_TABS: Record<SideTab, { label: string; icon: string; list: Component }> = {
+  ssh: { label: 'Сессии SSH', icon: 'monitor', list: TermSessionList },
+  presets: { label: 'Пресеты — команды в один клик', icon: 'zap', list: TermPresetList },
+  vars: { label: 'Переменные для пресетов', icon: 'braces', list: TermVarList },
+  watch: { label: 'Реакции на слова в выводе', icon: 'bell', list: TermWatchList },
 }
 </script>
 
 <template>
     <aside class="ps tw:relative tw:flex tw:flex-col tw:min-h-0 tw:border-r tw:border-r-border tw:bg-panel">
       <div class="stabs tw:flex tw:flex-none tw:h-38 tw:border-b tw:border-b-border">
-        <button v-for="t in SIDE_TAB_IDS" :key="t" class="tw:relative tw:flex-1 tw:min-w-0 tw:py-0 tw:px-4 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:overflow-hidden tw:text-ellipsis tw:hover:not-[&.on]:text-text tw:[&.on]:text-text-hi tw:[&.on]:[box-shadow:var(--shadow-underline)]" :class="{ on: sideTab === t }" @click="sideTab = t">{{ SIDE_TABS[t].label }}<i v-if="t === 'watch' && alerts.length"class="sdot tw:inline-block tw:w-6 tw:h-6 tw:ml-5 tw:rounded-[50%] tw:align-middle tw:animate-[Shared-blink-25_0.36s_steps(2)_infinite]" :style="{ background: alerts[0].color }"></i></button>
+        <button v-for="t in SIDE_TAB_IDS" :key="t" class="tw:relative tw:flex-1 tw:min-w-0 tw:inline-flex tw:items-center tw:justify-center tw:py-0 tw:px-4 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:hover:not-[&.on]:text-text tw:[&.on]:text-text-hi tw:[&.on]:[box-shadow:var(--shadow-underline)]" :class="{ on: sideTab === t }" :title="SIDE_TABS[t].label" :aria-label="SIDE_TABS[t].label" @click="sideTab = t"><Icon :name="SIDE_TABS[t].icon" :size="14" /><i v-if="t === 'watch' && alerts.length" class="sdot tw:absolute tw:top-9 tw:right-[calc(50%-12px)] tw:w-6 tw:h-6 tw:rounded-[50%] tw:animate-[Shared-blink-25_0.36s_steps(2)_infinite]" :style="{ background: alerts[0].color }"></i></button>
         <button class="shide tw:flex-none tw:w-34 tw:relative tw:min-w-0 tw:py-0 tw:px-4 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[12px] tw:whitespace-nowrap tw:overflow-hidden tw:text-ellipsis tw:hover:text-text" title="Скрыть панель" @click="sideHidden = true"><Icon name="sidebar" :size="14" /></button>
       </div>
 

@@ -1,6 +1,8 @@
 import { computed, onMounted, watch } from 'vue'
 import type TermPane from '../../components/TermPane.vue'
 import { addTab, syncLayout, termLayout, termsLoaded, useTermSessions } from '../../lib/terminal'
+import { ensureConnected } from '../../lib/ssh'
+import { remoteError } from '@shared/remoteError'
 
 /** The shells and the panes showing them: making, showing, closing; the split into two panes. */
 export function useTermShells() {
@@ -27,6 +29,30 @@ export function useTermShells() {
     } finally {
       making--
     }
+  }
+  /**
+   * A shell on an SSH server in a new tab of a pane: its connection made first (a password asked when needed;
+   * cancelled — no tab). Fails with the reason (no network, the server's key refused…).
+   */
+  async function newSshShell(sessionId: string, pi = termLayout.cur): Promise<string | undefined> {
+    if (!(await ensureConnected(sessionId))) return undefined
+    making++
+    try {
+      const s = await window.qa.termCreateSsh(sessionId)
+      for (const p of termLayout.panes) p.tabs = p.tabs.filter((t) => t !== s.id)
+      addTab(Math.min(pi, termLayout.panes.length - 1), s.id)
+      return s.id
+    } catch (e) {
+      throw new Error(remoteError(e))
+    } finally {
+      making--
+    }
+  }
+  /** A shell that ended started again (a server's — its connection made again first, a password asked when needed). */
+  async function restartShell(id: string): Promise<void> {
+    const ssh = byId(id)?.ssh
+    if (ssh && !(await ensureConnected(ssh.id))) return
+    await window.qa.termRestart(id)
   }
   onMounted(async () => {
     // the first visit: a shell to start with
@@ -67,6 +93,6 @@ export function useTermShells() {
     if (s?.busy && !confirm(`В «${s.title}» ещё идёт команда. Закрыть оболочку?`)) return
     await window.qa.termKill(id)
   }
-  return { sessions, byId, curId, paneRefs, newShell, toggleSplit, show, reveal, closeShell }
+  return { sessions, byId, curId, paneRefs, newShell, newSshShell, restartShell, toggleSplit, show, reveal, closeShell }
 }
 export type TermShells = ReturnType<typeof useTermShells>

@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 
 /** The side panel's tabs, in order. */
-export const SIDE_TAB_IDS = ['presets', 'vars', 'watch'] as const
+export const SIDE_TAB_IDS = ['ssh', 'presets', 'vars', 'watch'] as const
 export type SideTab = (typeof SIDE_TAB_IDS)[number]
 const isSideTab = (v: unknown): v is SideTab => (SIDE_TAB_IDS as readonly unknown[]).includes(v)
 

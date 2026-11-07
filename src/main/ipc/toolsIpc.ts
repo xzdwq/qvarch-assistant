@@ -4,7 +4,13 @@ import { contentsOf, type AppContext } from '../app/appContext'
 import { ClipLog } from '../clipLog'
 import { HttpClient } from '../http'
 import { Terminals } from '../terminal'
-import { emit, handle, listen } from './router'
+import type { SshShells } from '../terminal/terminals'
+import { sshProcess } from '../terminal/termProcess'
+import { SshService } from '../ssh/sshService'
+import { withCwdHook } from '../ssh/cwdHook'
+import { SSH_METHODS, type SshEventArgs } from '../../shared/ssh/api'
+import { sessionTitle } from '../../shared/ssh/sessions'
+import { emit, handle, handleDispatch, listen } from './router'
 
 /** The tools of the app: the terminal's shells, the HTTP client, the clipboard's history. */
 export function registerToolsIpc(app: AppContext): void {
@@ -15,6 +21,20 @@ export function registerToolsIpc(app: AppContext): void {
 
 /** Shells that live until the app quits; their output and state go to the main window (the state — to the island too). */
 function registerTerminal(app: AppContext): void {
+  // SSH: the saved sessions, the file explorer, the transfers; a session's shell goes into a terminal tab
+  const ssh = new SshService(app.store.root, () => app.windows.main ?? undefined, (type, payload) => app.emitToMain('onSsh', ...([type, payload] as SshEventArgs)))
+  app.ssh = ssh
+  handleDispatch('ssh', SSH_METHODS, () => ssh)
+  const sshShells: SshShells = {
+    label: (id) => {
+      const s = ssh.store.get(id)
+      return s && { title: sessionTitle(s), host: `${s.user}@${s.host}${s.port === 22 ? '' : `:${s.port}`}` }
+    },
+    open: async (id, cols, rows) => {
+      const ch = await ssh.connections.shell(id, cols, rows)
+      return withCwdHook(sshProcess(ch, ssh.connections.hold(id)), ssh.store.get(id)?.followCwd !== false)
+    },
+  }
   const term = new Terminals(
     app.store.root,
     (id, data, end) => app.emitToMain('onTermData', id, data, end),
@@ -23,9 +43,11 @@ function registerTerminal(app: AppContext): void {
       emit(contentsOf(app.windows.island?.win), 'onTermState', list)
     },
     (list, watchError) => app.emitToMain('onTermAlerts', { list, watchError }),
+    sshShells,
   )
   app.terminals = term
   handle('termCreate', (_e, cwd) => term.create(typeof cwd === 'string' ? cwd : undefined))
+  handle('termCreateSsh', (_e, sessionId) => term.createSsh(String(sessionId)))
   listen('termWrite', (_e, id, data) => term.write(String(id), String(data)))
   listen('termResize', (_e, id, cols, rows) => term.resize(String(id), Number(cols), Number(rows)))
   handle('termKill', (_e, id) => term.kill(String(id)))

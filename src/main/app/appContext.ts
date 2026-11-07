@@ -13,6 +13,7 @@ import type { SqlStore } from '../sql/store'
 import type { Store } from '../store'
 import type { TabletService } from '../tablet'
 import type { Terminals } from '../terminal'
+import type { SshService } from '../ssh/sshService'
 import { TestFiles } from '../testFiles'
 import type { Tracker } from '../tracker'
 import type { Transport } from '../transport/transport'
@@ -37,6 +38,7 @@ export class AppContext {
   vault!: Vault
   tablet?: TabletService
   terminals?: Terminals
+  ssh?: SshService
   browser?: Browser
   clipLog?: ClipLog
   sqlStore?: SqlStore

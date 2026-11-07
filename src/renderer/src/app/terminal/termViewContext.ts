@@ -7,6 +7,8 @@ import { useTermShells } from './useTermShells'
 import { useTermViewPrefs } from './useTermViewPrefs'
 import { useVarEditor } from './useVarEditor'
 import { useWatchEditor } from './useWatchEditor'
+import { useSessionEditor } from './useSessionEditor'
+import { useSftpPanels } from './useSftpPanels'
 
 /** Everything the terminal section's parts share: the view's settings, the shells, the config and its editors. */
 function createTermView() {
@@ -18,9 +20,11 @@ function createTermView() {
   const presets = usePresetEditor(config)
   const vars = useVarEditor(config, shells, prefs.sideTab, runner.runError)
   const watches = useWatchEditor(config)
+  const sessions = useSessionEditor()
+  const files = useSftpPanels(shells)
   /** The guide dialog open. */
   const helpOpen = ref(false)
-  return { prefs, alerts, watchError, config, shells, runner, presets, vars, watches, helpOpen }
+  return { prefs, alerts, watchError, config, shells, runner, presets, vars, watches, sessions, files, helpOpen }
 }
 export type TermView = ReturnType<typeof createTermView>
 const TERM_VIEW: InjectionKey<TermView> = Symbol('termView')
