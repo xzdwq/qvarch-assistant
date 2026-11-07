@@ -25,6 +25,8 @@ import { setupLinks } from '../lib/links'
 import { startBrowser } from '../lib/browser'
 import { watchPwRec } from '../lib/pwrec'
 import { startMcpBridge } from '../lib/mcpBridge'
+import { startShellApprovals } from '../lib/shellApprovals'
+import ShellApprovalDialog from '../components/ShellApprovalDialog.vue'
 import { startChat } from '../lib/chat'
 import { startAgents } from '../lib/agentTurns'
 import { startHarnessDriver } from '../lib/harness/harnessDriver'
@@ -42,6 +44,8 @@ setupLinks()
 startBrowser()
 watchPwRec()
 startMcpBridge()
+// the notebook's shell scripts: asked about here whatever section is open (a schedule, the AI may run them)
+startShellApprovals()
 // the chats: their news from the start (a notification may open a chat's document any time)
 startChat()
 // this person's AI agents answer in the chats when called
@@ -205,6 +209,7 @@ function setAppZoom(z: number): void {
     </header>
 
     <SeriesAsk />
+    <ShellApprovalDialog />
     <main class="tw:flex-1 tw:overflow-auto tw:min-h-0 tw:[&:has(>_.tools)]:not-[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.nb)]:not-[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rep)]:not-[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.sh)]:not-[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.rel)]:not-[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.ps)]:not-[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.tv)]:not-[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.hv)]:not-[&:has(>_.termslot)]:overflow-hidden tw:[&:has(>_.termslot)]:overflow-hidden" v-if="settings" :style="{ zoom: appZoom / 100 }">
       <Transition name="fade" mode="out-in">
         <div v-if="view === 'notebook'" class="termslot tw:hidden"></div>

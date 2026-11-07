@@ -5,6 +5,7 @@ import type { BlockRun } from '@nb/engine'
 import { sendsUnrun, type ShotKind } from '@nb/engine/chatAttach'
 import Icon from '@renderer/components/Icon.vue'
 import SendToChat from './SendToChat.vue'
+import type { BatchToggle } from './batchToggle'
 import VarNameField from './VarNameField.vue'
 
 /**
@@ -13,7 +14,9 @@ import VarNameField from './VarNameField.vue'
  */
 /** `send` — the kind it goes into a chat as («В чат»; none — not sent); `src` — the block's text (a kind sent as written). */
 /** `named` — the block publishes its result under a name (one that publishes nothing — no name field). */
-const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string; send?: ShotKind; src?: string; named?: boolean }>(), { canRun: true, src: '', named: true })
+/** `batch` — the block's part in «Выполнить всё» (a toggle; none — the block is never run in a batch). */
+/** `fold` — the block folds to its head: the chevron and its kind are one button at the start (as the chat's). */
+const props = withDefaults(defineProps<{ icon: string; kind: string; name?: string; run?: BlockRun; canRun?: boolean; namePlaceholder?: string; report?: () => string; send?: ShotKind; src?: string; named?: boolean; batch?: BatchToggle; fold?: { open: boolean; set(open: boolean): void } }>(), { canRun: true, src: '', named: true, batch: undefined, fold: undefined })
 /** «В чат» shown: a result to send (a run done), or a kind that goes as written. */
 const sendable = computed(() => !!props.send && (sendsUnrun(props.send) || (!!props.run && props.run.state !== 'run')))
 const emit = defineEmits<{ rename: [name: string | undefined]; run: []; stop: [] }>()
@@ -48,7 +51,19 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 
 <template>
   <div class="rh tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
-    <span class="rk tw:inline-flex tw:items-center tw:gap-6 tw:text-muted"><Icon :name="icon" :size="13" />{{ kind }}</span>
+    <button v-if="fold" class="rk tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-24 tw:py-0 tw:pr-6 tw:pl-2 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:text-[12px] tw:hover:bg-hover tw:hover:text-text tw:[&.out]:opacity-60" :class="{ out: batch && !batch.inBatch }" :title="fold.open ? 'Свернуть (останется заголовок)' : 'Развернуть'" @mousedown.prevent @click="fold.set(!fold.open)">
+      <Icon :name="fold.open ? 'chevronDown' : 'chevronRight'" :size="13" /><Icon :name="icon" :size="13" />{{ kind }}
+    </button>
+    <span v-else class="rk tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:[&.out]:opacity-60" :class="{ out: batch && !batch.inBatch }"><Icon :name="icon" :size="13" />{{ kind }}</span>
+    <!-- its part in «Выполнить всё»: left out — it runs only when started by itself -->
+    <button
+      v-if="batch"
+      class="rbatch tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:w-22 tw:h-22 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:[&.on]:text-accent-fg"
+      :class="{ on: batch.inBatch }"
+      :title="batch.inBatch ? 'Участвует в «Выполнить всё» — нажмите, чтобы пропускать (ручной запуск работает всегда)' : 'Пропускается в «Выполнить всё» — нажмите, чтобы участвовал'"
+      @mousedown.prevent
+      @click="batch.set(!batch.inBatch)"
+    ><Icon :name="batch.inBatch ? 'checkSquare' : 'pause'" :size="12" /></button>
     <VarNameField v-if="named" v-model="draft" :bad="bad" :placeholder="namePlaceholder" :title="bad ? 'Имя — латиница, цифры, _ ; не с цифры' : 'Имя: под ним результат доступен другим блокам и тексту — {{ имя }}'" @commit="commit" @cancel="((draft = name ?? ''), (bad = false))" />
     <slot />
     <span class="grow tw:flex-1"></span>

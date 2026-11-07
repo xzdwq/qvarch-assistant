@@ -9,7 +9,7 @@ import type { ClipLog } from '../clipLog'
 import type { Jira } from '../jira'
 import type { Outlook } from '../outlook'
 import type { Probe } from '../probe'
-import type { SqlStore } from '../sql/store'
+import { SqlStore } from '../sql/store'
 import type { Store } from '../store'
 import type { TabletService } from '../tablet'
 import type { Terminals } from '../terminal'
@@ -53,6 +53,10 @@ export class AppContext {
   /** A built script of the main process (a worker) by its file name. */
   script(file: string): string {
     return join(this.mainDir, file)
+  }
+  /** «Базы данных»: made on its first use (the notebook is there by then) — by the window and by the AI's tools alike. */
+  sql(): SqlStore {
+    return (this.sqlStore ??= new SqlStore(this.store.root, this.script('sqlWorker.js'), this.vault))
   }
   /** The notebook's test files (made when first asked for: the vault is there by then). */
   files(): TestFiles {

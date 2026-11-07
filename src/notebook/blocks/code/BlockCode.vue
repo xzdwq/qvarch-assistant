@@ -9,6 +9,7 @@ import Icon from '@renderer/components/Icon.vue'
 import RunHead from '../../ui/RunHead.vue'
 import { useBlockRun } from '../../ui/useBlockRun'
 import { useFenceSource } from '../../ui/useFenceSource'
+import { batchToggle } from '../../ui/batchToggle'
 
 /**
  * Code in a note (JS, or TS — the types are cut away): run apart from the app (stopped at once, its memory
@@ -23,6 +24,7 @@ const ts = computed(() => isTsLang(info.value.lang))
 const setLang = (lang: 'js' | 'ts') => fence.patchInfo({ lang })
 const setLib = (lib: boolean) => fence.patchInfo({ lib, run: !lib })
 const rename = (name: string | undefined) => fence.patchInfo({ name })
+const batch = batchToggle(fence)
 /** Runs the code as typed (written into the note first); shared functions (lib) never run alone. */
 async function go(): Promise<void> {
   fence.flush()
@@ -37,7 +39,7 @@ const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
 
 <template>
   <div class="bc tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-code) tw:rounded-[8px] tw:bg-panel tw:[&&]:[&.lib]:border-l-border-3" :class="{ lib: info.lib }" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :report="report" :send="info.lib ? undefined : 'code'" :src="src" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stop">
+    <RunHead :batch="info.lib ? undefined : batch" :report="report" :send="info.lib ? undefined : 'code'" :src="src" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !ts }" @mousedown.prevent @click="setLang('js')">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="setLang('ts')">TS</button>

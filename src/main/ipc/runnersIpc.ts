@@ -12,6 +12,7 @@ import { lendPage, type LentPage } from '../runner/lendPage'
 import { startAddressOf } from '../../shared/browser/scenarioAddress'
 import { sweepPwLeftovers } from '../runner/pwLeftovers'
 import { emit, handle, listen } from './router'
+import { registerShellIpc } from './shellIpc'
 
 /**
  * The notebook's runs in processes of their own: a code block, a loop's head (each pass it asks for — to the window
@@ -208,8 +209,10 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
   listen('runPwStop', (_e, runId) => pw.stop(str(runId), 'Остановлено'))
   // Playwright's temp folders runs killed before their browser closed left behind: at the start, and after a run
   void sweepPwLeftovers()
+  const stopShells = registerShellIpc(app)
   /** Every run stopped (the app closing). */
   return (reason: string) => {
     for (const s of [code, loop, pw]) s.stopAll(reason)
+    stopShells(reason)
   }
 }

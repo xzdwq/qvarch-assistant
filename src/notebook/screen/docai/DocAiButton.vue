@@ -16,6 +16,8 @@ import type { Placement } from '@renderer/lib/usePopover'
 import { useTransport } from '@renderer/lib/transport'
 import { docAiNow, mayEditDocAi, MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
 import { openNoteAt } from '@nb/workspace/noteGoto'
+import { sharedDocOfPath } from '@nb/workspace/sharedDocs'
+import { clearNoteMeta } from './clearNoteMeta'
 import { noteName } from '@nb/domain/notePaths'
 import DocAiGraph from './DocAiGraph.vue'
 import DocAiTrajectory from './DocAiTrajectory.vue'
@@ -101,6 +103,25 @@ function undo(): void {
 }
 const whenSaved = (at: number) => new Date(at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
+// ---------- the note's metadata cleared (asked first) ----------
+const shared = computed(() => !!sharedDocOfPath(props.path))
+const cleared = ref('')
+async function clearMeta(): Promise<void> {
+  const what = shared.value ? 'результаты блоков (значения, снимки, трассировки) и отметки строк агентов. Память и журнал ИИ общей заметки — общие, они останутся' : 'результаты блоков (значения, снимки, трассировки), память и журнал ИИ, отметки строк агентов'
+  if (!confirm(`Очистить метаданные «${noteName(props.path)}»?\n\nУдалятся ${what}. Текст заметки, её цвет и эмодзи останутся.`)) return
+  // (an unsaved draft goes too: the panel shows the emptied memory)
+  editing.value = false
+  error.value = ''
+  try {
+    await clearNoteMeta(props.path)
+    draft.value = memoryNow.value
+    cleared.value = 'Очищено'
+    setTimeout(() => (cleared.value = ''), 2500)
+  } catch (e) {
+    error.value = remoteError(e)
+  }
+}
+
 /** A thing of the graph opened: a note at its part, a task / an event / a page by its link. */
 function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
   if ('url' in t) return openUrl(t.url)
@@ -125,6 +146,8 @@ function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
         <Icon name="layers" :size="14" class="tw:mt-8 tw:text-accent-fg" />
         <b class="tw:mt-8 tw:text-text-hi tw:text-[13px]">Метаданные документа</b>
         <span class="tw:flex-1"></span>
+        <span v-if="cleared" class="tw:mt-8 tw:min-w-0 tw:truncate tw:text-muted tw:text-[11.5px]">{{ cleared }}</span>
+        <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:mt-8 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-down-fg" :title="shared ? 'Очистить метаданные: результаты блоков, снимки, трассировки, отметки строк агентов (память ИИ общей заметки — общая, она останется)' : 'Очистить метаданные: результаты блоков, снимки, трассировки, память и журнал ИИ, отметки строк агентов'" @click="clearMeta"><Icon name="eraser" :size="13" /></button>
         <button class="tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:mt-8 tw:p-0 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Скрыть (так же — «Метаданные» внизу)" @click="open = false"><Icon name="x" :size="13" /></button>
       </div>
 

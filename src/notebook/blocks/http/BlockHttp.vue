@@ -7,6 +7,7 @@ import Icon from '@renderer/components/Icon.vue'
 import RunHead from '../../ui/RunHead.vue'
 import { useBlockRun } from '../../ui/useBlockRun'
 import { useFenceSource } from '../../ui/useFenceSource'
+import { batchToggle } from '../../ui/batchToggle'
 
 /**
  * A request in a note (the .http format): run here, its answer shown under it and published into the note's
@@ -17,6 +18,7 @@ const fence = useFenceSource(props)
 const { parts, body } = fence
 const { key, run, start, stop, report } = useBlockRun(props, 'http', fence)
 const rename = (name: string | undefined) => fence.patchInfo({ name })
+const batch = batchToggle(fence)
 /** Runs the request as typed (written into the note first). */
 async function go(): Promise<void> {
   fence.flush()
@@ -34,7 +36,7 @@ const open = useFold(() => `${props.path}#${key.value}#result`, true)
 
 <template>
   <div class="bh tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-http) tw:rounded-[8px] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :report="report" send="http" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stop" />
+    <RunHead :batch="batch" :report="report" send="http" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stop" />
     <div class="bh-ed"><CodeArea v-model="body" lang="http" :run="go" :min-height="40" placeholder="GET https://…   (заголовки строками, пустая строка, тело)" /></div>
     <p v-if="run?.request?.missing.length" class="bh-miss tw:m-0 tw:text-warn-fg tw:text-[12px]">Нет значения: <code class="tw:my-0 tw:mx-3 tw:font-data" v-for="m in run.request.missing" :key="m">{{ '{' }}{{ '{' }}{{ m }}{{ '}' }}{{ '}' }}</code> — выполните блок, который его даёт (или задайте переменную в разделе HTTP)</p>
     <div v-if="run && run.state !== 'run' && (run.response || run.error)" class="bh-res tw:flex tw:flex-col tw:gap-6">

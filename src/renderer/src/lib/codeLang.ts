@@ -48,6 +48,7 @@ const LANGUAGES: Record<string, LanguageLoader> = {
   xml: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/xml')).xml),
   yaml: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/yaml')).yaml),
   bash: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/shell')).shell),
+  powershell: legacyMode(async () => (await import('@codemirror/legacy-modes/mode/powershell')).powerShell),
 }
 
 /** CodeMirror's highlighting of a kind (loaded when first needed); none for an unknown one. */

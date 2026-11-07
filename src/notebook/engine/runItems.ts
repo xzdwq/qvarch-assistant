@@ -15,8 +15,11 @@ export type BlockItem = { kind: RunnableKind; info: BlockInfo; body: string; key
 export type LoopItem = { kind: 'loop'; loop: LoopRange; key: string; line: number }
 export type RunItem = BlockItem | LoopItem
 
-/** The runnable things right inside a loop (none — the note's top): its blocks, the loops in it (not their insides). */
-export function runItemsIn(text: string, loop?: LoopRange): RunItem[] {
+/**
+ * The runnable things right inside a loop (none — the note's top): its blocks, the loops in it (not their insides).
+ * The ones left out of batch runs (skip) are not there — unless asked for (`withSkipped`: found by name, by hand).
+ */
+export function runItemsIn(text: string, loop?: LoopRange, opts: { withSkipped?: boolean } = {}): RunItem[] {
   const lines = text.split('\n')
   const loops = findLoops(lines)
   const owner = (line: number) => loopAt(loops, line)?.key
@@ -25,17 +28,19 @@ export function runItemsIn(text: string, loop?: LoopRange): RunItem[] {
   for (const b of findBlocks(lines)) {
     if (b.kind === 'loop') {
       const l = loops.find((x) => x.line0 === b.line0)
-      if (l && l.end !== undefined && l.parent === loop?.key) out.push({ kind: 'loop', loop: l, key: l.key, line: l.line0 })
+      if (l && l.end !== undefined && l.parent === loop?.key && (opts.withSkipped || !l.info.skip)) out.push({ kind: 'loop', loop: l, key: l.key, line: l.line0 })
       continue
     }
     const f = fenced.get(b.line0)
-    if (!f || !isRunnableKind(b.kind) || owner(b.line0) !== loop?.key || f.info.lib) continue
+    if (!f || !isRunnableKind(b.kind) || owner(b.line0) !== loop?.key || f.info.lib || (f.info.skip && !opts.withSkipped)) continue
     out.push({ kind: b.kind, info: f.info, body: f.body, key: f.key, line: b.line0 })
   }
   return out
 }
 /** An item's published name (a block's name=, a loop's name=). */
 export const itemName = (x: RunItem) => (x.kind === 'loop' ? x.loop.info.name : x.info.name)
+/** An item is left out of batch runs (skip). */
+export const itemIsSkipped = (x: RunItem) => (x.kind === 'loop' ? !!x.loop.info.skip : !!x.info.skip)
 /** An item's error does not stop the run (soft). */
 export const itemIsSoft = (x: RunItem) => (x.kind === 'loop' ? !!x.loop.info.soft : !!x.info.soft)
 /** What went wrong with an item's last run in an env. */

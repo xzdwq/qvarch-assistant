@@ -123,6 +123,12 @@ export class SshConnections {
     return new Promise((ok, fail) => client.shell({ term: 'xterm-256color', cols, rows }, (e, ch) => (e ? fail(e) : ok(ch))))
   }
 
+  /** A command run on the server (no terminal: stdout and stderr apart, an exit code) — a notebook block's script. */
+  async exec(id: string, command: string): Promise<ClientChannel> {
+    const client = await this.connect(id)
+    return new Promise((ok, fail) => client.exec(command, (e, ch) => (e ? fail(e) : ok(ch))))
+  }
+
   /** The explorer's SFTP channel (made once; gone with its connection — made again on the next call). */
   async sftp(id: string): Promise<SFTPWrapper> {
     await this.connect(id)

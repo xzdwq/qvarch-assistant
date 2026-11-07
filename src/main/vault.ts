@@ -114,6 +114,16 @@ export class Vault {
   runDir(rel: string, key: string): string {
     return this.runs.dir(rel, key)
   }
+  /**
+   * A note's metadata cleared — what the app keeps of it beside its text: its runs (results, screenshots, traces), the
+   * AI's memory and journal, the lines its agents wrote. Its own marks (colour, emoji, a linked board) stay.
+   */
+  clearMeta(rel: string): void {
+    this.files.abs(rel)
+    this.runs.remap(rel, undefined)
+    this.meta.setDocAi(rel, NO_DOC_AI)
+    this.meta.setAgentLines(rel, {})
+  }
   /** The folder all the runs' files are under (the trace viewer gives nothing else). */
   get runsRoot(): string {
     return this.runs.root

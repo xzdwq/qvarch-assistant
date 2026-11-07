@@ -6,7 +6,6 @@ import { TEST_FILES_METHODS } from '../../shared/testFiles'
 import type { AppContext } from '../app/appContext'
 import { Browser } from '../browser'
 import { netClear, netListen, setupNoteBrowser } from '../noteBrowser'
-import { SqlStore } from '../sql/store'
 import { registerBrowserPageIpc } from './browserPageIpc'
 import { emit, handle, handleDispatch, listen } from './router'
 
@@ -28,7 +27,7 @@ export function registerBrowserIpc(app: AppContext): void {
   handleDispatch('browser', BROWSER_METHODS, () => browser)
   handleDispatch('files', TEST_FILES_METHODS, () => app.files())
   // «Базы данных»: made on its first use (the notebook is there by then)
-  handleDispatch('sql', SQL_METHODS, () => (app.sqlStore ??= new SqlStore(app.store.root, app.script('sqlWorker.js'), app.vault)))
+  handleDispatch('sql', SQL_METHODS, () => app.sql())
   listen('browserLayout', (_e, rects) => browser.layout(Array.isArray(rects) ? rects : []))
   listen('browserOpen', (_e, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return

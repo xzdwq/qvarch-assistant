@@ -5,6 +5,7 @@ import type { RunnableKind } from '../blocks/specs'
 import { sqlRunner } from '../blocks/sql/run'
 import { tplRunner } from '../blocks/tpl/run'
 import { saveRunner } from '../blocks/save/run'
+import { shellRunner } from '../blocks/shell/run'
 import type { BlockRunner } from './blockRunner'
 
 /** The runners of the runnable kinds (the compiler checks every runnable spec has one). */
@@ -15,4 +16,5 @@ export const BLOCK_RUNNERS: { readonly [K in RunnableKind]: BlockRunner } = {
   sql: sqlRunner,
   tpl: tplRunner,
   save: saveRunner,
+  shell: shellRunner,
 }

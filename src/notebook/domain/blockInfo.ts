@@ -12,12 +12,13 @@
  *   ```md template name=text        Markdown with {{ values }}, published filled
  */
 import { keepOf } from './emits'
+import { isShellAsk, type ShellAsk } from '../../shared/shell/trust'
 
 /**
  * Where a value of the note's context came from (a block kind, set() of code, the browser component); `run` — what
  * started «Выполнить всё» (its `trigger`).
  */
-export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser' | 'table' | 'run' | 'save'
+export type ValueSource = 'http' | 'code' | 'data' | 'ref' | 'pw' | 'sql' | 'tpl' | 'loop' | 'set' | 'browser' | 'table' | 'run' | 'save' | 'shell'
 /** The values the note's text itself gives (data, a table): nothing to clear — they come back from the text at once. */
 export const TEXT_VALUE_SOURCES: ReadonlySet<ValueSource> = new Set<ValueSource>(['data', 'table'])
 /** The value «Выполнить всё» gives of what started it (by hand, by the AI, by a schedule) — no block may take its name. */
@@ -63,6 +64,8 @@ export interface BlockInfo {
   in?: string
   /** Its error does not stop «Выполнить всё» (a check expected to fail, a flaky one). */
   soft?: boolean
+  /** Left out of the batch runs («Выполнить всё», a loop's passes, a call): it runs only when started by itself. */
+  skip?: boolean
   /** Playwright: the Браузер section's sign-ins (its cookies) — a site entered there (SSO too) is entered here. */
   session?: boolean
   /** A database query (```sql db=…): the connection's name (its settings — in «Базы данных», not in the note). */
@@ -83,6 +86,30 @@ export interface BlockInfo {
   keep?: number
   /** The height of what a block shows under its text (a query's ER diagram and rows), px — as its edge was dragged. */
   h?: number
+  /** A shell block: the folder it starts in (this PC; no spaces — the info line splits on them). */
+  cwd?: string
+  /** A shell block: the saved SSH session it runs on (none — this PC). */
+  ssh?: string
+  /** A shell block: only the output lines matching `/pattern/flags` are kept (their groups — `matches`). */
+  match?: string
+  /** A shell block: when its script is asked about before running (shared/shell/trust.ts). */
+  ask?: ShellAsk
+}
+
+/** A folder in the info line: its spaces as %20 (the line splits on them), a % as %25. */
+const cwdMd = (p: string) => p.replace(/%/g, '%25').replace(/ /g, '%20')
+const cwdOf = (v: string) => v.replace(/%20/g, ' ').replace(/%25/g, '%')
+
+/** A shell block's `match=` as a pattern (`/source/flags`, a valid regex), else none. */
+export function matchOf(v: string | undefined): { source: string; flags: string } | undefined {
+  const m = v ? /^\/(.+)\/([dgimsuy]*)$/.exec(v) : null
+  if (!m) return undefined
+  try {
+    new RegExp(m[1], m[2])
+    return { source: m[1], flags: m[2] }
+  } catch {
+    return undefined
+  }
 }
 /** A block's shown part's height within these bounds, px. */
 export const BLOCK_H = { min: 200, max: 2400 } as const
@@ -99,6 +126,7 @@ const FLAGS = new Map<string, keyof BlockInfo>([
   ['headed', 'headed'],
   ['notrace', 'notrace'],
   ['soft', 'soft'],
+  ['skip', 'skip'],
   ['session', 'session'],
   ['template', 'template'],
   ['chat', 'chat'],
@@ -140,6 +168,18 @@ const SETTINGS: Record<string, (out: BlockInfo, v: string) => void> = {
   keep: (out, v) => {
     out.keep = keepOf(v) ?? out.keep
   },
+  cwd: (out, v) => {
+    if (v) out.cwd = cwdOf(v)
+  },
+  ssh: (out, v) => {
+    if (v) out.ssh = v
+  },
+  match: (out, v) => {
+    if (matchOf(v)) out.match = v
+  },
+  ask: (out, v) => {
+    if (isShellAsk(v)) out.ask = v
+  },
 }
 
 /** Parses an info line: `lang key=value flag …` (unknown words are ignored). */
@@ -175,6 +215,10 @@ export function infoMd(i: BlockInfo): string {
     i.lib ? 'lib' : '',
     i.db !== undefined ? `db=${i.db}` : '',
     i.name ? `name=${i.name}` : '',
+    i.ssh ? `ssh=${i.ssh}` : '',
+    i.cwd ? `cwd=${cwdMd(i.cwd)}` : '',
+    i.match ? `match=${i.match}` : '',
+    i.ask && i.ask !== 'auto' ? `ask=${i.ask}` : '',
     i.ref ? `ref=${i.ref}` : '',
     i.view ? `view=${i.view}` : '',
     i.pw && i.browser && i.browser !== 'msedge' ? `browser=${i.browser}` : '',
@@ -183,6 +227,7 @@ export function infoMd(i: BlockInfo): string {
     i.pw && i.notrace ? 'notrace' : '',
     i.pw && i.session ? 'session' : '',
     i.soft ? 'soft' : '',
+    i.skip ? 'skip' : '',
     i.timeout ? `timeout=${i.timeout}` : '',
     i.out ? `out=${i.out}` : '',
     i.id ? `id=${i.id}` : '',

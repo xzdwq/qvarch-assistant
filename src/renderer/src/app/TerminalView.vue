@@ -10,6 +10,7 @@ import TermWatchDialog from './terminal/TermWatchDialog.vue'
 import TermHelpDialog from './terminal/TermHelpDialog.vue'
 import TermSessionDialog from './terminal/TermSessionDialog.vue'
 import SshPasswordDialog from './terminal/SshPasswordDialog.vue'
+import SftpEditorDialog from './terminal/SftpEditorDialog.vue'
 import { provideTermView } from './terminal/termViewContext'
 
 /**
@@ -49,6 +50,8 @@ const { sideW, sideHidden } = prefs
       <!-- an SSH session, a password asked for -->
       <TermSessionDialog />
       <SshPasswordDialog />
+      <!-- a server's text file being edited -->
+      <SftpEditorDialog />
     </Teleport>
   </div>
 </template>

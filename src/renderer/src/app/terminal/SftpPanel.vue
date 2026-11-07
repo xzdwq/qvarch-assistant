@@ -5,13 +5,14 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import type { TermSession } from '@shared/terminal'
-import type { RemoteEntry } from '@shared/ssh/remoteFiles'
+import { isDirEntry, type RemoteEntry } from '@shared/ssh/remoteFiles'
 import { remoteCrumbs } from '@shared/ssh/remotePath'
 import { sizeText } from '@shared/ssh/transfers'
 import Icon from '../../components/Icon.vue'
 import Popover from '../../components/Popover.vue'
 import { vFocusSelect as vFocus } from '../../lib/focusSelect'
 import { openWhile } from '../../lib/usePopover'
+import SftpPropsDialog from './SftpPropsDialog.vue'
 import SftpTransfers from './SftpTransfers.vue'
 import { useTermView } from './termViewContext'
 
@@ -33,7 +34,7 @@ const cwdKnown = computed(() => !!props.session.info.cwd)
 
 const crumbs = computed(() => remoteCrumbs(ex.path || '/'))
 const when = (ms: number) => (ms ? new Date(ms).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '')
-const isDir = (e: RemoteEntry) => e.kind === 'dir' || !!e.toDir
+const isDir = isDirEntry
 
 /** Files are dragged over the list from Windows' Explorer. */
 const dropping = ref(false)
@@ -52,16 +53,21 @@ function onMenu(ev: MouseEvent, e?: RemoteEntry): void {
 /** The menu's items: for the entries picked, or for the folder (no entry under the pointer). */
 const MENU: Array<{ label: string; icon: string; entry: boolean; run: (e?: RemoteEntry) => void }> = [
   { label: 'Открыть', icon: 'external', entry: true, run: (e) => e && void files.open(ex, e) },
-  { label: 'Скачать в «Загрузки»', icon: 'download', entry: true, run: (e) => void files.download(ex, files.picked(ex, e), false) },
-  { label: 'Скачать в…', icon: 'download', entry: true, run: (e) => void files.download(ex, files.picked(ex, e), true) },
+  { label: 'Редактировать', icon: 'pencil', entry: true, run: (e) => e && void files.edit(ex, e) },
+  { label: 'Открыть программой Windows', icon: 'external', entry: true, run: (e) => e && void files.openInWindows(ex, e) },
+  { label: 'Скачать…', icon: 'download', entry: true, run: (e) => void files.download(ex, files.picked(ex, e)) },
   { label: 'Переименовать', icon: 'pencil', entry: true, run: (e) => e && files.startNaming(ex, 'rename', e) },
   { label: 'Копировать путь', icon: 'copy', entry: true, run: (e) => e && void navigator.clipboard.writeText(e.path) },
   { label: 'Удалить', icon: 'trash', entry: true, run: (e) => void files.remove(ex, files.picked(ex, e)) },
+  { label: 'Свойства', icon: 'list', entry: true, run: (e) => e && (propsOf.value = e.path) },
   { label: 'Новая папка', icon: 'folderPlus', entry: false, run: () => files.startNaming(ex, 'mkdir') },
   { label: 'Загрузить сюда…', icon: 'upload', entry: false, run: () => void files.pickUpload(ex) },
   { label: 'Копировать путь папки', icon: 'copy', entry: false, run: () => void navigator.clipboard.writeText(ex.path) },
   { label: 'Обновить', icon: 'refresh', entry: false, run: () => void files.refresh(ex) },
+  { label: 'Свойства папки', icon: 'list', entry: false, run: () => ex.path && (propsOf.value = ex.path) },
 ]
+/** The entry whose «Свойства» are shown (its path). */
+const propsOf = ref<string>()
 const menuItems = computed(() => MENU.filter((m) => m.entry === !!menu.value?.e))
 
 /** The list's keys: Enter opens, Backspace goes up, Delete removes, F2 renames, F5 reads again. */
@@ -111,7 +117,7 @@ function dragWidth(e: PointerEvent): void {
       <button class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Обновить (F5)" @click="files.refresh(ex)"><Icon name="refresh" :size="13" /></button>
       <button class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Новая папка" @click="files.startNaming(ex, 'mkdir')"><Icon name="folderPlus" :size="13" /></button>
       <button class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Загрузить файлы на сервер (или перетащите их сюда)" @click="files.pickUpload(ex)"><Icon name="upload" :size="13" /></button>
-      <button class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:disabled:opacity-35" title="Скачать выбранное в «Загрузки»" :disabled="!ex.selected.size" @click="files.download(ex, files.picked(ex), false)"><Icon name="download" :size="13" /></button>
+      <button class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:disabled:opacity-35" title="Скачать выбранное… (спросит, куда сохранить)" :disabled="!ex.selected.size" @click="files.download(ex, files.picked(ex))"><Icon name="download" :size="13" /></button>
       <span class="tw:flex-1"></span>
       <button
         class="tw:inline-flex tw:p-5 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-hover tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35"
@@ -164,6 +170,7 @@ function dragWidth(e: PointerEvent): void {
     </div>
     <p v-if="ex.error" class="tw:flex-none tw:m-0 tw:py-4 tw:px-8 tw:border-t tw:border-t-border tw:text-down-fg tw:text-[11.5px] tw:wrap-anywhere">{{ ex.error }}</p>
     <SftpTransfers :session-id="ex.sessionId" />
+    <SftpPropsDialog v-if="propsOf" :session-id="ex.sessionId" :path="propsOf" @close="propsOf = undefined" />
 
     <Popover v-model:open="menuOpen" :anchor="menu?.at" :width="220" class="tw:fixed tw:z-3000 tw:flex tw:flex-col tw:p-4 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-pop tw:shadow-pop">
       <template #default="{ close }">

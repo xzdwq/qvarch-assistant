@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
+import type { BatchToggle } from '../../ui/batchToggle'
 import { bodyVars, findLoops, LOOP_CLOSE_MD, LOOP_MAX, LOOP_PARALLEL_LIMIT, LOOP_TIMEOUT, loopKey, loopOpenMd, loopStartAt, parsePause, pauseText, type LoopInfo, type LoopPause } from '@nb/domain/loop'
 import { summary } from '@nb/domain/values'
 import { loopGoesSerial, loopReport, noteRun, passTitle, pickPass, runLoopAt, stopLoopAt, type BlockRun, type RunState } from '@nb/engine'
@@ -47,6 +48,8 @@ function write(i: LoopInfo = info.value, ts = parsed.value.ts, now = false): voi
 }
 watch(head, () => write())
 const set = (patch: Partial<LoopInfo>) => write({ ...info.value, ...patch }, parsed.value.ts, true)
+/** The loop's part in «Выполнить всё» (its comment's skip). */
+const batch = computed<BatchToggle>(() => ({ inBatch: !info.value.skip, set: (on) => set({ skip: on ? undefined : true }) }))
 /** The pause typed («5», «2-8»; empty or not one — none); what it came to. */
 function setPause(v: string): LoopPause | undefined {
   const pause = parsePause(v)
@@ -117,7 +120,7 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
 
 <template>
   <div class="bl tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:py-8 tw:px-10 tw:border tw:border-accent/45 tw:[&&]:border-l-3 tw:[&&]:border-l-accent tw:rounded-[8px_8px_8px_0] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :report="report" icon="repeat" kind="Цикл" :name="info.name" :run="asRun" :can-run="closed" name-placeholder="проходы" @rename="(name) => set({ name })" @run="go" @stop="stop">
+    <RunHead :batch="batch" :report="report" icon="repeat" kind="Цикл" :name="info.name" :run="asRun" :can-run="closed" name-placeholder="проходы" @rename="(name) => set({ name })" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !parsed.ts }" @mousedown.prevent @click="write(info, false, true)">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: parsed.ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="write(info, true, true)">TS</button>

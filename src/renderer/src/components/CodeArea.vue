@@ -13,7 +13,10 @@ import { languageOf } from '../lib/codeLang'
  * `lang`'s; `run` — Ctrl+Enter runs (and only runs: no new line).
  */
 const props = withDefaults(defineProps<{ modelValue: string; lang?: string; langExt?: Extension; placeholder?: string; readonly?: boolean; minHeight?: number; fill?: boolean; run?: () => void }>(), { lang: 'text', minHeight: 120 })
-const emit = defineEmits<{ 'update:modelValue': [v: string] }>()
+/** `userEdit` — the text changed by the person (typed, deleted, pasted, undone) — never by a change from outside. */
+const emit = defineEmits<{ 'update:modelValue': [v: string]; userEdit: [v: string] }>()
+/** The transaction kinds that are the person's own editing. */
+const USER_EVENTS = ['input', 'delete', 'undo', 'redo', 'move'] as const
 const host = ref<HTMLElement>()
 let view: EditorView | undefined
 const langC = new Compartment()
@@ -68,7 +71,12 @@ onMounted(() => {
         ...(props.placeholder ? [cmPlaceholder(props.placeholder)] : []),
         EditorState.readOnly.of(!!props.readonly),
         EditorView.lineWrapping,
-        EditorView.updateListener.of((u) => u.docChanged && emit('update:modelValue', u.state.doc.toString())),
+        EditorView.updateListener.of((u) => {
+          if (!u.docChanged) return
+          const text = u.state.doc.toString()
+          emit('update:modelValue', text)
+          if (u.transactions.some((t) => USER_EVENTS.some((e) => t.isUserEvent(e)))) emit('userEdit', text)
+        }),
       ],
     }),
   })

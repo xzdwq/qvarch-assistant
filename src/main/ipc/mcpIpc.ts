@@ -11,6 +11,7 @@ import { CLAUDE_MISSING, commandOf, findClaude, viaShell } from '../agent/claude
 import { saveEntry } from '../tracker/dayEdits'
 import { emit, handle, listen } from './router'
 import { WindowAsk } from './windowAsk'
+import { trialRunId } from '../tools/dbTools'
 
 /** The window's work that may take long (a note's run: its tests, its loops) — waited for up to half an hour. */
 // (`report` waits for a run of the note going on — a few minutes at most)
@@ -49,6 +50,13 @@ export function registerMcpIpc(app: AppContext, crons: CronSchedule): McpHost {
     ui: askWindow,
     kinds: () => app.store.cfg.kinds,
     crons,
+    sshSessions: () => app.ssh?.sessions() ?? [],
+    db: {
+      conns: () => app.sql().conns(),
+      schema: (conn) => app.sql().schema(conn),
+      // (every connection is read-only: a trial query changes nothing)
+      query: (conn, sql) => app.sql().run(trialRunId(), conn, sql, [], 'run'),
+    },
   }
   const mcp: Mcp = new Mcp(app.store.root, (): McpTool[] => qvarchTools(toolCtx), electronApp.getVersion())
   void mcp.restart()

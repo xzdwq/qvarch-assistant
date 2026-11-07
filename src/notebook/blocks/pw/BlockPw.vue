@@ -12,6 +12,7 @@ import Icon from '@renderer/components/Icon.vue'
 import RunHead from '../../ui/RunHead.vue'
 import { useBlockRun } from '../../ui/useBlockRun'
 import { useFenceSource } from '../../ui/useFenceSource'
+import { batchToggle } from '../../ui/batchToggle'
 import MatrixEditor from './MatrixEditor.vue'
 import FuzzEditor from './FuzzEditor.vue'
 import { readFuzz } from '@shared/fuzz'
@@ -32,6 +33,7 @@ const { info, body: code } = fence
 const { key, run, start, stop, report, values } = useBlockRun(props, 'pw', fence)
 const ts = computed(() => isTsLang(info.value.lang))
 const patch = (p: Partial<BlockInfo>) => fence.patchInfo(p)
+const batch = batchToggle(fence)
 
 // ---------- «Проверить ▾»: the recorded actions wrapped into a ready check ----------
 // (its list fits the window: as high as there is room, scrolled beyond)
@@ -243,7 +245,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 
 <template>
   <div class="bp tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-block-pw tw:rounded-[8px] tw:bg-panel tw:[.st.ok>&]:first:text-up-fg" @keydown.ctrl.enter.prevent="go">
-    <RunHead :report="report" send="pw" :src="src" icon="globe" kind="Playwright" :name="info.name" :run="run" can-run name-placeholder="сценарий" @rename="(name) => patch({ name })" @run="go" @stop="stop">
+    <RunHead :batch="batch" :report="report" send="pw" :src="src" icon="globe" kind="Playwright" :name="info.name" :run="run" can-run name-placeholder="сценарий" @rename="(name) => patch({ name })" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !ts }" @mousedown.prevent @click="patch({ lang: 'js' })">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="patch({ lang: 'ts' })">TS</button>

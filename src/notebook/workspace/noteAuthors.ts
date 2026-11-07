@@ -12,6 +12,9 @@ import { sharedLineAuthors } from './sharedPlaces'
 const kept = reactive(new Map<string, AgentLines>())
 const loading = new Set<string>()
 
+/** A personal note's agents' lines forgotten here (its metadata was cleared). */
+export const forgetAgentLines = (path: string) => void kept.set(path, {})
+
 /** A personal note's agents' lines (read once; asked before they are in — none for now). */
 function keptOf(path: string): AgentLines {
   const k = kept.get(path)

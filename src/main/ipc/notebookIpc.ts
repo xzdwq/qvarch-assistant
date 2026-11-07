@@ -41,6 +41,7 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('vaultDocAi', (_e, p) => vault.docAi(str(p)))
   // (read as kept: the malformed parts left out, the memory within its size)
   handle('vaultSetDocAi', (_e, p, ai) => vault.setDocAi(str(p), docAiOf(ai)))
+  handle('vaultClearMeta', (_e, p) => vault.clearMeta(str(p)))
   listen('vaultReveal', (_e, p) => vault.reveal(str(p)))
   handle('vaultCopyPath', (_e, p) => {
     const abs = vault.absPath(str(p))

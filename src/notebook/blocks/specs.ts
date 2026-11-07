@@ -22,6 +22,7 @@ import { tableSpec } from './table/spec'
 import { tocSpec } from './toc/spec'
 import { cronSpec } from './cron/spec'
 import { saveSpec } from './save/spec'
+import { shellSpec } from './shell/spec'
 import { toggleSpec } from './toggle/spec'
 import { tplSpec } from './tpl/spec'
 import { workSpec } from './work/spec'
@@ -55,6 +56,7 @@ export const BLOCK_SPECS = {
   sql: sqlSpec,
   tpl: tplSpec,
   save: saveSpec,
+  shell: shellSpec,
   loop: loopSpec,
   loopEnd: loopEndSpec,
 } satisfies { readonly [K in BlockKind]: BlockSpec<K> }

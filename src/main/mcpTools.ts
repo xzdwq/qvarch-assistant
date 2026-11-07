@@ -7,6 +7,11 @@ import { runTools } from './tools/runTools'
 import { cronTools } from './tools/cronTools'
 import type { CronSchedule } from './cron/cronSchedule'
 import { workTools } from './tools/workTools'
+import { shellTools } from './tools/shellTools'
+import type { SshSession } from '../shared/ssh/sessions'
+import { dbTools } from './tools/dbTools'
+import type { DbConn } from '../shared/sql/connection'
+import type { DbSchema, SqlRunOut } from '../shared/sql/result'
 
 /**
  * The tools Qvarch gives an AI assistant. Reading and running — always; writing notes and keeping the time —
@@ -28,7 +33,15 @@ export interface ToolCtx {
   kinds: () => KindDef[]
   /** The notes run on a schedule. */
   crons: CronSchedule
+  /** The saved SSH sessions (no passwords). */
+  sshSessions: () => SshSession[]
+  /** The databases: the connections (no passwords), a connection's tables and columns, a trial read-only query. */
+  db: {
+    conns: () => DbConn[]
+    schema: (conn: string) => Promise<DbSchema | { error: string }>
+    query: (conn: string, sql: string) => Promise<SqlRunOut>
+  }
 }
 
 /** Every tool, by area. */
-export const qvarchTools = (c: ToolCtx): McpTool[] => [...notesTools(c), ...runTools(c), ...cronTools(c), ...workTools(c)]
+export const qvarchTools = (c: ToolCtx): McpTool[] => [...notesTools(c), ...runTools(c), ...cronTools(c), ...workTools(c), ...shellTools(c), ...dbTools(c)]

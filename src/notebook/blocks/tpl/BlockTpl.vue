@@ -12,6 +12,7 @@ import Icon from '@renderer/components/Icon.vue'
 import Markdown from '@renderer/components/Markdown.vue'
 import RunHead from '../../ui/RunHead.vue'
 import { useFenceSource } from '../../ui/useFenceSource'
+import { batchToggle } from '../../ui/batchToggle'
 
 /**
  * «Текст по шаблону» (```md template name=…): Markdown — bold, lists, tables, emoji, quotes — with {{ values }} of the
@@ -22,6 +23,7 @@ const props = defineProps<{ src: string; path: string; line: number; inLoop?: bo
 const fence = useFenceSource(props)
 const { parts, body } = fence
 const rename = (name: string | undefined) => fence.patchInfo({ name })
+const batch = batchToggle(fence)
 const key = computed(() => blockRunKey(parts.value.info.name, 'tpl', props.line, parts.value.info.id))
 
 /** The text filled with the note's values now (what is missing — said, the text not published with holes). */
@@ -46,7 +48,7 @@ async function copy(): Promise<void> {
 
 <template>
   <div class="bt tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-tpl) tw:rounded-[8px] tw:bg-panel">
-    <RunHead icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename">
+    <RunHead :batch="batch" icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename">
       <button
         class="tw:inline-flex tw:items-center tw:gap-4 tw:h-22 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:bg-hover tw:hover:text-text tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg"
         :class="{ on: parts.info.chat }"

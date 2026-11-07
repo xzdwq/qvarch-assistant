@@ -25,14 +25,14 @@ export function runTools(c: ToolCtx): McpTool[] {
     {
       name: 'qvarch_guide',
       access: 'read',
-      description: 'Как писать исполняемые заметки Qvarch: блоки HTTP / JS-TS / Playwright / SQL / текст по шаблону / данные, циклы, переменные {{ }}, флаги, отчёты. Вызови перед созданием или правкой блоков.',
+      description: 'Как писать исполняемые заметки Qvarch: блоки HTTP / JS-TS / Playwright / SQL / оболочка (PowerShell, cmd, bash — на ПК и по SSH) / текст по шаблону / данные, циклы, переменные {{ }}, флаги, отчёты, правила работы с серверами. Вызови перед созданием или правкой блоков.',
       inputSchema: { type: 'object', properties: {} },
       run: async () => `${RUN_GUIDE}\n${CHECKS_GUIDE}`,
     },
     {
       name: 'note_run',
       access: 'run',
-      description: 'Выполнить заметку: все блоки сверху вниз (как «Выполнить всё») или один исполняемый блок / цикл по имени (HTTP, код, Playwright, SQL, текст по шаблону, цикл). Ждёт конца и возвращает отчёт: статусы, шаги тестов, ошибки, результаты.',
+      description: 'Выполнить заметку: все блоки сверху вниз (как «Выполнить всё») или один исполняемый блок / цикл по имени (HTTP, код, Playwright, SQL, оболочка, текст по шаблону, цикл). Скрипт оболочки, изменённый тобой, пользователь сначала подтверждает в приложении. Ждёт конца и возвращает отчёт: статусы, шаги тестов, ошибки, результаты.',
       inputSchema: { type: 'object', properties: { path: { type: 'string' }, block: { type: 'string', description: 'Имя блока или цикла (name=…); пусто — вся заметка' } }, required: ['path'] },
       run: async (a) => {
         const path = notePath(str(a.path, 'path', 1000))

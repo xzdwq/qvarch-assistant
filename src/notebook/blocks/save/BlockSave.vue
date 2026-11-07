@@ -13,12 +13,14 @@ import SuggestInput from '@renderer/components/SuggestInput.vue'
 import RunHead from '../../ui/RunHead.vue'
 import { useBlockRun } from '../../ui/useBlockRun'
 import { useFenceSource } from '../../ui/useFenceSource'
+import { batchToggle } from '../../ui/batchToggle'
 import { saveOf, withSave, type SaveKey } from './model'
 
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
 const fence = useFenceSource(props)
 const { body } = fence
 const { run, start, stop, report } = useBlockRun(props, 'save', fence)
+const batch = batchToggle(fence)
 const s = computed(() => saveOf(body.value))
 const set = (key: SaveKey, value: string) => (body.value = withSave(body.value, key, value))
 async function go(): Promise<void> {
@@ -62,7 +64,7 @@ const field = 'tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11
 
 <template>
   <div class="tw:contain-[inline-size] tw:min-w-0 tw:flex tw:flex-col tw:gap-6 tw:py-8 tw:px-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-ref) tw:rounded-[8px] tw:bg-panel">
-    <RunHead :report="report" icon="download" kind="Сохранить в файл" :run="run" can-run :named="false" @run="go" @stop="stop" />
+    <RunHead :batch="batch" :report="report" icon="download" kind="Сохранить в файл" :run="run" can-run :named="false" @run="go" @stop="stop" />
     <div class="tw:flex tw:flex-wrap tw:items-center tw:gap-8">
       <label :class="field" title="Переменная заметки (можно путь: login.body.items)">
         {{ '{' }}{{ '{' }}<SuggestInput class="tw:w-150 tw:h-22 tw:py-0 tw:px-6" :model-value="s.ref" :options="names" placeholder="переменная" @update:model-value="(v: string) => set('ref', v)" />{{ '}' }}{{ '}' }}

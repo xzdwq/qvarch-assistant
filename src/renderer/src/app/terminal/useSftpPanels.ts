@@ -1,6 +1,6 @@
 import { reactive, ref, watch } from 'vue'
 import type { TermSession } from '@shared/terminal'
-import type { RemoteEntry, RemoteListing } from '@shared/ssh/remoteFiles'
+import { isDirEntry, type RemoteEntry, type RemoteListing } from '@shared/ssh/remoteFiles'
 import { joinRemote, parentRemote } from '@shared/ssh/remotePath'
 import { needsPassword } from '@shared/ssh/api'
 import { remoteError } from '@shared/remoteError'
@@ -8,6 +8,7 @@ import { lineClearKey } from '@shared/terminal'
 import { shellQuote } from '@shared/ssh/remoteShell'
 import { ensureConnected, useSshSessions, useSshTransfers } from '../../lib/ssh'
 import type { TermShells } from './useTermShells'
+import type { SftpEditor } from './useSftpEditor'
 
 /** One SSH tab's file explorer: where it is, what is there, what is picked, what is being named. */
 export interface Explorer {
@@ -42,7 +43,7 @@ const readPrefs = (): { width?: number; hidden?: boolean } => {
  * home); listing, going in and up, new folder, rename, remove, upload (dropped from Windows' Explorer or picked),
  * download, open. A connection that needs a password asks for it and the action is tried once more.
  */
-export function useSftpPanels(shells: TermShells) {
+export function useSftpPanels(shells: TermShells, editor: SftpEditor) {
   const explorers = reactive(new Map<string, Explorer>())
   const sshSessions = useSshSessions()
   const saved = readPrefs()
@@ -162,10 +163,23 @@ export function useSftpPanels(shells: TermShells) {
     }
   })
 
-  /** An entry opened: a folder (a link to one too) — gone into; a file — brought over and opened by Windows. */
+  /**
+   * An entry opened: a folder (a link to one too) — gone into; a text file — the editor; any other file (binary, too
+   * big) — brought over and opened by Windows.
+   */
   async function open(ex: Explorer, e: RemoteEntry): Promise<void> {
     if (e.kind === 'dir' || e.toDir) return go(ex, e.path)
+    const r = await withConnection(ex, () => editor.open(ex.sessionId, e))
+    if (r && !r.ok) await openInWindows(ex, e)
+  }
+  /** A file brought over and opened by the program Windows has for it. */
+  async function openInWindows(ex: Explorer, e: RemoteEntry): Promise<void> {
     await withConnection(ex, () => window.qa.ssh('open', ex.sessionId, e.path))
+  }
+  /** A file opened in the editor (said why when it cannot be). */
+  async function edit(ex: Explorer, e: RemoteEntry): Promise<void> {
+    const r = await withConnection(ex, () => editor.open(ex.sessionId, e))
+    if (r && !r.ok) ex.error = r.reason
   }
 
   /** The entries picked (the one clicked when nothing is). */
@@ -180,11 +194,10 @@ export function useSftpPanels(shells: TermShells) {
     ex.selected = next
   }
 
-  async function download(ex: Explorer, list: RemoteEntry[], pickFolder: boolean): Promise<void> {
+  /** The entries downloaded where the person chooses (one file — its name and folder, else — a folder). */
+  async function download(ex: Explorer, list: RemoteEntry[]): Promise<void> {
     if (!list.length) return
-    const dir = pickFolder ? await window.qa.ssh('pickFolder') : undefined
-    if (pickFolder && !dir) return
-    await withConnection(ex, () => window.qa.ssh('download', ex.sessionId, list.map((e) => e.path), dir))
+    await withConnection(ex, () => window.qa.ssh('downloadAsk', ex.sessionId, list.map((e) => ({ path: e.path, dir: isDirEntry(e) }))))
   }
   async function upload(ex: Explorer, localPaths: string[]): Promise<void> {
     if (!localPaths.length || !ex.path) return
@@ -195,7 +208,7 @@ export function useSftpPanels(shells: TermShells) {
   }
   /** Files dropped from Windows' Explorer onto the list. */
   function drop(ex: Explorer, ev: DragEvent): void {
-    const paths = [...(ev.dataTransfer?.files ?? [])].map((f) => window.qa.pathForFile(f)).filter(Boolean)
+    const paths = [...(ev.dataTransfer?.files ?? [])].map((f) => window.qa.pathForFile(f)).filter((p) => !!p)
     void upload(ex, paths)
   }
 
@@ -224,6 +237,6 @@ export function useSftpPanels(shells: TermShells) {
   function forget(tabId: string): void {
     explorers.delete(tabId)
   }
-  return { explorers, width, hidden, explorerOf, go, refresh, up, home, followTerminal, setSync, open, picked, select, download, upload, pickUpload, drop, startNaming, finishNaming, remove, forget }
+  return { explorers, width, hidden, explorerOf, go, refresh, up, home, followTerminal, setSync, open, openInWindows, edit, picked, select, download, upload, pickUpload, drop, startNaming, finishNaming, remove, forget }
 }
 export type SftpPanels = ReturnType<typeof useSftpPanels>

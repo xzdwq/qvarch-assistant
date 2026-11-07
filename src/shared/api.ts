@@ -18,6 +18,7 @@ import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, Jir
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
 import type { BrowserApi, BrowserEventArgs } from './browser'
 import type { SshApi, SshEventArgs } from './ssh/api'
+import type { ShellValue } from './shell/output'
 import type { TestFilesApi } from './testFiles'
 import type { SqlApi } from './sql'
 import type { TableFileApi } from './tableData'
@@ -355,6 +356,8 @@ export interface QaApi {
   /** The AI's memory and journal of a personal note (a shared one keeps its own in its document). */
   vaultDocAi(path: string): Promise<DocAi>
   vaultSetDocAi(path: string, ai: DocAi): Promise<void>
+  /** A note's metadata cleared: its runs (results, files), the AI's memory and journal, its agents' lines. */
+  vaultClearMeta(path: string): Promise<void>
   /** The events mentioned in the notes: event id → the notes' paths. */
   eventMentions(): Promise<Record<string, string[]>>
   /** A recording for a note; its vault path (.audio/…). */
@@ -384,6 +387,14 @@ export interface QaApi {
   /** A code block run in a process of its own (killed by runCodeStop / its time limit). */
   runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number; emits?: number }>
   runCodeStop(runId: string): void
+  /** A shell block's script: on this PC, or on a saved SSH session's server (`ssh`); its output gathered. */
+  runShell(runId: string, job: { lang: string; script: string; env: Record<string, string>; cwd?: string; ssh?: string; match?: { source: string; flags: string }; timeoutSec?: number }): Promise<{ ok: boolean; value?: ShellValue; error?: string; ms: number }>
+  runShellStop(runId: string): void
+  /** A shell run's output as it comes (batches). */
+  onShellOut(cb: (runId: string, stream: 'out' | 'err', chunk: string) => void): () => void
+  /** A shell block's script: its fingerprint (main hashes it) and whether it was approved before (runs without asking). */
+  shellTrust(script: { notePath: string; infoLine: string; body: string }): Promise<{ fingerprint: string; approved: boolean }>
+  shellApprove(fingerprint: string): Promise<void>
   /** A loop's head run in a process of its own: each pass it asks for comes as onLoopPass, answered by runLoopPass. */
   runLoop(runId: string, job: LoopJob & { timeoutSec: number }): Promise<LoopResult>
   runLoopPass(runId: string, n: number, result: PassResult): void

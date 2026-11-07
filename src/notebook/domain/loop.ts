@@ -31,6 +31,8 @@ export interface LoopInfo {
   timeout: number
   /** Its error does not stop «Выполнить всё». */
   soft?: boolean
+  /** Left out of the batch runs (as a block's skip): it runs only when started by itself. */
+  skip?: boolean
   /** A pause between its passes (none — one right after another). */
   pause?: LoopPause
   /** What its head's emit() gathers goes on from the last run: its last N items / lines. */
@@ -96,6 +98,7 @@ export function parseLoopInfo(attrs: string): LoopInfo {
     const m = /^([\w-]+)=(.*)$/.exec(p)
     if (!m) {
       if (p === 'soft') out.soft = true
+      if (p === 'skip') out.skip = true
       continue
     }
     if (Object.hasOwn(LOOP_SETTINGS, m[1])) LOOP_SETTINGS[m[1]](out, m[2])
@@ -104,7 +107,7 @@ export function parseLoopInfo(attrs: string): LoopInfo {
 }
 /** Writes a loop's start comment (defaults left out). */
 export function loopOpenMd(i: LoopInfo): string {
-  const a = [i.name ? `name=${i.name}` : '', i.parallel > 1 ? `parallel=${i.parallel}` : '', i.max !== LOOP_MAX ? `max=${i.max}` : '', i.timeout !== LOOP_TIMEOUT ? `timeout=${i.timeout}` : '', i.pause ? `pause=${pauseText(i.pause)}` : '', i.keep ? `keep=${i.keep}` : '', i.soft ? 'soft' : ''].filter(Boolean)
+  const a = [i.name ? `name=${i.name}` : '', i.parallel > 1 ? `parallel=${i.parallel}` : '', i.max !== LOOP_MAX ? `max=${i.max}` : '', i.timeout !== LOOP_TIMEOUT ? `timeout=${i.timeout}` : '', i.pause ? `pause=${pauseText(i.pause)}` : '', i.keep ? `keep=${i.keep}` : '', i.soft ? 'soft' : '', i.skip ? 'skip' : ''].filter(Boolean)
   return `<!-- qa:loop${a.length ? ` ${a.join(' ')}` : ''} -->`
 }
 export const LOOP_CLOSE_MD = '<!-- /qa:loop -->'

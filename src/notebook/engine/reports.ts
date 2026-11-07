@@ -16,7 +16,9 @@ const stateMark = (state: RunState, soft = false) => (state === 'error' && soft 
 export function blockReport(path: string, key: string, kind: RunnableKind, info: BlockInfo, body: string, opts: { brief?: boolean } = {}): string {
   const r = noteRun(path).runs[key]
   const spec = blockSpec(kind)
-  const title = `${spec.reportTitle ?? spec.title} «${info.name ?? key}»`
+  // (left out of the batch: never run — said so; run by itself (by hand, by name) — its run, marked)
+  if (info.skip && !r) return `⏭ ${spec.reportTitle ?? spec.title} «${info.name ?? key}» — пропущен (не участвует в «Выполнить всё»)`
+  const title = `${spec.reportTitle ?? spec.title} «${info.name ?? key}»${info.skip ? ' (не участвует в «Выполнить всё»)' : ''}`
   if (!r) return `⏸ ${title} — не запускался`
   const brief = !!opts.brief
   const runner = BLOCK_RUNNERS[kind]
@@ -35,7 +37,10 @@ export function blockReport(path: string, key: string, kind: RunnableKind, info:
 
 /** The whole note: a summary line, every runnable block in order (the failed ones and the tests in full). */
 export function noteReport(path: string, noteText: string): string {
-  const blocks = fencedBlocksOf(noteText).flatMap((b) => (isRunnableKind(b.kind) && !b.info.lib ? [{ ...b, kind: b.kind }] : []))
+  const all = fencedBlocksOf(noteText).flatMap((b) => (isRunnableKind(b.kind) && !b.info.lib ? [{ ...b, kind: b.kind }] : []))
+  // (the ones left out of the batch are listed after, not counted)
+  const blocks = all.filter((b) => !b.info.skip)
+  const skipped = all.filter((b) => b.info.skip)
   const n = noteRun(path)
   const runs = blocks.map((b) => n.runs[b.key])
   const okN = runs.filter((r) => r?.state === 'ok').length
@@ -57,7 +62,10 @@ export function noteReport(path: string, noteText: string): string {
     ...[...tallies].map(([label, tests]) => `${label}: ${tests.filter((b) => n.runs[b.key]?.state === 'ok').length} из ${tests.length}`),
     ...(last ? [`Последний запуск: ${momentText(last)}`] : []),
   ]
-  const parts = blocks.map((b, i) => blockReport(path, b.key, b.kind, b.info, b.body, { brief: !(runs[i]?.state === 'error' || isTest(b)) }))
+  const parts = [
+    ...blocks.map((b, i) => blockReport(path, b.key, b.kind, b.info, b.body, { brief: !(runs[i]?.state === 'error' || isTest(b)) })),
+    ...skipped.map((b) => blockReport(path, b.key, b.kind, b.info, b.body, { brief: true })),
+  ]
   return [...head, '', ...parts.flatMap((p) => [p, ''])].join('\n').trim()
 }
 

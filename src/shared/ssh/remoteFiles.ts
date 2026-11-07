@@ -39,8 +39,10 @@ export function rightsOf(mode: number): string {
   return [bit(0o400, 'r'), bit(0o200, 'w'), x(0o100, 0o4000, 's', 'S'), bit(0o040, 'r'), bit(0o020, 'w'), x(0o010, 0o2000, 's', 'S'), bit(0o004, 'r'), bit(0o002, 'w'), x(0o001, 0o1000, 't', 'T')].join('')
 }
 
+/** A folder, or a link to one. */
+export const isDirEntry = (e: RemoteEntry) => e.kind === 'dir' || !!e.toDir
+
 /** Entries in the explorer's order: folders (and links to them) first, then by name as people sort (numbers too). */
 export function sortEntries(list: readonly RemoteEntry[]): RemoteEntry[] {
-  const isDir = (e: RemoteEntry) => e.kind === 'dir' || !!e.toDir
-  return [...list].sort((a, b) => Number(isDir(b)) - Number(isDir(a)) || a.name.localeCompare(b.name, 'ru', { sensitivity: 'base', numeric: true }))
+  return [...list].sort((a, b) => Number(isDirEntry(b)) - Number(isDirEntry(a)) || a.name.localeCompare(b.name, 'ru', { sensitivity: 'base', numeric: true }))
 }

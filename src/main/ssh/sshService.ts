@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { existsSync, writeFileSync } from 'node:fs'
 import { app, dialog, shell, type BrowserWindow } from 'electron'
+import { baseRemote, localSafeName } from '../../shared/ssh/remotePath'
+import type { DirSummary, RemoteProps } from '../../shared/ssh/remoteProps'
+import { backup, readText, writeText, type RemoteText } from './remoteText'
+import { countDir, readProps } from './remoteProps'
 import type { SshApi, SshEmit } from '../../shared/ssh/api'
 import type { RemoteListing } from '../../shared/ssh/remoteFiles'
 import type { SshSession, SshSessionInput } from '../../shared/ssh/sessions'
@@ -79,14 +84,62 @@ export class SshService implements SshApi {
   open(id: string, remotePath: string): Promise<void> {
     return this.queue.download(id, [remotePath], join(OPEN_DIR, randomUUID()), (t) => void shell.openPath(t.to))
   }
+  async readText(id: string, path: string): Promise<RemoteText> {
+    return readText(await this.connections.sftp(id), path)
+  }
+  async writeText(id: string, path: string, text: string, mtime?: number, force = false): Promise<number> {
+    return writeText(await this.connections.sftp(id), path, String(text), typeof mtime === 'number' ? mtime : undefined, !!force)
+  }
+  async backup(id: string, path: string): Promise<string> {
+    return backup(await this.connections.sftp(id), path)
+  }
+  async saveLocal(name: string, text: string): Promise<string | undefined> {
+    const opts: Electron.SaveDialogOptions = { title: 'Сохранить копию на этот ПК', defaultPath: join(app.getPath('downloads'), localSafeName(String(name))) }
+    const w = this.window()
+    const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return undefined
+    writeFileSync(r.filePath, String(text), 'utf8')
+    return r.filePath
+  }
+  async downloadAsk(id: string, entries: Array<{ path: string; dir: boolean }>): Promise<void> {
+    const list = Array.isArray(entries) ? entries.filter((e) => e && typeof e.path === 'string' && e.path) : []
+    if (!list.length) return
+    const w = this.window()
+    const start = this.lastDir ?? app.getPath('downloads')
+    if (list.length === 1 && !list[0].dir) {
+      const opts: Electron.SaveDialogOptions = { title: 'Скачать с сервера', defaultPath: join(start, localSafeName(baseRemote(list[0].path))) }
+      const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+      if (r.canceled || !r.filePath) return
+      this.lastDir = dirname(r.filePath)
+      return this.queue.downloadAs(id, list[0].path, r.filePath)
+    }
+    const dir = await this.pickFolder('Скачать с сервера в папку', start)
+    if (!dir) return
+    this.lastDir = dir
+    return this.queue.download(id, list.map((e) => e.path), dir)
+  }
+  /** The folder the last download went to (the next dialog opens there). */
+  private lastDir?: string
+  reveal(transferId: string): void {
+    const t = this.queue.transfers().find((x) => x.id === String(transferId))
+    if (!t || t.dir !== 'down') return
+    if (t.state === 'done' && existsSync(t.to)) return shell.showItemInFolder(t.to)
+    if (existsSync(dirname(t.to))) void shell.openPath(dirname(t.to))
+  }
+  async props(id: string, path: string): Promise<RemoteProps> {
+    return readProps(this.connections, await this.connections.sftp(id), id, String(path))
+  }
+  countDir(id: string, path: string): Promise<DirSummary> {
+    return countDir(this.connections, id, String(path))
+  }
   async pickFiles(): Promise<string[]> {
     const opts: Electron.OpenDialogOptions = { title: 'Загрузить на сервер', properties: ['openFile', 'multiSelections'] }
     const w = this.window()
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? [] : r.filePaths
   }
-  async pickFolder(): Promise<string | undefined> {
-    const opts: Electron.OpenDialogOptions = { title: 'Скачать в папку', properties: ['openDirectory', 'createDirectory'] }
+  async pickFolder(title?: string, start?: string): Promise<string | undefined> {
+    const opts: Electron.OpenDialogOptions = { title: typeof title === 'string' && title ? title : 'Скачать в папку', defaultPath: typeof start === 'string' && start ? start : undefined, properties: ['openDirectory', 'createDirectory'] }
     const w = this.window()
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? undefined : r.filePaths[0]

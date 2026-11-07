@@ -14,7 +14,7 @@ export default defineConfig({
     // becomes an empty stub that ws would take for the add-on (a scenario's bridge failed on its first frame)
     define: { 'process.env.WS_NO_BUFFER_UTIL': '"1"', 'process.env.WS_NO_UTF_8_VALIDATE': '"1"' },
     // the release builder runs in its own (utility) process — see src/main/release/worker.ts
-    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), releaseWorker: resolve('src/main/release/worker.ts'), codeWorker: resolve('src/main/runner/codeWorker.ts'), loopWorker: resolve('src/main/runner/loopWorker.ts'), pwWorker: resolve('src/main/runner/pwWorker.ts'), hookWorker: resolve('src/main/runner/hookWorker.ts'), sqlWorker: resolve('src/main/sql/worker.ts') } } },
+    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), releaseWorker: resolve('src/main/release/worker.ts'), codeWorker: resolve('src/main/runner/codeWorker.ts'), shellWorker: resolve('src/main/runner/shellWorker.ts'), loopWorker: resolve('src/main/runner/loopWorker.ts'), pwWorker: resolve('src/main/runner/pwWorker.ts'), hookWorker: resolve('src/main/runner/hookWorker.ts'), sqlWorker: resolve('src/main/sql/worker.ts') } } },
   },
   preload: {
     // the app's windows, and the browser's pages — the section's and the notes' (sign-in forms, a scenario's recording)

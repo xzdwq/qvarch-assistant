@@ -1,3 +1,6 @@
+import { SSH_RULES } from './shellTools'
+import { DB_RULES } from './dbTools'
+
 /** How runnable notes are written — what the `qvarch_guide` tool tells an agent. */
 export const RUN_GUIDE = `# Исполняемые заметки Qvarch — как писать
 
@@ -86,6 +89,18 @@ select id, status from orders where customer_id = {{ user.body.id }}
 \`\`\`
 - db — имя подключения из «Базы данных» (настройки там, не в заметке); значения {{ }} уходят параметрами, а не текстом.
 - Результат: rows = массив объектов ({{ rows[0].status }}, rows.length).
+${DB_RULES}
+
+## Оболочка: PowerShell / cmd / bash — на этом ПК или на сервере по SSH
+\`\`\`bash run ssh=<id сессии> name=disk match=/(\\d+)%/ cwd=/var/log
+df -h /
+\`\`\`
+- Язык — powershell (pwsh, ps1), cmd (bat), bash (sh); без ssh= — на этом ПК, с ssh=<id> — на сервере (id — инструмент ssh_sessions). cmd по SSH не поддерживается.
+- cwd= — папка запуска (пробелы — %20); пусто — домашняя. match=/…/ — оставить только совпавшие строки.
+- Результат: disk = { exitCode, ok, stdout, stderr, lines, matches (группы при match=), cwd, truncated }. Ненулевой код выхода — ошибка блока (soft — не останавливает), но значение публикуется: условие в коде может его прочитать.
+- {{ x }} в скрипте приходит переменной оболочки (значение — данные, не код); значения заметки доступны как переменные QA_<имя> ($env:QA_x, $QA_x, %QA_x%).
+- Скрипт, написанный или изменённый тобой, пользователь подтверждает в приложении перед запуском — note_run дождётся его ответа.
+${SSH_RULES}
 
 ## Текст по шаблону
 \`\`\`md template name=summary

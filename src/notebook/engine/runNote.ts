@@ -116,7 +116,8 @@ export function stopLoopAt(path: string, noteText: string, line: number, key: st
 }
 /** A runnable block or a loop of the note by its name or key (what the AI tools ask for), in any scope. */
 export function runItemNamed(text: string, want: string): RunItem | undefined {
-  const items = [undefined, ...findLoops(text.split('\n'))].flatMap((l) => runItemsIn(text, l))
+  // (a block left out of batch runs is still run by its name)
+  const items = [undefined, ...findLoops(text.split('\n'))].flatMap((l) => runItemsIn(text, l, { withSkipped: true }))
   return items.find((x) => x.key === want || itemName(x) === want)
 }
 /** An item of the note run where it stands (the AI tools, the harness's checks: a block or a loop by its name); what started it — its `trigger`. */

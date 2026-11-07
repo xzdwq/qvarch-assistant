@@ -46,6 +46,11 @@ async function changePersonal(path: string, fn: (ai: DocAi) => DocAi): Promise<v
   await window.qa.vaultSetDocAi(path, JSON.parse(JSON.stringify(next)) as DocAi)
 }
 
+/** A personal note's AI part forgotten here (its metadata was cleared): read again when next asked. */
+export function forgetDocAi(path: string): void {
+  personal.set(path, NO_DOC_AI)
+}
+
 /** One may change a note's memory (a reader of a shared note — not). */
 export const mayEditDocAi = (path: string): boolean => !readonlyPath(path)
 

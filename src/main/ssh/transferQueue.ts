@@ -68,6 +68,13 @@ export class TransferQueue {
     }
     this.pump()
   }
+  /** One server file to an exact local path (what is there is replaced once the file is whole). */
+  async downloadAs(id: string, remote: string, to: string): Promise<void> {
+    const sftp = await this.conns.sftp(id)
+    const st = await statOf(sftp, remote).catch((e: unknown) => Promise.reject(sftpError(e, remote)))
+    this.add(id, 'down', remote, to, st.size)
+    this.pump()
+  }
   private async downloadDir(id: string, sftp: SFTPWrapper, remote: string, local: string): Promise<void> {
     mkdirSync(local, { recursive: true })
     for (const r of await readDir(sftp, remote)) {

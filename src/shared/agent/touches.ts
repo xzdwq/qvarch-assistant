@@ -80,6 +80,10 @@ const TOOL_TOUCHES: Record<string, (a: Args, doc: string) => Seen[]> = {
   browser_open: (a) => [{ kind: 'web', op: 'read', ref: s(a.url), label: cut(s(a.url).replace(/^https?:\/\//, ''), 40) }],
   note_components: () => [{ kind: 'guide', op: 'read', ref: '', label: 'компоненты' }],
   qvarch_guide: () => [{ kind: 'guide', op: 'read', ref: '', label: 'справка Qvarch' }],
+  db_connections: () => [{ kind: 'guide', op: 'read', ref: '', label: 'подключения к БД' }],
+  db_schema: (a) => [{ kind: 'search', op: 'read', ref: s(a.conn), label: `${s(a.conn)}${s(a.table) ? ` · ${s(a.table)}` : ' · таблицы'}` }],
+  db_query: (a) => [{ kind: 'search', op: 'run', ref: s(a.conn), label: `${s(a.conn)}: ${cut(s(a.sql).replace(/\s+/g, ' '), 40)}` }],
+  ssh_sessions: () => [{ kind: 'guide', op: 'read', ref: '', label: 'сессии SSH' }],
 }
 
 /** What one call touched (a tool not in the registry — the tool itself). */
