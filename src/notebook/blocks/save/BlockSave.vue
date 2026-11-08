@@ -4,6 +4,7 @@
  * (the variable, the format, the folder, how many files to keep, what to do with a partial value) and its last file
  * (opened, shown in its folder).
  */
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref } from 'vue'
 import { SAVE_FORMATS, type PartialMode, type SaveFormat } from '@shared/valueFiles'
 import { remoteError } from '@shared/remoteError'
@@ -17,6 +18,8 @@ import { batchToggle } from '../../ui/batchToggle'
 import { saveOf, withSave, type SaveKey } from './model'
 
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { body } = fence
 const { run, start, stop, report } = useBlockRun(props, 'save', fence)
@@ -64,7 +67,8 @@ const field = 'tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11
 
 <template>
   <div class="tw:contain-[inline-size] tw:min-w-0 tw:flex tw:flex-col tw:gap-6 tw:py-8 tw:px-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-ref) tw:rounded-[8px] tw:bg-panel">
-    <RunHead :batch="batch" :report="report" icon="download" kind="Сохранить в файл" :run="run" can-run :named="false" @run="go" @stop="stop" />
+    <RunHead :fold="fold" :batch="batch" :report="report" icon="download" kind="Сохранить в файл" :run="run" can-run :named="false" @run="go" @stop="stop" />
+    <template v-if="!fold || fold.open">
     <div class="tw:flex tw:flex-wrap tw:items-center tw:gap-8">
       <label :class="field" title="Переменная заметки (можно путь: login.body.items)">
         {{ '{' }}{{ '{' }}<SuggestInput class="tw:w-150 tw:h-22 tw:py-0 tw:px-6" :model-value="s.ref" :options="names" placeholder="переменная" @update:model-value="(v: string) => set('ref', v)" />{{ '}' }}{{ '}' }}
@@ -103,5 +107,6 @@ const field = 'tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:text-[11
       </template>
     </div>
     <p v-if="said" class="tw:m-0 tw:text-down-fg tw:text-[11.5px]">{{ said }}</p>
+    </template>
   </div>
 </template>

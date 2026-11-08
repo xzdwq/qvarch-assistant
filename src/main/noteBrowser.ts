@@ -27,6 +27,10 @@ interface Listen {
   off?: () => void
 }
 const listening = new Map<number, Listen>()
+/** The pages of the notes' browsers (their webviews): the saved logins of their sites are typed into them. */
+const guests = new Set<number>()
+/** A page of a note's browser (not anything else). */
+export const isNoteGuest = (wc: WebContents): boolean => guests.has(wc.id)
 
 /**
  * A note's page told what browser it is, as the Браузер section's pages are (Chrome; a sign-in host — Firefox): the
@@ -61,6 +65,9 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
       if (params.partition !== NOTE_PARTITION || !/^(https?:|about:blank)/i.test(params.src || 'about:blank')) ev.preventDefault()
     })
     wc.on('did-attach-webview', (_ev, guest) => {
+      guests.add(guest.id)
+      const id = guest.id
+      guest.once('destroyed', () => guests.delete(id))
       wireGuest(wc, guest, emit)
       // a new window → a new tab of the same component; a popup (a sign-in) — a window of its own that keeps its opener
       wirePopups(guest, {
@@ -110,7 +117,7 @@ function wireGuest(host: WebContents, guest: WebContents, emit: (host: WebConten
 }
 
 /** A webview of this window (not anything else). */
-function guestOf(host: WebContents, id: number): WebContents {
+export function guestOf(host: WebContents, id: number): WebContents {
   const g = webContents.fromId(Number(id))
   if (!g || g.isDestroyed() || g.getType() !== 'webview' || g.hostWebContents !== host) throw new Error('Нет такой вкладки')
   return g

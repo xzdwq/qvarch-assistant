@@ -9,6 +9,8 @@ export const imageSpec: BlockSpec<'image'> = {
   detect: singleLine(41, IMAGE_EMBED),
   estimateHeight: fixedHeight(320),
   rawEditable: false,
+  // (a picture with no head to fold to)
+  fold: 'none',
   commands: [
     {
       id: 'image',

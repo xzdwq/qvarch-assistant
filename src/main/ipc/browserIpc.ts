@@ -5,7 +5,7 @@ import { SQL_METHODS } from '../../shared/sql'
 import { TEST_FILES_METHODS } from '../../shared/testFiles'
 import type { AppContext } from '../app/appContext'
 import { Browser } from '../browser'
-import { netClear, netListen, setupNoteBrowser } from '../noteBrowser'
+import { guestOf, netClear, netListen, setupNoteBrowser } from '../noteBrowser'
 import { registerBrowserPageIpc } from './browserPageIpc'
 import { emit, handle, handleDispatch, listen } from './router'
 
@@ -45,5 +45,8 @@ export function registerBrowserIpc(app: AppContext): void {
   })
   handle('nbNet', (e, id, on, preserve) => netListen(e.sender, Number(id), !!on, !!preserve, nbEmit))
   handle('nbNetClear', (e, id) => netClear(e.sender, Number(id)))
+  // the saved logins of a note's browser tab's site (only its own window's tabs)
+  handle('nbPwLogins', (e, id) => browser.passwordVault.loginsOf(guestOf(e.sender, Number(id))))
+  handle('nbPwFill', (e, id, loginId) => browser.passwordVault.fillPage(guestOf(e.sender, Number(id)), String(loginId)))
   handle('nbPwRec', (e, id, note, key, name) => browser.scenario.startIn(e.sender, String(note), String(key), Number(id), String(name)))
 }

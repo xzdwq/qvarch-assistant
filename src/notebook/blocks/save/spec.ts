@@ -20,7 +20,7 @@ export const saveSpec: RunnableBlockSpec<'save'> = {
       hint: 'Каждый прогон — новый файл с переменной (Excel / CSV / JSON / текст), только если данные изменились',
       icon: 'download',
       keys: ['файл', 'сохранить', 'save', 'export', 'экспорт', 'выгрузка', 'excel', 'xlsx', 'csv', 'json', 'txt'],
-      run: (c) => ({ kind: 'insertBlock', markdown: saveMd(c.lastValueName() || '') }),
+      run: (c) => ({ kind: 'insertBlock', markdown: saveMd('') }),
     },
   ],
 }

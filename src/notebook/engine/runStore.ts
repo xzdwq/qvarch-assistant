@@ -3,7 +3,7 @@ import type { ValueSource } from '../domain/blockInfo'
 import { jsonClone, type Values } from '../domain/values'
 import { runApi } from './runApi'
 import { runMoved } from './runKeys'
-import type { LoopRun, NoteRun } from './runTypes'
+import type { CtxItem, LoopRun, NoteRun } from './runTypes'
 
 /**
  * The notes' runs in memory (reactive — the blocks show them as they go) and on disk (vault/.runs/<note>.json):
@@ -56,7 +56,7 @@ async function loadSavedRuns(path: string, into: NoteRun): Promise<void> {
     for (const r of Object.values(d.runs ?? {})) if (r.state === 'run') r.state = 'error'
     Object.values(d.loops ?? {}).forEach(markInterrupted)
     // (into the objects there are — a run already going on holds them; what it wrote wins)
-    for (const [k, v] of Object.entries(d.ctx ?? {})) if (!(k in into.ctx)) into.ctx[k] = v
+    for (const [k, v] of Object.entries(d.ctx ?? {})) if (!(k in into.ctx)) into.ctx[k] = settledItem(v)
     for (const [k, v] of Object.entries(d.runs ?? {})) if (!(k in into.runs)) into.runs[k] = v
     for (const [k, v] of Object.entries(d.loops ?? {})) if (!(k in into.loops)) into.loops[k] = v
     if (d.sync) into.sync = { ...d.sync, ...into.sync }
@@ -65,6 +65,12 @@ async function loadSavedRuns(path: string, into: NoteRun): Promise<void> {
   } finally {
     into.loaded = true
   }
+}
+/** A value saved while its run went on: that run is over — what came is kept, as partial. */
+export function settledItem(v: CtxItem): CtxItem {
+  if (!v?.running) return v
+  const { running: _, ...rest } = v
+  return { ...rest, partial: true }
 }
 /** A loop saved while it ran: it and its passes failed («Прервано»). */
 function markInterrupted(l: LoopRun): void {
@@ -97,10 +103,10 @@ export function publishIntoRun(n: NoteRun, path: string, name: string, value: un
 /**
  * A value gathered by emit() put into the note's context as it comes (runEmits gives a new one each time it is
  * shown — never cloned deep here, never watched deep: a long stream stays cheap); `partial` — its run did not end
- * well (stopped, failed): what came is kept.
+ * well (stopped, failed): what came is kept; `running` — its run goes on, more is coming.
  */
-export function publishGathered(path: string, name: string, value: unknown, from: ValueSource, block: string, partial = false): void {
-  noteRun(path).ctx[name] = { value: value && typeof value === 'object' ? markRaw(value) : value, at: Date.now(), from, block, ...(partial ? { partial } : {}) }
+export function publishGathered(path: string, name: string, value: unknown, from: ValueSource, block: string, mark: { partial?: boolean; running?: boolean } = {}): void {
+  noteRun(path).ctx[name] = { value: value && typeof value === 'object' ? markRaw(value) : value, at: Date.now(), from, block, ...(mark.partial ? { partial: true } : {}), ...(mark.running ? { running: true } : {}) }
   saveRunsSoon(path)
 }
 /**

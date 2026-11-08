@@ -9,12 +9,10 @@ export interface CommandContext {
   latin: boolean
   /** The note's path in the vault ('' — no note). */
   notePath: string
-  /** A block name not taken in this note: base, base2, base3… */
-  freeName(base: string): string
+  /** A block name not taken in this note: base, base2, base3… (`numbered` — base1, base2…: the bare base is not a name of its own). */
+  freeName(base: string, numbered?: boolean): string
   /** The name of the note's newest value that is a list (a query's rows, data) — what a loop / a template goes over. */
   newestListName(): string | undefined
-  /** The name of the value the note published last. */
-  lastValueName(): string | undefined
   /** The first database connection's name ('' — none yet). */
   firstDbConnection(): string
   /** The site the built-in browser talked to last ('https://' — none). */

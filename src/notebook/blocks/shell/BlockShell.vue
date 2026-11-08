@@ -7,7 +7,7 @@
 import { computed, ref, watch } from 'vue'
 import { isShellAsk, type ShellAsk } from '@shared/shell/trust'
 import { shellKindOf, type ShellKind } from '@shared/shell/shells'
-import type { ShellValue } from '@shared/shell/output'
+import { newestLinesFirst, type ShellValue } from '@shared/shell/output'
 import { BLOCK_H, infoMd, matchOf, type BlockInfo } from '@nb/domain/blockInfo'
 import CodeArea from '@renderer/components/CodeArea.vue'
 import Icon from '@renderer/components/Icon.vue'
@@ -19,7 +19,9 @@ import ValueView from '../../ui/ValueView.vue'
 import { batchToggle } from '../../ui/batchToggle'
 import { useBlockRun } from '../../ui/useBlockRun'
 import { useFenceSource } from '../../ui/useFenceSource'
-import { liveText } from '@nb/engine/shellLive'
+import { liveText, sendLiveInput } from '@nb/engine/shellLive'
+import { useBlockFold } from '../../ui/blockFold'
+import { noteRun, runWaitOf } from '@nb/engine'
 
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
 const fence = useFenceSource(props)
@@ -67,7 +69,7 @@ const shellItems = computed<MenuItem[]>(() => (Object.keys(SHELLS) as ShellKind[
 const session = computed(() => sessions.value.find((s) => s.id === info.value.ssh))
 const placeLabel = computed(() => (!info.value.ssh ? 'Этот ПК' : (session.value?.name ?? 'сессия удалена')))
 const placeItems = computed<MenuItem[]>(() => [
-  { label: 'Этот ПК', icon: info.value.ssh ? undefined : 'check', run: () => patch({ ssh: undefined }) },
+  { label: 'Этот ПК', icon: info.value.ssh ? undefined : 'check', run: () => patch({ ssh: undefined, tty: undefined }) },
   ...sessions.value.map((s) => ({ label: s.name, icon: s.id === info.value.ssh ? 'check' : 'monitor', run: () => patch({ ssh: s.id, cwd: undefined }) })),
 ])
 
@@ -96,8 +98,9 @@ async function pickCwd(): Promise<void> {
   if (dir) patch({ cwd: dir })
 }
 
-/** Folded: only its head shows (remembered per block). */
-const open = useFold(() => `${props.path}#${key.value}#open`, true)
+/** Folded: only its head shows (the host's fold, kept per block). */
+const fold = useBlockFold()
+const open = computed(() => !fold || fold.open)
 /** The output's height, px (the bottom edge dragged — kept in the block's line; not part of its approval). */
 const outH = ref(info.value.h ?? 260)
 watch(
@@ -136,13 +139,38 @@ const go = async () => {
   await start()
 }
 const live = computed(() => liveText(props.path, key.value))
+/** Newest lines on top (a log stream reads from its latest — no scrolling after it); remembered per block. */
+const newestFirst = useFold(() => `${props.path}#${key.value}#newest`, true)
+/** A text's lines as shown: newest first (an empty last line — the newline that ended it — left out), or as they came. */
+const ordered = (t: string | undefined) => (newestFirst.value ? newestLinesFirst(t ?? '') : (t ?? ''))
+const liveShown = computed(() => ordered(live.value))
+
+/** In a terminal (`tty`, a server's bash only): a program may ask — sudo's password — and the person answers below. */
+const ttyAllowed = computed(() => !!info.value.ssh && kind.value === 'bash')
+const tty = computed(() => ttyAllowed.value && !!info.value.tty)
+/** The answer being typed (hidden unless shown: mostly a password); sent with Enter, then cleared — kept nowhere. */
+const answer = ref('')
+/** What its run asks now and waits for (none — it does not wait). */
+const waiting = computed(() => runWaitOf(props.path, key.value))
+const answerShown = ref(false)
+function sendAnswer(): void {
+  sendLiveInput(props.path, key.value, `${answer.value}\n`)
+  answer.value = ''
+}
 const value = computed(() => (run.value?.hasValue ? (run.value.value as ShellValue) : undefined))
+/** The value growing while it runs: published under its name by this block's run (none unnamed — nothing to publish). */
+const growing = computed(() => {
+  const it = info.value.name ? noteRun(props.path).ctx[info.value.name] : undefined
+  return it?.running && it.block === key.value ? (it.value as ShellValue) : undefined
+})
+/** What «Значение» shows: while it runs — the growing one (till its first part comes — nothing), then the run's. */
+const shownValue = computed(() => (live.value !== undefined ? growing.value : value.value))
 const showValue = useFold(() => `${props.path}#${key.value}#value`, false)
 </script>
 
 <template>
   <div class="bsh tw:contain-[inline-size] tw:min-w-0 tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-code) tw:rounded-[8px] tw:bg-panel">
-    <RunHead :batch="batch" :fold="{ open, set: (o: boolean) => (open = o) }" :report="report" icon="terminal" kind="Оболочка" :name="info.name" :run="run" name-placeholder="вывод" @rename="rename" @run="go" @stop="stop">
+    <RunHead :batch="batch" :fold="fold" :report="report" icon="terminal" kind="Оболочка" :name="info.name" :run="run" name-placeholder="вывод" @rename="rename" @run="go" @stop="stop">
       <MenuButton :label="SHELLS[kind].label" :items="shellItems" title="Оболочка" :width="160" />
       <MenuButton :label="placeLabel" :icon="info.ssh ? 'monitor' : undefined" :items="placeItems" title="Где выполнить: на этом ПК или на сервере по сохранённой сессии SSH" :width="260" />
       <MenuButton icon="lock" :items="askItems" :title="`Разрешение на запуск: ${ASK[ask].label} — ${ASK[ask].hint}`" :width="260" />
@@ -155,28 +183,40 @@ const showValue = useFold(() => `${props.path}#${key.value}#value`, false)
         <Icon v-else name="folderOpen" :size="13" class="tw:flex-none tw:text-warn" />
         <input v-model="cwdDraft" class="tw:flex-[0_1_40%] tw:min-w-60 tw:h-22 tw:font-data tw:text-[11.5px]" spellcheck="false" :placeholder="info.ssh ? '~ — домашняя папка на сервере' : 'домашняя папка'" :title="`Папка, в которой выполняется скрипт${info.ssh ? ' (на сервере)' : ''}; пусто — домашняя`" @blur="commitCwd" @keydown.enter.prevent="commitCwd" />
         <span class="tw:flex-1"></span>
+        <!-- the output's order: newest lines on top (a log stream) or as they came -->
+        <button class="tw:inline-flex tw:flex-none tw:p-3 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" :title="newestFirst ? 'Вывод: новые строки сверху (ошибки — над выводом). Нажмите — по порядку' : 'Вывод: по порядку. Нажмите — новые строки сверху'" @mousedown.prevent @click="newestFirst = !newestFirst"><Icon :name="newestFirst ? 'sortDesc' : 'sortAsc'" :size="13" /></button>
+        <!-- a terminal (as ssh -t): sudo may ask for the password, typed below while it runs -->
+        <button v-if="ttyAllowed" class="tw:inline-flex tw:flex-none tw:p-3 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:[&.on]:text-accent-fg" :class="{ on: tty }" :title="`Терминал (tty, как ssh -t): ${tty ? 'включён' : 'выключен'}. Программа может спросить — например, пароль sudo — ответ вводится под выводом. Вывод и ошибки идут одним потоком`" @mousedown.prevent @click="patch({ tty: tty ? undefined : true })"><Icon name="keyboard" :size="13" /></button>
         <!-- the line filter: shown when one is set or asked for (rarely needed — it takes numbers out for conditions) -->
         <button class="tw:inline-flex tw:flex-none tw:p-3 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text tw:[&.on]:text-accent-fg" :class="{ on: filterShown }" title="Фильтр строк вывода: оставить только совпавшие строки, их группы — в matches (например, /(\d+)%/ из df -h — число для условия)" @mousedown.prevent @click="filterOpen = !filterOpen"><Icon name="regex" :size="12" /></button>
         <input v-if="filterShown" v-model="matchDraft" class="tw:flex-[0_1_45%] tw:min-w-60 tw:h-22 tw:font-data tw:text-[11.5px] tw:[&.bad]:border-down" :class="{ bad: matchBad }" spellcheck="false" placeholder="/(\d+)%/" title="Регулярное выражение /…/флаги: только совпавшие строки попадают в lines, их группы — в matches" @blur="commitMatch" @keydown.enter.prevent="commitMatch" />
       </div>
       <!-- what it prints while it runs; then the run's value (the output's bottom edge dragged — its height) -->
       <template v-if="live !== undefined || value?.stdout || value?.stderr">
-        <pre v-if="live !== undefined" class="tw:m-0 tw:overflow-auto tw:py-6 tw:px-8 tw:rounded-[6px] tw:bg-bg tw:text-text-2 tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]" :style="{ maxHeight: `${outH}px` }">{{ live || '…' }}</pre>
-        <pre v-else class="tw:m-0 tw:overflow-auto tw:py-6 tw:px-8 tw:rounded-[6px] tw:bg-bg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]" :style="{ maxHeight: `${outH}px` }"><span class="tw:text-text-2">{{ value?.stdout }}</span><span class="tw:text-down-fg">{{ value?.stderr }}</span></pre>
+        <!-- a terminal run's input: the answer to what it asks (sudo's password), Enter sends it; it waits — said and lit -->
+        <div v-if="live !== undefined && tty" class="tw:flex tw:flex-col tw:gap-4 tw:min-w-0 tw:rounded-[6px] tw:[&.ask]:p-6 tw:[&.ask]:bg-accent/12 tw:[&.ask]:outline-1 tw:[&.ask]:outline-accent/60" :class="{ ask: !!waiting }">
+          <span v-if="waiting" class="tw:min-w-0 tw:truncate tw:text-accent-fg tw:text-[11.5px]" :title="waiting.prompt">Ждёт ввода: <span class="tw:font-data">{{ waiting.prompt }}</span></span>
+          <div class="tw:flex tw:items-center tw:gap-6 tw:min-w-0">
+            <Icon name="keyboard" :size="13" class="tw:flex-none" :class="waiting ? 'tw:text-accent-fg' : 'tw:text-muted'" />
+            <input v-model="answer" class="tw:flex-1 tw:min-w-0 tw:h-24 tw:font-data tw:text-[12px]" :type="answerShown ? 'text' : 'password'" autocomplete="off" spellcheck="false" placeholder="Ответ на запрос — например, пароль sudo; Enter — отправить" title="Уходит в терминал сервера как набранный текст; нигде не сохраняется" @keydown.enter.prevent="sendAnswer" />
+            <button class="tw:inline-flex tw:flex-none tw:p-3 tw:border-0 tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" :title="answerShown ? 'Скрыть ввод' : 'Показать ввод'" @mousedown.prevent @click="answerShown = !answerShown"><Icon :name="answerShown ? 'eyeOff' : 'eye'" :size="13" /></button>
+          </div>
+        </div>
+        <pre v-if="live !== undefined" class="tw:m-0 tw:overflow-auto tw:py-6 tw:px-8 tw:rounded-[6px] tw:bg-bg tw:text-text-2 tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]" :style="{ maxHeight: `${outH}px` }">{{ liveShown || '…' }}</pre>
+        <pre v-else class="tw:m-0 tw:overflow-auto tw:py-6 tw:px-8 tw:rounded-[6px] tw:bg-bg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap tw:[word-break:break-word]" :style="{ maxHeight: `${outH}px` }"><template v-if="newestFirst"><span v-if="value?.stderr" class="tw:block tw:text-down-fg">{{ ordered(value.stderr) }}</span><span class="tw:text-text-2">{{ ordered(value?.stdout) }}</span></template><template v-else><span class="tw:text-text-2">{{ value?.stdout }}</span><span class="tw:text-down-fg">{{ value?.stderr }}</span></template></pre>
         <div class="tw:group/grip tw:flex tw:flex-none tw:items-center tw:justify-center tw:h-8 tw:-mt-4 tw:cursor-ns-resize tw:select-none tw:touch-none" title="Потяните — выше или ниже" @pointerdown.prevent="dragOut"><span class="tw:w-36 tw:h-3 tw:rounded-[2px] tw:bg-border-2 tw:group-hover/grip:bg-accent"></span></div>
       </template>
     </template>
-    <template v-if="open && live === undefined && run && run.state !== 'run'">
-      <p v-if="run.error" class="tw:m-0 tw:text-down-fg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap">{{ run.error }}</p>
-      <template v-if="value">
-        <div class="tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
-          <button class="tw:inline-flex tw:flex-none tw:w-22 tw:h-22 tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:bg-hover" @mousedown.prevent @click="showValue = !showValue"><Icon :name="showValue ? 'chevronDown' : 'chevronRight'" :size="12" /></button>
-          <b class="tw:flex-none">Значение</b>
-          <span class="tw:min-w-0 tw:truncate tw:text-muted tw:text-[11.5px]" :title="value.cwd ? `Папка: ${value.cwd}` : undefined">код {{ value.exitCode }} · строк {{ value.lines.length }}<template v-if="value.matches"> · совпадений {{ value.matches.length }}</template><template v-if="value.truncated"> · вывод обрезан до последних 2 МБ</template><template v-if="value.cwd"> · в {{ value.cwd }}</template></span>
-          <span v-if="info.name" class="tw:text-muted tw:text-[11.5px] tw:truncate">→ {{ '{' }}{{ '{' }}{{ info.name }}.lines{{ '}' }}{{ '}' }}</span>
-        </div>
-        <ValueView v-if="showValue" :value="value" :name="info.name" />
-      </template>
+    <p v-if="open && live === undefined && run && run.state !== 'run' && run.error" class="tw:m-0 tw:text-down-fg tw:font-data tw:text-[12px] tw:whitespace-pre-wrap">{{ run.error }}</p>
+    <!-- its value: while it runs — the one growing (published as output comes), then the run's own -->
+    <template v-if="open && shownValue">
+      <div class="tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
+        <button class="tw:inline-flex tw:flex-none tw:w-22 tw:h-22 tw:items-center tw:justify-center tw:p-0 tw:border-0 tw:bg-transparent tw:text-muted tw:hover:bg-hover" @mousedown.prevent @click="showValue = !showValue"><Icon :name="showValue ? 'chevronDown' : 'chevronRight'" :size="12" /></button>
+        <b class="tw:flex-none">Значение</b>
+        <span class="tw:min-w-0 tw:truncate tw:text-muted tw:text-[11.5px]" :title="shownValue.cwd ? `Папка: ${shownValue.cwd}` : undefined"><template v-if="shownValue.running"><span class="tw:text-accent-fg">● растёт</span></template><template v-else>код {{ shownValue.exitCode }}</template> · строк {{ shownValue.lines.length }}<template v-if="shownValue.matches"> · совпадений {{ shownValue.matches.length }}</template><template v-if="shownValue.truncated"> · вывод обрезан до последних 2 МБ</template><template v-if="shownValue.cwd"> · в {{ shownValue.cwd }}</template></span>
+        <span v-if="info.name" class="tw:text-muted tw:text-[11.5px] tw:truncate">→ {{ '{' }}{{ '{' }}{{ info.name }}.lines{{ '}' }}{{ '}' }}</span>
+      </div>
+      <ValueView v-if="showValue" :value="shownValue" :name="info.name" />
     </template>
   </div>
 </template>

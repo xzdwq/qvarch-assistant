@@ -48,7 +48,8 @@ function show(path: string, name: string, g: Gathered, from: ValueSource, block:
   const value = COPY[g.mode](g.value)
   g.shownAt = performance.now()
   g.cost = g.shownAt - t0
-  publishGathered(path, name, value, from, block, !!o.partial)
+  // (shown before its run's end: more is coming)
+  publishGathered(path, name, value, from, block, { partial: o.partial, running: !o.now })
 }
 /** The variables of each run (its root env), by name. */
 const gathered = new WeakMap<RunEnv, Map<string, Gathered>>()

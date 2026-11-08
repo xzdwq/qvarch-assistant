@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref, watch } from 'vue'
 import { CHART_TYPES, chartMd, chartTypeOf, num, parseChart, seriesColor, type ChartModel } from './model'
 import Icon from '@renderer/components/Icon.vue'
@@ -8,6 +10,8 @@ import Icon from '@renderer/components/Icon.vue'
  * labels, the others — the series). «Данные» opens the table to edit; the file keeps a ```chart fence.
  */
 const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const m = ref<ChartModel>(parseChart(props.src))
 let mine = props.src
 watch(
@@ -180,6 +184,7 @@ const hover = ref('')
 <template>
   <div class="bc tw:flex tw:flex-col tw:gap-6 tw:py-10 tw:px-12 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
     <div class="bc-h tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
+      <FoldHead icon="chart" kind="График" :fold="fold" />
       <input v-model="m.title" class="bc-t tw:flex-1 tw:min-w-140 tw:h-28 tw:py-0 tw:px-4 tw:border-0 tw:bg-transparent tw:text-text-hi tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:font-semibold tw:outline-none" placeholder="Название графика" spellcheck="false" @input="save()" @blur="save(true)" />
       <span class="bc-types tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-24 tw:py-0 tw:px-8 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-text-2 tw:text-[11.5px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" v-for="t in CHART_TYPES" :key="t.id" :class="{ on: m.type === t.id }" @mousedown.prevent @click="((m.type = t.id), save(true))">{{ t.title }}</button>
@@ -187,6 +192,7 @@ const hover = ref('')
       <label v-if="chartType.stackable" class="bc-chk tw:inline-flex tw:items-center tw:gap-5 tw:text-text-2 tw:text-[12px]"><input v-model="m.stacked" type="checkbox" @change="save(true)" />Накоплением</label>
       <button class="bc-ed tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:border-accent/60 tw:[&.on]:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: editing }" @mousedown.prevent @click="editing = !editing"><Icon name="table" :size="13" />Данные</button>
     </div>
+    <template v-if="!fold || fold.open">
     <svg :viewBox="`0 0 ${W} ${H}`" class="bc-svg tw:w-full tw:max-h-320" preserveAspectRatio="xMidYMid meet">
       <template v-if="chartType.shape === 'pie'">
         <path v-for="(s, i) in pie" :key="i" :d="s.d" :style="{ fill: s.color }" stroke="var(--bg)" stroke-width="2" @mouseenter="hover = `${s.label}: ${s.v} (${s.pct}%)`" @mouseleave="hover = ''" />
@@ -251,5 +257,6 @@ const hover = ref('')
       </table>
       <button class="bc-add tw:hover:bg-hover tw:hover:text-text tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:border tw:border-dashed tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:border-border-3" @mousedown.prevent @click="addRow"><Icon name="plus" :size="12" />Строка</button>
     </div>
+    </template>
   </div>
 </template>

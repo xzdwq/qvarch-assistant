@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { remoteError } from '../../../shared/remoteError'
 import { joinFence, splitFence } from '@nb/domain/fence'
@@ -7,6 +9,8 @@ import { addressOf, BROWSER_MIN_H, browserBody, parseBrowserBody, type NetItem, 
 import { isName } from '@nb/domain/blockInfo'
 import { BROWSER_PARTITION } from '@shared/browser/constants'
 import Icon from '@renderer/components/Icon.vue'
+import BrowserLogins from './BrowserLogins.vue'
+import { useBrowserName } from './useBrowserName'
 import { holdNoteBrowser } from '@nb/engine/noteBrowsers'
 import { useDraft } from '@renderer/lib/drafts'
 import { useFlash } from '@renderer/lib/useFlash'
@@ -45,6 +49,8 @@ interface Tab {
 }
 
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const info = computed(() => splitFence(props.src).info)
 let seq = 0
 const first = parseBrowserBody(splitFence(props.src).body)
@@ -316,12 +322,25 @@ function publish(): void {
   flashPublished(true)
 }
 const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browserOpen(cur.value.url)
+
+// its name: what the note's Playwright blocks pick it by (in=…) — renamed, they follow
+const name = useBrowserName(props, info, (to) => {
+  const p = splitFence(mine)
+  mine = joinFence(p.fence, { ...p.info, name: to }, p.body)
+  props.onChange?.(mine)
+})
+const { draft: nameDraft, bad: nameBad } = name
 </script>
 
 <template>
   <div class="nbb tw:contain-[inline-size] tw:flex tw:flex-col tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-block-browser tw:rounded-[8px] tw:bg-panel tw:overflow-hidden">
-    <!-- its name: what a Playwright block of the note picks it by (in=…) -->
-    <div class="tw:min-w-0 tw:pt-4 tw:px-10 tw:text-muted tw:font-data tw:text-[11px] tw:leading-14 tw:truncate" :title="info.name ? `Имя браузера: тесты и запись этой заметки выбирают его как «${info.name}»` : 'У браузера нет имени — допишите name=… в его строку, чтобы тесты могли его выбрать'">{{ info.name ?? 'без имени' }}</div>
+    <!-- its name: what a Playwright block of the note picks it by (in=…); renamed — they follow -->
+    <div class="tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:pt-4 tw:px-10 tw:text-muted tw:font-data tw:text-[11px] tw:leading-14">
+      <FoldHead icon="browser" kind="Браузер" :fold="fold" />
+      <input v-model="nameDraft" class="tw:w-160 tw:min-w-0 tw:h-18 tw:py-0 tw:px-4 tw:border tw:border-transparent tw:rounded-[4px] tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:hover:border-border-2 tw:focus:border-border-2 tw:focus:text-text tw:[&.bad]:border-down" :class="{ bad: !!nameBad }" spellcheck="false" placeholder="без имени" :title="info.name ? `Имя браузера: тесты и запись этой заметки выбирают его как «${info.name}» (in=${info.name}). Переименуете — они последуют` : 'У браузера нет имени — задайте его, чтобы тесты могли его выбрать (in=…)'" @blur="name.commit" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" @keydown.esc.prevent="(name.cancel(), ($event.target as HTMLInputElement).blur())" />
+      <span v-if="nameBad" class="tw:min-w-0 tw:truncate tw:text-down-fg tw:[font-family:var(--font-ui,inherit)]">{{ nameBad }}</span>
+    </div>
+    <template v-if="!fold || fold.open">
     <div class="tb-tabs tw:flex tw:items-end tw:gap-2 tw:min-w-0 tw:pt-6 tw:pr-8 tw:pb-0 tw:pl-8 tw:overflow-x-auto tw:scrollbar-none">
       <button v-for="(t, i) in tabs" :key="t.key" class="tab tw:group/tab tw:inline-flex tw:flex-[0_1_200px] tw:items-center tw:gap-6 tw:min-w-70 tw:h-28 tw:pt-0 tw:pr-6 tw:pb-0 tw:pl-10 tw:border tw:border-transparent tw:[&&]:border-b-0 tw:rounded-[6px_6px_0_0] tw:bg-transparent tw:text-muted tw:text-[12px] tw:[&&]:[&.on]:border-border tw:[&.on]:bg-bg tw:[&.on]:text-text tw:hover:enabled:not-[&.on]:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: i === active }" :title="t.url" @mousedown.prevent @click="pick(i)" @auxclick.prevent="$event.button === 1 && closeTab(i)">
         <i v-if="t.loading" class="spin tw:w-9 tw:h-9 tw:border-2 tw:border-accent tw:[&&]:border-r-transparent tw:rounded-[50%] tw:animate-[Shared-spin_0.8s_linear_infinite]"></i><Icon v-else name="globe" :size="11" />
@@ -338,6 +357,7 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
       <input ref="addrEl" v-model="addr" class="addr tw:flex-1 tw:min-w-0 tw:h-28 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[14px] tw:bg-panel tw:text-text tw:text-[12.5px]" spellcheck="false" placeholder="Адрес или поиск" @focus="editing = true" @blur="editing = false" @keydown.enter.prevent="submit" @keydown.esc.prevent="(addr = cur.url === 'about:blank' ? '' : cur.url), ($event.target as HTMLInputElement).blur()" />
       <button class="tx tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35 tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg" :class="{ on: netOn }" title="Запросы страницы: время каждого, размер, водопад; DOMContentLoaded и load" @mousedown.prevent @click="netOn = !netOn"><Icon name="timeline" :size="13" />Запросы</button>
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" title="Инструменты разработчика" @mousedown.prevent @click="wv()?.openDevTools()"><Icon name="code" :size="13" /></button>
+      <BrowserLogins :tab="cur.wc" :url="cur.url" />
       <button class="tw:inline-flex tw:flex-none tw:items-center tw:justify-center tw:gap-5 tw:min-w-28 tw:h-28 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:hover:enabled:bg-hover tw:disabled:opacity-35" title="Открыть в разделе «Браузер»" @mousedown.prevent @click="openInBrowser"><Icon name="external" :size="13" /></button>
     </div>
     <div class="stage tw:relative tw:bg-white" :style="{ height: `${height}px` }">
@@ -382,5 +402,6 @@ const openInBrowser = () => cur.value.url.startsWith('http') && window.qa.browse
         <p v-if="!shown.length" class="muted tw:my-8 tw:mx-10 tw:text-muted tw:[font-family:var(--font-ui,inherit)] tw:text-[12px]">{{ net.length ? 'Ничего не подходит' : 'Пока пусто — обновите страницу или перейдите по ссылке' }}</p>
       </div>
     </div>
+    </template>
   </div>
 </template>

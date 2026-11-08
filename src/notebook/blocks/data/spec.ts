@@ -6,7 +6,7 @@ import { dataValueOf } from './model'
 export const dataSpec: BlockSpec<'data'> = {
   kind: 'data',
   title: 'Данные',
-  detect: { by: 'fence', matches: ({ info }) => (info.lang === 'json' || info.lang === 'yaml') && !!info.name && !info.ref },
+  detect: { by: 'fence', matches: ({ info }) => (info.lang === 'json' || info.lang === 'yaml') && !!info.name && info.ref === undefined },
   estimateHeight: fixedHeight(90),
   rawEditable: true,
   publishWithoutRun: { source: 'data', usesValues: false, valueOf: (body, info) => dataValueOf(info.lang, body) },

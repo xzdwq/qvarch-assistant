@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
@@ -17,6 +18,8 @@ import { batchToggle } from '../../ui/batchToggle'
  * «Общие функции» (lib): not run alone — put before every code block of the note.
  */
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { info, body: code } = fence
 const { key, run, start, stop, report, values } = useBlockRun(props, 'code', fence)
@@ -39,13 +42,14 @@ const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
 
 <template>
   <div class="bc tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-code) tw:rounded-[8px] tw:bg-panel tw:[&&]:[&.lib]:border-l-border-3" :class="{ lib: info.lib }" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :batch="info.lib ? undefined : batch" :report="report" :send="info.lib ? undefined : 'code'" :src="src" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stop">
+    <RunHead :fold="fold" :batch="info.lib ? undefined : batch" :report="report" :send="info.lib ? undefined : 'code'" :src="src" :icon="info.lib ? 'book' : 'code'" :kind="info.lib ? 'Общие функции' : 'Код'" :name="info.name" :run="info.lib ? undefined : run" :can-run="!info.lib" name-placeholder="результат" @rename="rename" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !ts }" @mousedown.prevent @click="setLang('js')">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="setLang('ts')">TS</button>
       </span>
       <label class="chk tw:inline-flex tw:items-center tw:gap-4 tw:text-muted tw:font-data tw:text-[11px]" title="Общие функции: не выполняются сами, подставляются перед каждым блоком кода заметки"><input type="checkbox" :checked="info.lib" @change="setLib(($event.target as HTMLInputElement).checked)" />lib</label>
     </RunHead>
+    <template v-if="!fold || fold.open">
     <div class="bc-ed"><CodeArea v-model="code" :lang="ts ? 'typescript' : 'js'" :run="go" :min-height="40" placeholder="return items.filter((x) => x.price > 100)" /></div>
     <p v-if="!info.lib && vars.length" class="bc-vars tw:m-0 tw:text-muted tw:text-[11.5px]">Доступно: <code class="tw:my-0 tw:mx-3 tw:text-accent-fg tw:font-data" v-for="v in vars" :key="v">{{ v }}</code><span class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">· set('имя', значение) — опубликовать ещё · emit('имя', порция) — копить по ходу (.text, .merge)</span></p>
     <div v-if="run && !info.lib && run.state !== 'run'" class="bc-out tw:flex tw:flex-col tw:gap-2">
@@ -61,6 +65,7 @@ const showValue = useFold(() => `${props.path}#${key.value}#result`, true)
       </template>
       <p v-else-if="!run.logs?.length" class="muted tw:ml-6 tw:text-muted tw:text-[11.5px]">Выполнено. Ничего не вернул — добавьте return, чтобы опубликовать результат.</p>
     </div>
+    </template>
   </div>
 </template>
 

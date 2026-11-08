@@ -17,9 +17,8 @@ export interface ComponentEntry {
 const SAMPLE_CTX: CommandContext = {
   latin: false,
   notePath: '',
-  freeName: (base) => base,
+  freeName: (base, numbered) => (numbered ? `${base}1` : base),
   newestListName: () => 'rows',
-  lastValueName: () => 'value',
   firstDbConnection: () => 'db',
   currentSiteUrl: () => 'https://example.com',
   now: () => new Date(),

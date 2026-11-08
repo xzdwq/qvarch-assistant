@@ -3,6 +3,7 @@ import { splicesOf } from '../textSplice'
 import type { BlockOrigin, TextAnchor } from './places'
 import { isRefCard, type RefCard } from './refCards'
 import { docAiOf, DOC_TURNS_MAX, type DocAi, type DocMemory, type DocTurn } from '../agent/docAi'
+import { DOC_RUNS_MAX, type DocRun } from '../agent/docRuns'
 
 /** Where an update comes from: the server (someone else's edit), this computer's kept state, this person's change. */
 export type UpdateOrigin = 'remote' | 'load' | 'local'
@@ -99,10 +100,12 @@ export class SharedText extends SharedModel {
   /** The AI's part of the document (docAi): its memory, and its journal of turns (an array: two turns at once both kept). */
   private readonly ai = this.y.getMap<unknown>('ai')
   private readonly aiTurns = this.y.getArray<unknown>('aiTurns')
+  /** Who ran which block (an array: two runs at once both kept). */
+  private readonly aiRuns = this.y.getArray<unknown>('aiRuns')
 
   /** The AI's memory and journal as kept (the malformed parts — someone else's app wrote them — left out). */
   aiNow(): DocAi {
-    return docAiOf({ memory: this.ai.get('memory'), turns: this.aiTurns.toArray() })
+    return docAiOf({ memory: this.ai.get('memory'), turns: this.aiTurns.toArray(), runs: this.aiRuns.toArray() })
   }
   /** The memory changed (one change, sent as any). */
   setAiMemory(m: DocMemory): void {
@@ -114,6 +117,15 @@ export class SharedText extends SharedModel {
       this.aiTurns.push([{ ...t }])
       const extra = this.aiTurns.length - DOC_TURNS_MAX
       if (extra > 0) this.aiTurns.delete(0, extra)
+    })
+  }
+
+  /** A run into the journal (the oldest go past the limit). */
+  pushAiRun(r: DocRun): void {
+    this.local(() => {
+      this.aiRuns.push([{ ...r, who: { ...r.who } }])
+      const extra = this.aiRuns.length - DOC_RUNS_MAX
+      if (extra > 0) this.aiRuns.delete(0, extra)
     })
   }
 

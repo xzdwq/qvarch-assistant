@@ -1,11 +1,11 @@
 import type { BlockSpec } from '../../domain/blockSpec'
 import { fixedHeight } from '../detectors'
 
-/** A value of the note's context shown live (```json ref=login.body; view=table — as a table). */
+/** A value of the note's context shown live (```json ref=login.body; `ref=` — not chosen yet; view=table — as a table). */
 export const refSpec: BlockSpec<'ref'> = {
   kind: 'ref',
   title: 'Значение',
-  detect: { by: 'fence', matches: ({ info }) => (info.lang === 'json' || info.lang === 'yaml') && !!info.ref },
+  detect: { by: 'fence', matches: ({ info }) => (info.lang === 'json' || info.lang === 'yaml') && info.ref !== undefined },
   estimateHeight: fixedHeight(90),
   rawEditable: true,
   commands: [
@@ -15,7 +15,7 @@ export const refSpec: BlockSpec<'ref'> = {
       hint: 'Показывает значение из контекста заметки — вживую',
       icon: 'eye',
       keys: ['значение', 'value', 'ref', 'вывод', 'output', 'показать'],
-      run: (c) => ({ kind: 'insertBlock', markdown: '```json ref=' + (c.lastValueName() || 'value') + '\n```' }),
+      run: (c) => ({ kind: 'insertBlock', markdown: '```json ref=\n```' }),
     },
   ],
 }

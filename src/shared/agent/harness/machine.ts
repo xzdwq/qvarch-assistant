@@ -225,6 +225,9 @@ function onChecked(run: HarnessRun, ev: Extract<HarnessEvent, { kind: 'checked' 
   const r = { ...run, criteria, bent: undefined, recheck: undefined }
   // a check given (there before the work) changed by the agent: never bent to pass — the person decides
   const bent = retake ? [] : run.criteria.filter((c) => c.guard !== undefined && ev.bodies.has(c.id) && ev.bodies.get(c.id) !== c.guard)
+  // a check's block waits for a person (a terminal asks for a password): the person answers in the block, then «Продолжить»
+  const waits = [...ev.results.values()].flatMap((x) => (x.waiting ? [x.waiting] : []))
+  if (waits.length) return ended({ ...run, question: `${waits.join('; ')}: блок ждёт ввода. Введите ответ в поле под выводом блока, дождитесь конца его выполнения и нажмите «Продолжить».` }, 'help', now, `ждёт ввода — ${waits.join('; ')}`)
   if (bent.length) return ended({ ...r, bent: true, question: `Изменены проверки: ${bent.map((c) => c.check!.block).join(', ')}. «Продолжить» — принять изменения.` }, 'help', now, `ИИ изменил проверку ${bent.map((c) => `«${c.check!.block}»`).join(', ')}`)
   if (baseline) {
     const failed = failedCriteria(criteria)

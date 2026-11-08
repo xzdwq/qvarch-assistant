@@ -18,6 +18,8 @@ export const toggleSpec: BlockSpec<'toggle'> = {
   },
   estimateHeight: heightPerLine(40, 24),
   rawEditable: true,
+  // (is a fold itself)
+  fold: 'none',
   guide: 'Сворачиваемый раздел: подробности, которые не нужны с первого взгляда (логи, длинные списки).',
   commands: [
     {

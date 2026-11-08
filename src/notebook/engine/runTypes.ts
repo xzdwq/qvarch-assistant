@@ -24,6 +24,8 @@ export interface CtxItem {
   by?: string
   /** Gathered by emit() in a run that did not end well (stopped, failed) — what came is kept. */
   partial?: boolean
+  /** Its run still goes on: the value grows as it comes (a stream's output, emit() parts). */
+  running?: boolean
 }
 /** A block's last run (the fields a kind fills — the others stay empty). */
 export interface BlockRun {

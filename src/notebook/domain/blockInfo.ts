@@ -5,7 +5,7 @@
  *   ```ts run name=total            code run apart from the app; its return value published as `total`
  *   ```ts lib                       shared functions put before every code block of the note
  *   ```ts playwright name=shot      a browser scenario (flags: headed, notrace, session, browser=chrome;
- *                                   browser=qvarch — the app's own, in=site — in the note's browser «site»)
+ *                                   browser=qvarch — the app's own, in=browser — in the note's browser «browser»)
  *   ```json name=items              data, published as soon as it parses
  *   ```json ref=login.body          a value of the note's context, shown live
  *   ```sql db=main name=rows        a read-only database query
@@ -94,6 +94,10 @@ export interface BlockInfo {
   match?: string
   /** A shell block: when its script is asked about before running (shared/shell/trust.ts). */
   ask?: ShellAsk
+  /** A shell block on a server: run in a terminal (as `ssh -t`) — a program may ask, the person answers (sudo). */
+  tty?: boolean
+  /** A «Значение» block: shows its value as it grows while its run goes on (else — once the run is over). */
+  watch?: boolean
 }
 
 /** A folder in the info line: its spaces as %20 (the line splits on them), a % as %25. */
@@ -126,6 +130,8 @@ const FLAGS = new Map<string, keyof BlockInfo>([
   ['headed', 'headed'],
   ['notrace', 'notrace'],
   ['soft', 'soft'],
+  ['tty', 'tty'],
+  ['watch', 'watch'],
   ['skip', 'skip'],
   ['session', 'session'],
   ['template', 'template'],
@@ -219,7 +225,9 @@ export function infoMd(i: BlockInfo): string {
     i.cwd ? `cwd=${cwdMd(i.cwd)}` : '',
     i.match ? `match=${i.match}` : '',
     i.ask && i.ask !== 'auto' ? `ask=${i.ask}` : '',
-    i.ref ? `ref=${i.ref}` : '',
+    i.tty ? 'tty' : '',
+    i.ref !== undefined ? `ref=${i.ref}` : '',
+    i.ref !== undefined && i.watch ? 'watch' : '',
     i.view ? `view=${i.view}` : '',
     i.pw && i.browser && i.browser !== 'msedge' ? `browser=${i.browser}` : '',
     i.pw && i.browser === PW_OWN_BROWSER && i.in ? `in=${i.in}` : '',

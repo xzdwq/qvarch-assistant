@@ -12,6 +12,8 @@ export interface CheckResult {
   error?: string
   missing?: boolean
   findings?: boolean
+  /** Its block stopped to wait for a person's input (which block, what it asked): the run needs the person. */
+  waiting?: string
 }
 /** A criterion of the run: its check's result now and before the work started, the check's texts they came from. */
 export interface HarnessCriterion extends PlannedCriterion {

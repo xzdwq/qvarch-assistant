@@ -2,7 +2,8 @@
 /**
  * «Метаданные» in a note's status line: its panel slides up over the note, held to the line — the document's
  * memory (what every AI turn reads: its aim, what was agreed, how to work in it — kept short; the agents keep it, and
- * so may everyone who edits the note) and the AI's turns in it: the journal as a trajectory, or the graph of what they touched.
+ * so may everyone who edits the note) and the AI's turns in it: the journal as a trajectory, or the graph of what they touched;
+ * and the runs — who ran which block (a person, an AI agent, a harness check, a schedule).
  * Its head dragged up or down — its height (kept, as the view chosen).
  */
 import { computed, ref, watch } from 'vue'
@@ -20,6 +21,7 @@ import { sharedDocOfPath } from '@nb/workspace/sharedDocs'
 import { clearNoteMeta } from './clearNoteMeta'
 import { noteName } from '@nb/domain/notePaths'
 import DocAiGraph from './DocAiGraph.vue'
+import DocAiRuns from './DocAiRuns.vue'
 import DocAiTrajectory from './DocAiTrajectory.vue'
 import { isDocAiOpen, setDocAiOpen } from './docAiOpen'
 
@@ -57,7 +59,8 @@ watch([height, view], () => {
     // kept for this run only
   }
 })
-const VIEW_LABEL: Record<DocAiView, string> = { journal: 'Журнал', graph: 'Граф' }
+const VIEW_LABEL: Record<DocAiView, string> = { journal: 'Журнал', graph: 'Граф', runs: 'Запуски' }
+const runs = computed(() => ai.value.runs ?? [])
 
 /** The head dragged: the panel taller (up) or lower (down), within the room there is. */
 let drag: { y: number; h: number; room: number } | undefined
@@ -133,7 +136,7 @@ function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
   <button
     class="tw:inline-flex tw:items-center tw:gap-4 tw:h-20 tw:py-0 tw:px-6 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:bg-white/8 tw:hover:text-text tw:[&.on]:bg-accent/18 tw:[&.on]:text-accent-fg"
     :class="{ on: open }"
-    :title="open ? 'Скрыть метаданные' : 'Метаданные документа: память ИИ, журнал ходов (траектория) и граф'"
+    :title="open ? 'Скрыть метаданные' : 'Метаданные документа: память ИИ, журнал ходов (траектория), граф и запуски блоков (кто и что запускал)'"
     @click="open = !open"
   >
     <Icon name="layers" :size="12" />Метаданные<b v-if="ai.turns.length" class="tw:font-data tw:font-normal">{{ ai.turns.length }}</b>
@@ -183,14 +186,15 @@ function go(t: NonNullable<ReturnType<typeof leafTarget>>): void {
 
       <div class="tw:flex-none tw:h-1 tw:-mx-14 tw:bg-border"></div>
       <!-- the AI's work: the journal, or the graph -->
-      <div class="tw:flex tw:flex-none tw:items-center tw:gap-8 tw:text-[11.5px]">
-        <b class="tw:text-text">Ходы ИИ</b>
+      <div class="tw:flex tw:flex-none tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap tw:text-[11.5px]">
+        <b class="tw:text-text">Работа</b>
         <span class="tw:inline-flex tw:border tw:border-border-2 tw:rounded-full tw:overflow-hidden">
           <button v-for="v in DOC_AI_VIEWS" :key="v" class="tw:h-22 tw:py-0 tw:px-10 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:bg-accent/18 tw:[&.on]:text-text" :class="{ on: view === v }" @click="view = v">{{ VIEW_LABEL[v] }}</button>
         </span>
-        <span class="tw:text-muted">последние {{ ai.turns.length }} ходов</span>
+        <span class="tw:min-w-0 tw:truncate tw:text-muted">{{ view === 'runs' ? `последние ${runs.length} запусков блоков: кто и что запускал` : `последние ${ai.turns.length} ходов ИИ` }}</span>
       </div>
       <DocAiTrajectory v-if="view === 'journal'" class="tw:flex-1" :turns="ai.turns" />
+      <DocAiRuns v-else-if="view === 'runs'" class="tw:flex-1" :runs="runs" :path="path" />
       <DocAiGraph v-else class="tw:flex-1" :turns="ai.turns" :title="noteName(path)" @open="go" />
     </div>
   </Popover>

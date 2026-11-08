@@ -1,4 +1,5 @@
 import type { TraceLine } from './agentLoop'
+import { docRunsOf, type DocRun } from './docRuns'
 import { isTouch, TOUCHES_MAX, type Touch } from './touches'
 import { keptSteps, TRAJ_KINDS, TRAJ_TURNS_KEPT, type TrajStep } from './trajectory'
 
@@ -10,8 +11,8 @@ import { keptSteps, TRAJ_KINDS, TRAJ_TURNS_KEPT, type TrajStep } from './traject
  * for a harness that drives the agents through the document).
  */
 
-/** The views of the AI's work in the panel: the journal of turns, the graph of what they touched. */
-export const DOC_AI_VIEWS = ['journal', 'graph'] as const
+/** The views of the work in the panel: the journal of turns, the graph of what they touched, the runs of the blocks. */
+export const DOC_AI_VIEWS = ['journal', 'graph', 'runs'] as const
 export type DocAiView = (typeof DOC_AI_VIEWS)[number]
 
 /** The memory's size at most, characters (it goes into every turn). */
@@ -58,6 +59,8 @@ export interface DocTurn {
 export interface DocAi {
   memory?: DocMemory
   turns: DocTurn[]
+  /** Who ran which block (shared/agent/docRuns). */
+  runs?: DocRun[]
 }
 export const NO_DOC_AI: DocAi = { turns: [] }
 
@@ -93,7 +96,8 @@ export function docAiOf(x: unknown): DocAi {
     const okSteps = Array.isArray(steps) ? keptSteps(steps.filter(isTrajStep)) : []
     return { ...rest, ...(ok.length ? { touches: ok } : {}), ...(okSteps.length ? { steps: okSteps } : {}) }
   })
-  return { ...(isDocMemory(x.memory) ? { memory: x.memory } : {}), turns }
+  const runs = docRunsOf(x.runs)
+  return { ...(isDocMemory(x.memory) ? { memory: x.memory } : {}), turns, ...(runs.length ? { runs } : {}) }
 }
 
 /** The tools a turn used, counted by name. */

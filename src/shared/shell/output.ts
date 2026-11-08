@@ -11,9 +11,14 @@ export interface ShellValue {
   /** More came than is kept: only the newest part of a stream is there. */
   truncated?: boolean
   ms: number
+  /** The run still goes on: the value grows as output comes (exitCode -1 till it ends). */
+  running?: boolean
   /** The folder it ran in ('~' — the user's home on a server). */
   cwd?: string
 }
+
+/** A text's lines newest first (a log stream read from its latest); the newline that ended it is not an empty line. */
+export const newestLinesFirst = (t: string): string => (t ? t.replace(/\r?\n$/, '').split('\n').reverse().join('\n') : '')
 
 /** Terminal escape sequences (colours, cursor moves, a window's title) — a block shows text, not a terminal. */
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*\x1b\\|\x1b[@-Z\\-_]/g
@@ -83,6 +88,24 @@ export class OutputCollector {
       const g = this.re ? this.matches.shift() : undefined
       this.kept -= old.length + (g && g[0] !== old ? g.join('').length : 0)
       this.cut = true
+    }
+  }
+
+  /**
+   * The value so far while the run goes on (nothing consumed: a line not ended yet waits — it is in stdout, not in
+   * lines); `running`, no exit code yet (-1), not ok.
+   */
+  snapshot(ms: number): ShellValue {
+    return {
+      exitCode: -1,
+      ok: false,
+      running: true,
+      stdout: this.text.out,
+      stderr: this.text.err,
+      lines: [...this.lines],
+      ...(this.re ? { matches: [...this.matches] } : {}),
+      ...(this.cut ? { truncated: true } : {}),
+      ms,
     }
   }
 

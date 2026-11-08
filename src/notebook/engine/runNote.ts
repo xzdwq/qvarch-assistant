@@ -5,7 +5,8 @@ import { TRIGGER_NAME, type BlockInfo } from '../domain/blockInfo'
 import { findLoops } from '../domain/loop'
 import { blockRunKey } from '../domain/noteBlocks'
 import { envAtLine, NoteEnv, type RunEnv } from './runEnv'
-import { runItem, stopItem } from './runItem'
+import { stopItem } from './runItem'
+import { runJournaled } from './runJournal'
 import { itemError, itemIsSoft, itemName, runItemsIn, type BlockItem, type RunItem } from './runItems'
 import { stopLoopRun } from './runLoop'
 import { noteRun } from './runStore'
@@ -54,7 +55,7 @@ async function runAllNow(path: string, text: string, trigger: RunTrigger, epoch:
       }
       n.all = { at: x.key, done: i, total: list.length }
       runAllCurrent.set(path, { item: x, env })
-      const ok = await runItem(x, env, text)
+      const ok = await runJournaled(x, env, text, trigger, { all: true })
       // a «soft» block's error is expected — the rest go on
       if (!ok && !itemIsSoft(x)) {
         n.all = { at: x.key, done: i, total: list.length, error: itemError(x, env) }
@@ -89,8 +90,9 @@ const itemOf = (b: BlockAtLine): BlockItem => ({ kind: b.kind, info: b.info, bod
  */
 export function runBlockAt(path: string, noteText: string, block: BlockAtLine, opts: { sqlMode?: SqlMode } = {}): Promise<boolean> {
   const env = envAtLine(path, block.line, noteText)
-  env.publish(TRIGGER_NAME, { by: 'hand', at: Date.now() } satisfies RunTrigger, 'run', TRIGGER_NAME)
-  return runItem(itemOf(block), env, noteText, opts)
+  const trigger: RunTrigger = { by: 'hand', at: Date.now() }
+  env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
+  return runJournaled(itemOf(block), env, noteText, trigger, opts)
 }
 /** A block's run going on where it stands stopped (in a loop — the pass shown's). */
 export function stopBlockAt(path: string, noteText: string, block: Omit<BlockAtLine, 'body'>): void {
@@ -98,7 +100,7 @@ export function stopBlockAt(path: string, noteText: string, block: Omit<BlockAtL
 }
 /** A block run in the note's own env even when it stands in a loop (a regression runs every test as the note's). */
 export function runBlockInNote(path: string, noteText: string, block: BlockAtLine): Promise<boolean> {
-  return runItem(itemOf(block), new NoteEnv(path), noteText)
+  return runJournaled(itemOf(block), new NoteEnv(path), noteText, { by: 'hand', at: Date.now() })
 }
 /** A block's run in the note's own env stopped. */
 export function stopBlockInNote(path: string, block: Omit<BlockAtLine, 'body'>): void {
@@ -108,7 +110,7 @@ export function stopBlockInNote(path: string, block: Omit<BlockAtLine, 'body'>):
 export async function runLoopAt(path: string, noteText: string, line: number): Promise<boolean> {
   const loop = findLoops(noteText.split('\n')).find((l) => l.line0 === line)
   if (!loop || loop.end === undefined) return false
-  return runItem({ kind: 'loop', loop, key: loop.key, line }, envAtLine(path, line, noteText), noteText)
+  return runJournaled({ kind: 'loop', loop, key: loop.key, line }, envAtLine(path, line, noteText), noteText, { by: 'hand', at: Date.now() })
 }
 /** A loop's run going on where it stands stopped: its head, its passes' blocks. */
 export function stopLoopAt(path: string, noteText: string, line: number, key: string): void {
@@ -124,5 +126,5 @@ export function runItemNamed(text: string, want: string): RunItem | undefined {
 export function runItemWhereItStands(path: string, noteText: string, item: RunItem, trigger: RunTrigger, recheck?: string[]): Promise<boolean> {
   const env = envAtLine(path, item.line, noteText)
   env.publish(TRIGGER_NAME, trigger, 'run', TRIGGER_NAME)
-  return runItem(item, env, noteText, recheck?.length ? { recheck } : {})
+  return runJournaled(item, env, noteText, trigger, recheck?.length ? { recheck } : {})
 }

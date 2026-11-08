@@ -78,7 +78,7 @@ export class AiStore {
 
 function putDocAi(db: DatabaseSync, path: string, ai: DocAi): void {
   const clean = docAiOf(ai)
-  if (clean.memory || clean.turns.length) db.prepare('INSERT INTO doc_ai (path, ai) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET ai = excluded.ai').run(path, JSON.stringify(clean))
+  if (clean.memory || clean.turns.length || clean.runs?.length) db.prepare('INSERT INTO doc_ai (path, ai) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET ai = excluded.ai').run(path, JSON.stringify(clean))
   else db.prepare('DELETE FROM doc_ai WHERE path = ?').run(path)
 }
 function putAgentLines(db: DatabaseSync, path: string, lines: AgentLines): void {

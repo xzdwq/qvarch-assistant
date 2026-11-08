@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref, watch } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import type { BatchToggle } from '../../ui/batchToggle'
@@ -21,6 +22,8 @@ import RunHead from '../../ui/RunHead.vue'
  * run with those names) — its settings (passes at once, passes at most), ▶ / ■, how its passes went.
  */
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const parsed = computed(() => loopStartAt(props.src.split('\n'), 0) ?? { line1: 1, info: { parallel: 1, max: LOOP_MAX, timeout: LOOP_TIMEOUT } as LoopInfo, head: '', ts: false })
 const info = computed(() => parsed.value.info)
 const head = ref(parsed.value.head)
@@ -120,7 +123,7 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
 
 <template>
   <div class="bl tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:py-8 tw:px-10 tw:border tw:border-accent/45 tw:[&&]:border-l-3 tw:[&&]:border-l-accent tw:rounded-[8px_8px_8px_0] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :batch="batch" :report="report" icon="repeat" kind="Цикл" :name="info.name" :run="asRun" :can-run="closed" name-placeholder="проходы" @rename="(name) => set({ name })" @run="go" @stop="stop">
+    <RunHead :fold="fold" :batch="batch" :report="report" icon="repeat" kind="Цикл" :name="info.name" :run="asRun" :can-run="closed" name-placeholder="проходы" @rename="(name) => set({ name })" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !parsed.ts }" @mousedown.prevent @click="write(info, false, true)">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: parsed.ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="write(info, true, true)">TS</button>
@@ -136,6 +139,7 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
       /></label>
       <MenuButton icon="list" title="Заполнить заголовок готовым видом цикла: for…of, счётчик, for…in, Object.entries, while, параллельно…" :width="280" :items="presetItems" />
     </RunHead>
+    <template v-if="!fold || fold.open">
     <div v-if="!head.trim()" class="bl-pre">
       <p class="muted tw:mt-0 tw:mr-0 tw:mb-6 tw:ml-0 tw:text-[12px] tw:text-muted">Выберите вид цикла — код заполнится (по {{ names.list }} / {{ names.obj }} — имена можно поменять):</p>
       <div class="bl-pg tw:grid tw:grid-cols-[repeat(auto-fill,minmax(190px,1fr))] tw:gap-6">
@@ -175,6 +179,7 @@ const presetItems = computed<MenuItem[]>(() => LOOP_PRESETS.map((p) => ({ label:
         <ValueView v-if="showValue" :value="lr.value" :name="info.name" />
       </template>
     </div>
+    </template>
   </div>
 </template>
 

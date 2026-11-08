@@ -9,4 +9,6 @@ export const loopEndSpec: BlockSpec<'loopEnd'> = {
   detect: singleLine(20, LOOP_CLOSE),
   estimateHeight: fixedHeight(26),
   rawEditable: true,
+  // (only a line)
+  fold: 'none',
 }

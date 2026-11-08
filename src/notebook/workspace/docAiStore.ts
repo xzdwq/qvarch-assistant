@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { memoryRewrite, NO_DOC_AI, withTurn, type DocAi, type DocMemory, type DocTurn } from '@shared/agent/docAi'
+import { withRun, type DocRun } from '@shared/agent/docRuns'
 import { loadedDoc } from './noteDocs'
 import { readonlyPath, sharedDocOfPath, sharedTextOf, sharedTick } from './sharedDocs'
 
@@ -83,4 +84,13 @@ export async function addDocTurn(path: string, t: DocTurn): Promise<void> {
     return
   }
   await changePersonal(path, (ai) => ({ ...ai, turns: withTurn(ai.turns, t) }))
+}
+/** A block's run into the note's journal (who ran it, how it ended). */
+export async function addDocRun(path: string, r: DocRun): Promise<void> {
+  if ((await ready(path)) === 'shared') {
+    // (a reader's runs are not written into the note)
+    if (mayEditDocAi(path)) sharedTextOf(path)!.pushAiRun(r)
+    return
+  }
+  await changePersonal(path, (ai) => ({ ...ai, runs: withRun(ai.runs ?? [], r) }))
 }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onMounted, ref, watch } from 'vue'
 import { parseRegress, regressMd, runSum, unstable, type RegressCfg, type RegressRun } from '@shared/regress'
 import type { VaultNode } from '@shared/vault'
@@ -12,6 +14,8 @@ import Icon from '@renderer/components/Icon.vue'
  * the run, the runs by date above it (a click — that run), a test that passed and failed in turns — unstable.
  */
 const props = defineProps<{ src: string; path: string; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const cfg = ref<RegressCfg>(parseRegress(props.src))
 watch(
   () => props.src,
@@ -61,12 +65,13 @@ const noteName = (p: string) => p.split('/').pop()!.replace(/\.md$/i, '')
 <template>
   <div class="rg tw:flex tw:flex-col tw:gap-8 tw:py-10 tw:px-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-panel tw:text-[12.5px]">
     <div class="rg-head tw:flex tw:items-center tw:gap-8">
-      <Icon name="repeat" :size="14" /><b>Регрессия</b>
+      <FoldHead icon="repeat" kind="Регрессия" :fold="fold" />
       <span class="muted tw:text-muted">{{ count === undefined ? '' : `тестов: ${count}` }}</span>
       <span class="grow tw:flex-1"></span>
       <button v-if="!running" class="primary tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-12" :disabled="!count" @mousedown.prevent @click="run"><Icon name="play" :size="11" />Прогнать</button>
       <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-28 tw:py-0 tw:px-12" v-else @mousedown.prevent @click="stop"><Icon name="stop" :size="11" />Стоп</button>
     </div>
+    <template v-if="!fold || fold.open">
     <div class="rg-cfg tw:flex tw:flex-wrap tw:items-center tw:gap-y-8 tw:gap-x-14">
       <label class="tw:inline-flex tw:items-center tw:gap-6 tw:text-text-2">Папка
         <select class="tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" :value="cfg.folder" @change="save({ folder: ($event.target as HTMLSelectElement).value })" @focus="loadDirs">
@@ -125,6 +130,7 @@ const noteName = (p: string) => p.split('/').pop()!.replace(/\.md$/i, '')
           </tr>
         </tbody>
       </table>
+    </template>
     </template>
   </div>
 </template>

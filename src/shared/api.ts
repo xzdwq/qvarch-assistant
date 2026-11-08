@@ -16,7 +16,7 @@ import type { ComboState } from './combo'
 import type { PulsePoint } from './pulse'
 import type { JiraFacets, JiraIssue, JiraListItem, JiraListQuery, JiraState, JiraVersion } from './jira'
 import type { HttpDoc, HttpFolder, HttpKV, HttpRequest, HttpRunResult } from './http'
-import type { BrowserApi, BrowserEventArgs } from './browser'
+import type { BrowserApi, BrowserEventArgs, PasswordInfo } from './browser'
 import type { SshApi, SshEventArgs } from './ssh/api'
 import type { ShellValue } from './shell/output'
 import type { TestFilesApi } from './testFiles'
@@ -388,10 +388,14 @@ export interface QaApi {
   runCode(runId: string, job: { code: string; ts: boolean; libs: Array<{ code: string; ts: boolean }>; ctx: Record<string, unknown>; runs?: Record<string, unknown>; timeoutSec?: number }): Promise<{ ok: boolean; value?: unknown; hasValue?: boolean; sets?: Record<string, unknown>; logs: Array<{ level: 'log' | 'info' | 'warn' | 'error'; text: string }>; error?: string; ms: number; emits?: number }>
   runCodeStop(runId: string): void
   /** A shell block's script: on this PC, or on a saved SSH session's server (`ssh`); its output gathered. */
-  runShell(runId: string, job: { lang: string; script: string; env: Record<string, string>; cwd?: string; ssh?: string; match?: { source: string; flags: string }; timeoutSec?: number }): Promise<{ ok: boolean; value?: ShellValue; error?: string; ms: number }>
+  runShell(runId: string, job: { lang: string; script: string; env: Record<string, string>; cwd?: string; ssh?: string; tty?: boolean; match?: { source: string; flags: string }; timeoutSec?: number }): Promise<{ ok: boolean; value?: ShellValue; error?: string; ms: number }>
   runShellStop(runId: string): void
+  /** The person's answer to a shell run in a terminal (`tty` — sudo's password…), sent as typed. */
+  runShellInput(runId: string, text: string): void
   /** A shell run's output as it comes (batches). */
   onShellOut(cb: (runId: string, stream: 'out' | 'err', chunk: string) => void): () => void
+  /** A terminal run waits for the person's answer (what it asked — sudo's password…), or goes on again (''). */
+  onShellWait(cb: (runId: string, prompt: string) => void): () => void
   /** A shell block's script: its fingerprint (main hashes it) and whether it was approved before (runs without asking). */
   shellTrust(script: { notePath: string; infoLine: string; body: string }): Promise<{ fingerprint: string; approved: boolean }>
   shellApprove(fingerprint: string): Promise<void>
@@ -418,6 +422,10 @@ export interface QaApi {
   /** A note's browser tab (a webview, by its webContents id): its requests listened to, or no more. */
   nbNet(id: number, on: boolean, preserve?: boolean): Promise<void>
   nbNetClear(id: number): Promise<void>
+  /** A note's browser tab (its webview id): the saved logins of its page's site — without the passwords. */
+  nbPwLogins(id: number): Promise<PasswordInfo[]>
+  /** A saved login typed into the tab's sign-in form (the page must be that site). */
+  nbPwFill(id: number, loginId: string): Promise<void>
   /** A scenario recorded in a note's browser tab (a webview, by its webContents id; `name` — the browser block's). */
   nbPwRec(id: number, note: string, key: string, name: string): Promise<void>
   /** A note's browser news: open (a page asked for a new window), net (a tab's requests). */

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { BrowserWindow, Notification, type WebContents } from 'electron'
 import { shellFingerprint } from '../../shared/shell/trust'
 import type { AppContext } from '../app/appContext'
 import { ProcessSupervisor } from '../process/processSupervisor'
@@ -24,10 +25,16 @@ export function registerShellIpc(app: AppContext): (reason: string) => void {
     local,
     () => app.ssh?.connections,
     (to, runId, stream, chunk) => !to.isDestroyed() && emit(to, 'onShellOut', runId, stream, chunk),
+    (to, runId, prompt) => {
+      if (to.isDestroyed()) return
+      emit(to, 'onShellWait', runId, prompt)
+      if (prompt) tellAway(to, prompt)
+    },
   )
   const approvals = new ShellApprovals(app.store.root)
   handle('runShell', (e, runId, job) => runs.run(String(runId), cleanJob(job), e.sender))
   listen('runShellStop', (_e, runId) => runs.stop(String(runId)))
+  listen('runShellInput', (_e, runId, text) => typeof text === 'string' && runs.input(String(runId), text))
   handle('shellTrust', (_e, s) => {
     const fingerprint = shellFingerprint(String(s?.notePath ?? ''), String(s?.infoLine ?? ''), String(s?.body ?? ''), sha256)
     return { fingerprint, approved: approvals.has(fingerprint) }
@@ -37,6 +44,18 @@ export function registerShellIpc(app: AppContext): (reason: string) => void {
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
+
+/**
+ * A block waits for the person while they are elsewhere (the window not in front): a system notice — it takes no
+ * focus; a click on it brings the window up.
+ */
+function tellAway(to: WebContents, prompt: string): void {
+  const win = BrowserWindow.fromWebContents(to)
+  if (!win || win.isFocused() || !Notification.isSupported()) return
+  const n = new Notification({ title: 'Блок заметки ждёт ввода', body: prompt.slice(-160) })
+  n.on('click', () => (win.isMinimized() && win.restore(), win.show(), win.focus()))
+  n.show()
+}
 
 /** A job as the window sent it: only its known fields, of the right shape. */
 function cleanJob(j: Partial<ShellJob> | undefined): ShellJob {
@@ -48,6 +67,7 @@ function cleanJob(j: Partial<ShellJob> | undefined): ShellJob {
     env: Object.fromEntries(Object.entries(j?.env && typeof j.env === 'object' ? j.env : {}).filter(([k, v]) => /^QA_\w+$/.test(k) && typeof v === 'string')),
     cwd: typeof j?.cwd === 'string' ? j.cwd : undefined,
     ssh: typeof j?.ssh === 'string' && j.ssh ? j.ssh : undefined,
+    tty: j?.tty === true,
     match: m && typeof m.source === 'string' ? { source: m.source, flags: String(m.flags ?? '') } : undefined,
     timeoutSec: Number(j?.timeoutSec) || undefined,
   }

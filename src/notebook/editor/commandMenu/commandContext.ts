@@ -11,12 +11,12 @@ export function commandContext(view: EditorView, notePath: string, query: string
   return {
     latin: /^[a-z]/i.test(query.trim()),
     notePath,
-    freeName(base) {
+    freeName(base, numbered) {
       const text = view.state.doc.toString()
       // (the blocks' and tables' names — the ones given to tables not named yet too; any `name=` in the text)
       const taken = noteVarNames(text)
       for (let n = 1; ; n++) {
-        const name = n === 1 ? base : `${base}${n}`
+        const name = n === 1 && !numbered ? base : `${base}${n}`
         if (!taken.has(name) && !new RegExp(`name=${name}(\\s|$)`, 'm').test(text)) return name
       }
     },
@@ -26,7 +26,6 @@ export function commandContext(view: EditorView, notePath: string, query: string
         .filter((k) => Array.isArray(c[k].value))
         .sort((a, b) => c[b].at - c[a].at)[0]
     },
-    lastValueName: () => Object.keys(ctx()).pop(),
     firstDbConnection: () => dbConns.value[0]?.name ?? '',
     currentSiteUrl() {
       const host = [...apiMapHosts.value].sort((a, b) => b.last - a.last)[0]?.host

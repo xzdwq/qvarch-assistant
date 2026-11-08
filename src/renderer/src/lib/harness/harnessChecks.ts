@@ -1,9 +1,10 @@
-import { noteRun, runItemNamed, runItemWhereItStands, stopBlockAt, stopLoopAt, syncNoteData, type RunItem } from '@nb/engine'
+import { itemLabel, noteRun, runItemNamed, runItemWhereItStands, stopBlockAt, stopLoopAt, syncNoteData, type RunItem } from '@nb/engine'
 import { keyNow } from '@nb/engine/runKeys'
 import type { CheckResult, HarnessCriterion } from '@shared/agent/harness/model'
 import { standingResult } from '@shared/agent/harness/reuse'
 import { files } from '../notebook'
 import { itemReport, itemText, noteRunsLoaded, noteTextOf } from '../noteRunAccess'
+import { doneOrWaiting } from '../runWaitWords'
 
 /** The checks going on in a room: the item running (to stop it), whether the rest is to be skipped. */
 const going = new Map<string, { path: string; text: string; item?: RunItem; stopped: boolean }>()
@@ -62,7 +63,15 @@ export async function runHarnessChecks(
         continue
       }
       Object.assign(g, { path, text, item })
-      const ok = await runItemWhereItStands(path, text, item, { by: 'ai', at: Date.now() }, ask.recheck ? [...ask.recheck] : undefined).catch(() => false)
+      const run = runItemWhereItStands(path, text, item, { by: 'ai', at: Date.now(), harness: true }, ask.recheck ? [...ask.recheck] : undefined).catch(() => false)
+      // the check's block waits for a person (a terminal's password): said at once — the run goes to «нужен человек»,
+      // the block goes on and the rest wait (they are run again on «Продолжить»)
+      const r = await doneOrWaiting(path, run, item.kind === 'loop' ? undefined : new Set([item.key]))
+      if ('wait' in r) {
+        results.set(c.id, { ok: false, at: Date.now(), error: `Ждёт ввода человека: ${r.wait.prompt}`, waiting: `${itemLabel(item)} — ${r.wait.prompt}` })
+        break
+      }
+      const ok = r.done
       const found = ok || g.stopped ? undefined : findingsOf(path, item)
       if (ok) results.set(c.id, { ok: true, at: Date.now() })
       // (it ran through and its ready checks found the thing tested wrong: what they found, not the run's report)

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref } from 'vue'
 import { BOARD_MODES, boardDocOf, boardMd, boardModeOf, boardPathOf, type BoardMode } from './model'
 import { pathOfShared } from '@nb/workspace/sharedAttachments'
@@ -16,6 +18,8 @@ import Icon from '@renderer/components/Icon.vue'
  * edge; the plain wheel scrolls the note, Ctrl + the wheel zooms). «Снимок» puts a PNG of it in its place.
  */
 const props = defineProps<{ src: string; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 /** The board as the block names it (in a shared note — maybe in someone else's notebook). */
 const written = computed(() => boardPathOf(props.src))
 const inTree = (p: string) => {
@@ -67,7 +71,7 @@ async function snapshot(): Promise<void> {
 <template>
   <div class="bb tw:flex tw:flex-col tw:gap-8 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
     <div class="bb-h tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:text-[12.5px]">
-      <span class="bb-k tw:inline-flex tw:items-center tw:gap-6 tw:text-muted"><Icon name="presentation" :size="14" />Доска</span>
+      <FoldHead icon="presentation" kind="Доска" :fold="fold" />
       <b class="tw:overflow-hidden tw:text-text-hi tw:text-ellipsis tw:whitespace-nowrap">{{ name || 'не выбрана' }}</b>
       <span class="bb-live tw:text-up-fg tw:text-[11px]" title="Доска та же, что в своей вкладке — изменения видны сразу">● вживую</span>
       <span v-if="exists" class="seg tw:inline-flex tw:flex-none tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden" @mousedown.prevent>
@@ -78,12 +82,14 @@ async function snapshot(): Promise<void> {
       <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:text-[12px]" v-if="exists" title="Открыть доску для рисования" @mousedown.prevent @click="openFile(path)"><Icon name="external" :size="13" />Открыть</button>
       <button v-if="exists" class="primary tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:text-[12px]" :disabled="busy" title="Сохранить картинку доски сейчас — она встанет на это место, связь с доской разорвётся" @mousedown.prevent @click="snapshot"><Icon name="image" :size="13" />{{ busy ? 'Снимаю…' : 'Снимок' }}</button>
     </div>
+    <template v-if="!fold || fold.open">
     <div v-if="!exists" class="bb-miss tw:p-16 tw:text-muted tw:text-[13px]">{{ sharedDoc ? `Доска «${name}» общая — она появится здесь, как только придёт с сервера.` : `Доска «${name || path}» не найдена — её удалили, переименовали или она не в общей папке.` }}</div>
     <div v-else-if="d?.loaded" class="bb-view tw:h-480 tw:overflow-hidden tw:rounded-[6px]">
       <BoardView v-if="mode === 'edit'" ref="view" :key="`e:${path}`" :path="path" :text="d.text" inline @change="(t) => setText(path, t)" @warn="(t) => (error = t)" />
       <BoardView v-else ref="view" :key="`v:${path}`" :path="path" :text="d.text" preview />
     </div>
     <div v-else class="bb-miss tw:p-16 tw:text-muted tw:text-[13px]">Загружаю…</div>
+    </template>
   </div>
 </template>
 

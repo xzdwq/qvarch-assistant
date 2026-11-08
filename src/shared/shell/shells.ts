@@ -145,6 +145,21 @@ const REMOTE: Record<ShellKind, (script: string, cwd?: string) => RemoteLaunch> 
 }
 export const launchRemote = (kind: ShellKind, script: string, cwd?: string): RemoteLaunch => REMOTE[kind](script, cwd)
 
+/** The longest command a terminal run sends (one argument on the server: Linux takes up to 128 KB). */
+export const TTY_COMMAND_MAX = 100_000
+/**
+ * A server start in a terminal (the block's `tty`, as `ssh -t`): a program may ask the person (sudo's password) and
+ * read the answer; output and errors come as one stream. The script goes in the command — stdin is the terminal
+ * (whatever is sent there is the person's input); its process id told first on stdout; line ends kept as \n, no pager.
+ */
+export function launchRemoteTty(kind: ShellKind, script: string, cwd?: string): RemoteLaunch {
+  if (kind !== 'bash') throw new Error('Терминал (tty) — только для bash на сервере')
+  const body = `stty -onlcr 2>/dev/null\nexport NO_COLOR=1 PAGER=cat\necho "${PID_MARK}$$"\n__qa() {\n${script}\n}\n${cwd ? `cd -- ${bashQuote(cwd)} || exit 1\n` : ''}__qa\n`
+  const command = `bash -c ${bashQuote(body)}`
+  if (command.length > TTY_COMMAND_MAX) throw new Error(`Скрипт слишком длинный для запуска в терминале (tty): больше ${TTY_COMMAND_MAX / 1000} КБ — уберите tty или сократите значения`)
+  return { command }
+}
+
 /** A server's bash process id from the start of its stderr (the mark's line taken out); none there — as it is. */
 export function takePidMark(stderr: string): { pid?: number; rest: string } {
   const m = new RegExp(`^${PID_MARK}(\\d+)\\r?\\n`).exec(stderr)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
@@ -14,6 +15,8 @@ import { batchToggle } from '../../ui/batchToggle'
  * context under its name — {{login.body.token}} in the next block, in the text.
  */
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { parts, body } = fence
 const { key, run, start, stop, report } = useBlockRun(props, 'http', fence)
@@ -36,7 +39,8 @@ const open = useFold(() => `${props.path}#${key.value}#result`, true)
 
 <template>
   <div class="bh tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-http) tw:rounded-[8px] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :batch="batch" :report="report" send="http" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stop" />
+    <RunHead :fold="fold" :batch="batch" :report="report" send="http" icon="api" kind="HTTP" :name="parts.info.name" :run="run" name-placeholder="ответ" @rename="rename" @run="go" @stop="stop" />
+    <template v-if="!fold || fold.open">
     <div class="bh-ed"><CodeArea v-model="body" lang="http" :run="go" :min-height="40" placeholder="GET https://…   (заголовки строками, пустая строка, тело)" /></div>
     <p v-if="run?.request?.missing.length" class="bh-miss tw:m-0 tw:text-warn-fg tw:text-[12px]">Нет значения: <code class="tw:my-0 tw:mx-3 tw:font-data" v-for="m in run.request.missing" :key="m">{{ '{' }}{{ '{' }}{{ m }}{{ '}' }}{{ '}' }}</code> — выполните блок, который его даёт (или задайте переменную в разделе HTTP)</p>
     <div v-if="run && run.state !== 'run' && (run.response || run.error)" class="bh-res tw:flex tw:flex-col tw:gap-6">
@@ -62,6 +66,7 @@ const open = useFold(() => `${props.path}#${key.value}#result`, true)
 {{ run.request?.headers.map(([k, v]) => `${k}: ${v}`).join('\n') }}{{ run.request?.body ? `\n\n${run.request.body}` : '' }}</pre>
       </template>
     </div>
+    </template>
   </div>
 </template>
 

@@ -129,6 +129,13 @@ export class SshConnections {
     return new Promise((ok, fail) => client.exec(command, (e, ch) => (e ? fail(e) : ok(ch))))
   }
 
+  /** A command run in a terminal (as `ssh -t`: it may ask and read the answer; one output stream) — a `tty` block. */
+  async execTty(id: string, command: string): Promise<ClientChannel> {
+    const client = await this.connect(id)
+    // (a dumb, wide terminal: no colours, no cursor tricks, lines not cut at 80)
+    return new Promise((ok, fail) => client.exec(command, { pty: { term: 'dumb', cols: 250, rows: 50 } }, (e, ch) => (e ? fail(e) : ok(ch))))
+  }
+
   /** The explorer's SFTP channel (made once; gone with its connection — made again on the next call). */
   async sftp(id: string): Promise<SFTPWrapper> {
     await this.connect(id)

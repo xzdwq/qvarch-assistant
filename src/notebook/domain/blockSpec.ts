@@ -57,6 +57,8 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   chip?: string
   /** The menu offers «Изменить как Markdown» (false: a line of its own with nothing to edit). */
   rawEditable: boolean
+  /** It does not fold (it folds on its own — the chat; or is only a line). Every other folds to its head (FoldHead). */
+  fold?: 'none'
   /** Its «@» commands (the menu's order is set in commands/registry). */
   commands?: NoteCommand[]
   /** How an AI agent writes it: what it is for, its settings (the sample comes from its «@» command). */

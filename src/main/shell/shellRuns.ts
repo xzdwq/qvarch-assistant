@@ -4,8 +4,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { WebContents } from 'electron'
-import { clixmlText, launchLocal, launchRemote, remoteKillTree, shellKindOf, takePidMark, valuesPrefix, type ShellKind, type ShellTools } from '../../shared/shell/shells'
+import { clixmlText, launchLocal, launchRemote, launchRemoteTty, remoteKillTree, shellKindOf, takePidMark, valuesPrefix, type ShellKind, type ShellTools } from '../../shared/shell/shells'
 import { OutputCollector, stripAnsi, type ShellValue } from '../../shared/shell/output'
+import { PromptWatch } from '../../shared/shell/promptWatch'
 import type { ProcessSupervisor } from '../process/processSupervisor'
 import { shellEnv } from '../terminal/shellIntegration'
 import { windowsShellEnv } from '../terminal/windowsEnv'
@@ -20,6 +21,8 @@ export interface ShellJob {
   cwd?: string
   /** A saved SSH session: run on that server (none — on this PC). */
   ssh?: string
+  /** On a server: run in a terminal (as `ssh -t`) — a program may ask (sudo's password), the person answers. */
+  tty?: boolean
   match?: { source: string; flags: string }
   timeoutSec?: number
 }
@@ -53,6 +56,8 @@ const killTree = (pid: number) => void execFile('taskkill', ['/PID', String(pid)
 /** A server run going on: how to stop it (asked during its connection — kept until it is up). */
 interface RemoteRun {
   stop: (why: string) => void
+  /** The person's answer typed into its terminal (a `tty` run once it is up; none — not taken). */
+  input?: (text: string) => void
 }
 
 /**
@@ -67,6 +72,8 @@ export class ShellRuns {
     private readonly local: ProcessSupervisor<ShellRunResult>,
     private readonly ssh: () => SshConnections | undefined,
     private readonly sendOut: (to: WebContents, runId: string, stream: 'out' | 'err', chunk: string) => void,
+    /** A terminal run waits for the person's answer (what it asked), or goes on ('') — the window, the AI learn it. */
+    private readonly sendWait: (to: WebContents, runId: string, prompt: string) => void,
   ) {}
 
   async run(runId: string, job: ShellJob, owner: WebContents): Promise<ShellRunResult> {
@@ -87,11 +94,12 @@ export class ShellRuns {
       const raw = out.result(exitCode, Date.now() - t0)
       // (a Windows server's PowerShell writes its errors as CLIXML)
       const value = { ...raw, stderr: clixmlText(raw.stderr), cwd }
-      const last = value.stderr.trim().split('\n').pop()
+      // (a terminal run has one stream: its last line tells the error)
+      const last = (value.stderr.trim() || (job.tty ? value.stdout.trim() : '')).split('\n').pop()
       return { ok: value.ok, value, ms: value.ms, ...(value.ok ? {} : { error: `Код выхода ${exitCode}${last ? `: ${last}` : ''}` }) }
     }
     try {
-      return job.ssh ? await this.onServer(runId, job, kind, sec, feed, ended) : await this.onPc(runId, job, kind, sec, owner, feed, ended)
+      return job.ssh ? await this.onServer(runId, job, kind, sec, owner, feed, ended) : await this.onPc(runId, job, kind, sec, owner, feed, ended)
     } catch (e) {
       live.flush()
       return { ok: false, error: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 }
@@ -127,7 +135,7 @@ export class ShellRuns {
     return r
   }
 
-  private async onServer(runId: string, job: ShellJob, kind: ShellKind, sec: number, feed: Feed, ended: (code: number) => ShellRunResult): Promise<ShellRunResult> {
+  private async onServer(runId: string, job: ShellJob, kind: ShellKind, sec: number, owner: WebContents, feed: Feed, ended: (code: number) => ShellRunResult): Promise<ShellRunResult> {
     const conns = this.ssh()
     if (!conns || !job.ssh) throw new Error('SSH недоступен')
     const session = job.ssh
@@ -137,10 +145,12 @@ export class ShellRuns {
     const me: RemoteRun = { stop: (why) => void (stopped ??= why) }
     this.remote.set(runId, me)
     const vars = Object.fromEntries(Object.entries(job.env).map(([k, v]) => [k.replace(/^QA_/, ''), v]))
-    const launch = launchRemote(kind, valuesPrefix(kind, vars) + job.script, job.cwd)
+    const script = valuesPrefix(kind, vars) + job.script
+    const tty = !!job.tty
+    const launch = tty ? launchRemoteTty(kind, script, job.cwd) : launchRemote(kind, script, job.cwd)
     let ch
     try {
-      ch = await conns.exec(session, launch.command)
+      ch = tty ? await conns.execTty(session, launch.command) : await conns.exec(session, launch.command)
     } catch (e) {
       if (this.remote.get(runId) === me) this.remote.delete(runId)
       throw e
@@ -149,8 +159,18 @@ export class ShellRuns {
     return new Promise<ShellRunResult>((done) => {
       let code = -1
       let pid: number | undefined
-      let errHead = ''
+      let head = ''
       const dec = { out: new StringDecoder('utf8'), err: new StringDecoder('utf8') }
+      // bash's first line on the mark's stream (stderr; stdout in a terminal) is its process id: taken out, kept for «Стоп»
+      const markStream = tty ? 'out' : 'err'
+      const take = (stream: 'out' | 'err', text: string) => {
+        if (kind !== 'bash' || stream !== markStream || pid !== undefined) return feed(stream, text)
+        head += text
+        if (!head.includes('\n')) return
+        const m = takePidMark(head)
+        pid = m.pid ?? 0
+        if (m.rest) feed(stream, m.rest)
+      }
       const stop = (why: string) => {
         stopped ??= why
         // the script's whole tree stopped by its id (a second command: the channel's own signal reaches its shell only)
@@ -166,27 +186,37 @@ export class ShellRuns {
       // asked to stop while it was connecting
       if (stopped) stop(stopped)
       const timer = setTimeout(() => stop(`Остановлено: дольше ${sec} с (timeout=… в строке блока — дать больше)`), sec * 1000)
-      ch.on('data', (b: Buffer) => feed('out', dec.out.write(b)))
-      ch.stderr.on('data', (b: Buffer) => {
-        const text = dec.err.write(b)
-        // bash's first stderr line is its process id (the mark): taken out, kept for «Стоп»
-        if (kind !== 'bash' || pid !== undefined) return feed('err', text)
-        errHead += text
-        if (!errHead.includes('\n')) return
-        const m = takePidMark(errHead)
-        pid = m.pid ?? 0
-        if (m.rest) feed('err', m.rest)
+      // a terminal that asks and waits (sudo's password): told to the window — the person, the AI learn it at once
+      const asking = tty ? new PromptWatch((p) => !owner.isDestroyed() && this.sendWait(owner, runId, p ?? '')) : undefined
+      // (a terminal's line ends before its stty ran: \r\n — taken as \n)
+      ch.on('data', (b: Buffer) => {
+        const text = tty ? dec.out.write(b).replace(/\r\n/g, '\n') : dec.out.write(b)
+        take('out', text)
+        asking?.feed(text)
       })
+      ch.stderr.on('data', (b: Buffer) => take('err', dec.err.write(b)))
       ch.on('exit', (c: number | null) => (code = typeof c === 'number' ? c : -1))
       ch.on('close', () => {
         clearTimeout(timer)
+        asking?.end()
         if (this.remote.get(runId) === me) this.remote.delete(runId)
         release()
         const r = ended(code)
         done(stopped ? { ...r, ok: false, error: stopped } : r)
       })
-      ch.end(launch.stdin ?? '')
+      // a terminal stays open for the person's answers (never logged: the terminal itself echoes what it shows)
+      if (tty)
+        me.input = (text) => {
+          asking?.answered()
+          ch.write(text)
+        }
+      else ch.end(launch.stdin ?? '')
     })
+  }
+
+  /** The person's answer to a server run in a terminal (sudo's password…): sent as typed; another run — ignored. */
+  input(runId: string, text: string): void {
+    this.remote.get(runId)?.input?.(text)
   }
 
   stop(runId: string): void {

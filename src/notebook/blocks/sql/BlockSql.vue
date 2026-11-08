@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { Extension } from '@codemirror/state'
 import { formatCode } from '@shared/codeformat'
@@ -29,6 +30,8 @@ import { openErTab } from './er/erTabs'
  * notebook's library shows.
  */
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { parts, body } = fence
 const { key, run, start, stop, report } = useBlockRun(props, 'sql', fence)
@@ -172,7 +175,8 @@ const planItems = computed<MenuItem[]>(() => [
 
 <template>
   <div class="bs tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:min-w-0 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-sql) tw:rounded-[8px] tw:bg-panel" @keydown.ctrl.enter="(e: KeyboardEvent) => !(e.target as Element).closest('.cm-editor') && (e.preventDefault(), go())">
-    <RunHead :batch="batch" :report="report" send="sql" icon="database" kind="SQL" :name="parts.info.name" :run="run" name-placeholder="строки" @rename="rename" @run="go()" @stop="stop" />
+    <RunHead :fold="fold" :batch="batch" :report="report" send="sql" icon="database" kind="SQL" :name="parts.info.name" :run="run" name-placeholder="строки" @rename="rename" @run="go()" @stop="stop" />
+    <template v-if="!fold || fold.open">
     <div class="bs-bar tw:flex tw:items-center tw:gap-8 tw:min-w-0 tw:whitespace-nowrap tw:flex-wrap">
       <select class="db tw:h-26 tw:min-w-0 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:text-[12.5px] tw:max-w-360" :value="parts.info.db ?? ''" :title="conn ? `${kindTitle(conn.kind)} · ${connWhere(conn)}` : 'Через какое подключение'" @change="setDb(($event.target as HTMLSelectElement).value)">
         <option value="" disabled>{{ dbConns.length ? 'подключение…' : 'нет подключений — ⚙ справа' }}</option>
@@ -247,6 +251,7 @@ const planItems = computed<MenuItem[]>(() => [
     </div>
     <!-- the shown part's bottom edge: dragged — the ER and the rows taller or lower (kept in the block: h=) -->
     <HeightGrip v-if="hasEr || hasRes" :height="outH" @drag="(h) => (dragH = h)" @done="keepH" />
+    </template>
   </div>
 </template>
 

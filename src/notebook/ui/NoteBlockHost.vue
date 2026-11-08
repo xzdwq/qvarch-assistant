@@ -15,12 +15,14 @@ import BlockOrigin from './BlockOrigin.vue'
 import LoopOut from './LoopOut.vue'
 import { BLOCK_VIEWS } from './blockViews'
 import { pickHostProps } from './blockView'
+import { provideBlockFold } from './blockFold'
 
 /**
  * A component of a note as the editor shows it: the kind's view (from the registry) and, on the left on hover, its
  * handle — dragged, it moves the component in the note; clicked — its menu (what the block can do: run, copy,
  * duplicate, the Markdown it keeps, delete); Ctrl / Shift + click — chosen with others, the menu then acts on all of
- * them. (The hover area takes the handle in: the mouse on its way there does not lose it.)
+ * them. (The hover area takes the handle in: the mouse on its way there does not lose it.) It gives the block its fold
+ * (kept per block): the block folds to its own head — the chevron at its start (FoldHead).
  */
 const props = defineProps<{
   kind: BlockKind
@@ -47,6 +49,10 @@ const props = defineProps<{
   loop?: string
 }>()
 const spec = computed(() => BLOCK_SPECS[props.kind])
+/** A fenced block's info line (its name, its id); none — not a fenced block. */
+const fenceInfo = computed(() => (/^(`{3,}|~{3,})/.test(props.src) ? splitFence(props.src).info : undefined))
+/** Open or folded, kept per block: by its id or name (they follow it when lines move), else its kind and line. */
+provideBlockFold(() => `${props.path}#fold#${props.kind}:${fenceInfo.value?.id ?? fenceInfo.value?.name ?? `@${props.line}`}`)
 const view = computed(() => BLOCK_VIEWS[props.kind])
 /** The props the kind's component takes. */
 const viewProps = computed(() =>

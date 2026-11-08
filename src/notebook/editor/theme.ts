@@ -46,7 +46,8 @@ const editorTheme = EditorView.theme(
     '.cm-cursor': { borderLeftColor: 'var(--accent-fg)', borderLeftWidth: '2px' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgb(var(--accent-rgb) / 0.3) !important' },
     '.cm-activeLine': { backgroundColor: 'transparent' },
-    '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: 'var(--border-3)', fontSize: '0.78em', paddingTop: '0.35em' },
+    // (the margin is never selected with the text)
+    '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: 'var(--border-3)', fontSize: '0.78em', paddingTop: '0.35em', userSelect: 'none' },
     '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 4px', minWidth: '28px' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--muted)' },
     '.cm-placeholder': { color: 'var(--editor-placeholder)' },
@@ -132,8 +133,10 @@ const editorTheme = EditorView.theme(
     '.cm-lp-check': { verticalAlign: '-0.12em', margin: '0 0.35em 0 0', width: '1em', height: '1em', accentColor: 'var(--accent)', cursor: 'pointer' },
     // comments of a shared note: their places underlined, a sign on the margin
     '.cm-comment': { backgroundColor: 'rgb(var(--accent-rgb) / 0.12)', borderBottom: '2px solid rgb(var(--accent-rgb) / 0.55)', cursor: 'pointer' },
-    '.cm-comment-gutter .cm-gutterElement': { padding: '0 2px', cursor: 'pointer' },
-    '.cm-comment-sign': { display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--accent-fg)' },
+    // (a column's room is its sign's, never its element's: the active line puts an empty element into every column —
+    // padded, the column would widen while that line is drawn and the text jump aside once it scrolls away)
+    '.cm-comment-gutter .cm-gutterElement': { cursor: 'pointer' },
+    '.cm-comment-sign': { padding: '0 2px', display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--accent-fg)' },
     // the other participants of a shared note: a thin caret of their colour gliding, their name over it for a moment
     '.cm-peer-carets': { pointerEvents: 'none' },
     '.cm-peer-caret': { position: 'absolute', width: '2px', marginLeft: '-1px', borderRadius: '1px', backgroundColor: 'var(--peer)', transition: 'left 0.12s ease-out, top 0.12s ease-out, height 0.12s ease-out', pointerEvents: 'auto' },
@@ -155,10 +158,7 @@ const editorTheme = EditorView.theme(
     '.cm-peer-caret:hover .cm-peer-label': { animation: 'none', opacity: '1' },
     // who changed a line last: a thin bar of their colour left of the line numbers
     // (room on the left for an AI run's ✦)
-    '.cm-authors .cm-gutterElement': { padding: '0 1px 0 13px' },
-    // (a column's spacer in a note with no signs of it: no width)
-    '.cm-gutterElement.cm-gutter-none': { padding: '0 !important' },
-    '.cm-author-bar': { position: 'relative', width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
+    '.cm-author-bar': { position: 'relative', margin: '0 1px 0 13px', width: '3px', height: '100%', minHeight: '1em', borderRadius: '2px', backgroundColor: 'var(--peer)', opacity: '0.85' },
     // an AI agent's lines: one solid bar in the AI's colour (no gaps between its lines); ✦ beside it where its run starts
     '.cm-author-bar.ai': { opacity: '1', borderRadius: '0', backgroundColor: 'var(--ai-line)' },
     '.cm-author-bar.ai.first': { borderTopLeftRadius: '2px', borderTopRightRadius: '2px' },

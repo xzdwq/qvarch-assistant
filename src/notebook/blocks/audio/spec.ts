@@ -9,6 +9,8 @@ export const audioSpec: BlockSpec<'audio'> = {
   detect: singleLine(40, AUDIO_EMBED),
   estimateHeight: fixedHeight(48),
   rawEditable: false,
+  // (a player in one line — nothing to fold to)
+  fold: 'none',
   commands: [
     {
       id: 'audio',

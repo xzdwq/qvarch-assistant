@@ -59,9 +59,8 @@ describe('«@» commands', () => {
   const ctx = (o: Partial<CommandContext> = {}): CommandContext => ({
     latin: false,
     notePath: 'dir/My note.md',
-    freeName: (b) => `${b}2`,
+    freeName: (b, numbered) => (numbered ? `${b}1` : `${b}2`),
     newestListName: () => 'rows',
-    lastValueName: () => 'last',
     firstDbConnection: () => 'main',
     currentSiteUrl: () => 'https://site/',
     now: () => new Date(2026, 9, 23),
@@ -113,14 +112,14 @@ describe('«@» commands', () => {
     expect(md('divider')).toBe('---')
     expect(md('toc')).toBe('```toc\n```')
     expect(md('http')).toBe('```http name=resp2\nGET https://\n```')
-    expect(md('browser')).toBe('```browser name=site2\nurl: about:blank\nheight: 560\n```')
+    expect(md('browser')).toBe('```browser name=browser1\nurl: about:blank\nheight: 560\n```')
     expect(md('pw')).toBe("```ts playwright name=scenario2\nawait page.goto('https://example.com')\nawait expect(page).toHaveTitle(/Example/)\nreturn await page.title()\n```")
     expect(md('js')).toBe('```js run name=result2\n\n```')
     expect(md('tpl')).toBe('```md template name=text2\n✅ **{{ rows }}**\n```')
     expect(md('tpl', { newestListName: () => undefined })).toBe('```md template name=text2\n✅ **{{ value }}**\n```')
     expect(md('data')).toBe('```json name=data2\n[]\n```')
-    expect(md('ref')).toBe('```json ref=last\n```')
-    expect(md('ref', { lastValueName: () => undefined })).toBe('```json ref=value\n```')
+    // (no variable chosen for it: never one of the note's — nor another note's)
+    expect(md('ref')).toBe('```json ref=\n```')
     expect(md('sql')).toBe('```sql db=main name=rows2\nselect \n```')
     expect(md('loop')).toBe('<!-- qa:loop name=passes2 -->\n```js loop\n\n```\n\n<!-- /qa:loop -->')
     expect(md('files')).toBe('```files\n{\n  "set": "My note"\n}\n```')

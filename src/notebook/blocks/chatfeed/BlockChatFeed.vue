@@ -4,6 +4,8 @@
  * all), the shared notes' chats, the comments — newest first, the unread counted; the one picked on the right with its
  * head and messages, answered right here. A comment — «В заметке» opens its note at its place.
  */
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useDraft } from '@renderer/lib/drafts'
 import { attachWord, authorName, feedSections, isComment, unreadOf, type ChatRoom } from '@shared/transport/chat'
@@ -20,6 +22,8 @@ import { openComment } from '@nb/workspace/noteComments'
 import { pathOfShared } from '@nb/workspace/sharedAttachments'
 
 const props = defineProps<{ src: string; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 /** The feed's height in lines: as the block keeps it; while its edge is dragged — as dragged. */
 const rows = ref(rowsOf(props.src, FEED_ROWS))
 watch(
@@ -73,9 +77,11 @@ async function toNote(r: ChatRoom): Promise<void> {
 
 <template>
   <div class="tw:flex tw:flex-col">
+    <template v-if="!fold || fold.open">
     <div class="tw:flex tw:border tw:border-border tw:rounded-[18px] tw:bg-panel tw:overflow-hidden" :style="{ height: `${rows * ROW_PX}px` }">
       <aside class="tw:flex tw:flex-col tw:flex-none tw:w-270 tw:border-r tw:border-r-border">
         <div class="tw:flex tw:items-center tw:gap-6 tw:h-40 tw:px-10 tw:border-b tw:border-b-border">
+          <FoldHead icon="chat" kind="Чаты" :fold="fold" />
           <Icon name="search" :size="13" class="tw:text-muted" />
           <input v-model="q" class="tw:flex-1 tw:min-w-0 tw:h-28 tw:border-0 tw:bg-transparent" placeholder="Поиск по чатам" spellcheck="false" />
         </div>
@@ -115,5 +121,7 @@ async function toNote(r: ChatRoom): Promise<void> {
       </section>
     </div>
     <RowsGrip :rows="rows" @drag="(n) => (rows = n)" @done="(n) => onChange?.(withRows(src, n))" />
+    </template>
+    <div v-else class="tw:flex tw:items-center tw:py-6 tw:px-10 tw:border tw:border-border tw:rounded-[18px] tw:bg-panel"><FoldHead icon="chat" kind="Чаты" :fold="fold" /></div>
   </div>
 </template>

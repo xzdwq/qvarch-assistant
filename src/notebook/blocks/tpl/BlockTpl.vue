@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed } from 'vue'
 import { interpolate } from '@nb/domain/values'
 import { blockRunKey } from '@nb/domain/noteBlocks'
@@ -20,6 +21,8 @@ import { batchToggle } from '../../ui/batchToggle'
  * text, published under its name. In a loop — filled on every pass: all the texts together under it.
  */
 const props = defineProps<{ src: string; path: string; line: number; inLoop?: boolean; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { parts, body } = fence
 const rename = (name: string | undefined) => fence.patchInfo({ name })
@@ -48,7 +51,7 @@ async function copy(): Promise<void> {
 
 <template>
   <div class="bt tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-(--block-tpl) tw:rounded-[8px] tw:bg-panel">
-    <RunHead :batch="batch" icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename">
+    <RunHead :fold="fold" :batch="batch" icon="note" kind="Шаблон" :name="parts.info.name" :can-run="false" name-placeholder="текст" @rename="rename">
       <button
         class="tw:inline-flex tw:items-center tw:gap-4 tw:h-22 tw:py-0 tw:px-6 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:hover:bg-hover tw:hover:text-text tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg"
         :class="{ on: parts.info.chat }"
@@ -59,6 +62,7 @@ async function copy(): Promise<void> {
         <Icon name="send" :size="12" />в чат
       </button>
     </RunHead>
+    <template v-if="!fold || fold.open">
     <div class="bt-ed"><CodeArea v-model="body" lang="markdown" :min-height="40" placeholder="✅ **{{ user.body.data.email }}** — {{ rows[0].status }}" /></div>
     <div v-if="filled" class="bt-res tw:border tw:border-border-2 tw:rounded-[8px] tw:bg-bg">
       <div class="bt-rh tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:py-2 tw:px-6 tw:border-b tw:border-b-border tw:text-[12.5px] tw:whitespace-nowrap">
@@ -76,6 +80,7 @@ async function copy(): Promise<void> {
       <template v-else-if="sent?.state === 'ok'">Отправлено в чат документа · {{ new Date(sent.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</template>
       <template v-else>Уйдёт в чат документа при выполнении («Выполнить всё», расписание)</template>
     </p>
+    </template>
   </div>
 </template>
 

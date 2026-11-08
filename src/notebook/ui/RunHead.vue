@@ -4,6 +4,7 @@ import { isName } from '@nb/domain/blockInfo'
 import type { BlockRun } from '@nb/engine'
 import { sendsUnrun, type ShotKind } from '@nb/engine/chatAttach'
 import Icon from '@renderer/components/Icon.vue'
+import FoldHead from './FoldHead.vue'
 import SendToChat from './SendToChat.vue'
 import type { BatchToggle } from './batchToggle'
 import VarNameField from './VarNameField.vue'
@@ -51,10 +52,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 
 <template>
   <div class="rh tw:flex tw:items-center tw:gap-10 tw:min-w-0 tw:text-[12px] tw:whitespace-nowrap">
-    <button v-if="fold" class="rk tw:inline-flex tw:flex-none tw:items-center tw:gap-4 tw:h-24 tw:py-0 tw:pr-6 tw:pl-2 tw:border-0 tw:rounded-full tw:bg-transparent tw:text-muted tw:text-[12px] tw:hover:bg-hover tw:hover:text-text tw:[&.out]:opacity-60" :class="{ out: batch && !batch.inBatch }" :title="fold.open ? 'Свернуть (останется заголовок)' : 'Развернуть'" @mousedown.prevent @click="fold.set(!fold.open)">
-      <Icon :name="fold.open ? 'chevronDown' : 'chevronRight'" :size="13" /><Icon :name="icon" :size="13" />{{ kind }}
-    </button>
-    <span v-else class="rk tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:[&.out]:opacity-60" :class="{ out: batch && !batch.inBatch }"><Icon :name="icon" :size="13" />{{ kind }}</span>
+    <FoldHead :icon="icon" :kind="kind" :fold="fold" :dim="!!batch && !batch.inBatch" />
     <!-- its part in «Выполнить всё»: left out — it runs only when started by itself -->
     <button
       v-if="batch"

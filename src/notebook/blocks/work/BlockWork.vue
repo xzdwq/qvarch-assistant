@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { parseWork, workMd, workRange, workReport, WORK_PERIODS, type WorkModel, type WorkPeriod, type WorkReport } from './model'
 import { isProductive } from '@shared/kinds'
@@ -14,6 +16,8 @@ import { useSharedWork } from './useSharedWork'
  * (parallel events counted once). A relative period («эта неделя») moves with the calendar.
  */
 const props = defineProps<{ src: string; path?: string; line?: number; autofocus?: boolean; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const m = ref<WorkModel>(parseWork(props.src))
 let mine = props.src
 watch(
@@ -164,7 +168,7 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
 <template>
   <div class="wk tw:flex tw:flex-col tw:gap-8 tw:pt-10 tw:pr-12 tw:pb-12 tw:pl-12 tw:border tw:border-border tw:rounded-[8px] tw:bg-panel">
     <div class="wk-h tw:flex tw:items-center tw:gap-10 tw:flex-wrap">
-      <span class="wk-k tw:inline-flex tw:items-center tw:gap-6 tw:text-muted tw:text-[12px]"><Icon name="briefcase" :size="14" />Работа<b v-if="shared.foreign.value" class="tw:font-medium tw:text-text-2" :title="'Работа участника из его трекера — у каждого видна она, а не своя'">: {{ shared.ownerName.value }}</b></span>
+      <FoldHead icon="briefcase" kind="Работа" :fold="fold"><b v-if="shared.foreign.value" class="tw:font-medium tw:text-text-2" :title="'Работа участника из его трекера — у каждого видна она, а не своя'">: {{ shared.ownerName.value }}</b></FoldHead>
       <span class="wk-nav tw:inline-flex tw:items-center tw:gap-2" title="Колесо мыши — на день / период вперёд или назад" @wheel.prevent="onWheel">
         <button class="ib tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[6px] tw:bg-transparent tw:text-muted tw:hover:bg-hover tw:hover:text-text" title="Назад" @mousedown.prevent @click="shift(-1)"><Icon name="chevronLeft" :size="13" /></button>
         <button ref="pickEl" class="wk-p tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-9 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-text tw:text-[12.5px] tw:font-semibold tw:whitespace-nowrap tw:[&.on]:border-accent/60 tw:first-letter:uppercase" :class="{ on: pickOpen }" title="Выбрать день или период" @mousedown.prevent @click="pickOpen = !pickOpen"><Icon name="calendar" :size="12" />{{ periodText }}</button>
@@ -179,6 +183,7 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
         <button :class="{ on: m.view === 'list' }" @mousedown.prevent @click="((m.view = 'list'), save())"><Icon name="list" :size="12" />Список</button>
       </span>
     </div>
+    <template v-if="!fold || fold.open">
     <div v-if="kindCounts.length > 1 || hidden.size" class="wk-kinds tw:flex tw:flex-wrap tw:gap-5 tw:mt-2 tw:mr-0 tw:mb-8 tw:ml-0">
       <button
         v-for="[k, n] in kindCounts"
@@ -246,6 +251,7 @@ const open = (day: string, id: string) => window.qa.openMain(day, id)
         <div class="wk-all tw:flex tw:justify-between tw:pt-6 tw:border-t tw:[border-top-style:dashed] tw:border-t-border-2 tw:text-text-hi tw:font-semibold"><span>Всего</span><b class="tw:text-accent-fg tw:font-data">{{ dur(report.total) }}</b></div>
         <p class="note tw:m-0 tw:text-dim tw:text-[11px]">Параллельные события считаются один раз — поэтому «всего» может быть меньше суммы по типам.</p>
       </div>
+    </template>
     </template>
   </div>
 </template>

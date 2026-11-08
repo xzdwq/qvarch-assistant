@@ -12,6 +12,7 @@ import type { RunEnv } from '../../engine/runEnv'
 import { askShellApproval, cancelShellApproval, connectSsh } from '../../engine/shellApproval'
 import { LatestRuns, trackedRun } from '../../engine/trackedRun'
 import { beginLive, endLive } from '../../engine/shellLive'
+import { liveValue } from '../../engine/shellValueLive'
 
 /** Shell runs going on (run again before the first ended — the first one's answer is dropped, its process killed). */
 const latest = new LatestRuns()
@@ -53,14 +54,17 @@ export const shellRunner: BlockRunner = {
       if ('error' in vars) return { ok: false, run: { error: vars.error } }
       const refused = await allowed(env, item, slot)
       if (refused) return { ok: false, run: { error: refused } }
-      const job = { lang: item.info.lang, script: filled.script, env: vars.env, cwd: item.info.cwd, ssh: item.info.ssh, match: matchOf(item.info.match), timeoutSec: item.info.timeout }
-      beginLive(slot, env.notePath, item.key)
+      const job = { lang: item.info.lang, script: filled.script, env: vars.env, cwd: item.info.cwd, ssh: item.info.ssh, tty: item.info.ssh && item.info.tty ? true : undefined, match: matchOf(item.info.match), timeoutSec: item.info.timeout }
+      // its value grows while it runs (the note's own runs: a loop's pass keeps its values to itself)
+      const growing = item.info.name && env.root === env ? liveValue(env.notePath, item.info.name, item.key, job.match) : undefined
+      beginLive(slot, env.notePath, item.key, growing?.feed)
       let r
       try {
         r = await runApi().runShell(slot, job)
         if (!r.ok && item.info.ssh && r.error && needsPassword(r.error) && (await connectSsh(item.info.ssh))) r = await runApi().runShell(slot, job)
       } finally {
         endLive(slot)
+        growing?.end(r?.value)
       }
       const value = r.value
       return {

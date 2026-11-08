@@ -15,6 +15,10 @@ export interface RunTrigger {
   at: number
   /** The schedule that started it. */
   cron?: { id: string; title: string; expr: string }
+  /** Who: the person (by hand), the AI agent (its name). */
+  who?: string
+  /** The AI's run is a harness check (the app ran a criterion's block). */
+  harness?: boolean
 }
 
 /** How a job's run went: done, failed, skipped (when it was due and could not run — why, in `error`). */

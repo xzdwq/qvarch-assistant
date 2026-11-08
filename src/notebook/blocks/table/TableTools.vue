@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, ref, toRef } from 'vue'
 import { summary } from '@nb/domain/values'
 import MenuButton, { type MenuItem } from '@renderer/components/MenuButton.vue'
@@ -20,6 +22,8 @@ type TableVarState = ReturnType<typeof useTableVar>
  * copied / saved as Excel or CSV.
  */
 const props = defineProps<{ table: TableModel; path?: string; line?: number; tableVar: TableVarState }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const emit = defineEmits<{ commit: []; import: [source: ImportSourceId] }>()
 const asJson = defineModel<boolean>('asJson', { required: true })
 const t = toRef(props, 'table')
@@ -51,6 +55,7 @@ const fileItems = computed<MenuItem[]>(() => [
 
 <template>
   <div class="bt-tools tw:relative tw:z-4 tw:flex tw:flex-wrap tw:items-center tw:gap-6 tw:min-w-0 tw:text-muted tw:text-[12px] tw:whitespace-nowrap" @mousedown.prevent>
+    <FoldHead icon="table" kind="Таблица" :fold="fold" />
     <VarNameField v-model="tv.draft.value" :bad="!!(tv.clash.value || tv.error.value)" :title="tv.error.value || nameTitle" @commit="tv.rename(commit)" @cancel="tv.revert" @mousedown.stop />
     <span class="seg tw:inline-flex tw:flex-none tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden" title="Тип таблицы">
       <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:text-[11.5px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !table.from && !asking }" title="Обычная таблица: данные — свои" @click="detach">Обычная</button>

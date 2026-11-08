@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import ValueView from '../../ui/ValueView.vue'
 import { useFold } from '@renderer/lib/foldState'
@@ -28,6 +29,8 @@ import Popover from '@renderer/components/Popover.vue'
  * a screenshot, the trace (Trace Viewer in the app's browser) and Allure results.
  */
 const props = defineProps<{ src: string; path: string; line: number; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const fence = useFenceSource(props)
 const { info, body: code } = fence
 const { key, run, start, stop, report, values } = useBlockRun(props, 'pw', fence)
@@ -245,12 +248,13 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
 
 <template>
   <div class="bp tw:contain-[inline-size] tw:flex tw:flex-col tw:gap-6 tw:pt-8 tw:pr-10 tw:pb-10 tw:pl-10 tw:border tw:border-border tw:[&&]:border-l-3 tw:[&&]:border-l-block-pw tw:rounded-[8px] tw:bg-panel tw:[.st.ok>&]:first:text-up-fg" @keydown.ctrl.enter.prevent="go">
-    <RunHead :batch="batch" :report="report" send="pw" :src="src" icon="globe" kind="Playwright" :name="info.name" :run="run" can-run name-placeholder="сценарий" @rename="(name) => patch({ name })" @run="go" @stop="stop">
+    <RunHead :fold="fold" :batch="batch" :report="report" send="pw" :src="src" icon="globe" kind="Playwright" :name="info.name" :run="run" can-run name-placeholder="сценарий" @rename="(name) => patch({ name })" @run="go" @stop="stop">
       <span class="seg tw:inline-flex tw:border tw:border-border-2 tw:rounded-[6px] tw:overflow-hidden">
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: !ts }" @mousedown.prevent @click="patch({ lang: 'js' })">JS</button>
         <button class="tw:h-22 tw:py-0 tw:px-7 tw:border-0 tw:rounded-none tw:bg-transparent tw:text-muted tw:font-data tw:text-[11px] tw:[&.on]:bg-accent/20 tw:[&.on]:text-accent-fg" :class="{ on: ts }" title="TypeScript: типы просто убираются перед выполнением" @mousedown.prevent @click="patch({ lang: 'ts' })">TS</button>
       </span>
     </RunHead>
+    <template v-if="!fold || fold.open">
     <div v-if="recording" class="recon tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]"><i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-35_1.2s_ease-in-out_infinite]"></i><span class="tw:min-w-0 tw:truncate">Идёт запись {{ pwRec!.in ? `в «${pwRec!.in}»` : 'в Браузере' }} · строк: {{ pwRec!.count }}</span><span class="grow tw:flex-1"></span><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec()">Стоп — вставить сюда</button><button class="tw:h-26 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-panel tw:text-text tw:text-[12px]" @mousedown.prevent @click="stopPwRec(true)">Отменить</button></div>
     <div v-else-if="recUrl !== undefined" class="recon ask tw:flex tw:items-center tw:gap-8 tw:py-6 tw:px-8 tw:border tw:border-stop/45 tw:rounded-[6px] tw:bg-stop/8 tw:text-[12px]">
       <i class="prd tw:flex-none tw:w-8 tw:h-8 tw:rounded-[50%] tw:bg-stop tw:animate-[Shared-blink-35_1.2s_ease-in-out_infinite]"></i><span>С какой страницы начать:</span>
@@ -377,6 +381,7 @@ const msText = (ms?: number) => (ms === undefined ? '' : ms < 1000 ? `${Math.rou
         <div v-if="showValue" class="bp-val"><ValueView :value="run.value" :name="info.name" /></div>
       </template>
     </div>
+    </template>
   </div>
 </template>
 

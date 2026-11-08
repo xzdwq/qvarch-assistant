@@ -1,13 +1,14 @@
 import { summary } from '@nb/domain/values'
-import { noteReport, noteRun, noteRunsSettled, runAll, runItemNamed, runItemWhereItStands, syncNoteData } from '@nb/engine'
+import { noteReport, noteRun, noteRunsSettled, runAll, runItemNamed, runItemWhereItStands, runWaitsIn, syncNoteData } from '@nb/engine'
+import type { RunTrigger } from '@shared/cronJobs'
 import { docLinkPath, shareLinkOf } from '@nb/workspace/docLinks'
 import { docs, files, loadTree, openFile, save, setText } from './notebook'
 import { MemoryChanged, setDocMemory } from '@nb/workspace/docAiStore'
 import { agentByOf, agentWrote, agentWroteMemory } from './agentWrites'
 import { isHeld, postMessage, roomOf } from './chat'
 import { itemReport, noteRunsLoaded as runsLoaded, noteTextOf as textOf } from './noteRunAccess'
-import type { RunTrigger } from '@shared/cronJobs'
 import { serveOps } from './serveOps'
+import { doneOrWaiting, waitWords } from './runWaitWords'
 
 /**
  * The AI assistants' tools (MCP, served by the main process) work on the notes here — where the editor holds
@@ -62,8 +63,12 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     openFile(path)
     syncNoteData(path, text)
     const want = typeof a.block === 'string' && a.block ? a.block : undefined
+    // (who ran it — the agent by its name — goes into the note's journal)
+    const trigger: RunTrigger = { by: 'ai', at: Date.now(), who: agentByOf(a)?.name }
     if (!want) {
-      await runAll(path, text, { by: 'ai', at: Date.now() })
+      // a block waiting for a person (a terminal's password) answers at once — never waited out
+      const r = await doneOrWaiting(path, runAll(path, text, trigger))
+      if ('wait' in r) return waitWords(text, r.wait)
       const n = noteRun(path)
       const stop = n.all?.error ? `\n\n⛔ Прогон остановился на «${n.all.at}»: ${n.all.error}` : ''
       return `${noteReport(path, text)}${stop}\n\n${vars(path)}`.trim()
@@ -71,7 +76,9 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     // any runnable block (HTTP, code, Playwright, SQL, a template) or a loop — by its name or key, where it stands
     const item = runItemNamed(text, want)
     if (!item) throw new Error(`В заметке нет исполняемого блока или цикла «${want}» (name=…)`)
-    await runItemWhereItStands(path, text, item, { by: 'ai', at: Date.now() })
+    // (a loop: any of its blocks may ask; a block — itself)
+    const r = await doneOrWaiting(path, runItemWhereItStands(path, text, item, trigger), item.kind === 'loop' ? undefined : new Set([item.key]))
+    if ('wait' in r) return waitWords(text, r.wait)
     return `${itemReport(path, item)}\n\n${vars(path)}`.trim()
   },
   /**
@@ -124,13 +131,18 @@ const OPS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
     const path = String(a.path)
     await runsLoaded(path)
     const t0 = Date.now()
-    const ended = await noteRunsSettled(path, RESULTS_WAIT_MS)
+    // a run waiting for a person is not waited for: said at once (it goes on once they answer)
+    const r = await doneOrWaiting(path, noteRunsSettled(path, RESULTS_WAIT_MS))
     const waited = Date.now() - t0
-    const head = !ended
-      ? `Прогон ещё идёт (${Math.round(waited / 60_000)} мин) — результаты на сейчас; итог вернёт note_run, который его запустил`
-      : waited > 1000
-        ? `Дождался конца прогона (${Math.round(waited / 1000)} с)`
-        : ''
+    const waits = runWaitsIn(path)
+    const head =
+      'wait' in r || waits.length
+        ? waitWords(await textOf(path), 'wait' in r ? r.wait : waits[0])
+        : !r.done
+          ? `Прогон ещё идёт (${Math.round(waited / 60_000)} мин) — результаты на сейчас; итог вернёт note_run, который его запустил`
+          : waited > 1000
+            ? `Дождался конца прогона (${Math.round(waited / 1000)} с)`
+            : ''
     // (the text read after the wait: a run may have given a block its id)
     const text = await textOf(path)
     return [head, noteReport(path, text), vars(path)].filter(Boolean).join('\n\n').trim()

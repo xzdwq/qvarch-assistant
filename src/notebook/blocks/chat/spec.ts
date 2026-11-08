@@ -8,6 +8,8 @@ export const chatSpec: BlockSpec<'chat'> = {
   detect: fenceOfLang('chat'),
   estimateHeight: fixedHeight(460),
   rawEditable: true,
+  // (folds on its own — the fold shared with the island)
+  fold: 'none',
   commands: [
     {
       id: 'chat',

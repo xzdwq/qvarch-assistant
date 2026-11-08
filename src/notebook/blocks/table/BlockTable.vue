@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onMounted, ref } from 'vue'
 import { columnTotal, coveredBy, mergeAt, tableValue } from './model'
 import CodeArea from '@renderer/components/CodeArea.vue'
@@ -26,6 +28,8 @@ import { useTablePaste } from './import/useTablePaste'
  * objects — code reads it by its name). Seen as JSON too; copied / saved as Excel or CSV.
  */
 const props = defineProps<{ src: string; autofocus?: boolean; path?: string; line?: number; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 const { t, save: saveDoc } = useTableDoc(() => props.src, (md) => props.onChange?.(md))
 // ---------- its variable in the note: the name given kept in the file with any edit ----------
 const tv = useTableVar(t, () => ({ path: props.path, line: props.line }))
@@ -69,6 +73,7 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
 <template>
   <div ref="root" class="bt tw:relative tw:flow-root tw:contain-[inline-size] tw:min-w-0">
     <TableTools v-model:asJson="asJson" :table="t" :path="path" :line="line" :table-var="tv" @commit="save(true)" @import="imp.importFrom" />
+    <template v-if="!fold || fold.open">
     <p v-if="imp.error.value" class="bt-err tw:my-4 tw:text-warn-fg tw:text-[12px]">{{ imp.error.value }}</p>
     <TableImportDialog v-if="imp.book.value" v-model:head-row="imp.headRow.value" :book="imp.book.value" :sheet="imp.sheet.value" :sheet-index="imp.sheetIndex.value" @pick="imp.pickSheet" @apply="imp.apply" @cancel="imp.cancel" />
     <div v-if="asJson" class="bt-json"><CodeArea :model-value="JSON.stringify(objects, null, 2)" lang="json" readonly :min-height="24" /></div>
@@ -116,6 +121,7 @@ defineExpose({ focusFirst: () => focusCell(-1, 0), focusLast: () => focusCell(t.
       <button class="tw:inline-flex tw:items-center tw:gap-6 tw:h-26 tw:py-0 tw:px-10 tw:text-[12px]" v-else-if="curMerge" @click="doUnmerge"><Icon name="layers" :size="13" />Разъединить</button>
       <span v-if="selCells > 1" class="hint tw:text-muted tw:text-[11.5px]">Esc — отменить выбор</span>
     </div>
+    </template>
     <ContextMenu v-if="cellMenu" :x="cellMenu.x" :y="cellMenu.y" :items="cellItems" @close="cellMenu = undefined" />
     <TableMenu ref="menuRef" :table="t" @add-col="addCol" @del-col="delCol" @add-row="addRow" @del-row="delRow" @align="setAlign" @sort="sortBy" @total="setTotal" />
   </div>

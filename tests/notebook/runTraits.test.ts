@@ -59,7 +59,7 @@ describe('run envs', () => {
   it('a pass knows its number; a value is partial by where it is seen', () => {
     const path = fresh()
     const env = new NoteEnv(path)
-    publishGathered(path, 'rows', [1], 'code', 'c', true)
+    publishGathered(path, 'rows', [1], 'code', 'c', { partial: true })
     expect(env.passNumber).toBeUndefined()
     expect(env.isPartial('rows')).toBe(true)
     const pass = { n: 3, vars: { rows: [9] }, state: 'run' as const, at: 1, values: {} }

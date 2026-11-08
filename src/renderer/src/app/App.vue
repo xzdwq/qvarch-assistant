@@ -30,6 +30,7 @@ import ShellApprovalDialog from '../components/ShellApprovalDialog.vue'
 import { startChat } from '../lib/chat'
 import { startAgents } from '../lib/agentTurns'
 import { startHarnessDriver } from '../lib/harness/harnessDriver'
+import { startRunJournal } from '../lib/runJournalHost'
 import { startIslandChat } from '../lib/islandChat'
 import { chatPortLocal } from '../lib/chatPortLocal'
 import { provideChatPort } from '@nb/blocks/chat/chatPort'
@@ -44,6 +45,8 @@ setupLinks()
 startBrowser()
 watchPwRec()
 startMcpBridge()
+// who ran which block — into each note's journal («Метаданные»)
+startRunJournal()
 // the notebook's shell scripts: asked about here whatever section is open (a schedule, the AI may run them)
 startShellApprovals()
 // the chats: their news from the start (a notification may open a chat's document any time)

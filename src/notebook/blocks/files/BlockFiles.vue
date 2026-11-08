@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FoldHead from '../../ui/FoldHead.vue'
+import { useBlockFold } from '../../ui/blockFold'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { remoteError } from '../../../shared/remoteError'
 import { RECORDED_SET, type TestFile, type TestFileSet } from '@shared/testFiles'
@@ -13,6 +15,8 @@ import { useSharedFiles } from './useSharedFiles'
  * A scenario with an upload runs over a set by «Проверить ▾ → Прогнать с разными файлами».
  */
 const props = defineProps<{ src: string; path?: string; onChange?: (src: string) => void }>()
+/** Folded to its head (the host's fold, kept per block): the chevron at the head's start. */
+const fold = useBlockFold()
 /** The block's own: its set, the generator's spec and faults picked (kept — the files can be made again). */
 interface Cfg {
   set: string
@@ -145,7 +149,7 @@ const counts = computed(() => ({ ok: files.value.filter((f) => f.expect === 'ok'
 <template>
   <div class="tf tw:flex tw:flex-col tw:gap-8 tw:py-10 tw:px-12 tw:border tw:border-border-2 tw:rounded-r3 tw:bg-panel tw:text-[12.5px] tw:[&.over]:border-accent tw:[&.over]:bg-accent/8" :class="{ over }" @dragover.prevent="over = true" @dragleave="over = false" @drop.prevent="onDrop">
     <div class="tf-head tw:flex tw:flex-wrap tw:items-center tw:gap-8">
-      <Icon name="folder" :size="14" /><b>Тестовые файлы</b>
+      <FoldHead icon="folder" kind="Тестовые файлы" :fold="fold" />
       <select class="tw:h-26 tw:py-0 tw:px-6 tw:border tw:border-border tw:rounded-[4px] tw:bg-field tw:text-text tw:[font:inherit]" :value="set" title="Набор файлов" @change="write(($event.target as HTMLSelectElement).value)">
         <option v-if="!sets.some((s) => s.name === set)" :value="set">{{ set }} · 0</option>
         <option v-for="s in sets" :key="s.name" :value="s.name">{{ s.name }} · {{ s.count }}</option>
@@ -161,6 +165,7 @@ const counts = computed(() => ({ ok: files.value.filter((f) => f.expect === 'ok'
       <button class="primary sm tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-10 tw:whitespace-nowrap" title="Выбрать файлы на диске — они скопируются в набор" @click="pick"><Icon name="plus" :size="12" />Добавить файлы</button>
       <button v-if="set !== RECORDED_SET" class="ib tw:inline-grid tw:place-items-center tw:w-26 tw:h-26 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:hover:not-[&.warn]:bg-hover tw:hover:not-[&.warn]:text-text tw:[&.warn]:bg-stop/18 tw:[&.warn]:text-down-fg tw:hover:enabled:border-border-3" :class="{ warn: sure }" :title="sure ? 'Нажмите ещё раз — набор и его файлы будут удалены' : 'Удалить набор'" @click="removeSet"><Icon name="trash" :size="13" /></button>
     </div>
+    <template v-if="!fold || fold.open">
     <p v-if="err" class="er tw:m-0 tw:text-down-fg">{{ err }}</p>
 
     <!-- the generator: columns, rows, faults → files into this set -->
@@ -256,5 +261,6 @@ const counts = computed(() => ({ ok: files.value.filter((f) => f.expect === 'ok'
         </tr>
       </tbody>
     </table>
+    </template>
   </div>
 </template>
