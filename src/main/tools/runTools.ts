@@ -24,8 +24,13 @@ const CHECKS_GUIDE = [
   'load и matrix меняют данные на сервере (строки, сохранения) — перед запуском скажи об этом пользователю. Сценарий пользователя правь бережно: его действия и локаторы — основа, меняй то, что падает.',
 ].join('\n')
 
+/** Said over results that have not changed since this turn asked last (no run since). */
+export const RESULTS_UNCHANGED = 'Без изменений с прошлого вызова note_results: новых запусков не было, отчёт тот же. Не опрашивай по кругу — запусти note_run сам или спроси пользователя.'
+
 /** Running: the guide to runnable notes, a run, its results, the browser. */
 export function runTools(c: ToolCtx): McpTool[] {
+  // the results each note gave this tool set (one agent's turn): the same again — said so, polling stopped
+  const seenResults = new Map<string, string>()
   return [
     {
       name: 'qvarch_guide',
@@ -50,7 +55,13 @@ export function runTools(c: ToolCtx): McpTool[] {
       description:
         'Последние результаты заметки без запуска: отчёт по блокам и значения переменных. Если по заметке идёт прогон — сначала дожидается его конца (до 5 мин), поэтому опрашивать по кругу не нужно; результат своего note_run бери из его ответа.',
       inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-      run: async (a) => c.ui<string>('report', { path: notePath(str(a.path, 'path', 1000)) }),
+      run: async (a) => {
+        const path = notePath(str(a.path, 'path', 1000))
+        const report = await c.ui<string>('report', { path })
+        const same = seenResults.get(path) === report
+        seenResults.set(path, report)
+        return same ? `${RESULTS_UNCHANGED}\n\n${report}` : report
+      },
     },
     {
       name: 'pw_check',

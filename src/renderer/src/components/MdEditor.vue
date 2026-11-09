@@ -38,7 +38,7 @@ import CommandMenu from '@nb/editor/commandMenu/CommandMenu.vue'
 import { useEditorContextMenu } from '@nb/editor/contextMenu/useEditorContextMenu'
 import EditorContextMenu from '@nb/editor/contextMenu/EditorContextMenu.vue'
 import '@nb/editor/editor.css'
-import { CODE_LANGUAGES, indentFold } from '../lib/codeblocks'
+import { CODE_LANGUAGES, fencedMarkdownHighlighting, indentFold } from '../lib/codeblocks'
 import { transcribing } from '../lib/notebook'
 import { eventsNow, eventsTick } from '../lib/noteEvents'
 
@@ -112,6 +112,8 @@ onMounted(() => {
         EditorView.lineWrapping,
         markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES, extensions: [{ remove: ['SetextHeading'] }, looseFence] }),
         editorHighlighting,
+        // (Markdown inside a ```markdown fence: its own colours, the note's own text untouched)
+        fencedMarkdownHighlighting,
         codeFolding({ placeholderText: '…' }),
         foldGutter({ openText: '▾', closedText: '▸' }),
         indentFold,

@@ -14,14 +14,14 @@ interface Step {
   /** Runs in the first visible browser page (a WebContentsView) — after js. */
   vjs?: string
   /** Real (trusted) input into that page, in order: a click at the centre of a CSS selector, typed text, a key. */
-  vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number }>
+  vinput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number; hold?: number }>
   /**
    * Files picked in the page as a person does: a real click on `click` (it opens the file window — caught by the
    * protocol, never shown), the files given to it; without `click` — straight into the file field `sel`.
    */
   vfiles?: { click?: string; sel?: string; paths: string[] }
   /** The same real input into the window itself (the app's own fields). */
-  minput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number }>
+  minput?: Array<{ click?: string; dbl?: string; type?: string; key?: string; mods?: Array<'control' | 'shift' | 'alt'>; at?: string; wait?: number; hold?: number }>
   /** A mouse moved across the window (x, y → x, y in n steps): every cursor change of the window and its pages is logged. */
   move?: [number, number, number, number, number]
   /**
@@ -196,6 +196,8 @@ export async function runSnap(out: string, main: BrowserWindow, island?: Browser
               const [x, y] = r.map((v) => Math.round(v * wc.getZoomFactor()))
               wc.sendInputEvent({ type: 'mouseMove', x, y })
               wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+              // (a person's click: the button held a moment — the page may redraw before it goes up)
+              if (a.hold) await sleep(a.hold)
               wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
             }
           }

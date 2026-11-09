@@ -89,6 +89,9 @@ export function registerFilesIpc(app: AppContext): void {
   })
   listen('openExternal', (_e, url) => {
     // web pages only (Jira, links in notes) — never file:// or app protocols
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
+    // (development pictures never open the system browser — it would take the focus: the wish is logged)
+    if (process.env.QA_SNAP) return void console.log('[snap] openExternal', url)
+    void shell.openExternal(url)
   })
 }

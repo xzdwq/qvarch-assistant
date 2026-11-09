@@ -5,6 +5,7 @@ import type { TrajStep } from './trajectory'
 import type { PackLink, PackMessage } from './contextPack'
 import type { Caller } from './trigger'
 import type { TurnHarness } from './harness/report'
+import type { TurnUsage } from './usage'
 
 /**
  * An agent's turn as the window asks main for it (the window knows the chat and the note) and as main answers it
@@ -53,6 +54,8 @@ export interface TurnAnswer {
   steps?: TrajStep[]
   /** A harness turn: the plan or the report it gave. */
   harness?: TurnHarness
+  /** What it cost (when its provider says). */
+  usage?: TurnUsage
 }
 
 /**

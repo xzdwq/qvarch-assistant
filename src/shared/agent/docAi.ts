@@ -2,6 +2,7 @@ import type { TraceLine } from './agentLoop'
 import { docRunsOf, type DocRun } from './docRuns'
 import { isTouch, TOUCHES_MAX, type Touch } from './touches'
 import { keptSteps, TRAJ_KINDS, TRAJ_TURNS_KEPT, type TrajStep } from './trajectory'
+import { turnUsageOf, type TurnUsage } from './usage'
 
 /**
  * The AI's own part of a document: its memory — a short text of what matters about the document (its aim, what was
@@ -55,6 +56,8 @@ export interface DocTurn {
   touches?: Touch[]
   /** The turn step by step (the trajectory); the latest turns only. */
   steps?: TrajStep[]
+  /** What it cost (when its provider says). */
+  usage?: TurnUsage
 }
 export interface DocAi {
   memory?: DocMemory
@@ -91,10 +94,11 @@ const isTrajStep = (x: unknown): x is TrajStep => isObj(x) && (TRAJ_KINDS as rea
 export function docAiOf(x: unknown): DocAi {
   if (!isObj(x)) return NO_DOC_AI
   const turns = (Array.isArray(x.turns) ? x.turns.filter(isDocTurn).slice(-DOC_TURNS_MAX) : []).map((t) => {
-    const { touches, steps, ...rest } = t
+    const { touches, steps, usage, ...rest } = t
     const ok = Array.isArray(touches) ? touches.filter(isTouch).slice(0, TOUCHES_MAX) : []
     const okSteps = Array.isArray(steps) ? keptSteps(steps.filter(isTrajStep)) : []
-    return { ...rest, ...(ok.length ? { touches: ok } : {}), ...(okSteps.length ? { steps: okSteps } : {}) }
+    const okUsage = turnUsageOf(usage)
+    return { ...rest, ...(ok.length ? { touches: ok } : {}), ...(okSteps.length ? { steps: okSteps } : {}), ...(okUsage ? { usage: okUsage } : {}) }
   })
   const runs = docRunsOf(x.runs)
   return { ...(isDocMemory(x.memory) ? { memory: x.memory } : {}), turns, ...(runs.length ? { runs } : {}) }
@@ -134,7 +138,9 @@ export function docTurnOf(o: {
   memory?: boolean
   touches?: readonly Touch[]
   steps?: readonly TrajStep[]
+  usage?: TurnUsage
 }): DocTurn {
+  const usage = turnUsageOf(o.usage)
   const outcome: TurnOutcome = o.error ? 'error' : o.stopped ? 'stopped' : 'ok'
   return {
     id: o.id,
@@ -151,6 +157,7 @@ export function docTurnOf(o: {
     ...(o.memory ? { memory: true } : {}),
     ...(o.touches?.length ? { touches: o.touches.slice(0, TOUCHES_MAX) } : {}),
     ...(o.steps?.length ? { steps: keptSteps(o.steps) } : {}),
+    ...(usage ? { usage } : {}),
   }
 }
 /** The journal with a turn put in (once): the latest DOC_TURNS_MAX turns; only the latest TRAJ_TURNS_KEPT keep their steps. */

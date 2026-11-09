@@ -1,5 +1,32 @@
-import { LanguageDescription, StreamLanguage, foldService, syntaxTree } from '@codemirror/language'
+import { HighlightStyle, Language, LanguageDescription, LanguageSupport, StreamLanguage, defineLanguageFacet, foldService, languageDataProp, syntaxHighlighting, syntaxTree } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
+import { tags as t } from '@lezer/highlight'
+import { GFM, parser as markdownParser } from '@lezer/markdown'
+
+/**
+ * Markdown inside a ```markdown fence — a language of its own (its own facet): a highlight style can be put on it
+ * alone, never on the note's own Markdown around (which the live preview draws). Coloured as the editors around show
+ * it (Markdown Preview Enhanced): headings, the marks (#, -, >, backticks), code, links, bold and italics.
+ */
+const fencedMarkdownData = defineLanguageFacet()
+// (a bare Language does not tag its tree: the facet goes on the top node, or a scoped style never matches)
+const FENCED_MARKDOWN = new Language(fencedMarkdownData, markdownParser.configure([GFM, { props: [languageDataProp.add({ Document: fencedMarkdownData })] }]), [], 'markdown')
+export const fencedMarkdownHighlighting = syntaxHighlighting(
+  HighlightStyle.define(
+    [
+      { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6, t.heading], color: 'var(--syntax-function)', fontWeight: '700' },
+      { tag: t.processingInstruction, color: 'var(--syntax-special)' },
+      { tag: t.monospace, color: 'var(--syntax-string)' },
+      { tag: [t.link, t.url], color: 'var(--syntax-property)', textDecoration: 'underline' },
+      { tag: t.strong, fontWeight: '700', color: 'var(--syntax-strong)' },
+      { tag: t.emphasis, fontStyle: 'italic' },
+      { tag: t.quote, color: 'var(--syntax-quote)' },
+      { tag: t.labelName, color: 'var(--syntax-type)' },
+      { tag: t.contentSeparator, color: 'var(--syntax-meta)' },
+    ],
+    { scope: FENCED_MARKDOWN },
+  ),
+)
 
 /**
  * Code blocks of the notebook: the languages inside ``` fences (highlighting, folding) and formatting.
@@ -12,6 +39,17 @@ export const CODE_LANGUAGES: LanguageDescription[] = [
   LanguageDescription.of({ name: 'sql', alias: ['postgresql', 'postgres', 'pgsql', 'mysql', 'plsql'], load: async () => (await import('@codemirror/lang-sql')).sql({ dialect: (await import('@codemirror/lang-sql')).PostgreSQL, upperCaseKeywords: true }) }),
   LanguageDescription.of({ name: 'html', alias: ['htm', 'xml', 'vue', 'svg'], load: async () => (await import('@codemirror/lang-html')).html() }),
   LanguageDescription.of({ name: 'css', alias: ['scss', 'less'], load: async () => (await import('@codemirror/lang-css')).css() }),
+  LanguageDescription.of({ name: 'markdown', alias: ['md', 'mdx'], load: async () => new LanguageSupport(FENCED_MARKDOWN) }),
+  LanguageDescription.of({
+    name: 'yaml',
+    alias: ['yml'],
+    load: async () => new (await import('@codemirror/language')).LanguageSupport(StreamLanguage.define((await import('@codemirror/legacy-modes/mode/yaml')).yaml)),
+  }),
+  LanguageDescription.of({
+    name: 'python',
+    alias: ['py'],
+    load: async () => new (await import('@codemirror/language')).LanguageSupport(StreamLanguage.define((await import('@codemirror/legacy-modes/mode/python')).python)),
+  }),
   LanguageDescription.of({
     name: 'bash',
     alias: ['sh', 'shell', 'zsh', 'console', 'powershell', 'ps1', 'cmd'],

@@ -4,6 +4,7 @@ import { findLoops } from '../../notebook/domain/loop'
 import { BLOCK_SPECS } from '../../notebook/blocks/specs'
 import { componentsGuide } from '../../notebook/blocks/catalog'
 import type { VaultNode } from '../../shared/vault'
+import { applyEdits, editsOf, TEXT_EDIT_PROPS, TEXT_EDITS_PROP } from '../../shared/agent/textEdits'
 import type { McpTool } from '../mcp'
 import type { ToolCtx } from '../mcpTools'
 import { notePath, opt, str } from './toolArgs'
@@ -116,17 +117,11 @@ export function notesTools(c: ToolCtx): McpTool[] {
     {
       name: 'note_edit',
       access: 'write',
-      description: 'Точечная правка: заменить фрагмент find на replace (find должен встречаться ровно один раз), или append — дописать в конец.',
-      inputSchema: { type: 'object', properties: { path: { type: 'string' }, find: { type: 'string' }, replace: { type: 'string' }, append: { type: 'string' } }, required: ['path'] },
+      description: 'Точечная правка: заменить фрагмент find на replace (find должен встречаться ровно один раз), или after — вставить text после строки, содержащей after, или append — дописать в конец. Несколько правок сразу — одним вызовом в edits.',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' }, ...TEXT_EDIT_PROPS, edits: TEXT_EDITS_PROP }, required: ['path'] },
       run: async (a) => {
         const path = notePath(str(a.path, 'path', 1000))
-        let text = await c.ui<string>('read', { path })
-        if (typeof a.find === 'string' && a.find) {
-          const n = text.split(a.find).length - 1
-          if (n !== 1) throw new Error(n ? `Фрагмент встречается ${n} раз — уточни find` : 'Фрагмент find не найден — прочитай заметку заново (note_read)')
-          text = text.replace(a.find, String(a.replace ?? ''))
-        }
-        if (typeof a.append === 'string' && a.append) text = `${text.replace(/\n*$/, '')}\n\n${a.append}\n`
+        const text = applyEdits(await c.ui<string>('read', { path }), editsOf(a), 'прочитай заметку заново (note_read)')
         await c.ui('write', { path, text })
         return `Изменено: ${path}`
       },

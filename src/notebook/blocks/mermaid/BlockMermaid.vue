@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import FoldHead from '../../ui/FoldHead.vue'
 import { useBlockFold } from '../../ui/blockFold'
-import { openUrl } from '@renderer/lib/links'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { mermaidBody, mermaidMd } from './model'
 import Icon from '@renderer/components/Icon.vue'
@@ -66,7 +65,6 @@ function onCode(v: string): void {
     }
   }, 400)
 }
-const HELP = 'https://mermaid.js.org/intro/syntax-reference.html'
 </script>
 
 <template>
@@ -75,7 +73,6 @@ const HELP = 'https://mermaid.js.org/intro/syntax-reference.html'
       <FoldHead icon="branch" kind="Диаграмма" :fold="fold" />
       <span v-if="error" class="bm-err tw:overflow-hidden tw:text-down-fg tw:text-[12px] tw:text-ellipsis tw:whitespace-nowrap" :title="error">{{ error }}</span>
       <span class="grow tw:flex-1"></span>
-      <button class="lnk tw:h-24 tw:py-0 tw:px-6 tw:border-0 tw:bg-transparent tw:text-muted tw:text-[12px] tw:hover:text-text tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" title="Справка по синтаксису Mermaid" @mousedown.prevent @click="window_open(HELP)">Синтаксис</button>
       <button class="bm-ed tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-9 tw:border tw:border-border-2 tw:rounded-[6px] tw:bg-transparent tw:text-text-2 tw:text-[12px] tw:[&.on]:border-accent/60 tw:[&.on]:text-accent-fg tw:hover:enabled:bg-hover tw:hover:enabled:not-[&.on]:border-border-3" :class="{ on: editing }" @mousedown.prevent @click="editing = !editing"><Icon name="code" :size="13" />Код</button>
     </div>
     <template v-if="!fold || fold.open">
@@ -87,9 +84,5 @@ const HELP = 'https://mermaid.js.org/intro/syntax-reference.html'
     </template>
   </div>
 </template>
-
-<script lang="ts">
-const window_open = (u: string) => openUrl(u)
-</script>
 
 <style scoped src="./BlockMermaid.css"></style>

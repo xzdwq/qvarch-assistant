@@ -11,6 +11,7 @@ import { useDraft } from '@renderer/lib/drafts'
 import type { DocTurn, TurnOutcome } from '@shared/agent/docAi'
 import { TRAJ_LANES, type TrajKind, type TrajLane, type TrajStep } from '@shared/agent/trajectory'
 import { timeBar, turnSteps } from '@shared/agent/trajectoryView'
+import { tokensText, usageText, usageTotal } from '@shared/agent/usage'
 import Icon from '@renderer/components/Icon.vue'
 
 const props = defineProps<{ turns: readonly DocTurn[] }>()
@@ -44,7 +45,10 @@ const sum = computed(() => {
   const t = props.turns
   const steps = rows.value.reduce((n, r) => n + r.steps.length, 0)
   const calls = t.reduce((n, x) => n + Object.values(x.tools).reduce((a, b) => a + b, 0), 0)
-  return { n: t.length, steps, calls, failed: t.filter((x) => x.outcome === 'error').length, avg: t.length ? Math.round(t.reduce((n, x) => n + x.ms, 0) / t.length) : 0 }
+  // (the turns whose provider said what they cost: their tokens, on average)
+  const priced = t.filter((x) => x.usage)
+  const tokens = priced.length ? Math.round(priced.reduce((n, x) => n + usageTotal(x.usage!), 0) / priced.length) : 0
+  return { n: t.length, steps, calls, failed: t.filter((x) => x.outcome === 'error').length, avg: t.length ? Math.round(t.reduce((n, x) => n + x.ms, 0) / t.length) : 0, tokens }
 })
 
 // ---------- a search over the steps ----------
@@ -91,6 +95,7 @@ const pct = (v: number) => `${(v * 100).toFixed(3)}%`
       <span>вызовов <b class="tw:text-text">{{ sum.calls }}</b></span>
       <span v-if="sum.failed">с ошибкой <b class="tw:text-down-fg">{{ sum.failed }}</b></span>
       <span v-if="sum.n">в среднем <b class="tw:text-text">{{ secs(sum.avg) }}</b></span>
+      <span v-if="sum.tokens" title="Токенов за ход в среднем (по ходам, где провайдер их сообщил)">токенов <b class="tw:text-text">{{ tokensText(sum.tokens) }}</b></span>
       <span class="tw:flex-1"></span>
       <label class="tw:inline-flex tw:flex-none tw:items-center tw:gap-5 tw:h-22 tw:px-6 tw:border tw:border-border tw:rounded-r2 tw:bg-field tw:focus-within:border-accent"><Icon name="search" :size="11" /><input v-model="q" class="tw:w-120 tw:min-w-0 tw:border-0 tw:bg-transparent tw:text-text tw:text-[11.5px] tw:outline-none" placeholder="Поиск по шагам" spellcheck="false" @keydown.esc="q = ''" /></label>
     </div>
@@ -128,6 +133,7 @@ const pct = (v: number) => `${(v * 100).toFixed(3)}%`
             <span class="tw:flex-1"></span>
             <span v-if="r.turn.memory" class="tw:flex-none tw:px-5 tw:rounded-full tw:bg-accent/15 tw:text-accent-fg tw:text-[10px]" title="Обновил память документа">память</span>
             <span v-if="r.turn.wrote" class="tw:flex-none tw:font-data tw:text-text-2" title="Строк записано в заметки">+{{ r.turn.wrote }}</span>
+            <span v-if="r.turn.usage" class="tw:flex-none tw:font-data tw:text-muted" :title="usageText(r.turn.usage)">{{ tokensText(usageTotal(r.turn.usage)) }}</span>
             <span class="tw:flex-none tw:font-data tw:text-muted">{{ secs(r.turn.ms) }}</span>
           </div>
           <template v-for="(s, si) in r.steps" :key="si">

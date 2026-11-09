@@ -104,6 +104,9 @@ function stuckPill(dock: Dock, wa: Rectangle, cx: number, cy: number): { x: numb
   }
 }
 
+/** How near the island's content (px) its click-through window still passes mouse moves to its page. */
+const NEAR_CONTENT = 48
+
 function intersects(a: Rectangle, b: Rectangle): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
@@ -111,7 +114,8 @@ function intersects(a: Rectangle, b: Rectangle): boolean {
 /**
  * The "dynamic island".
  * The window has a fixed size, is transparent and click-through everywhere except the visible content
- * (the renderer reports that rectangle). Pill ↔ panel morphing is pure CSS — no window resizing.
+ * (the renderer reports that rectangle; mouse moves reach the page only near it). Pill ↔ panel morphing is pure
+ * CSS — no window resizing.
  * Position is persisted as the top-left of the collapsed pill; the window is placed around it, so the pill
  * stays put; the content grows downward unless there is not enough room below — then upward.
  * Moving is the native window drag (-webkit-app-region: drag on the handle / header).
@@ -126,6 +130,8 @@ export class Island {
   /** Where the content is in the window (reported by the renderer) — the pill's real rectangle. */
   private rect = { x: (ISLAND_WINDOW.width - ISLAND_PILL.width) / 2, y: 0, width: ISLAND_PILL.width, height: ISLAND_PILL.height }
   private ignoring = true
+  /** Mouse moves forwarded to the page while click-through (only near the content — see tick). */
+  private forwarding = false
   private placing = false
   private timers: NodeJS.Timeout[] = []
 
@@ -158,7 +164,7 @@ export class Island {
     })
     this.win.setAlwaysOnTop(true, 'screen-saver')
     this.win.setVisibleOnAllWorkspaces(true)
-    this.win.setIgnoreMouseEvents(true, { forward: true })
+    this.win.setIgnoreMouseEvents(true)
     load(this.win, 'island', mainDir)
     forwardConsole(this.win, 'island')
     this.win.once('ready-to-show', () => show && !Island.hidden && this.win.showInactive())
@@ -306,17 +312,42 @@ export class Island {
   setSolid(solid: boolean): void {
     if (solid === !this.ignoring || this.win.isDestroyed()) return
     this.ignoring = !solid
-    this.win.setIgnoreMouseEvents(!solid, { forward: true })
+    this.applyMouse()
   }
 
   /**
-   * A safety net: if the window is still "solid" while the cursor is far outside it,
-   * make it click-through again and report a leave (during a native drag the window stays under the cursor).
+   * Click-through forwards mouse moves to the page only near the content. Electron forwards every move inside the
+   * whole window (800×640, mostly transparent, over the other apps) and the page then sets its own cursor there:
+   * the cursor of the window under it flickered with every pixel. Near the content the page still decides itself.
+   */
+  private applyMouse(): void {
+    if (this.ignoring) this.win.setIgnoreMouseEvents(true, this.forwarding ? { forward: true } : undefined)
+    else this.win.setIgnoreMouseEvents(false)
+  }
+
+  /** The cursor near the content: its rectangle on screen, widened (coarse — DIP may drift across monitors' scaling). */
+  private nearContent(p: { x: number; y: number }, b: Rectangle): boolean {
+    const r = this.rect
+    return p.x >= b.x + r.x - NEAR_CONTENT && p.x <= b.x + r.x + r.width + NEAR_CONTENT && p.y >= b.y + r.y - NEAR_CONTENT && p.y <= b.y + r.y + r.height + NEAR_CONTENT
+  }
+
+  /**
+   * Forwarding switched by the cursor's distance from the content; a safety net: if the window is still "solid"
+   * while the cursor is far outside it, click-through again with a leave (a native drag keeps it under the cursor).
    */
   private tick(): void {
-    if (this.win.isDestroyed() || !this.win.isVisible() || this.ignoring) return
+    if (this.win.isDestroyed() || !this.win.isVisible()) return
     const p = screen.getCursorScreenPoint()
     const b = this.win.getBounds()
+    if (this.ignoring) {
+      const near = this.nearContent(p, b)
+      if (near === this.forwarding) return
+      this.forwarding = near
+      this.applyMouse()
+      // (moved away faster than a forwarded move could tell the page)
+      if (!near) emit(this.win.webContents, 'onIslandHover', { leave: true })
+      return
+    }
     const far = 60
     if (p.x < b.x - far || p.x > b.x + b.width + far || p.y < b.y - far || p.y > b.y + b.height + far) {
       this.setSolid(false)

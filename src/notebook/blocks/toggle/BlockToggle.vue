@@ -2,6 +2,8 @@
 import { onMounted, ref, watch } from 'vue'
 import { parseToggle, toggleMd, type ToggleModel } from './model'
 import Icon from '@renderer/components/Icon.vue'
+import Markdown from '@renderer/components/Markdown.vue'
+import { useDrawnText } from '../../ui/useDrawnText'
 
 /** A fold: a title that opens / closes its text (as Notion's toggle; <details> in the file). */
 const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
@@ -29,6 +31,8 @@ function save(now = false): void {
 }
 const titleEl = ref<HTMLInputElement>()
 const bodyEl = ref<HTMLTextAreaElement>()
+/** The text drawn as Markdown until it is edited (ui/useDrawnText). */
+const { editing, drawn, edit: editText, onDrawnDown, leave } = useDrawnText(() => t.value.body, bodyEl, () => save(true))
 onMounted(() => props.autofocus && titleEl.value?.focus())
 /** Into the text (Enter opens a closed fold; ↓ only an open one), else out of the block. */
 function enterBody(): void {
@@ -36,7 +40,7 @@ function enterBody(): void {
     t.value.open = true
     save(true)
   }
-  setTimeout(() => bodyEl.value?.focus())
+  setTimeout(() => void editText())
 }
 function onTitleKey(e: KeyboardEvent): void {
   switch (e.key) {
@@ -79,6 +83,8 @@ function onBodyKey(e: KeyboardEvent): void {
       <button class="tg-ar tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:p-0 tw:border-0 tw:rounded-[5px] tw:bg-transparent tw:text-text-2 tw:[transition:transform_0.12s] tw:hover:bg-hover tw:group-[.open]/tg:[transform:rotate(90deg)] tw:hover:enabled:border-border-3" :title="t.open ? 'Свернуть' : 'Развернуть'" @mousedown.prevent @click="((t.open = !t.open), save(true))"><Icon name="chevronRight" :size="14" /></button>
       <input ref="titleEl" v-model="t.title" class="tg-t tw:flex-1 tw:min-w-0 tw:h-28 tw:py-0 tw:px-2 tw:border-0 tw:bg-transparent tw:text-text-hi tw:[font-style:inherit] tw:[font-variant:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:[line-height:inherit] tw:font-[inherit] tw:[&&]:font-semibold tw:outline-none" placeholder="Заголовок свёртки" spellcheck="false" @input="save()" @blur="save(true)" @keydown="onTitleKey" />
     </div>
-    <textarea v-if="t.open" ref="bodyEl" v-model="t.body" class="tg-b tw:min-h-0 tw:ml-12 tw:pt-2 tw:pr-4 tw:pb-4 tw:pl-14 tw:border-0 tw:[&&]:border-l-2 tw:[&&]:border-l-border-2 tw:bg-transparent tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.6] tw:resize-none tw:field-sizing-content tw:outline-none" rows="1" placeholder="Скрытый текст" spellcheck="false" @input="save()" @blur="save(true)" @keydown="onBodyKey"></textarea>
+    <!-- the text as it reads; a press — edited -->
+    <Markdown v-if="t.open && drawn" class="tg-md tw:ml-12 tw:pt-2 tw:pr-4 tw:pb-4 tw:pl-14 tw:border-0 tw:border-l-2 tw:border-solid tw:border-l-border-2 tw:cursor-text tw:[&&]:text-[1em] tw:[&&]:leading-[1.6]" :text="t.body" @mousedown="onDrawnDown" />
+    <textarea v-else-if="t.open" ref="bodyEl" v-model="t.body" class="tg-b tw:min-h-0 tw:ml-12 tw:pt-2 tw:pr-4 tw:pb-4 tw:pl-14 tw:border-0 tw:[&&]:border-l-2 tw:[&&]:border-l-border-2 tw:bg-transparent tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.6] tw:resize-none tw:field-sizing-content tw:outline-none" rows="1" placeholder="Скрытый текст" spellcheck="false" @focus="editing = true" @input="save()" @blur="leave" @keydown="onBodyKey"></textarea>
   </div>
 </template>

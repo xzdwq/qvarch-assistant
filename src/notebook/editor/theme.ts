@@ -1,14 +1,16 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
 import { iconSvg } from '@renderer/components/Icon.vue'
 import { PEER_SLOTS } from './peerCursors'
 
 /** The note editor's look: Markdown and code colours, the editor's own theme, the search panel in Russian. */
 
-/** Markdown: headings, emphasis, links, quotes. */
-const markdownHighlight = HighlightStyle.define([
+/** Markdown: headings, emphasis, links, quotes — the note's own text only (a ```markdown fence has its own colours). */
+const markdownHighlight = HighlightStyle.define(
+  [
   { tag: t.heading1, fontSize: '1.75em', fontWeight: '700', color: 'var(--text-hi)' },
   { tag: t.heading2, fontSize: '1.45em', fontWeight: '700', color: 'var(--text-hi)' },
   { tag: t.heading3, fontSize: '1.22em', fontWeight: '650', color: 'var(--text)' },
@@ -22,7 +24,9 @@ const markdownHighlight = HighlightStyle.define([
   { tag: t.quote, color: 'var(--syntax-quote)' },
   { tag: [t.processingInstruction, t.meta], color: 'var(--syntax-meta)' },
   { tag: t.contentSeparator, color: 'var(--syntax-meta)' },
-])
+  ],
+  { scope: markdownLanguage },
+)
 /** Code inside the blocks: a dark palette close to VS Code's. */
 const codeHighlight = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword], color: 'var(--syntax-keyword)' },
@@ -36,6 +40,7 @@ const codeHighlight = HighlightStyle.define([
   { tag: [t.variableName, t.definition(t.variableName)], color: 'var(--syntax-variable)' },
   { tag: t.special(t.variableName), color: 'var(--syntax-special)' },
   { tag: t.attributeValue, color: 'var(--syntax-string)' },
+  { tag: t.meta, color: 'var(--syntax-meta)' },
 ])
 const editorTheme = EditorView.theme(
   {

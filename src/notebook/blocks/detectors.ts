@@ -8,8 +8,8 @@ import type { BlockDetector } from '../domain/blockSpec'
 /** A fence of this language with no attributes (```chart; ```chart x is plain code). */
 export const fenceOfLang = (lang: string): BlockDetector => ({ by: 'fence', matches: (h) => h.lang === lang && !h.attrs.trim() })
 
-/** A single line matching the pattern. */
-export const singleLine = (order: number, re: RegExp): BlockDetector => ({ by: 'lines', order, match: (lines, i) => (re.test(lines[i]) ? i : undefined) })
+/** A single line matching the pattern (a spec's own way, or its second one — alsoDetect). */
+export const singleLine = (order: number, re: RegExp): Extract<BlockDetector, { by: 'lines' }> => ({ by: 'lines', order, match: (lines, i) => (re.test(lines[i]) ? i : undefined) })
 
 /** Height estimates: a fixed one, or a base plus so much per line of the block's text. */
 export const fixedHeight = (px: number) => () => px

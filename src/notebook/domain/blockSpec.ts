@@ -49,6 +49,8 @@ export interface BlockSpec<K extends BlockKind = BlockKind> {
   /** Its name in run reports, when it differs. */
   reportTitle?: string
   detect: BlockDetector
+  /** Another way the text writes it: a line form beside its fence (`[toc]` — as other Markdown editors write it). */
+  alsoDetect?: Extract<BlockDetector, { by: 'lines' }>
   /** Its height before it is drawn (px), from its text — the editor's scroll estimate. */
   estimateHeight(src: string): number
   /** It runs: a step of «Выполнить всё» and of a loop's pass (its runner is in the run engine). */

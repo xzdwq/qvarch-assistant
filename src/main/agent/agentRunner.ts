@@ -3,6 +3,7 @@ import { buildPack, type Pack } from '../../shared/agent/contextPack'
 import { baseUrlOf, headersOf, modelOf, sessionHeaderOf, type AgentProfile } from '../../shared/agent/profiles'
 import { AGENT_PROVIDERS, type AgentProtocol } from '../../shared/agent/providers'
 import type { TurnAnswer, TurnRequest } from '../../shared/agent/turn'
+import type { TurnUsage } from '../../shared/agent/usage'
 import { TOUCHES_MAX, touchesOf, type Touch } from '../../shared/agent/touches'
 import type { AppContext } from '../app/appContext'
 import type { McpHost } from '../ipc/mcpIpc'
@@ -39,7 +40,7 @@ interface TurnRun {
 interface ProtocolRunner {
   /** It works with tools of its own (a harness elsewhere): it is not told of ours. */
   ownTools?: boolean
-  turn(r: TurnRun, host: McpHost): Promise<{ text: string; note?: string }>
+  turn(r: TurnRun, host: McpHost): Promise<{ text: string; note?: string; usage?: TurnUsage }>
   models(p: AgentProfile, key?: string): Promise<string[]>
   error(e: unknown): string | undefined
 }
@@ -93,8 +94,7 @@ const RUNNERS: Record<AgentProtocol, ProtocolRunner> = {
       }))
       const open = host.mcp.openTurn(() => traced)
       try {
-        const text = await claudeCodeTurn({ system: r.pack.system, prompt: r.pack.prompt, model: r.profile.model || undefined, project: r.profile.project, mcp: { url: open.url, token: open.token }, signal: r.signal })
-        return { text }
+        return await claudeCodeTurn({ system: r.pack.system, prompt: r.pack.prompt, model: r.profile.model || undefined, project: r.profile.project, mcp: { url: open.url, token: open.token }, signal: r.signal })
       } finally {
         open.close()
       }
@@ -216,7 +216,7 @@ export class AgentRunner {
       traj.given(pack, Date.now() - t0, req.messages[req.question]?.text ?? '', { memory: !!req.memory?.memory, links: req.links.length, messages: req.messages.length })
       const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => void trace.push(t), onModel: (m) => traj.model(m), onRemoteTool: (t) => traj.remote(t), session: `qvarch-${req.room}-${profile.id}` }, this.host)
       const said = harness ? harness.ended(out.text) : { text: out.text }
-      return answer({ text: said.text, ...(out.note ? { note: out.note } : {}), ...(said.harness ? { harness: said.harness } : {}) })
+      return answer({ text: said.text, ...(out.note ? { note: out.note } : {}), ...(said.harness ? { harness: said.harness } : {}), ...(out.usage ? { usage: out.usage } : {}) })
     } catch (e) {
       if (ac.signal.aborted) return answer({ text: '', error: 'Остановлено', stopped: true })
       return answer({ text: '', error: runner.error(e) ?? (e instanceof Error ? e.message : String(e)) })

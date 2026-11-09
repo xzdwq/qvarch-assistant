@@ -154,7 +154,7 @@ async function runTurn(agent: string, job: Job): Promise<void> {
   if (docPath)
     void addDocTurn(
       docPath,
-      docTurnOf({ id: turn, at: t0, ms: Date.now() - t0, agent: name, owner: chatMeName(), asker: authorName(job.message), question: job.message.text, trace: answer.trace, wrote: wrote.lines, error: answer.stopped ? undefined : answer.error, stopped: answer.stopped, memory: wrote.memory, touches: answer.touches, steps: answer.steps }),
+      docTurnOf({ id: turn, at: t0, ms: Date.now() - t0, agent: name, owner: chatMeName(), asker: authorName(job.message), question: job.message.text, trace: answer.trace, wrote: wrote.lines, error: answer.stopped ? undefined : answer.error, stopped: answer.stopped, memory: wrote.memory, touches: answer.touches, steps: answer.steps, usage: answer.usage }),
     ).catch(() => undefined)
   if (job.harness) return job.harness.done(answer)
   await post({ id: agent, name }, room, job.message, { ...answer, text: withPlaces(answer.text, placesOf(wrote.places)) })

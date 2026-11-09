@@ -8,10 +8,11 @@ import { FENCE_OPEN, findFenceClose } from './fence'
  * table, a callout…) in their order; a fence is taken whole — the fence specs decide what it is, an unknown fence
  * is plain code (the lines inside it are never looked at).
  */
-type LineSpec = BlockSpec & { detect: { by: 'lines'; order: number; match(lines: readonly string[], i: number): number | undefined } }
+/** A line detector and the kind it finds (a spec's own, or its second way of being written). */
+type LineSpec = { kind: BlockKind; detect: { by: 'lines'; order: number; match(lines: readonly string[], i: number): number | undefined } }
 type FenceSpec = BlockSpec & { detect: { by: 'fence'; matches(h: FenceHeader): boolean } }
 
-const LINE_SPECS: LineSpec[] = ALL_BLOCK_SPECS.filter((s): s is LineSpec => s.detect.by === 'lines').sort((a, b) => a.detect.order - b.detect.order)
+const LINE_SPECS: LineSpec[] = ALL_BLOCK_SPECS.flatMap((s): LineSpec[] => [...(s.detect.by === 'lines' ? [{ kind: s.kind, detect: s.detect }] : []), ...(s.alsoDetect ? [{ kind: s.kind, detect: s.alsoDetect }] : [])]).sort((a, b) => a.detect.order - b.detect.order)
 const FENCE_SPECS: FenceSpec[] = ALL_BLOCK_SPECS.filter((s): s is FenceSpec => s.detect.by === 'fence')
 const BEFORE_FENCE = LINE_SPECS.filter((s) => s.detect.order < FENCE_SCAN_ORDER)
 const AFTER_FENCE = LINE_SPECS.filter((s) => s.detect.order >= FENCE_SCAN_ORDER)

@@ -2,6 +2,7 @@ import { onBeforeUnmount, onMounted, watch, type Ref } from 'vue'
 import ForceGraph from 'force-graph'
 import type { NotebookGraph, ViewNode } from '@shared/notebook/graph'
 import { cssColor } from '@renderer/lib/cssColor'
+import { ancestorsZoom } from '@renderer/lib/zoomFree'
 import { iconPicture, loadIconPictures, markColor, NODE_LOOK, radiusOf } from './graphLook'
 
 /** A node as the graph keeps it (its place, its look). */
@@ -143,8 +144,19 @@ export function useForceGraph(el: Ref<HTMLElement | undefined>, view: ForceGraph
     size()
     show(view.data.value)
   })
-  /** The canvas as big as its place. */
-  const size = () => el.value && fg?.width(el.value.clientWidth).height(el.value.clientHeight)
+  /**
+   * The canvas as big as its place, at the screen's own pixels: the app's zoom (a CSS zoom on its frame) undone on
+   * the graph's box — force-graph maps the pointer by its own measures, and under a zoom the node lit drifted from the
+   * one under the cursor (the further from the corner, the more). Done again on every resize (the zoom changed too).
+   */
+  let zoomUndone = 1
+  const size = () => {
+    const box = el.value
+    if (!box || !fg) return
+    const z = ancestorsZoom(box)
+    if (Math.abs(z - zoomUndone) > 0.001) ((zoomUndone = z), (box.style.zoom = String(1 / z)))
+    fg.width(box.clientWidth).height(box.clientHeight)
+  }
   const ro = new ResizeObserver(() => size())
   watch(el, (e, was) => (was && ro.unobserve(was), e && ro.observe(e)), { immediate: true })
   watch(view.data, (g) => show(g))

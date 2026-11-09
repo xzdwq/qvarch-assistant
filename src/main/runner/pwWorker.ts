@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import { PageScreen } from './pageScreen'
 import { scenarioShots } from './scenarioShots'
+import { watchUi } from './uiWatch'
+import { uiReport } from '../../shared/uiMetrics'
 import { expect } from 'playwright/test'
 import { makeQa } from './qaRuntime'
 import type { MatrixOpts, MatrixOutcome } from './qa/fieldMatrixCheck'
@@ -138,6 +140,8 @@ async function run(job: Job): Promise<void> {
 
   let page: Page | undefined
   let screen: PageScreen | undefined
+  /** How the page answers input, watched through the run (none — it could not be watched). */
+  let ui: Awaited<ReturnType<typeof watchUi>> | undefined
   let value: unknown
   /** What a ready check gathered (the field matrix: each value's outcome) — the block's value when it returns none. */
   let checkValue: unknown
@@ -156,6 +160,8 @@ async function run(job: Job): Promise<void> {
       // (the app's own page carries its site's zoom: a screen the scenario sets is the screen the page sees)
       screen = new PageScreen(page, own?.zoom ?? 1)
       screen.takeOver()
+      // every input / key / click measured by the browser, every long frame — the UI's own lag, apart from the server
+      ui = await watchUi(page).catch(() => undefined)
       // a click that opens the system's file window (a «Загрузить» button) — the window is never shown: the files go by
       // setInputFiles / qa.dropFiles
       page.on('filechooser', () => undefined)
@@ -214,6 +220,12 @@ async function run(job: Job): Promise<void> {
     for (const s of steps) if (s.state === 'run') ((s.state = 'error'), (s.ms = Date.now() - s.start))
   }
 
+  // how the page answered input through the run: one entry beside the checks (none — nothing typed, clicked or held)
+  if (ui && !stopped) {
+    await ui.drain()
+    const entry = uiReport(ui.samples, steps)
+    if (entry) checks.push(entry)
+  }
   // (the scenario returns nothing of its own: what its check gathered is its value — every value of the matrix at once)
   if (value === undefined && checkValue !== undefined) value = checkValue
   // what is left: the screenshot, the trace, the Allure results

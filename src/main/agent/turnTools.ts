@@ -7,6 +7,7 @@ import { sharedDocOf } from '../../shared/transport/space'
 import { filesOf, resolveWiki, type VaultHit, type VaultNode } from '../../shared/vault'
 import { reasonText, type RelatedNote } from '../../shared/notebook/graph'
 import { META_PLACE } from '../../shared/agent/docAiSearch'
+import { applyEdits, editsOf, TEXT_EDIT_PROPS, TEXT_EDITS_PROP } from '../../shared/agent/textEdits'
 import type { McpTool } from '../mcp'
 
 /**
@@ -33,27 +34,6 @@ const str = (v: unknown, name: string, max = 200_000): string => {
 }
 const notePath = (p: string) => (/\.(md|qboard)$/i.test(p) ? p : `${p}.md`).replace(/^\/+/, '')
 const noteTitle = (path: string) => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
-/** A text changed as `doc_edit` asks: a fragment replaced (it must be there once), a text put after a line, one appended. */
-export function editedText(text: string, a: Record<string, unknown>): string {
-  const s = (v: unknown) => (typeof v === 'string' ? v : '')
-  let out = text
-  const find = s(a.find)
-  if (find) {
-    const n = out.split(find).length - 1
-    if (n !== 1) throw new Error(n ? `Фрагмент встречается ${n} раз — уточни find` : 'Фрагмент find не найден — перечитай документ (doc_read)')
-    out = out.replace(find, () => s(a.replace))
-  }
-  const after = s(a.after)
-  if (after && s(a.text)) {
-    const lines = out.split('\n')
-    const at = lines.findIndex((l) => l.includes(after))
-    if (at < 0) throw new Error('Строка after не найдена — перечитай документ (doc_read)')
-    lines.splice(at + 1, 0, s(a.text))
-    out = lines.join('\n')
-  }
-  if (s(a.append)) out = `${out.replace(/\n*$/, '')}\n\n${s(a.append)}\n`
-  return out
-}
 const READ_MAX = 60_000
 const cut = (s: string) => (s.length > READ_MAX ? `${s.slice(0, READ_MAX)}\n…(обрезано: ещё ${s.length - READ_MAX} символов)` : s)
 
@@ -177,12 +157,11 @@ export function turnTools(c: TurnToolsCtx): McpTool[] {
       name: 'doc_edit',
       access: 'doc',
       description:
-        'Точечная правка текущего документа: заменить фрагмент find на replace (find — ровно одно вхождение, например строка, куда вставить ссылку на задачу), или after — вставить text после строки, содержащей after, или append — дописать в конец.',
-      inputSchema: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' }, after: { type: 'string' }, text: { type: 'string' }, append: { type: 'string' } } },
+        'Точечная правка текущего документа: заменить фрагмент find на replace (find — ровно одно вхождение, например строка, куда вставить ссылку на задачу), или after — вставить text после строки, содержащей after, или append — дописать в конец. Несколько правок сразу — одним вызовом в edits.',
+      inputSchema: { type: 'object', properties: { ...TEXT_EDIT_PROPS, edits: TEXT_EDITS_PROP } },
       run: async (a) => {
         const { path, text } = await docToWrite()
-        const next = editedText(text, a)
-        if (next === text) throw new Error('Нечего менять: укажи find + replace, after + text или append')
+        const next = applyEdits(text, editsOf(a), 'перечитай документ (doc_read)')
         await c.ui('write', { path, text: next })
         return `Изменено: ${path}`
       },

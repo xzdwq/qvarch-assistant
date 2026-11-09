@@ -2,8 +2,10 @@
 import FoldHead from '../../ui/FoldHead.vue'
 import { useBlockFold } from '../../ui/blockFold'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useDrawnText } from '../../ui/useDrawnText'
 import { CALLOUTS, calloutMd, parseCallout, type CalloutModel } from './model'
 import Icon from '@renderer/components/Icon.vue'
+import Markdown from '@renderer/components/Markdown.vue'
 
 /** A callout: a coloured box (заметка, информация, совет, готово, внимание, опасно) with a title and text. */
 const props = defineProps<{ src: string; autofocus?: boolean; onChange?: (src: string) => void; onExit?: (dir: 1 | -1) => void }>()
@@ -34,6 +36,8 @@ function save(now = false): void {
 const def = computed(() => CALLOUTS.find((x) => x.id === c.value.type) ?? CALLOUTS[0])
 const open = ref(false)
 const bodyEl = ref<HTMLTextAreaElement>()
+/** The text drawn as Markdown until it is edited (ui/useDrawnText). */
+const { editing, drawn, edit: editBody, onDrawnDown, leave: leaveBody } = useDrawnText(() => c.value.body, bodyEl, () => save(true))
 const titleEl = ref<HTMLInputElement>()
 onMounted(() => props.autofocus && titleEl.value?.focus())
 function onTitleKey(e: KeyboardEvent): void {
@@ -41,7 +45,7 @@ function onTitleKey(e: KeyboardEvent): void {
     case 'Enter':
     case 'ArrowDown':
       e.preventDefault()
-      bodyEl.value?.focus()
+      void editBody()
       break
     case 'ArrowUp':
       e.preventDefault()
@@ -81,7 +85,9 @@ function onBodyKey(e: KeyboardEvent): void {
     <div v-if="open" class="co-pick tw:flex tw:flex-wrap tw:gap-4 tw:pt-4 tw:pr-0 tw:pb-6 tw:pl-34">
       <button class="tw:inline-flex tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-[color-mix(in_srgb,var(--c)_40%,transparent)] tw:rounded-[6px] tw:bg-transparent tw:text-(--c) tw:text-[12px] tw:[&.on]:bg-[color-mix(in_srgb,var(--c)_18%,transparent)]" v-for="x in CALLOUTS" :key="x.id" :class="{ on: x.id === c.type }" :style="{ '--c': x.color }" @mousedown.prevent @click="((c.type = x.id), (open = false), save(true))"><Icon :name="x.icon" :size="13" />{{ x.title }}</button>
     </div>
-    <textarea ref="bodyEl" v-model="c.body" class="co-b tw:min-h-0 tw:pt-2 tw:pr-2 tw:pb-2 tw:pl-34 tw:border-0 tw:bg-transparent tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.6] tw:resize-none tw:field-sizing-content tw:outline-none" rows="1" placeholder="Текст" spellcheck="false" @input="save()" @blur="save(true)" @keydown="onBodyKey"></textarea>
+    <!-- the text as it reads (links open outside); a click — edited -->
+    <Markdown v-if="drawn" class="co-md tw:pt-2 tw:pr-2 tw:pb-2 tw:pl-34 tw:cursor-text tw:[&&]:text-[1em] tw:[&&]:leading-[1.6]" :text="c.body" @mousedown="onDrawnDown" />
+    <textarea v-else ref="bodyEl" v-model="c.body" class="co-b tw:min-h-0 tw:pt-2 tw:pr-2 tw:pb-2 tw:pl-34 tw:border-0 tw:bg-transparent tw:text-text tw:[font-style:inherit] tw:[font-variant:inherit] tw:[font-weight:inherit] tw:font-stretch-[inherit] tw:[font-size:inherit] tw:font-[inherit] tw:[&&]:leading-[1.6] tw:resize-none tw:field-sizing-content tw:outline-none" rows="1" placeholder="Текст" spellcheck="false" @focus="editing = true" @input="save()" @blur="leaveBody" @keydown="onBodyKey"></textarea>
     </template>
   </div>
 </template>

@@ -94,7 +94,11 @@ describe('chart model', () => {
 describe('callout model', () => {
   it('own types, aliases and the fallback', () => {
     expect(parseCallout('> [!WARNING]+ Осторожно\n> текст')).toEqual({ type: 'warning', title: 'Осторожно', body: 'текст' })
-    expect(parseCallout('> [!bug]').type).toBe('danger')
+    // (Obsidian's kinds are all own ones; their other names — drawn as them)
+    expect(parseCallout('> [!bug]').type).toBe('bug')
+    expect(parseCallout('> [!hint]').type).toBe('tip')
+    expect(parseCallout('> [!faq]').type).toBe('question')
+    expect(parseCallout('> [!tldr]').type).toBe('abstract')
     expect(parseCallout('> [!constructor]').type).toBe('note')
     expect(calloutMd({ type: 'tip', title: '', body: 'a\n\nb' })).toBe('> [!tip]\n> a\n>\n> b')
   })

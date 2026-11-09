@@ -1,16 +1,24 @@
 /** The callout component's model: an Obsidian-style quote `> [!info] Title` with its body on the `>` lines. */
+/** The callouts as Obsidian draws them (Markdown Preview Enhanced and others follow it): kind, icon, colour. */
 export const CALLOUTS = [
   { id: 'note', title: 'Заметка', icon: 'pencil', color: 'var(--callout-note)' },
-  { id: 'info', title: 'Информация', icon: 'bell', color: 'var(--callout-info)' },
-  { id: 'tip', title: 'Совет', icon: 'sparkles', color: 'var(--callout-tip)' },
+  { id: 'abstract', title: 'Кратко', icon: 'clipboardList', color: 'var(--callout-abstract)' },
+  { id: 'info', title: 'Информация', icon: 'info', color: 'var(--callout-info)' },
+  { id: 'todo', title: 'Задача', icon: 'checkCircle', color: 'var(--callout-todo)' },
+  { id: 'tip', title: 'Совет', icon: 'flame', color: 'var(--callout-tip)' },
   { id: 'success', title: 'Готово', icon: 'check', color: 'var(--callout-success)' },
-  { id: 'warning', title: 'Внимание', icon: 'zap', color: 'var(--callout-warning)' },
-  { id: 'danger', title: 'Опасно', icon: 'x', color: 'var(--callout-danger)' },
+  { id: 'question', title: 'Вопрос', icon: 'helpCircle', color: 'var(--callout-question)' },
+  { id: 'warning', title: 'Внимание', icon: 'alertTriangle', color: 'var(--callout-warning)' },
+  { id: 'failure', title: 'Не вышло', icon: 'x', color: 'var(--callout-failure)' },
+  { id: 'danger', title: 'Опасно', icon: 'zap', color: 'var(--callout-danger)' },
+  { id: 'bug', title: 'Ошибка', icon: 'bug', color: 'var(--callout-bug)' },
+  { id: 'example', title: 'Пример', icon: 'list', color: 'var(--callout-example)' },
+  { id: 'quote', title: 'Цитата', icon: 'quote', color: 'var(--callout-quote)' },
 ] as const satisfies ReadonlyArray<{ id: string; title: string; icon: string; color: string }>
 export type CalloutType = (typeof CALLOUTS)[number]['id']
 const isCalloutType = (s: string): s is CalloutType => CALLOUTS.some((c) => c.id === s)
-/** Other tools' callout types, shown as the nearest own one. */
-const CALLOUT_ALIAS: Record<string, CalloutType> = { abstract: 'info', summary: 'info', todo: 'info', hint: 'tip', important: 'tip', check: 'success', done: 'success', question: 'info', caution: 'warning', attention: 'warning', failure: 'danger', fail: 'danger', error: 'danger', bug: 'danger', example: 'note', quote: 'note' }
+/** The other names of the kinds (Obsidian's): each drawn as its kind. */
+const CALLOUT_ALIAS: Record<string, CalloutType> = { summary: 'abstract', tldr: 'abstract', hint: 'tip', important: 'tip', check: 'success', done: 'success', help: 'question', faq: 'question', caution: 'warning', attention: 'warning', fail: 'failure', missing: 'failure', error: 'danger', cite: 'quote' }
 export interface CalloutModel {
   type: CalloutType
   title: string

@@ -1,7 +1,7 @@
 /**
  * A note's tags, as Obsidian writes them: `#тег` in the text (`#работа/релиз` — nested; found by `#работа` too) and
  * `tags:` in the front matter; a number is a tag too (`#1`). Not a tag: a heading's `# `, a `#` after a word (`C#`),
- * a place in a link (`[[A#раздел]]`, `https://x#a`), anything in `code`.
+ * a place in a link (`[[A#раздел]]`, `https://x#a`), anything in `code`, a value in quotes or after `=` (`fill="#93c5fd"`).
  */
 
 export interface NoteTag {
@@ -11,9 +11,9 @@ export interface NoteTag {
   line: number
 }
 
-const TAG = /(?<![\p{L}\p{N}_/&#\\])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu
+const TAG = /(?<![\p{L}\p{N}_/&#\\"'=])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu
 /** A tag being typed at a line's end: `#` (not after a word) and its first characters — [1]. */
-export const TAG_TYPED = /(?<![\p{L}\p{N}_/&#\\])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)$/u
+export const TAG_TYPED = /(?<![\p{L}\p{N}_/&#\\"'=])#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)$/u
 /** What a tag's name goes on with (the rest of it, as typed). */
 export const TAG_REST = /^[\p{L}\p{N}_\-/]*$/u
 /** A tag's name cleaned: no trailing `/` `-` (a number is a tag too: `#1`, `#2026`). */

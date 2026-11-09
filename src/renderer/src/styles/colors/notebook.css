@@ -132,13 +132,20 @@
   /* a recording's orb while it is transcribed (a canvas: read as hex) */
   --audio-transcribing: #ffa25c;
 
-  /* callouts, by their type */
-  --callout-note: #94a3b8;
-  --callout-info: #38bdf8;
-  --callout-tip: #a78bfa;
-  --callout-success: #4ade80;
-  --callout-warning: #fbbf24;
-  --callout-danger: #f87171;
+  /* callouts, by their type — Obsidian's colours (Markdown Preview Enhanced and others draw them so) */
+  --callout-note: #448aff;
+  --callout-abstract: #00b0ff;
+  --callout-info: #00b8d4;
+  --callout-todo: #00b8d4;
+  --callout-tip: #00bfa5;
+  --callout-success: #00c853;
+  --callout-question: #ffab00;
+  --callout-warning: #ff9100;
+  --callout-failure: #ff5252;
+  --callout-danger: #ff1744;
+  --callout-bug: #f50057;
+  --callout-example: #7c4dff;
+  --callout-quote: #9e9e9e;
 
   /* the colours a note / folder can be marked with (a picked one is kept in the vault as its hex) */
   --note-mark-1: #f87171;

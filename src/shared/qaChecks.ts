@@ -12,11 +12,14 @@ import type { QaMark } from './browser/constants'
  */
 export const isRunPicture = (name: string): boolean => /^(final|failure)\.png$|^layout-\d+x\d+-\d+\.png$|^shot-\d+\.png$/.test(name)
 
-/** A result entry that is no check: the scenario's own pictures (shot()). */
-export const SCENARIO_SHOTS = 'shots'
+/** The result entries that are no checks: the scenario's own pictures (shot()), how the page answered input (uiMetrics). */
+export const RESULT_ENTRY_KINDS = ['shots', 'ui'] as const
+export type ResultEntryKind = (typeof RESULT_ENTRY_KINDS)[number]
+export const SCENARIO_SHOTS: ResultEntryKind = 'shots'
+export const UI_METRICS: ResultEntryKind = 'ui'
 
 export interface QaCheck {
-  kind: QaCheckKind | typeof SCENARIO_SHOTS
+  kind: QaCheckKind | ResultEntryKind
   name: string
   state: QaMark
   /** One sentence: what was done, what came. */
