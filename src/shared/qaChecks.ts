@@ -6,8 +6,17 @@ import type { QaMark } from './browser/constants'
  * runner does it). The result of each check — passed / failed / a warning, a sentence, a table «до / после»,
  * pictures (the layout's sizes).
  */
+/**
+ * A picture a run leaves in its folder that the window may read: the last page (final / failure), a layout check's
+ * screen (layout-<w>x<h>-<zoom>.png), the scenario's own (shot-<n>.png). Nothing else of the folder is handed out.
+ */
+export const isRunPicture = (name: string): boolean => /^(final|failure)\.png$|^layout-\d+x\d+-\d+\.png$|^shot-\d+\.png$/.test(name)
+
+/** A result entry that is no check: the scenario's own pictures (shot()). */
+export const SCENARIO_SHOTS = 'shots'
+
 export interface QaCheck {
-  kind: QaCheckKind
+  kind: QaCheckKind | typeof SCENARIO_SHOTS
   name: string
   state: QaMark
   /** One sentence: what was done, what came. */
@@ -19,7 +28,7 @@ export interface QaCheck {
   marks?: QaMark[]
   /** The rows go in groups by their first cell (shown once per group). */
   group?: boolean
-  /** Pictures the check left in the run's folder (layout-<w>x<h>-<zoom>.png), with what each is. */
+  /** Pictures the check left in the run's folder (layout-<w>x<h>-<zoom>.png; the scenario's own — shot-<n>.png), with what each is. */
   shots?: Array<{ file: string; label: string; bad: number }>
 }
 
@@ -336,23 +345,23 @@ const aroundLast = (lines: string[], last: number, open: string, close: string):
   code: [...lines.slice(0, last), open, ...indent([lines[last]]), close, ...lines.slice(last + 1)].join('\n'),
 })
 const WRAPS: Record<QaCheckKind, CheckWrap> = {
-  reload: { around: false, wrap: (_, all) => ({ code: `${all}\nawait qa.sameAfterReload() // шаг: Перезагрузить страницу и сравнить, что осталось как было` }) },
-  layout: { around: false, wrap: (_, all) => ({ code: `${all}\nawait qa.layout() // шаг: Проверить вёрстку на разных экранах и масштабах` }) },
+  reload: { around: false, wrap: (_, all) => ({ code: beforeReturn(all, 'await qa.sameAfterReload() // шаг: Перезагрузить страницу и сравнить, что осталось как было') }) },
+  layout: { around: false, wrap: (_, all) => ({ code: beforeReturn(all, 'await qa.layout() // шаг: Проверить вёрстку на разных экранах и масштабах') }) },
   context: {
     around: false,
     wrap: (_, all) => ({
-      code: `${all}\nawait qa.snapshot('${BEFORE_SWITCH}') // шаг: Запомнить поля до смены контекста\n// ↓ запишите здесь смену контекста (компании, раздела, категории…) (кнопка «Записать» допишет сюда), затем «Проверить ▾ → Сравнить с «до смены»»`,
+      code: beforeReturn(all, `await qa.snapshot('${BEFORE_SWITCH}') // шаг: Запомнить поля до смены контекста\n// ↓ запишите здесь смену контекста (компании, раздела, категории…) (кнопка «Записать» допишет сюда), затем «Проверить ▾ → Сравнить с «до смены»»`),
     }),
   },
   fuzz: {
     around: false,
-    wrap: (_, all) => (/\bqa\.fuzz\(/.test(all) ? { error: 'Перебор уже есть в сценарии — его параметры в «Параметры перебора»' } : { code: [all, ...fuzzLines(emptyFuzz())].join('\n') }),
+    wrap: (_, all) => (/\bqa\.fuzz\(/.test(all) ? { error: 'Перебор уже есть в сценарии — его параметры в «Параметры перебора»' } : { code: beforeReturn(all, fuzzLines(emptyFuzz()).join('\n')) }),
   },
   compare: {
     around: false,
     wrap: (_, all) =>
       /\bqa\.snapshot\(/.test(all)
-        ? { code: `${all}\nawait qa.compareWith('${BEFORE_SWITCH}') // шаг: Сравнить поля с тем, что было до смены` }
+        ? { code: beforeReturn(all, `await qa.compareWith('${BEFORE_SWITCH}') // шаг: Сравнить поля с тем, что было до смены`) }
         : { error: 'Сначала «Сменить контекст: запомнить «до смены»», потом запись смены — и только тогда сравнение' },
   },
   // (these find their own lines: a typing, an upload — an upload by qa.dropFiles is no page action)
@@ -387,6 +396,24 @@ const WRAPS: Record<QaCheckKind, CheckWrap> = {
       }),
   },
 }
+/**
+ * Lines put after the scenario's actions: before its closing `return …` (a statement of the top level, at the
+ * code's end) — after it they would never run; none — at the end.
+ */
+export function beforeReturn(code: string, added: string): string {
+  const lines = code.replace(/\s+$/, '').split('\n')
+  let at = -1
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^return\b/.test(lines[i])) {
+      at = i
+      break
+    }
+    // (a line of the top level that is no part of a return: the return is not the last statement)
+    if (/^\S/.test(lines[i]) && !/^[)}\]]/.test(lines[i])) break
+  }
+  return at < 0 ? [...lines, added].join('\n') : [...lines.slice(0, at), added, ...lines.slice(at)].join('\n')
+}
+
 /** A check put around the actions is in the code already. */
 const AROUND_IN_CODE = new RegExp(
   `\\bqa\\.(${(Object.keys(WRAPS) as QaCheckKind[])

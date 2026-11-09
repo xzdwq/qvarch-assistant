@@ -1,7 +1,7 @@
 /**
  * The browser component of a note:
  *
- *   ```browser name=site            its tabs (one `url:` line each — the one marked `*` is shown),
+ *   ```browser name=browser1            its tabs (one `url:` line each — the one marked `*` is shown),
  *   url: https://jira.example.com   its height; `name=` — the requests can be put into the note's
  *   url: * https://example.com      context ({{ site.requests }}).
  *   height: 560

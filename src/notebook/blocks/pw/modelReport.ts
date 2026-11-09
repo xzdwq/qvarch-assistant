@@ -38,6 +38,8 @@ export function checkLines(checks: readonly QaCheck[], brief: boolean): string[]
   let size = 0
   for (const c of checks) {
     out.push(`${mark(c.state)} Проверка «${c.name}»: ${c.summary}`)
+    // (the pictures are in the block's results — said, with the screens whose faults are outlined)
+    if (c.shots?.length) out.push(`  снимков в результате блока: ${c.shots.length}${c.shots.some((x) => x.bad) ? ` · с отмеченными проблемами: ${c.shots.filter((x) => x.bad).map((x) => x.label).join(', ')}` : ''}`)
     if (brief || !c.rows?.length) continue
     if (c.head?.length) out.push(`  ${c.head.join(' | ')}`)
     const rows = c.rows.slice(0, CHECK_ROWS_SHOWN)

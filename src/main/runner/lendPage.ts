@@ -16,6 +16,8 @@ export interface LentPage {
   source: BridgeSource
   /** Where it runs, for the run's first step. */
   label: string
+  /** The page's zoom now (its site's, kept by Chromium for the whole profile): the run's screens make up for it. */
+  zoom(): number
   /** The page back: the protocol let go, its throttling as it was. */
   release(): void
 }
@@ -45,6 +47,7 @@ function lendTab(browser: Browser, tab: Tab): Omit<LentPage, 'label'> {
   const wc = tab.view.webContents
   return {
     source: sourceOf(wc, (fn) => browser.cdp.listen('run', (t, m, p, s) => t === tab && fn(m, p, s), true)),
+    zoom: () => wc.getZoomFactor(),
     release: () => {
       browser.cdp.drop(tab, 'run')
       // the device mode the tab is in told to the page again (the run's window size undone over it)
@@ -62,6 +65,7 @@ function lendOwnPage(page: { wc: WebContents; close(): void }): Omit<LentPage, '
       dbg.on('message', h)
       return () => void dbg.off('message', h)
     }),
+    zoom: () => page.wc.getZoomFactor(),
     release: () => page.close(),
   }
 }

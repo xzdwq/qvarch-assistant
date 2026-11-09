@@ -1,6 +1,8 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CDPSession, Page } from 'playwright-core'
+import { PageScreen } from '../pageScreen'
+import { revealPage, rollPageBack, unrollPage } from './pageUnroll'
 import { PAGE_MARK } from '../../../shared/browser/pageMarks'
 import { UI } from '../../../shared/browser/uiKits'
 import type { QaCheck } from '../../../shared/qaChecks'
@@ -31,6 +33,8 @@ export class QaContext {
     readonly checks: QaCheck[],
     readonly dir: string,
     readonly filesRoot: string,
+    /** How the page's screen is set (its site's zoom made up for). */
+    readonly screen: PageScreen = new PageScreen(page),
   ) {
     this.traffic = new Traffic(page)
     this.sent = this.traffic.list
@@ -99,40 +103,63 @@ export class QaContext {
    */
   async shoot(cdp: CDPSession, file: string, where: string, seen: SeenFlaws): Promise<Flaw[]> {
     const page = this.page
-    const r = ((await page.evaluate(layoutProbe, UI).catch(() => undefined)) as { hscroll: number; items: Flaw[] } | undefined) ?? { hscroll: 0, items: [] }
-    const flaws = [...r.items, ...(r.hscroll ? [{ kind: 'Прокрутка вбок', text: `страница шире окна на ${r.hscroll}px`, x: 0, y: 0, w: 0, h: 0 }] : [])]
-    for (const x of flaws) {
-      // (a page wider than the window — one finding, its widest overrun)
-      const k = x.kind === 'Прокрутка вбок' ? x.kind : `${x.kind}|${x.text}`
-      const e = seen.get(k) ?? { kind: x.kind, text: x.text, where: [] }
-      if (x.kind === 'Прокрутка вбок') e.text = `страница шире окна (до ${Math.max(r.hscroll, Number(/\d+/.exec(e.text)?.[0] ?? 0))}px)`
-      e.where.push(where)
-      seen.set(k, e)
+    // the page drawn all the way down first (what it draws only once scrolled to), then — an app scrolling a box of its
+    // own — that box laid out whole: the measure and the picture take the whole page; put back after
+    await page.evaluate(revealPage).catch(() => undefined)
+    const unrolled = await page.evaluate(unrollPage).catch(() => false)
+    try {
+      const r = ((await page.evaluate(layoutProbe, UI).catch(() => undefined)) as { hscroll: number; items: Flaw[] } | undefined) ?? { hscroll: 0, items: [] }
+      const flaws = [...r.items, ...(r.hscroll ? [{ kind: 'Прокрутка вбок', text: `страница шире окна на ${r.hscroll}px`, x: 0, y: 0, w: 0, h: 0 }] : [])]
+      for (const x of flaws) {
+        // (a page wider than the window — one finding, its widest overrun)
+        const k = x.kind === 'Прокрутка вбок' ? x.kind : `${x.kind}|${x.text}`
+        const e = seen.get(k) ?? { kind: x.kind, text: x.text, where: [] }
+        if (x.kind === 'Прокрутка вбок') e.text = `страница шире окна (до ${Math.max(r.hscroll, Number(/\d+/.exec(e.text)?.[0] ?? 0))}px)`
+        e.where.push(where)
+        seen.set(k, e)
+      }
+      await page
+        .evaluate(
+          ({ boxes, mark }: { boxes: Flaw[]; mark: typeof PAGE_MARK }) => {
+            const layer = document.createElement('div')
+            layer.id = '__qa_layout'
+            layer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none'
+            // (on the page first: a word's width is known only there)
+            document.body.appendChild(layer)
+            for (const b of boxes) {
+              if (!b.w || !b.h) continue
+              const d = document.createElement('div')
+              d.style.cssText = `position:absolute;left:${b.x - 2}px;top:${b.y - 2}px;width:${b.w + 4}px;height:${b.h + 4}px;border:2px solid ${mark.line};border-radius:3px;background:${mark.fill}`
+              // what is wrong — on the outline itself
+              const tag = document.createElement('span')
+              tag.textContent = b.kind
+              tag.style.cssText = `position:absolute;left:-2px;top:-18px;padding:1px 5px;border-radius:3px;background:${mark.line};color:${mark.onLine};font:600 11px/15px system-ui,sans-serif;white-space:nowrap`
+              d.appendChild(tag)
+              layer.appendChild(d)
+              // (a word that would run past the screen's right edge — held to the outline's right side instead)
+              if (b.x - 2 - scrollX + tag.offsetWidth > innerWidth) ((tag.style.left = 'auto'), (tag.style.right = '-2px'))
+            }
+          },
+          { boxes: r.items, mark: PAGE_MARK },
+        )
+        .catch(() => undefined)
+      // the whole page down (the faults below the first screen seen too), as wide as the screen — no wider
+      const size = (await page.evaluate(() => ({ w: innerWidth, h: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0) })).catch(() => undefined)) ?? { w: 0, h: 0 }
+      // (the region in the screen's own pixels: the site's zoom — as the screen was set — counted)
+      const z = this.screen.zoom
+      const clip = size.w && size.h ? { x: 0, y: 0, width: size.w * z, height: Math.min(size.h, PICTURE_MAX_H) * z, scale: 1 } : undefined
+      const pic = (await cdp.send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip, captureBeyondViewport: true } : { captureBeyondViewport: false }) }).catch(() => undefined)) as
+        { data: string } | undefined
+      if (pic) writeFileSync(join(this.dir, file), Buffer.from(pic.data, 'base64'))
+      await page.evaluate(() => document.getElementById('__qa_layout')?.remove()).catch(() => undefined)
+      return flaws
+    } finally {
+      if (unrolled) await page.evaluate(rollPageBack).catch(() => undefined)
     }
-    await page
-      .evaluate(({ boxes, mark }: { boxes: Flaw[]; mark: typeof PAGE_MARK }) => {
-        const layer = document.createElement('div')
-        layer.id = '__qa_layout'
-        layer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none'
-        for (const b of boxes) {
-          if (!b.w || !b.h) continue
-          const d = document.createElement('div')
-          d.style.cssText = `position:absolute;left:${b.x - 2}px;top:${b.y - 2}px;width:${b.w + 4}px;height:${b.h + 4}px;border:2px solid ${mark.line};border-radius:3px;background:${mark.fill}`
-          // what is wrong — on the outline itself
-          const tag = document.createElement('span')
-          tag.textContent = b.kind
-          tag.style.cssText = `position:absolute;left:-2px;top:-18px;padding:1px 5px;border-radius:3px;background:${mark.line};color:${mark.onLine};font:600 11px/15px system-ui,sans-serif;white-space:nowrap`
-          d.appendChild(tag)
-          layer.appendChild(d)
-        }
-        document.body.appendChild(layer)
-      }, { boxes: r.items, mark: PAGE_MARK })
-      .catch(() => undefined)
-    const pic = (await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }).catch(() => undefined)) as { data: string } | undefined
-    if (pic) writeFileSync(join(this.dir, file), Buffer.from(pic.data, 'base64'))
-    await page.evaluate(() => document.getElementById('__qa_layout')?.remove()).catch(() => undefined)
-    return flaws
   }
 }
+/** A layout picture's height at most, CSS px (a very long page is cut there — its faults are still in the table). */
+const PICTURE_MAX_H = 12000
+
 /** An answer 2xx. */
 export const ok2 = (x: Exchange) => !!x.status && x.status >= 200 && x.status < 300

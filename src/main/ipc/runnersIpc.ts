@@ -165,7 +165,7 @@ export function registerRunnersIpc(app: AppContext): (reason: string) => void {
           name: str(job.name) || 'Сценарий',
           suite: (note.split('/').pop() ?? note).replace(/\.md$/i, ''),
           browser: (PW_BROWSERS as readonly string[]).includes(job.browser) ? job.browser : 'msedge',
-          own: bridge ? { url: bridge.url, label: lent!.label } : undefined,
+          own: bridge ? { url: bridge.url, label: lent!.label, zoom: lent!.zoom() } : undefined,
           headed: !!job.headed,
           trace: job.trace !== false,
           ignoreHTTPSErrors: browser.settings().acceptBadCerts,

@@ -10,6 +10,7 @@ export const browserSpec: BlockSpec<'browser'> = {
   detect: { by: 'fence', matches: (h) => h.lang === 'browser' },
   estimateHeight: (src) => 128 + browserHeightOf(src),
   rawEditable: true,
+  guide: 'Браузер прямо в заметке: name=browser1 (имя browser занято объектом Playwright). Сценарий в нём — ```ts playwright browser=qvarch in=<его name>: отдельная страница с тем же входом. Вкладки и высота — в теле: url: …, height: 560.',
   commands: [
     {
       id: 'browser',

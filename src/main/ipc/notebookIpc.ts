@@ -1,4 +1,5 @@
 import { app as electronApp, clipboard, dialog, shell } from 'electron'
+import { isRunPicture } from '../../shared/qaChecks'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -76,7 +77,7 @@ export function registerNotebookIpc(app: AppContext): void {
   handle('runSave', (_e, p, json) => vault.runWrite(str(p), str(json)))
   handle('runFile', (_e, p, key, name) => {
     const n = str(name)
-    if (!/^(final|failure)\.png$|^layout-\d+x\d+-\d+\.png$/.test(n)) throw new Error('Недопустимый файл')
+    if (!isRunPicture(n)) throw new Error('Недопустимый файл')
     return readFileSync(join(vault.runDir(str(p), str(key)), n))
   })
   const traces = new TraceServer(vault.runsRoot)

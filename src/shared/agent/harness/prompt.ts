@@ -16,7 +16,7 @@ export const HARNESS_PROTOCOL = `## Протокол harness (обязатель
 ### План
 - Разберись в задаче: прочитай документ и ссылки, поищи связанное в заметках (notes_search, note_related), посмотри память документа. Задача о проекте на диске — прочитай его правила (CLAUDE.md, AGENTS.md, README) и следуй им.
 - Пойми, что это за работа, выбери из каталога инструкции, которые ей подходят (только нужные), прочитай их (harness_guides_read) и строй план по ним.
-- План — инструментом harness_plan: steps — шаги (3–8, крупные и проверяемые, в порядке риска), criteria — критерии приёмки (конкретные, проверяемые; где можно — с исполняемым блоком заметки: path, block = его name=… латиницей, step — после какого шага проверять), guides — инструкции для работы, checkGuides — для финальной проверки.
+- План — инструментом harness_plan: steps — шаги (3–8, крупные и проверяемые, в порядке риска), criteria — критерии приёмки (конкретные, проверяемые; у каждого, который можно измерить, — исполняемый блок заметки: path, block = его name=… латиницей, step — после какого шага проверять; критерий про снимки / вёрстку проверяет блок с готовой проверкой layout; без блока — только то, что блоком не измерить: такой критерий проверит лишь финальная проверка, а если её нет — никто), guides — инструкции для работы, checkGuides — для финальной проверки.
 - Отдельный шаг «прогнать проверку / тест» не нужен: после шага его проверки запускает приложение, их результат ты получаешь.
 
 ### Работа
@@ -34,17 +34,28 @@ export const HARNESS_PROTOCOL = `## Протокол harness (обязатель
 const STEP_MARK = { todo: '○', doing: '◐', done: '✓', failed: '✗' } as const
 const minutesLeft = (run: HarnessRun, now: number) => Math.max(0, Math.round(run.limits.minutes - (now - run.startedAt) / 60_000))
 
+/**
+ * The plan without a final review: a criterion with no block of its own is checked by no one — said when the plan is
+ * made (give it a block) and at the work's end (its data in the report). None — a review there, or every one has a block.
+ */
+function unchecked(run: HarnessRun, mode: 'plan' | 'work'): string {
+  if (run.reviewer !== REVIEWER_OFF) return ''
+  if (mode === 'plan') return ' В этом прогоне финальной проверки нет: критерий без блока-проверки не проверит никто — каждому, который можно измерить (снимки, числа, состояние страницы, вывод команды), дай блок (path, block).'
+  const ids = run.criteria.filter((c) => !c.check).map((c) => c.id)
+  return ids.length ? ` Финальной проверки нет: критерии ${ids.join(', ')} без блока — перед done приведи по каждому данные (результат блока, строку документа); чего нет — так и скажи, не засчитывай.` : ''
+}
+
 /** Each kind of turn — what it is for. */
 const MODE_TASK: Record<TurnMode, (run: HarnessRun) => string> = {
   plan: (run) =>
-    run.go
+    (run.go
       ? 'Этап: ПЛАН — уточнение. Человек нажал «Начать», поменяв инструкции и / или написав замечания (выше). Реши сам: если текущий план им уже соответствует — верни его как есть; если нет — поправь только то, что требуется. Его правки шагов и критериев сохрани. Вызови harness_plan (guides и checkGuides — как выбрал человек) — работа начнётся сразу.'
       : run.pinned
       ? 'Этап: ПЛАН. Человек сам выбрал инструкции (они выше) — строй план по ним, guides и checkGuides дай те же. Вызови harness_plan. Работу не начинай.'
-      : 'Этап: ПЛАН. Разберись в задаче, выбери инструкции из каталога и прочитай их (harness_guides_read), потом вызови harness_plan с guides и checkGuides. Работу не начинай.',
+      : 'Этап: ПЛАН. Разберись в задаче, выбери инструкции из каталога и прочитай их (harness_guides_read), потом вызови harness_plan с guides и checkGuides. Работу не начинай.') + unchecked(run, 'plan'),
   work: (run) => {
     const i = currentStep(run)
-    return `Этап: РАБОТА. Текущий шаг ${i + 1}: «${run.steps[i]?.title ?? ''}». Сделай его и вызови harness_report (check — шаг готов к проверке; done — всё сделано).`
+    return `Этап: РАБОТА. Текущий шаг ${i + 1}: «${run.steps[i]?.title ?? ''}». Сделай его и вызови harness_report (check — шаг готов к проверке; done — всё сделано). Блок, который шаг создал или поменял, запусти (note_run) и прочитай результат до отчёта — кроме блоков-проверок критериев (их запускает harness).${unchecked(run, 'work')}`
   },
   fix: (run) => `Этап: ИСПРАВЛЕНИЕ. Разберись, почему не прошло, и исправь:\n${run.fix ?? ''}\nПотом harness_report state=check (или done).`,
   review: () =>

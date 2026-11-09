@@ -6,6 +6,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
+import { PageScreen } from './pageScreen'
+import { scenarioShots } from './scenarioShots'
 import { expect } from 'playwright/test'
 import { makeQa } from './qaRuntime'
 import type { MatrixOpts, MatrixOutcome } from './qa/fieldMatrixCheck'
@@ -37,7 +39,7 @@ interface Job {
   suite: string
   browser: PwBrowser
   /** The app's own browser (browser=qvarch): the bridge to the page lent, and where that page is. */
-  own?: { url: string; label: string }
+  own?: { url: string; label: string; zoom?: number }
   headed: boolean
   trace: boolean
   ignoreHTTPSErrors: boolean
@@ -135,6 +137,7 @@ async function run(job: Job): Promise<void> {
   }
 
   let page: Page | undefined
+  let screen: PageScreen | undefined
   let value: unknown
   /** What a ready check gathered (the field matrix: each value's outcome) — the block's value when it returns none. */
   let checkValue: unknown
@@ -150,6 +153,9 @@ async function run(job: Job): Promise<void> {
       context = got.context
       if (job.trace) await context.tracing.start({ screenshots: true, snapshots: true, sources: false, title: job.name })
       page = got.page ?? (await context.newPage())
+      // (the app's own page carries its site's zoom: a screen the scenario sets is the screen the page sees)
+      screen = new PageScreen(page, own?.zoom ?? 1)
+      screen.takeOver()
       // a click that opens the system's file window (a «Загрузить» button) — the window is never shown: the files go by
       // setInputFiles / qa.dropFiles
       page.on('filechooser', () => undefined)
@@ -164,7 +170,7 @@ async function run(job: Job): Promise<void> {
       context,
       browser,
       expect,
-      qa: makeQa(page!, step, checks, job.dir, job.files ?? '', (v) => (checkValue = v), matrixRunOf(job)),
+      qa: makeQa(page!, step, checks, job.dir, job.files ?? '', (v) => (checkValue = v), matrixRunOf(job), screen),
       gen,
       devices,
       step,
@@ -174,6 +180,8 @@ async function run(job: Job): Promise<void> {
         sets[k] = v
       },
       emit: out.emit,
+      // the scenario's own pictures, into its results (page.screenshot({ path }) never gets there)
+      shot: scenarioShots(() => page, job.dir, checks),
       setTimeout,
       clearTimeout,
       setInterval,

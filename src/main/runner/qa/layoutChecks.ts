@@ -19,13 +19,15 @@ export function layoutChecks(ctx: QaContext) {
     layout: (o: Screens = {}) =>
       step('Проверка: вёрстка на разных экранах', async () => {
         const name = 'Вёрстка на разных экранах'
-        // nothing to look at: a blank tab (the scenario never opened a page, or left it)
-        if (page.url().startsWith('about:'))
-          return ctx.verdict({ kind: 'layout', name, state: 'warn', summary: `вкладка пустая (${page.url()}) — проверять нечего: поставьте вёрстку после строки, где открыта нужная страница` })
+        // nothing to look at: a blank tab (the scenario never opened a page, or left it); a page of its own content
+        // (setContent — the address stays about:blank) is looked at
+        const blank = page.url().startsWith('about:') && !(await page.evaluate(() => !!document.body?.innerText.trim()).catch(() => false))
+        if (blank)
+          return ctx.verdict({ kind: 'layout', name, state: 'fail', summary: `вкладка пустая (${page.url()}) — проверять нечего: поставьте вёрстку после строки, где открыта нужная страница` })
         const widths = o.widths ?? [375, 768, 1280, 1920]
         const zooms = o.zooms ?? [80, 100, 125]
         const H = o.height ?? 900
-        const was = page.viewportSize()
+        const was = ctx.screen.size()
         const cdp = await page.context().newCDPSession(page)
         await ctx.quiet()
         const shots: NonNullable<QaCheck['shots']> = []
@@ -35,7 +37,7 @@ export function layoutChecks(ctx: QaContext) {
             for (const z of zooms) {
               const cw = Math.round((w * 100) / z)
               const ch = Math.round((H * 100) / z)
-              await cdp.send('Emulation.setDeviceMetricsOverride', { width: cw, height: ch, deviceScaleFactor: z / 100, mobile: false })
+              await ctx.screen.set({ width: cw, height: ch, dpr: z / 100 })
               await page.waitForTimeout(RELAYOUT_MS)
               await ctx.quiet(300, 5000)
               const where = `${w} px · ${z}%`
@@ -44,10 +46,10 @@ export function layoutChecks(ctx: QaContext) {
               shots.push({ file, label: where, bad: flaws.length })
             }
         } finally {
-          await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+          await ctx.screen.clear()
           // (a session left attached repeats every page event to the app's bridge for the rest of the run)
           await cdp.detach().catch(() => undefined)
-          if (was) await page.setViewportSize(was).catch(() => undefined)
+          if (was) await ctx.screen.set(was).catch(() => undefined)
         }
         const list = [...seen.values()]
         const rows = list.slice(0, 40).map((x) => [x.kind, x.text, x.where.length === shots.length ? 'на всех' : x.where.join(', ')])
@@ -66,7 +68,7 @@ export function layoutChecks(ctx: QaContext) {
         const widths = o.widths ?? [375, 768, 1280, 1920]
         const zooms = o.zooms ?? [100]
         const H = o.height ?? 900
-        const was = page.viewportSize()
+        const was = ctx.screen.size()
         const cdp = await page.context().newCDPSession(page)
         const shots: NonNullable<QaCheck['shots']> = []
         const seen: SeenFlaws = new Map()
@@ -81,9 +83,7 @@ export function layoutChecks(ctx: QaContext) {
               const cw = Math.round((w * 100) / z)
               const ch = Math.round((H * 100) / z)
               // 100% — the window itself (the scenario's clicks land as on a real one); a zoom — the density emulated
-              await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
-              await page.setViewportSize({ width: cw, height: ch })
-              if (z !== 100) await cdp.send('Emulation.setDeviceMetricsOverride', { width: cw, height: ch, deviceScaleFactor: z / 100, mobile: false })
+              await ctx.screen.set({ width: cw, height: ch, dpr: z / 100 })
               const where = `${w} px · ${z}%`
               let error: string | undefined
               await step(where, async () => {
@@ -103,10 +103,10 @@ export function layoutChecks(ctx: QaContext) {
               marks.push(flaws.length ? 'fail' : error ? 'warn' : 'ok')
             }
         } finally {
-          await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+          await ctx.screen.clear()
           // (a session left attached repeats every page event to the app's bridge for the rest of the run)
           await cdp.detach().catch(() => undefined)
-          if (was) await page.setViewportSize(was).catch(() => undefined)
+          if (was) await ctx.screen.set(was).catch(() => undefined)
           page.setDefaultTimeout(30000)
         }
         const failed = rows.filter((r) => r[1] === 'Сценарий не прошёл').length
