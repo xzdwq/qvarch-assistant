@@ -11,7 +11,11 @@ import { CheckTabs } from './checkTabs'
 import { DeviceEmulation } from './deviceEmulation'
 import { DockedDevTools } from './dockedDevTools'
 import { HookSearch } from './hookSearch'
+import { InspectMode } from './inspect/inspectMode'
+import { TechDetector } from './inspect/techDetector'
+import { LinkStatus } from './linkStatus'
 import { PageLayout } from './pageLayout'
+import { PageZoom } from './pageZoom'
 import { wirePageLife } from './pageLife'
 import { PageRulers, savePageAs } from './pageTools'
 import { PasswordVault } from './passwordVault'
@@ -28,6 +32,8 @@ export interface BrowserFiles {
   preload: string
   /** The hooks' search process. */
   hookWorker: string
+  /** The inspector's technologies process. */
+  inspectWorker: string
 }
 
 /**
@@ -45,6 +51,9 @@ export class BrowserCore implements TabEventsHost {
   readonly checkTabs: CheckTabs
   readonly scenario: ScenarioRecorder
   readonly devTools: DockedDevTools
+  readonly pageZoom: PageZoom
+  readonly linkStatus: LinkStatus
+  readonly inspector: InspectMode
   protected win: BrowserWindow | undefined
   protected uaDefault = ''
   protected pages: PageLayout
@@ -85,8 +94,11 @@ export class BrowserCore implements TabEventsHost {
     this.scenario = new ScenarioRecorder(this, (id, d) => this.devices.set(id, d))
     this.passwordVault = new PasswordVault(root, this)
     this.rulers = new PageRulers(this)
-    this.devTools = new DockedDevTools(this)
+    this.devTools = new DockedDevTools(this, { level: () => this.store.devtoolsZoom(), set: (z) => this.store.setDevtoolsZoom(z) })
+    this.pageZoom = new PageZoom(this, this.store)
     this.pages = new PageLayout(this, (t) => void this.devices.apply(t, true))
+    this.linkStatus = new LinkStatus({ window: () => this.win, pageBox: (id) => this.pages.boxOf(id) })
+    this.inspector = new InspectMode(this, new TechDetector(files.inspectWorker), (tab, x, y) => (this.devTools.open(tab), tab.view.webContents.inspectElement(x, y)), () => this.store.settings.inspectFrame)
     this.setupSession()
     // the tabs not looked at for a while fall asleep (each page is a process of its own: memory)
     setInterval(() => this.sleepIdle(), 60_000)
@@ -214,12 +226,14 @@ export class BrowserCore implements TabEventsHost {
   }
   layout(rects: Rect[]): void {
     this.pages.layout(rects)
+    this.linkStatus.follow()
   }
   shots(): Promise<Record<string, string>> {
     return this.pages.shots()
   }
   cover(on: boolean): void {
     this.pages.cover(on)
+    this.linkStatus.follow()
   }
 
   // ---------- tabs ----------
@@ -262,7 +276,7 @@ export class BrowserCore implements TabEventsHost {
     // (the tabs' list told only when one went to sleep)
     if (slept) this.changed()
   }
-  /** A tab asleep made again: its page loads at the address it had (the zoom kept). */
+  /** A tab asleep made again: its page loads at the address it had (zoomed as its site — when it is there). */
   wake(t: Tab): void {
     if (!t.asleep) return
     t.view = this.makeView()
@@ -279,7 +293,8 @@ export class BrowserCore implements TabEventsHost {
     if (this.recorder.recording) void this.recorder.attach(t)
     t.checkScript = undefined
     void this.checkTabs.sync(t)
-    t.view.webContents.setZoomFactor((t.t.zoom || 100) / 100)
+    void this.inspector.sync(t, true)
+    t.t.zoom = this.store.siteZoom(t.t.url)
     const ua = this.store.settings.ua
     if (ua) t.view.webContents.setUserAgent(ua)
     void t.view.webContents.loadURL(t.t.url).catch(() => undefined)
@@ -315,7 +330,7 @@ export class BrowserCore implements TabEventsHost {
   create(url = 'about:blank', opener?: string): BrowserTab {
     const id = browserId()
     const view = this.makeView()
-    const tab: Tab = { t: { id, url, title: url === 'about:blank' ? 'Новая вкладка' : url, loading: false, canBack: false, canFwd: false, zoom: 100 }, view, rec: false, ruler: { on: false, v: [], h: [] }, dbg: new Set(), seen: Date.now() }
+    const tab: Tab = { t: { id, url, title: url === 'about:blank' ? 'Новая вкладка' : url, loading: false, canBack: false, canFwd: false, zoom: this.store.siteZoom(url) }, view, rec: false, ruler: { on: false, v: [], h: [] }, dbg: new Set(), seen: Date.now() }
     this.tabs.set(id, tab)
     this.win?.contentView.addChildView(view)
     wireTab(this, tab)
@@ -338,6 +353,8 @@ export class BrowserCore implements TabEventsHost {
     this.checkTabs.forget(id)
     this.cancelLogins(id)
     this.devTools.close(t)
+    this.linkStatus.forget(id)
+    this.inspector.forget(id)
     try {
       if (!t.asleep) {
         this.win?.contentView.removeChildView(t.view)
@@ -384,14 +401,12 @@ export class BrowserCore implements TabEventsHost {
     }
     NAV[action]?.()
   }
+  /** A tab's zoom: its site's (every tab there goes with it), remembered between runs. */
   zoom(id: string, percent: number): void {
     const t = this.tabs.get(id)
     if (!t) return
     this.wake(t)
-    const p = Math.min(300, Math.max(25, Math.round(percent)))
-    t.view.webContents.setZoomFactor(p / 100)
-    t.t.zoom = p
-    this.changed()
+    this.pageZoom.set(t, percent)
   }
   /** «Сохранить как…»: the page with its files (or one .mhtml), where the user says. */
   async savePage(id: string): Promise<void> {

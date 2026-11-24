@@ -38,7 +38,11 @@ export interface TermPreset {
   cmd: string
   /** Enter right away (else it is only typed in — to finish it by hand). */
   run: boolean
+  /** A PowerShell script kept in the preset itself: `{{ script }}` in the command is its file (written when run). */
+  script?: string
 }
+/** The command of a preset that has only a script: run that script past the execution policy, without the profile. */
+export const SCRIPT_PRESET_CMD = 'powershell -NoProfile -ExecutionPolicy Bypass -File {{ quote(script) }}'
 /** A variable of one's own for the presets: a text (it may hold {{ … }}) or a JS expression. */
 export interface TermVar {
   id: string
@@ -109,6 +113,9 @@ export function cleanTermConfigPatch(v: unknown): Partial<TermConfig> {
 export const lineClearKey = (s: Pick<TermSession, 'ssh'>) => (s.ssh ? '\x15' : '\x1b')
 
 export const presetId = () => Math.random().toString(36).slice(2, 10)
+
+/** A text as one PowerShell argument: in single quotes, the quotes inside doubled (PowerShell takes ‘ ’ ‚ ‛ as quotes too). */
+export const psQuote = (text: unknown) => `'${String(text ?? '').replace(/['‘’‚‛]/g, '$&$&')}'`
 
 /** The colours offered for a reaction (CSS variables, in integrations.css); a new one takes them in turn. */
 export const WATCH_COLOR_VARS = Array.from({ length: 8 }, (_, i) => `--new-watch-${i + 1}` as const)

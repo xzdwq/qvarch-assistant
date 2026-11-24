@@ -27,7 +27,7 @@ export function usePresetRunner(shells: TermShells) {
     const id = shells.curId.value ?? (await shells.newShell())
     if (!id) return
     try {
-      const { text, empty } = await window.qa.termRender(id, p.cmd, answers)
+      const { text, empty } = await window.qa.termRender(id, p.cmd, answers, p.script)
       // an insert came out empty (no git branch here…) — ask first, the command would be cut
       if (empty.length) {
         emptyAsk.value = { preset: p, id, text, empty }

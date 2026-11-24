@@ -5,9 +5,10 @@ import type { TabCdp } from './tabCdp'
 
 /**
  * Who keeps a tab's DevTools protocol attached (the recording, the device mode, a hook's search, «Проверка», a
- * scenario's recording; `run` — a scenario run in the tab; `chrome` — the page told it is Chrome, all its life).
+ * scenario's recording; `run` — a scenario run in the tab; `chrome` — the page told it is Chrome, all its life;
+ * `inspect` — the inspector; `copy` — an element copied from the page's menu, for that moment).
  */
-export const CDP_OWNERS = ['rec', 'device', 'hook', 'check', 'pw', 'run', 'chrome'] as const
+export const CDP_OWNERS = ['rec', 'device', 'hook', 'check', 'pw', 'run', 'chrome', 'inspect', 'copy'] as const
 export type CdpOwner = (typeof CDP_OWNERS)[number]
 /** The work that keeps a tab awake while it is not shown (its page closed would lose it). */
 export const KEEPS_AWAKE: readonly CdpOwner[] = ['rec', 'pw', 'run', 'device']

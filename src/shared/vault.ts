@@ -84,6 +84,18 @@ export function resolveWiki(target: string, files: string[]): string | undefined
   return files.find((f) => (f.split('/').pop() ?? '').toLowerCase() === `${t}.md`)
 }
 
+/**
+ * The notes a reference names: a path in the vault ("folder/Name", ".md" and "\" allowed) — that one note; else a
+ * name — every note so named (several = ambiguous, the caller says so). Letter case does not matter.
+ */
+export function notesByRef(ref: string, files: string[]): string[] {
+  const t = ref.trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\.md$/i, '').toLowerCase()
+  if (!t) return []
+  const exact = files.filter((f) => f.toLowerCase() === `${t}.md`)
+  if (exact.length || t.includes('/')) return exact
+  return files.filter((f) => (f.split('/').pop() ?? '').toLowerCase() === `${t}.md`)
+}
+
 /** All note paths of a tree. */
 export function filesOf(nodes: VaultNode[]): string[] {
   const out: string[] = []

@@ -34,18 +34,38 @@ export function insertBookmark(list: Bookmark[], folder: string | undefined, ite
   if (!folder) return put(list)
   return list.map((b) => (b.id === folder ? { ...b, children: put(b.children ?? []) } : b.children ? { ...b, children: insertBookmark(b.children, folder, item, at) } : b))
 }
-/** Every folder, in the tree's order, its title indented by its depth (for a «where» list). */
-export function bookmarkFolders(list: Bookmark[]): Array<{ id: string; title: string }> {
-  const out: Array<{ id: string; title: string }> = []
+/** A folder as a row of the «where» tree: its depth (0 — on the bar), whether folders are inside it, open or shut. */
+export interface FolderRow {
+  id: string
+  title: string
+  depth: number
+  branches: boolean
+  open: boolean
+}
+/**
+ * The folders as the «where» tree's visible rows, in the tree's order: a shut folder hides what is inside it; `skip`
+ * (a folder being moved) is left out with all inside it — a folder never goes into itself.
+ */
+export function folderTreeRows(list: Bookmark[], shut: ReadonlySet<string>, skip?: string): FolderRow[] {
+  const out: FolderRow[] = []
+  const isFolder = (b: Bookmark) => !!b.children && b.id !== skip
   const walk = (l: Bookmark[], depth: number) => {
-    for (const b of l)
-      if (b.children) {
-        out.push({ id: b.id, title: `${'  '.repeat(depth)}${b.title}` })
-        walk(b.children, depth + 1)
-      }
+    for (const b of l) {
+      if (!isFolder(b)) continue
+      const branches = b.children!.some(isFolder)
+      const open = branches && !shut.has(b.id)
+      out.push({ id: b.id, title: b.title, depth, branches, open })
+      if (open) walk(b.children!, depth + 1)
+    }
   }
   walk(list, 0)
   return out
+}
+/** The folders a bookmark is inside, the outermost first (none — it is on the bar). */
+export function bookmarkPath(list: Bookmark[], id: string): string[] {
+  const path: string[] = []
+  for (let p = parentOfBookmark(list, id); p; p = parentOfBookmark(list, p.id)) path.unshift(p.id)
+  return path
 }
 /** The bookmarks with an address, folders opened (at most `max`). */
 export function flatBookmarks(list: Bookmark[], max: number): Bookmark[] {

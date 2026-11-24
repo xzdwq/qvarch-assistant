@@ -1,6 +1,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { HOUR, MINUTE } from '@shared/timeline'
 import type { Ms } from '@shared/types'
+import { clampWindow, rebaseWindow } from '@shared/tracker/timeWindow'
 
 /**
  * Visible time window of a timeline with smooth wheel zoom / pan.
@@ -14,12 +15,7 @@ export function useViewport(opts: { bounds: () => [Ms, Ms]; initial: () => [Ms, 
   let target: [Ms, Ms] | undefined
   let raf = 0
 
-  function clamp([a, b]: [Ms, Ms]): [Ms, Ms] {
-    const [lo, hi] = opts.bounds()
-    const span = Math.min(Math.max(b - a, minSpan), hi - lo)
-    const start = Math.min(Math.max(a, lo), hi - span)
-    return [start, start + span]
-  }
+  const clamp = (r: [Ms, Ms]): [Ms, Ms] => clampWindow(r, opts.bounds(), minSpan)
 
   function step(): void {
     raf = 0
@@ -48,6 +44,16 @@ export function useViewport(opts: { bounds: () => [Ms, Ms]; initial: () => [Ms, 
       else [from.value, to.value] = c
     },
     { immediate: true },
+  )
+
+  // another day: a zoomed window keeps its hours and scale there (otherwise it stays on the old day's ms)
+  watch(
+    () => opts.bounds(),
+    (nb, ob) => {
+      if (!zoomed.value || (nb[0] === ob[0] && nb[1] === ob[1])) return
+      if (target) target = rebaseWindow(target, ob, nb, minSpan)
+      ;[from.value, to.value] = rebaseWindow([from.value, to.value], ob, nb, minSpan)
+    },
   )
 
   function zoomAt(t: Ms, factor: number): void {

@@ -2,6 +2,7 @@ import type { ApiEndpoint } from '../apiMap'
 import type { CheckProblem, CheckSettings, CheckState } from '../check'
 import type { BrowserHook, HookHit, HookStatus } from '../hooks'
 import type { DeviceMode } from './devices'
+import type { InspectNews, InspectReq, InspectView } from './inspect/types'
 import type { ImportSource } from './browserImport'
 import type { PwRecState, RecFull, RecItem, RecState } from './recording'
 import type { BrowserSession } from './session'
@@ -45,6 +46,10 @@ export interface BrowserEvents {
   hooks: BrowserHook[]
   hookHits: { hookId: string; hits: HookHit[] }
   hookStatus: HookStatus
+  /** The inspector of a tab: its changed groups, its passport, on / off. */
+  inspect: InspectNews
+  /** An element copied from the page's menu (or why not). */
+  inspectCopied: { tabId: string; what: string; chars?: number; error?: string }
 }
 export type BrowserEventName = keyof BrowserEvents
 /** One event as the IPC carries it: its name, then its payload (a callback's parameters narrow by the name). */
@@ -86,6 +91,8 @@ export interface BrowserApi {
   go(id: string, url: string): void
   nav(id: string, action: NavAction): void
   zoom(id: string, percent: number): void
+  /** The tab's page takes the keyboard (its tab clicked): its selection ready to copy again. */
+  focusPage(id: string): void
   trust(id: string, host: string): void
   loginReply(reqId: string, user?: string, pass?: string): void
   /** The shown pages' pictures (by tab id; `id:dev` — its docked tools'), JPEG in base64. */
@@ -150,5 +157,19 @@ export interface BrowserApi {
   checkNote(ids: string[], note: string): void
   checkShow(tabId: string, sel: string): Promise<boolean>
   checkShot(tabId: string): Promise<Uint8Array | undefined>
+  /** The inspector on / off on a tab. */
+  inspect(id: string, on: boolean): void
+  /** A tab's inspector as a whole (none — never turned on). */
+  inspectView(id: string): InspectView | undefined
+  /** Its log starts anew. */
+  inspectClear(id: string): void
+  /** A request of the log with its headers. */
+  inspectRequest(id: string, reqId: string): InspectReq | undefined
+  /** The site's passport made again. */
+  inspectPassport(id: string): void
+  /** The passport and the log as Markdown (for an AI, for a bug). */
+  inspectReport(id: string): string
+  /** An element of the log (its CSS path) shown on the page (`scroll` — brought into view); no path — the mark taken off. */
+  inspectShow(id: string, selector?: string, scroll?: boolean): Promise<boolean>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'takeSession', 'saveSession', 'create', 'close', 'go', 'nav', 'zoom', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'takeSession', 'saveSession', 'create', 'close', 'go', 'nav', 'zoom', 'focusPage', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot', 'inspect', 'inspectView', 'inspectClear', 'inspectRequest', 'inspectPassport', 'inspectReport', 'inspectShow']

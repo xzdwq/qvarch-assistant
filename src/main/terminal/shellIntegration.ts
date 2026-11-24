@@ -59,9 +59,17 @@ if (Get-Command PSConsoleHostReadLine -ErrorAction SilentlyContinue) {
 /** What the shells must not inherit: NO_COLOR would make oh-my-posh and the tools colourless. */
 const DROP_ENV = /^(NO_COLOR|ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE|GIT_TERMINAL_PROMPT)$/i
 
-/** PowerShell's arguments: no logo, the profile or not, the prompt wrapper run first. */
-export function shellArgs(loadProfile: boolean): string[] {
-  return ['-NoLogo', ...(loadProfile ? [] : ['-NoProfile']), '-NoExit', '-EncodedCommand', Buffer.from(INIT, 'utf16le').toString('base64')]
+/**
+ * Into the folder a shell opens in — by PowerShell's location, not the process's working folder: Windows keeps a
+ * process's working folder open (it cannot be deleted while the shell lives, whatever `cd` did since), PowerShell's
+ * location holds nothing. After the profile, so the opened folder wins; a folder gone meanwhile — the shell stays put.
+ */
+export const startLocation = (dir: string): string => `Set-Location -LiteralPath '${dir.replace(/'/g, "''")}' -ErrorAction SilentlyContinue`
+
+/** PowerShell's arguments: no logo, the profile or not, the prompt wrapper run first, then into the folder (if one). */
+export function shellArgs(loadProfile: boolean, dir?: string): string[] {
+  const init = dir ? `${INIT}\n${startLocation(dir)}\n` : INIT
+  return ['-NoLogo', ...(loadProfile ? [] : ['-NoProfile']), '-NoExit', '-EncodedCommand', Buffer.from(init, 'utf16le').toString('base64')]
 }
 /** The shell's environment: the app's own, without what spoils it, marked as this terminal with true colour. */
 export function shellEnv(env: NodeJS.ProcessEnv): Record<string, string> {

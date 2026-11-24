@@ -1,3 +1,4 @@
+import type { InspectCommand } from './inspect/pageCommands'
 import type { PageLook } from './pageLook'
 
 /**
@@ -32,6 +33,10 @@ export interface PageEvents {
   ruler: [ruler: PageRuler]
   /** What may be acted on in this page (answered by `lookReply` with this id). */
   look: [id: string]
+  /** The inspector's frame and card over the element under the pointer: on / off. */
+  inspect: [on: boolean]
+  /** A command to the page's inspector (answered by `inspectReply` with this id). */
+  inspectCmd: [id: string, cmd: InspectCommand]
 }
 /** Page → main (no answer). */
 export interface PageSends {
@@ -41,6 +46,7 @@ export interface PageSends {
   pwSubmit: [login: PageLogin]
   rulerSet: [ruler: PageRuler]
   lookReply: [id: string, look: PageLook]
+  inspectReply: [id: string, answer: unknown]
 }
 /** Page → main, answered. */
 export interface PageAsks {
@@ -48,6 +54,8 @@ export interface PageAsks {
   /** The site's saved login (the page's own origin only). */
   pwGet: PageLogin | null
   rulerGet: PageRuler | null
+  /** A new page of the tab: is its inspector on. */
+  inspectGet: boolean
 }
 export type PageChannel = keyof PageEvents | keyof PageSends | keyof PageAsks
 
@@ -65,4 +73,8 @@ export const PAGE_CHANNELS = {
   rulerGet: 'qa:ruler-get',
   look: 'qa:page-look',
   lookReply: 'qa:page-look-reply',
+  inspect: 'qa:inspect',
+  inspectCmd: 'qa:inspect-cmd',
+  inspectReply: 'qa:inspect-reply',
+  inspectGet: 'qa:inspect-get',
 } as const satisfies Record<PageChannel, string>

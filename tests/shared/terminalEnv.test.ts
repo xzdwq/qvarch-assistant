@@ -30,6 +30,15 @@ describe('a new shell’s environment', () => {
     expect(env.TOOL).toBe('u')
     expect(env.APP_ONLY).toBe('1')
   })
+  it('the session’s over the system’s (USERNAME=SYSTEM there is the system account’s), the user’s over both', () => {
+    const env = freshEnv(
+      { USERNAME: 'me', USERDOMAIN: 'D' },
+      vars({ USERNAME: 'SYSTEM', TOOL: 'm' }),
+      vars({ TOOL: 'u', MY_BIN: ['%USERPROFILE%\\bin'] }),
+      vars({ USERNAME: 'me', USERDOMAIN: 'D', USERPROFILE: 'C:\\Users\\me', TOOL: 's' }),
+    )
+    expect(env).toMatchObject({ USERNAME: 'me', USERDOMAIN: 'D', USERPROFILE: 'C:\\Users\\me', TOOL: 'u', MY_BIN: 'C:\\Users\\me\\bin' })
+  })
   it('expandable user values see the system’s; nothing read — the app’s own, its PATH cleaned', () => {
     expect(freshEnv({ X: '1' }, vars({ ROOT: 'C:\\R' }), vars({ Path: ['%ROOT%\\bin'] })).Path).toBe('C:\\R\\bin')
     expect(freshEnv({ PATH: 'C:\\a; C:\\a;' }, new Map(), new Map()).PATH).toBe('C:\\a')

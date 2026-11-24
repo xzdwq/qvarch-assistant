@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import BookmarkFolderTree from './BookmarkFolderTree.vue'
 import { useBrowserView } from './browserViewContext'
 
-/** A bookmark or a folder made / changed (teleported): its name, its address, the folder it is in. */
-const { bmEdit, folders, saveBmEdit } = useBrowserView().bookmarks
+/** A bookmark or a folder made / changed (teleported): its name, its address, the folder it is in (a tree). */
+const { bmEdit, saveBmEdit } = useBrowserView().bookmarks
 </script>
 
 <template>
@@ -11,13 +12,10 @@ const { bmEdit, folders, saveBmEdit } = useBrowserView().bookmarks
       <div class="cap tw:text-muted tw:font-data tw:text-[10.5px] tw:tracking-[0.06em] tw:uppercase">{{ bmEdit.isFolder ? (bmEdit.id ? 'Папка' : 'Новая папка') : bmEdit.id ? 'Закладка' : 'Новая закладка — куда сохранить?' }}</div>
       <label class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">Название<input v-model="bmEdit.title" spellcheck="false" /></label>
       <label v-if="!bmEdit.isFolder" class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">Адрес<input v-model="bmEdit.url" spellcheck="false" /></label>
-      <label class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">
+      <div class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">
         Где
-        <select v-model="bmEdit.folder">
-          <option value="">Панель закладок</option>
-          <option v-for="f in folders.filter((x) => x.id !== bmEdit!.id)" :key="f.id" :value="f.id">{{ f.title }}</option>
-        </select>
-      </label>
+        <BookmarkFolderTree v-model="bmEdit.folder" :skip="bmEdit.isFolder ? bmEdit.id : undefined" />
+      </div>
       <div class="tqb tw:flex tw:gap-8"><button type="submit" class="primary">Сохранить</button><button type="button" @click="bmEdit = undefined">Отмена</button></div>
     </form>
   </div>

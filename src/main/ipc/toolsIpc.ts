@@ -5,6 +5,7 @@ import { ClipLog } from '../clipLog'
 import { HttpClient } from '../http'
 import { Terminals } from '../terminal'
 import type { SshShells } from '../terminal/terminals'
+import { PresetNotes } from '../terminal/presetNotes'
 import { sshProcess } from '../terminal/termProcess'
 import { SshService } from '../ssh/sshService'
 import { withCwdHook } from '../ssh/cwdHook'
@@ -44,6 +45,7 @@ function registerTerminal(app: AppContext): void {
     },
     (list, watchError) => app.emitToMain('onTermAlerts', { list, watchError }),
     sshShells,
+    new PresetNotes(() => app.vault),
   )
   app.terminals = term
   handle('termCreate', (_e, cwd) => term.create(typeof cwd === 'string' ? cwd : undefined))
@@ -61,7 +63,7 @@ function registerTerminal(app: AppContext): void {
   handle('termDirs', (_e, p) => term.dirs(String(p)))
   handle('termConfig', () => term.cfg)
   handle('termSetConfig', (_e, c) => term.setConfig(cleanTermConfigPatch(c)))
-  handle('termRender', (_e, id, cmd, answers) => term.render(String(id), String(cmd), answers ?? {}))
+  handle('termRender', (_e, id, cmd, answers, script) => term.render(String(id), String(cmd), answers ?? {}, typeof script === 'string' ? script : undefined))
 }
 
 /** The HTTP section: its collection, a request run, a folder's chain (its steps as events), import from the browser. */

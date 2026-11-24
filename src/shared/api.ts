@@ -274,7 +274,8 @@ export interface QaApi {
   termConfig(): Promise<TermConfig>
   termSetConfig(c: Partial<TermConfig>): Promise<TermConfig>
   /** A preset's command worked out for a shell (its folder, branch…), ask(…) → the answers. */
-  termRender(id: string, cmd: string, answers: Record<string, string>): Promise<{ text: string; empty: string[] }>
+  /** A preset's command worked out for a shell; its own script (if any) written to a file — `{{ script }}`. */
+  termRender(id: string, cmd: string, answers: Record<string, string>, script?: string): Promise<{ text: string; empty: string[] }>
   /** A shell's output; `end` — how much it has sent so far, this included. */
   onTermData(cb: (id: string, data: string, end: number) => void): () => void
   onTermState(cb: (list: TermSession[]) => void): () => void

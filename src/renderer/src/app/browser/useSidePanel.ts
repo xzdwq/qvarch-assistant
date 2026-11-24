@@ -2,8 +2,9 @@ import { computed, ref, watch } from 'vue'
 import { checkProblems } from '../../lib/browser'
 
 const REC = 'qa.browser.rec'
-/** What the side panel shows: «Проверка», the recording, «Карта API», the hooks. */
-export type PanelMode = 'rec' | 'hooks' | 'check' | 'map'
+/** What the side panel shows: «Проверка», the recording, «Карта API», the hooks, the inspector. */
+export const PANEL_MODES = ['rec', 'hooks', 'check', 'map', 'inspect'] as const
+export type PanelMode = (typeof PANEL_MODES)[number]
 
 /** The side panel at the right: open or not and its width (remembered, dragged), its mode, «Проверка»'s news. */
 export function useSidePanel() {

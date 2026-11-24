@@ -1,5 +1,6 @@
 import type { Input, WebContents } from 'electron'
 import type { NavAction, PageKeyCommand } from '../../shared/browser/constants'
+import { PAGE_ZOOM } from '../../shared/browser/zoom'
 
 /** A key pressed in a page, as the rules read it. */
 export interface PageKey {
@@ -31,8 +32,8 @@ const PAGE_KEYS: Array<{ when: (i: PageKey) => boolean; run: (a: PageKeyActions,
   { when: (i) => i.key === 'F12', run: (a) => a.nav('devtools') },
   { when: (i) => i.alt && i.key === 'ArrowLeft', run: (a) => a.nav('back') },
   { when: (i) => i.alt && i.key === 'ArrowRight', run: (a) => a.nav('fwd') },
-  { when: (i) => i.ctrl && (i.k === '=' || i.k === '+'), run: (a) => a.zoomBy(10) },
-  { when: (i) => i.ctrl && i.k === '-', run: (a) => a.zoomBy(-10) },
+  { when: (i) => i.ctrl && (i.k === '=' || i.k === '+'), run: (a) => a.zoomBy(PAGE_ZOOM.step) },
+  { when: (i) => i.ctrl && i.k === '-', run: (a) => a.zoomBy(-PAGE_ZOOM.step) },
   { when: (i) => i.ctrl && i.k === '0', run: (a) => a.zoomReset() },
   // Ctrl+` — the terminal's panel (the app's key, from a page too)
   { when: (i) => i.ctrl && !i.alt && i.code === 'Backquote', run: (a) => a.send('terminal') },

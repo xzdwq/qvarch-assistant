@@ -5,13 +5,16 @@ import Icon from '../../components/Icon.vue'
 import Popover from '../../components/Popover.vue'
 import UrlParts from '../../components/UrlParts.vue'
 import ZoomChip from '../../components/ZoomChip.vue'
-import { hostOf, type BPane } from '../../lib/browser'
+import { PAGE_ZOOM } from '@shared/browser/zoom'
+import { bLayout, hostOf, type BPane } from '../../lib/browser'
+import { inspectNotice } from '../../lib/browserInspect'
 import { useBrowserView } from './browserViewContext'
 import { originOf } from './usePasswords'
 
 /**
  * A pane's navigation: back, forward, reload, the site's data reset; the address line (its colours, the lock, the
- * suggestions, its saved passwords, the star, the address in parts); the zoom, the rulers, the device mode, the tools.
+ * suggestions, its saved passwords, the star, the address in parts); the zoom, the rulers, a copy's word from the
+ * inspector, the device mode, the tools.
  */
 const props = defineProps<{ p: BPane; pi: number }>()
 const view = useBrowserView()
@@ -62,9 +65,9 @@ const lineWidth = (el: HTMLElement) => el.getBoundingClientRect().width
       </Popover>
     </div>
     <button v-if="bounced[p.id]" class="bounce tw:inline-flex tw:flex-none tw:items-center tw:gap-5 tw:h-26 tw:py-0 tw:px-8 tw:border tw:border-caution/50 tw:rounded-[13px] tw:bg-caution/12 tw:text-warn-fg tw:text-[12px] tw:whitespace-nowrap tw:hover:enabled:bg-hover tw:hover:enabled:border-border-3" :title="bounced[p.id]" @click="bounced[p.id] = undefined"><Icon name="undo" :size="12" />сайт вернул адрес</button>
-    <ZoomChip v-if="p.active && pageShown(p.active)" :model-value="byId(p.active)?.zoom ?? 100" :min="25" :max="300" title="Масштаб страницы · колесо, Ctrl+колесо над страницей · клик — 100%" @update:model-value="(z) => p.active && zoom(p.active, z)" />
+    <ZoomChip v-if="p.active && pageShown(p.active)" :model-value="byId(p.active)?.zoom ?? PAGE_ZOOM.base" :min="PAGE_ZOOM.min" :max="PAGE_ZOOM.max" title="Масштаб страницы · колесо, Ctrl+колесо над страницей · клик — 100%" @update:model-value="(z) => p.active && zoom(p.active, z)" />
     <button class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: byId(p.active)?.ruler }" :title="byId(p.active)?.ruler ? 'Убрать линейки' : 'Линейки: тяните из линейки — линия, обратно в линейку — убрать'" :disabled="!pageShown(p.active)" @click="p.active && toggleRuler(p.active)"><Icon name="ruler" :size="14" /></button>
-    <button class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: !!byId(p.active)?.device }" :title="byId(p.active)?.device ? 'Выключить режим устройства (Ctrl+Shift+M)' : 'Режим устройства: страница как на телефоне, планшете или экране нужного размера (Ctrl+Shift+M)'" :disabled="!pageShown(p.active)" @click="toggleDevice(p.active)"><Icon name="devices" :size="15" /></button>
+    <span v-if="inspectNotice && pi === bLayout.cur" class="tw:flex-none tw:max-w-220 tw:truncate tw:px-6 tw:text-[11.5px] tw:text-up-fg tw:[&.err]:text-down-fg" :class="{ err: inspectNotice.error }" :title="inspectNotice.text">{{ inspectNotice.text }}</span>    <button class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: !!byId(p.active)?.device }" :title="byId(p.active)?.device ? 'Выключить режим устройства (Ctrl+Shift+M)' : 'Режим устройства: страница как на телефоне, планшете или экране нужного размера (Ctrl+Shift+M)'" :disabled="!pageShown(p.active)" @click="toggleDevice(p.active)"><Icon name="devices" :size="15" /></button>
     <button v-if="byId(p.active)?.devtools" class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :title="devSide === 'right' ? 'Инструменты разработчика — вниз' : 'Инструменты разработчика — справа'" @click="devSide = devSide === 'right' ? 'bottom' : 'right'"><Icon :name="devSide === 'right' ? 'rows' : 'columns'" :size="14" /></button>
     <button class="tb tw:flex-none tw:inline-flex tw:items-center tw:justify-center tw:w-28 tw:h-28 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:hover:enabled:bg-white/7 tw:hover:enabled:text-text tw:[&.on]:bg-accent/22 tw:[&.on]:text-accent-fg tw:disabled:opacity-35 tw:hover:enabled:border-border-3" :class="{ on: byId(p.active)?.devtools }" title="Инструменты разработчика (F12)" :disabled="!pageShown(p.active)" @click="p.active && nav(p.active, 'devtools')"><Icon name="code" :size="14" /></button>
   </div>

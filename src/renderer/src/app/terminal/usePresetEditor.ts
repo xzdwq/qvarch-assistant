@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { presetId, type TermPreset } from '@shared/terminal'
-import { upsertById } from '@shared/terminalEdit'
+import { presetToKeep, upsertById } from '@shared/terminalEdit'
 import type { TermConfigState } from './useTermConfig'
 
 /** The preset dialog: a new or an existing preset edited on a copy, kept into the list; removing one. */
@@ -17,11 +17,10 @@ export function usePresetEditor({ cfg, saveCfg }: TermConfigState) {
     editing.value = { ...p }
     isNew.value = false
   }
-  /** Kept (a preset without a name is named by its command). */
+  /** Kept (see presetToKeep: a preset of only a script runs it, one without a name is named by its command). */
   function saveEdit(): void {
-    const e = editing.value
-    if (!e || !e.cmd.trim()) return
-    if (!e.name.trim()) e.name = e.cmd.slice(0, 40)
+    const e = editing.value && presetToKeep(editing.value)
+    if (!e) return
     upsertById(cfg.value.presets, e)
     editing.value = undefined
     savePresets()

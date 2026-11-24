@@ -23,7 +23,7 @@ function answerPage<K extends keyof PageAsks>(name: K, fn: (from: WebContents) =
   ipcMain.handle(PAGE_CHANNELS[name], (e) => fn(e.sender))
 }
 
-/** The pages' channels answered by the browser's parts: the scenario's recorder, the passwords, the rulers, a look. */
+/** The pages' channels answered by the browser's parts: the scenario's recorder, the passwords, the rulers, a look, the inspector. */
 export function registerBrowserPageIpc(browser: Browser): void {
   answerPage('recGet', (wc) => browser.scenario.pageState(wc))
   onPage('recAct', (wc, act) => browser.scenario.onPageAct(wc, act))
@@ -33,4 +33,6 @@ export function registerBrowserPageIpc(browser: Browser): void {
   answerPage('rulerGet', (wc) => browser.rulers.of(wc))
   onPage('rulerSet', (wc, ruler) => browser.rulers.onPageSet(wc, ruler))
   onPage('lookReply', (wc, id, look) => browser.lookReply(wc, id, look))
+  answerPage('inspectGet', (wc) => browser.inspector.isOnFor(wc))
+  onPage('inspectReply', (wc, id, answer) => browser.inspector.ask.reply(wc, id, answer))
 }

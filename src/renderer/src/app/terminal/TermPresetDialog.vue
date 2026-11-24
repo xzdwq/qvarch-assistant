@@ -5,6 +5,7 @@ import { useTermView } from './termViewContext'
 const { editing, isNew, saveEdit } = useTermView().presets
 /** «{{ … }}» as text (a mustache inside a mustache would close it). */
 const INS = '{{ … }}'
+const SCRIPT = '{{ script }}'
 </script>
 
 <template>
@@ -13,9 +14,10 @@ const INS = '{{ … }}'
           <div class="cap">{{ isNew ? 'Новый пресет' : 'Пресет' }}</div>
           <label class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">Название<input class="tw:font-data tw:text-[12.5px]" v-model="editing.name" spellcheck="false" placeholder="Коммит с задачей" /></label>
           <label class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">Команда<textarea class="tw:font-data tw:text-[12.5px] tw:resize-y" v-model="editing.cmd" rows="4" spellcheck="false" placeholder="git commit -m &quot;[{{ task }}] &quot;"></textarea></label>
+          <label class="tqf tw:flex tw:flex-col tw:gap-5 tw:text-text-2 tw:text-[12px]">Скрипт PowerShell — необязательно; в команде это {{ SCRIPT }}<textarea class="tw:font-data tw:text-[12.5px] tw:resize-y tw:max-h-[45vh]" v-model="editing.script" rows="6" spellcheck="false" wrap="off" placeholder="param([string]$Root)&#10;Get-ChildItem $Root"></textarea></label>
           <label class="tqc tw:flex tw:items-center tw:gap-8 tw:text-text-2 tw:text-[12.5px]"><input v-model="editing.run" type="checkbox" />Сразу выполнить (иначе — только вписать, чтобы дописать руками)</label>
-          <p class="hint tw:m-0 tw:text-muted tw:text-[11.5px]">{{ INS }} — JavaScript: currentBranch, task, cwd, dir, date, свои переменные, ask('Вопрос'), sh('команда')… — подробно в «Инструкции».</p>
-          <div class="tqb tw:flex tw:gap-8"><button type="submit" class="primary" :disabled="!editing.cmd.trim()">Сохранить</button><button type="button" @click="editing = undefined">Отмена</button></div>
+          <p class="hint tw:m-0 tw:text-muted tw:text-[11.5px]">{{ INS }} — JavaScript: currentBranch, task, cwd, dir, date, свои переменные, ask('Вопрос'), sh('команда'), note('Заметка'), quote(…), script… — подробно в «Инструкции».</p>
+          <div class="tqb tw:flex tw:gap-8"><button type="submit" class="primary" :disabled="!editing.cmd.trim() && !editing.script?.trim()">Сохранить</button><button type="button" @click="editing = undefined">Отмена</button></div>
         </form>
       </div>
 </template>

@@ -62,16 +62,23 @@ export function cleanPath(path: string): string {
 }
 
 /**
- * The environment a new shell starts with: the app's own (`base`), the system's variables over it, the user's over
- * those (each expanded against what is there by then); PATH — the system's, then the user's, cleaned. A name keeps
- * the case it has in `base` (Windows' names know no case).
+ * The environment a new shell starts with, in Windows' sign-in order: the app's own (`base`), the system's variables
+ * over it, the session's over those (`Volatile Environment`: the signed-in USERNAME, USERDOMAIN, USERPROFILE… — the
+ * system key holds USERNAME=SYSTEM, meant for the system account only), the user's over all (each expanded against
+ * what is there by then); PATH — the system's, then the user's, cleaned. A name keeps the case it has in `base`
+ * (Windows' names know no case).
  */
-export function freshEnv(base: Readonly<Record<string, string>>, machine: ReadonlyMap<string, RegVar>, user: ReadonlyMap<string, RegVar>): Record<string, string> {
+export function freshEnv(
+  base: Readonly<Record<string, string>>,
+  machine: ReadonlyMap<string, RegVar>,
+  user: ReadonlyMap<string, RegVar>,
+  session: ReadonlyMap<string, RegVar> = new Map(),
+): Record<string, string> {
   const env: Record<string, string> = { ...base }
   const set = (name: string, value: string) => void (env[keyOf(env, name) ?? name] = value)
   const textOf = (v: RegVar) => (v.expand ? expandVars(v.value, env) : v.value)
   const pathOf = (vars: ReadonlyMap<string, RegVar>) => [...vars].find(([k]) => k.toLowerCase() === 'path')?.[1]
-  for (const vars of [machine, user]) for (const [name, v] of vars) if (name.toLowerCase() !== 'path') set(name, textOf(v))
+  for (const vars of [machine, session, user]) for (const [name, v] of vars) if (name.toLowerCase() !== 'path') set(name, textOf(v))
   const mp = pathOf(machine)
   const up = pathOf(user)
   if (mp || up) set('Path', cleanPath([mp ? textOf(mp) : '', up ? textOf(up) : ''].join(';')))

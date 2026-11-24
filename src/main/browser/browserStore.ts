@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { readJsonFile, writeJsonQuietly } from '../fsAtomic'
 import { browserId, cleanSession, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserSession, type BrowserEmit, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
+import { cleanZoomMemory, clampDevtoolsZoom, siteZoom, withSiteZoom, type ZoomMemory } from '../../shared/browser/zoom'
 import type { Tab } from './tab'
 
 const MAX_HISTORY = 3000
@@ -8,7 +9,7 @@ const MAX_HISTORY = 3000
 const MAX_VISITS = 30000
 const VISITS_DAYS = 90
 
-type BrowserData = { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings; session?: BrowserSession }
+type BrowserData = { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings; session?: BrowserSession; zoom: ZoomMemory }
 
 /** The settings as written (anything missing or wrong — the default). */
 function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
@@ -18,6 +19,7 @@ function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
     acceptBadCerts: typeof st.acceptBadCerts === 'boolean' ? st.acceptBadCerts : DEFAULT_BROWSER_SETTINGS.acceptBadCerts,
     sleepMin: typeof st.sleepMin === 'number' && st.sleepMin >= 0 ? Math.min(240, Math.round(st.sleepMin)) : DEFAULT_BROWSER_SETTINGS.sleepMin,
     sitePermissions: typeof st.sitePermissions === 'boolean' ? st.sitePermissions : DEFAULT_BROWSER_SETTINGS.sitePermissions,
+    inspectFrame: typeof st.inspectFrame === 'boolean' ? st.inspectFrame : DEFAULT_BROWSER_SETTINGS.inspectFrame,
   }
 }
 
@@ -48,13 +50,36 @@ export class BrowserStore {
   }
   private read(): BrowserData {
     // a broken file is set aside — the bookmarks in it are not overwritten by the first save
-    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings>; session: unknown }>>(this.file) ?? {}
+    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings>; session: unknown; zoom: unknown }>>(this.file) ?? {}
     return {
       bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
       history: Array.isArray(d.history) ? d.history : [],
       settings: readSettings(d.settings ?? {}),
       session: cleanSession(d.session),
+      zoom: cleanZoomMemory(d.zoom),
     }
+  }
+
+  // ---------- the zoom (each site's, the DevTools') ----------
+  /** The zoom a page at this address opens with, %. */
+  siteZoom(url: string): number {
+    return siteZoom(this.data.zoom, url)
+  }
+  setSiteZoom(url: string, percent: number): void {
+    const sites = withSiteZoom(this.data.zoom.sites, url, percent)
+    if (sites === this.data.zoom.sites) return
+    this.data.zoom = { ...this.data.zoom, sites }
+    this.save()
+  }
+  /** The docked DevTools' zoom level (0 — 100 %). */
+  devtoolsZoom(): number {
+    return this.data.zoom.devtools
+  }
+  setDevtoolsZoom(level: number): void {
+    const devtools = clampDevtoolsZoom(level)
+    if (devtools === this.data.zoom.devtools) return
+    this.data.zoom = { ...this.data.zoom, devtools }
+    this.save()
   }
 
   // ---------- the open tabs (opened again on the next run) ----------

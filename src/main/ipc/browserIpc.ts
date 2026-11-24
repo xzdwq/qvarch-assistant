@@ -16,7 +16,7 @@ import { emit, handle, handleDispatch, listen } from './router'
 export function registerBrowserIpc(app: AppContext): void {
   // the pages' preload: the section's tabs and the notes' browsers (a scenario's recorder) — one file
   const preload = join(app.mainDir, '../preload/browser.js')
-  const browser = new Browser(app.store.root, { preload, hookWorker: app.script('hookWorker.js') }, (type, payload) => app.emitToMain('onBrowser', ...([type, payload] as BrowserEventArgs)))
+  const browser = new Browser(app.store.root, { preload, hookWorker: app.script('hookWorker.js'), inspectWorker: app.script('inspectWorker.js') }, (type, payload) => app.emitToMain('onBrowser', ...([type, payload] as BrowserEventArgs)))
   app.browser = browser
   registerBrowserPageIpc(browser)
   if (app.windows.main && !app.windows.main.isDestroyed()) browser.attach(app.windows.main)

@@ -17,6 +17,8 @@ export interface BrowserTab {
   zoom: number
   /** The developer tools are open (docked under the page). */
   devtools?: boolean
+  /** The inspector is on (the element under the pointer framed, the log, the site's passport). */
+  inspect?: boolean
   /** The rulers are shown over the page. */
   ruler?: boolean
   /** The device mode: the page as on that device. */
@@ -102,8 +104,10 @@ export interface BrowserSettings {
    * uses them runs here too); off — refused to every site. Nothing is asked of the person.
    */
   sitePermissions: boolean
+  /** The inspector frames the element under the pointer (its card beside it); off — only the log and the passport. */
+  inspectFrame: boolean
 }
-export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '', acceptBadCerts: true, sleepMin: 15, sitePermissions: true }
+export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = { history: true, ua: '', acceptBadCerts: true, sleepMin: 15, sitePermissions: true, inspectFrame: true }
 
 export const browserId = () => Math.random().toString(36).slice(2, 10)
 /** What the address line turns into a URL: a host → https, words → a search. */

@@ -47,6 +47,10 @@ export function registerMcpIpc(app: AppContext, crons: CronSchedule): McpHost {
       if (!app.browser) throw new Error('Встроенный браузер ещё не открыт — откройте раздел «Браузер»')
       return app.browser.look(url)
     },
+    inspectPage: async (url) => {
+      if (!app.browser) throw new Error('Встроенный браузер ещё не открыт — откройте раздел «Браузер»')
+      return app.browser.inspectFor(url)
+    },
     ui: askWindow,
     kinds: () => app.store.cfg.kinds,
     crons,

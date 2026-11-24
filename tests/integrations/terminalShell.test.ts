@@ -33,6 +33,12 @@ describe('terminal: the shell start', () => {
     expect(shellArgs(false)).toContain('-NoProfile')
     const script = Buffer.from(shellArgs(true).at(-1)!, 'base64').toString('utf16le')
     expect(script).toContain('function global:prompt')
+    expect(script).not.toContain('Set-Location')
+  })
+  it('goes into the folder by its location, last (after the prompt wrapper), quotes doubled', () => {
+    const script = Buffer.from(shellArgs(false, "C:\\Проекты\\it's").at(-1)!, 'base64').toString('utf16le')
+    expect(script.trimEnd().split('\n').at(-1)).toBe("Set-Location -LiteralPath 'C:\\Проекты\\it''s' -ErrorAction SilentlyContinue")
+    expect(script.indexOf('function global:prompt')).toBeLessThan(script.indexOf('Set-Location'))
   })
   it('drops what spoils the colours and marks the terminal', () => {
     const env = shellEnv({ PATH: 'C:\\bin', NO_COLOR: '1', electron_run_as_node: '1', EMPTY: undefined })

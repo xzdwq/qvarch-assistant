@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Bookmark, BrowserTab } from '../../src/shared/browser'
-import { bookmarkFolders, findBookmark, flatBookmarks, insertBookmark, parentOfBookmark, withoutBookmarks, withTabIcons } from '../../src/shared/browser/bookmarkTree'
+import { bookmarkPath, findBookmark, folderTreeRows, flatBookmarks, insertBookmark, parentOfBookmark, withoutBookmarks, withTabIcons } from '../../src/shared/browser/bookmarkTree'
 
 /** A bar: a page, a folder (a page, a folder inside it with a page), another page. */
 const tree = (): Bookmark[] => [
@@ -37,11 +37,17 @@ describe('the bookmarks tree', () => {
     expect(ids(insertBookmark(tree(), 'g', x, 0))).toEqual(['a', ['f', ['b', ['g', ['x', 'c']]]], 'd'])
     expect(ids(insertBookmark(tree(), 'f', x, 99))).toEqual(['a', ['f', ['b', ['g', ['c']], 'x']], 'd'])
   })
-  it('its folders indented by depth; its pages flat', () => {
-    expect(bookmarkFolders(tree())).toEqual([
-      { id: 'f', title: 'Work' },
-      { id: 'g', title: '  Docs' },
+  it('its folders as a tree (shut ones hide theirs, a moved folder never into itself); its pages flat', () => {
+    expect(folderTreeRows(tree(), new Set())).toEqual([
+      { id: 'f', title: 'Work', depth: 0, branches: true, open: true },
+      { id: 'g', title: 'Docs', depth: 1, branches: false, open: false },
     ])
+    expect(folderTreeRows(tree(), new Set(['f'])).map((r) => [r.id, r.open])).toEqual([['f', false]])
+    // the folder moved: it and all inside it are not places to go; a folder left with none inside — no branches
+    expect(folderTreeRows(tree(), new Set(), 'f')).toEqual([])
+    expect(folderTreeRows(tree(), new Set(), 'g')).toEqual([{ id: 'f', title: 'Work', depth: 0, branches: false, open: false }])
+    expect(bookmarkPath(tree(), 'c')).toEqual(['f', 'g'])
+    expect(bookmarkPath(tree(), 'a')).toEqual([])
     expect(flatBookmarks(tree(), 10).map((b) => b.id)).toEqual(['a', 'b', 'c', 'd'])
     expect(flatBookmarks(tree(), 2).map((b) => b.id)).toEqual(['a', 'b'])
   })

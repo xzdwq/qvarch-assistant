@@ -1,6 +1,6 @@
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { browserId, toUrl, type Bookmark, type BrowserTab } from '@shared/browser'
-import { bookmarkFolders, findBookmark, flatBookmarks, insertBookmark, parentOfBookmark, withoutBookmarks, withTabIcons } from '@shared/browser/bookmarkTree'
+import { bookmarkPath, findBookmark, flatBookmarks, insertBookmark, parentOfBookmark, withoutBookmarks, withTabIcons } from '@shared/browser/bookmarkTree'
 import { bookmarks, hostOf, tabs } from '../../lib/browser'
 
 /** A bookmark or a folder being made / changed (the dialog's fields). */
@@ -21,7 +21,7 @@ export function useBookmarks(deps: { active: () => boolean; byId: (id?: string) 
   const saveBms = (list: Bookmark[]) => void window.qa.browser('setBookmarks', JSON.parse(JSON.stringify(list)) as Bookmark[])
   /** Bookmark icons that would not load (a globe instead). */
   const badIcon = reactive(new Set<string>())
-  const folders = computed(() => bookmarkFolders(bookmarks.value))
+  const hasFolders = computed(() => !!findBm((b) => !!b.children))
   const bmEdit = ref<BookmarkEdit>()
   /** The star: off — removed; on — with folders, asked where to (and its name); else straight to the bar. */
   function toggleStar(id?: string): void {
@@ -29,7 +29,7 @@ export function useBookmarks(deps: { active: () => boolean; byId: (id?: string) 
     if (!t || isBlank(t.url)) return
     if (findBm((b) => b.url === t.url)) return saveBms(withoutBookmarks(bookmarks.value, (b) => b.url === t.url))
     const title = t.title || hostOf(t.url)
-    if (folders.value.length) bmEdit.value = { id: '', title, url: t.url, folder: '', isFolder: false, icon: t.favicon || undefined }
+    if (hasFolders.value) bmEdit.value = { id: '', title, url: t.url, folder: '', isFolder: false, icon: t.favicon || undefined }
     else saveBms([...bookmarks.value, { id: browserId(), title, url: t.url, ...(t.favicon ? { icon: t.favicon } : {}) }])
   }
   // a bookmark without its icon gets it when its page shows one
@@ -45,9 +45,10 @@ export function useBookmarks(deps: { active: () => boolean; byId: (id?: string) 
     const item: Bookmark = e.isFolder
       ? { id: e.id || browserId(), title: e.title.trim() || 'Папка', children: old?.children ?? [] }
       : { id: e.id || browserId(), title: e.title.trim() || hostOf(e.url), url: toUrl(e.url), ...(e.icon ? { icon: e.icon } : {}) }
+    // (a folder never into itself, nor into a folder inside it — it would go with it: kept where it was)
+    const into = e.folder && (e.folder === item.id || bookmarkPath(bookmarks.value, e.folder).includes(item.id)) ? (parentOf(item.id)?.id ?? '') : e.folder
     const list = e.id ? withoutBookmarks(bookmarks.value, (b) => b.id === e.id) : [...bookmarks.value]
-    // (a folder never into itself)
-    saveBms(insertBookmark(list, e.folder && e.folder !== item.id ? e.folder : undefined, item))
+    saveBms(insertBookmark(list, into || undefined, item))
   }
 
   // ---------- a folder's contents: a list under its chip (going deeper inside it, back with ‹) ----------
@@ -107,5 +108,5 @@ export function useBookmarks(deps: { active: () => boolean; byId: (id?: string) 
     { immediate: true },
   )
   const flatBms = computed(() => flatBookmarks(bookmarks.value, 24))
-  return { findBm, parentOf, starred, saveBms, badIcon, folders, bmEdit, toggleStar, saveBmEdit, folderPop, folderAnchor, bmDrag, openFolder, folderBack, popFolder, openBm, onBmMenu, popular, flatBms }
+  return { findBm, parentOf, starred, saveBms, badIcon, hasFolders, bmEdit, toggleStar, saveBmEdit, folderPop, folderAnchor, bmDrag, openFolder, folderBack, popFolder, openBm, onBmMenu, popular, flatBms }
 }

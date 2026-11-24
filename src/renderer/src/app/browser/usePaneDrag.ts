@@ -5,7 +5,7 @@ import { bLayout, moveTab, splitWith } from '../../lib/browser'
  * The panes by the pointer: the split's width dragged; tabs dragged — along a row, the order; onto the other pane's
  * row, moved there; onto a page's edge, a split; onto the other pane, moved into it.
  */
-export function usePaneDrag(deps: { show: (pi: number, id: string) => void }) {
+export function usePaneDrag(deps: { show: (pi: number, id: string) => void; focusPage: (id: string) => void }) {
   /** The panes' box (its panes found under the pointer). */
   const panesEl = ref<HTMLElement>()
   const tabDrag = ref<{ pane: number; id: string; x: number; y: number }>()
@@ -96,8 +96,11 @@ export function usePaneDrag(deps: { show: (pi: number, id: string) => void }) {
     } else if (pi !== from) zone.value = { pane: pi, side: 'here' }
     return from
   }
+  /** A tab clicked: shown, its page takes the keyboard (a selection made before is ready to copy again). */
   function onTabClick(pi: number, id: string): void {
-    if (!dragged) deps.show(pi, id)
+    if (dragged) return
+    deps.show(pi, id)
+    deps.focusPage(id)
   }
   return { panesEl, tabDrag, zone, onSplitResize, onTabDown, onTabClick }
 }

@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import vm from 'node:vm'
-import { BUILTIN_VARS, builtinValues, VAR_NAME, type BuiltinVarFacts, type TermInfo, type TermVar } from '../../shared/terminal'
+import { BUILTIN_VARS, builtinValues, psQuote, VAR_NAME, type BuiltinVarFacts, type TermInfo, type TermVar } from '../../shared/terminal'
+import type { PresetNotes } from './presetNotes'
+import { presetScriptFile } from './presetScriptFile'
 import { findUp } from './projectInfo'
 
 /** A JS insert's time limit (a formula, `{{ … }}`, `sh(…)`). */
@@ -33,6 +35,8 @@ export interface VariableSource {
   info?: TermInfo
   vars: TermVar[]
   shell: string
+  /** The notebook's notes for `note(…)` (none — it throws). */
+  notes?: Pick<PresetNotes, 'note'>
 }
 
 /** The lock files by package manager, in the order they are looked for. */
@@ -62,6 +66,13 @@ export function variableScope(src: VariableSource, answers: Record<string, strin
   const ctx = vm.createContext({
     ...builtinValues(builtinFacts(src)),
     ask: (label: string, def = '') => answers[label] ?? def,
+    /** A text as one PowerShell argument (in quotes). */
+    quote: psQuote,
+    /** A notebook note by name or path → its file on disk. */
+    note: (ref: string) => {
+      if (!src.notes) throw new Error('note(…) здесь недоступна')
+      return src.notes.note(ref)
+    },
     /** The output of a command in this folder (5 s at most). */
     sh: (command: string) => {
       try {
@@ -84,11 +95,14 @@ export function variableScope(src: VariableSource, answers: Record<string, strin
 
 /**
  * A preset's command with its `{{ … }}` worked out (JS over the variables; ask(…) → the answers given), and the
- * inserts that came out empty (not the questions — an empty answer is meant).
+ * inserts that came out empty (not the questions — an empty answer is meant). The preset's own script (if it has
+ * one) is written to a file — `script` in the command is that file.
  */
-export function renderPreset(src: VariableSource, cmd: string, answers: Record<string, string>): { text: string; empty: string[] } {
+export function renderPreset(src: VariableSource, cmd: string, answers: Record<string, string>, script?: string): { text: string; empty: string[] } {
   const empty: string[] = []
-  const text = fillInserts(cmd, variableScope(src, answers), empty)
+  const ctx = variableScope(src, answers)
+  if (script?.trim()) ctx.script = presetScriptFile(script)
+  const text = fillInserts(cmd, ctx, empty)
   return { text, empty }
 }
 

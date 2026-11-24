@@ -1,7 +1,22 @@
-import { compileWatch, VAR_NAME, type TermAlert, type TermSession, type TermVar, type TermWatch } from './terminal'
+import { compileWatch, SCRIPT_PRESET_CMD, VAR_NAME, type TermAlert, type TermPreset, type TermSession, type TermVar, type TermWatch } from './terminal'
 
 /** «{{ name }}» — how a variable is written in a preset. */
 export const insertOf = (name: string): string => '{{ ' + name + ' }}'
+
+/**
+ * A preset as it is kept, or undefined when there is nothing to run: a blank script dropped; only a script — the
+ * command runs it; no name — named by the command.
+ */
+export function presetToKeep(p: TermPreset): TermPreset | undefined {
+  const { script, ...rest } = p
+  const out: TermPreset = script?.trim() ? { ...rest, script } : rest
+  if (!out.cmd.trim()) {
+    if (!out.script) return undefined
+    out.cmd = SCRIPT_PRESET_CMD
+  }
+  if (!out.name.trim()) out.name = out.cmd.slice(0, 40)
+  return out
+}
 
 /** Why a variable being edited cannot be kept ('' — it can). */
 export function varNameError(v: TermVar, vars: TermVar[]): string {

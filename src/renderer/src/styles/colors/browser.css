@@ -22,6 +22,27 @@
   --api-method-put: #38bdf8;
   --api-method-patch: #a78bfa;
   --api-method-delete: #ef4444;
+  /* the inspector's charts: categorical slots in a fixed order (checked for colour-blind separation on the dark
+     panels, adjacent pairs) — a series takes its slot, never by rank; the rest is gray */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #0ca30c;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-rest: #6e7681;
+  /* a request's source in the inspector's log (the slots in REQ_CATS' order) */
+  --req-doc: var(--viz-1);
+  --req-js: var(--viz-2);
+  --req-api: var(--viz-3);
+  --req-img: var(--viz-4);
+  --req-css: var(--viz-5);
+  --req-font: var(--viz-6);
+  --req-media: var(--viz-7);
+  --req-ws: var(--viz-8);
+  --req-other: var(--viz-rest);
   /* the device preview: the backdrop's stripes, the frame's shadow */
   --device-stripe: rgb(255 255 255 / 0.015);
   --device-frame-shadow: 0 8px 30px rgb(0 0 0 / 0.45);

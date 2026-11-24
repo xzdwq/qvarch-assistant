@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import * as pty from '@lydell/node-pty'
 import { presetId, type TermAlert, type TermConfig, type TermSession } from '../../shared/terminal'
 import { readProjectInfo, ToolVersions } from './projectInfo'
+import type { PresetNotes } from './presetNotes'
 import { renderPreset, variableValues, type VariableSource } from './presetVariables'
 import { commandFailure, COMMAND_ACCEPTED, isCtrlCExit, lastPromptMark, openMarkTail, PROMPT_MARK_START, shellArgs, shellEnv } from './shellIntegration'
 import { TermConfigFile } from './termConfigFile'
@@ -72,6 +73,8 @@ export class Terminals {
     private onState: (list: TermSession[]) => void,
     onAlerts: (list: TermAlert[], watchError: string) => void,
     private readonly sshShells?: SshShells,
+    /** The notebook's notes a preset may name (`note(…)`). */
+    private readonly presetNotes?: PresetNotes,
   ) {
     this.cfgFile = new TermConfigFile(root)
     this.cfg = this.cfgFile.read()
@@ -178,9 +181,12 @@ export class Terminals {
   /**
    * The shell's process in its pseudo-console. Its console not connected in time (the library's own 5 s; the app or
    * the computer busy) ends it at once with -1 and no output — started again a couple of times before it is told.
+   * The process works in the home folder and goes into `dir` by PowerShell's location (see startLocation): a folder
+   * the shell was opened in stays free to delete.
    */
   private spawn(ses: Session, dir: string, env: Record<string, string>, attempt: number): void {
-    const p = ptyProcess(pty.spawn(this.shell, shellArgs(this.cfg.profile), { name: 'xterm-256color', cols: ses.cols ?? 120, rows: ses.rows ?? 30, cwd: dir, env }))
+    const args = shellArgs(this.cfg.profile, dir)
+    const p = ptyProcess(pty.spawn(this.shell, args, { name: 'xterm-256color', cols: ses.cols ?? 120, rows: ses.rows ?? 30, cwd: homedir(), env }))
     ses.p = p
     let said = false
     p.onData((d) => {
@@ -363,11 +369,11 @@ export class Terminals {
   /** Where a shell's variables are worked out (no shell — the last folder used). */
   private variableSource(id: string | undefined): VariableSource {
     const ses = id ? this.sessions.get(id) : undefined
-    return { cwd: ses?.s.info.cwd || this.cfg.lastCwd || homedir(), info: ses?.s.info, vars: this.cfg.vars, shell: this.shell }
+    return { cwd: ses?.s.info.cwd || this.cfg.lastCwd || homedir(), info: ses?.s.info, vars: this.cfg.vars, shell: this.shell, notes: this.presetNotes }
   }
   /** A preset's command with its `{{ … }}` worked out for a shell, and the inserts that came out empty. */
-  render(id: string, cmd: string, answers: Record<string, string>): { text: string; empty: string[] } {
-    return renderPreset(this.variableSource(id), cmd, answers)
+  render(id: string, cmd: string, answers: Record<string, string>, script?: string): { text: string; empty: string[] } {
+    return renderPreset(this.variableSource(id), cmd, answers, script)
   }
   /** Every variable's value for a shell, as text (or its error). */
   values(id?: string): Record<string, { value?: string; error?: string }> {

@@ -1,6 +1,8 @@
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import type { Bookmark, BrowserEventArgs, BrowserTab, RecItem, RecState } from '@shared/browser'
 import { DEFAULT_CHECK, type CheckProblem, type CheckState } from '@shared/check'
+import type { InspectNews } from '@shared/browser/inspect/types'
+import { applyInspectNews, inspectCopied } from './browserInspect'
 
 /** The browser's state from the main process: tabs, the recording, bookmarks — shared by the section and the status bar. */
 export const tabs = shallowRef<BrowserTab[]>([])
@@ -54,6 +56,8 @@ const STATE_EVENTS: Record<string, (p: unknown) => void> = {
   },
   // a tab the app opened (a recording, a link, a trace): shown in the current pane
   activate: (p) => placeTab(bLayout.cur, (p as { id: string }).id),
+  inspect: (p) => applyInspectNews(p as InspectNews),
+  inspectCopied: (p) => inspectCopied(p as { what: string; chars?: number; error?: string }),
 }
 /** The browser's other news (a tab opened by a page, a key in a page, a sign-in asked…). */
 export function onBrowserEvent(l: Listener): void {

@@ -7,6 +7,8 @@ import { onMain, sendMain } from './pageIpc'
 import './page/passwordFill'
 // rulers over the page
 import './page/rulers'
+// the inspector's frame and card over the element under the pointer, its commands (hide, edit, locator…)
+import './page/inspector'
 // no passkeys offered to pages (a hung Windows dialog would take the page's input with it)
 import './noPasskeys'
 // no page drags the app's window (a site's own app-region: drag)

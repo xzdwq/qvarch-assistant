@@ -107,6 +107,10 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
     bLayout.panes[pi].active = id
     bLayout.cur = pi
   }
+  /** A tab's page takes the keyboard (a start page / an error has none — the window keeps it). */
+  function focusPage(id: string): void {
+    if (pageShown(id)) window.qa.browser('focusPage', id)
+  }
   async function toggleSplit(): Promise<void> {
     if (bLayout.panes.length > 1) {
       const [a, b] = bLayout.panes
@@ -148,5 +152,5 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
   }
   onMounted(() => window.addEventListener('keydown', onKey))
   onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-  return { byId, isBlank, pageShown, curId, newTab, closeTab, reopenTab, show, toggleSplit, paneOf, openUrl }
+  return { byId, isBlank, pageShown, curId, newTab, closeTab, reopenTab, show, focusPage, toggleSplit, paneOf, openUrl }
 }

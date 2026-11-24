@@ -12,6 +12,7 @@ import { findSwagger, type SwaggerFound } from './browser/swaggerFind'
 import { lookAtTab, takeLookReply } from './browser/pageLook'
 import { pageLookText } from '../shared/browser/pageLook'
 import { sameAddress } from '../shared/browser/scenarioAddress'
+import type { InspectReq, InspectView } from '../shared/browser/inspect/types'
 import { newBookmarksOnly, type ImportSource } from '../shared/browser/browserImport'
 import { importSources, pickPasswordsCsv, readImportBookmarks } from './browser/browserImport'
 
@@ -131,6 +132,10 @@ export class Browser extends BrowserCore implements BrowserApi {
   ruler(id: string, on: boolean): void {
     this.rulers.set(id, on)
   }
+  /** A tab's page takes the keyboard (its tab clicked): its selection is the page's again, ready to copy. */
+  focusPage(id: string): void {
+    this.pages.focus(id)
+  }
 
   // ---------- settings, bookmarks, the history ----------
   settings(): BrowserSettings {
@@ -141,6 +146,10 @@ export class Browser extends BrowserCore implements BrowserApi {
     if (typeof patch.history === 'boolean') s.history = patch.history
     if (typeof patch.acceptBadCerts === 'boolean') s.acceptBadCerts = patch.acceptBadCerts
     if (typeof patch.sleepMin === 'number' && patch.sleepMin >= 0) s.sleepMin = Math.min(240, Math.round(patch.sleepMin))
+    if (typeof patch.inspectFrame === 'boolean' && patch.inspectFrame !== s.inspectFrame) {
+      s.inspectFrame = patch.inspectFrame
+      this.inspector.frameChanged()
+    }
     if (typeof patch.ua === 'string') {
       s.ua = patch.ua.replace(/[\r\n]+/g, ' ').trim().slice(0, 1000)
       const ua = this.applyUserAgent()
@@ -347,5 +356,40 @@ export class Browser extends BrowserCore implements BrowserApi {
   }
   apiMapClear(host?: string): void {
     this.checkTabs.apiMap.clear(host)
+  }
+
+  // ---------- the inspector ----------
+  inspect(id: string, on: boolean): void {
+    this.inspector.set(String(id), on === true)
+  }
+  inspectView(id: string): InspectView | undefined {
+    return this.inspector.view(String(id))
+  }
+  inspectClear(id: string): void {
+    this.inspector.clear(String(id))
+  }
+  inspectRequest(id: string, reqId: string): InspectReq | undefined {
+    return this.inspector.request(String(id), String(reqId))
+  }
+  inspectPassport(id: string): void {
+    this.inspector.refreshPassport(String(id))
+  }
+  inspectReport(id: string): string {
+    return this.inspector.report(String(id))
+  }
+  inspectShow(id: string, selector?: string, scroll?: boolean): Promise<boolean> {
+    return this.inspector.show(String(id), typeof selector === 'string' && selector ? selector : undefined, scroll === true)
+  }
+  /**
+   * The inspector's report for an AI: the tab at the address (none — the one shown); its inspector turned on if it
+   * was not, and its passport waited for a while.
+   */
+  async inspectFor(url?: string): Promise<string> {
+    const shown = [...this.tabs.values()].filter((x) => !x.asleep && /^https?:/.test(x.t.url)).sort((a, b) => Number(this.pages.isShown(b.t.id)) - Number(this.pages.isShown(a.t.id)) || b.seen - a.seen)
+    const t = url ? shown.find((x) => sameAddress(x.view.webContents.getURL() || x.t.url, url)) : shown[0]
+    if (!t) throw new Error(url ? `Вкладка с адресом ${url} не открыта во встроенном браузере` : 'Во встроенном браузере нет открытой страницы')
+    if (!this.inspector.isOn(t.t.id)) this.inspector.set(t.t.id, true)
+    for (let i = 0; i < 40 && this.inspector.view(t.t.id)?.passport?.pending !== false; i++) await new Promise((r) => setTimeout(r, 300))
+    return this.inspector.report(t.t.id)
   }
 }

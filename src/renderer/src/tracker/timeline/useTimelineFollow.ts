@@ -74,6 +74,14 @@ export function useTimelineFollow(props: TimelineFollowProps, scale: TimelineSca
     },
   )
 
+  // back on today (now appears): following puts now at its place at once, at the current scale
+  watch(
+    () => props.now !== undefined,
+    (has) => {
+      if (has && props.follow?.follow) applyFollow(true, to.value - from.value)
+    },
+  )
+
   // the width settles after mounting (a dashboard widget): "now" is put back at its offset
   let followRo: ResizeObserver | undefined
   onMounted(() => {

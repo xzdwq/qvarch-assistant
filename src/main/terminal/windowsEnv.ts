@@ -7,6 +7,8 @@ import { freshEnv, parseRegExport, type RegVar } from '../../shared/terminalEnv'
 /** Where Windows keeps the variables: the system's, the user's. */
 const MACHINE_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'
 const USER_KEY = 'HKCU\\Environment'
+/** The sign-in session's variables (USERNAME, USERPROFILE, APPDATA…; its subkey — the session's name). */
+const SESSION_KEY = 'HKCU\\Volatile Environment'
 const READ_MS = 5000
 
 /**
@@ -24,8 +26,8 @@ export async function windowsShellEnv(base: Record<string, string>): Promise<Rec
   if (process.platform !== 'win32') return base
   const dir = await mkdtemp(join(tmpdir(), 'qv-env-'))
   try {
-    const [machine, user] = await Promise.all([readKey(dir, MACHINE_KEY, 'm.reg'), readKey(dir, USER_KEY, 'u.reg')])
-    return freshEnv(base, machine, user)
+    const [machine, user, session] = await Promise.all([readKey(dir, MACHINE_KEY, 'm.reg'), readKey(dir, USER_KEY, 'u.reg'), readKey(dir, SESSION_KEY, 's.reg')])
+    return freshEnv(base, machine, user, session)
   } catch {
     return freshEnv(base, new Map(), new Map())
   } finally {

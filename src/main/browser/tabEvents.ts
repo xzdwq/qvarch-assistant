@@ -1,5 +1,9 @@
 import { clipboard, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import type { NavAction } from '../../shared/browser'
+import { PAGE_ZOOM } from '../../shared/browser/zoom'
+import type { InspectMode } from './inspect/inspectMode'
+import type { LinkStatus } from './linkStatus'
+import type { PageZoom } from './pageZoom'
 import type { Hooks } from '../hooks'
 import type { BrowserStore } from './browserStore'
 import type { CheckTabs } from './checkTabs'
@@ -22,6 +26,9 @@ export interface TabEventsHost extends BrowserHost {
   readonly files: { preload: string }
   nav(id: string, action: NavAction): void
   zoom(id: string, percent: number): void
+  readonly pageZoom: PageZoom
+  readonly linkStatus: LinkStatus
+  readonly inspector: InspectMode
   savePage(id: string): Promise<void>
   viewSource(id: string): void
   /** A site asks to sign in (the window asks the user; `cb` without a user — cancelled). */
@@ -60,6 +67,8 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     b.scenario.onNavigated(wc, url)
     b.hookSearch.sync(tab, url)
     t.url = url
+    // the new page zoomed as its site is remembered (the zoom shown is the page's own)
+    b.pageZoom.follow(tab, url)
     // its title comes later (the old one is the previous page's)
     b.store.visit(tab, url, '', true)
     sync()
@@ -107,7 +116,9 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
     t.loading = false
     b.changed()
   })
-  wc.on('zoom-changed', (_e, dir) => b.zoom(t.id, t.zoom + (dir === 'in' ? 10 : -10)))
+  wc.on('zoom-changed', (_e, dir) => b.zoom(t.id, t.zoom + (dir === 'in' ? PAGE_ZOOM.step : -PAGE_ZOOM.step)))
+  // the link under the pointer: shown in the page's bottom corner
+  wc.on('update-target-url', (_e, url) => b.linkStatus.hover(t.id, url))
   // target=_blank: a new tab next to this one; a popup (a sign-in) — a window of its own that keeps its opener
   wirePopups(wc, { owner: () => b.window(), toTab: (url) => b.create(url, t.id), chrome: () => b.uaOverride(), preload: b.files.preload })
   wc.on('login', (e, _details, info, cb) => {
@@ -117,13 +128,17 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
   handlePageKeys(wc, {
     nav: (a) => b.nav(t.id, a),
     zoomBy: (step) => b.zoom(t.id, t.zoom + step),
-    zoomReset: () => b.zoom(t.id, 100),
+    zoomReset: () => b.zoom(t.id, PAGE_ZOOM.base),
     send: (key) => b.emit('key', { id: t.id, key }),
     save: () => void b.savePage(t.id),
     viewSource: () => b.viewSource(t.id),
     print: () => wc.print(),
   })
-  wc.on('context-menu', (_e, p) => Menu.buildFromTemplate(pageMenu(b, tab, p)).popup({ window: b.window() }))
+  // the menu: the inspector's part about the element first (asked of the page — a moment), then the page's own
+  wc.on('context-menu', (_e, p) => {
+    const site = /^(https?|file):/.test(wc.getURL())
+    void (site ? b.inspector.menuFor(tab, p).catch(() => []) : Promise.resolve([])).then((own) => !wc.isDestroyed() && Menu.buildFromTemplate([...own, ...pageMenu(b, tab, p)]).popup({ window: b.window() }))
+  })
 }
 
 /** A picture's type by its first bytes (servers name icons anyhow): the kinds an icon comes as. */

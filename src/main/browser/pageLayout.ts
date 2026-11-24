@@ -1,6 +1,9 @@
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Box, BrowserHost, Rect, Tab } from './tab'
 
+/** How long a page asked to take the keyboard waits to be shown, ms (a tab switched to shows at the next layout). */
+const FOCUS_WAIT_MS = 1000
+
 /**
  * Where the tabs' pages are: each a native view over the main window, put where the renderer says (the rest hidden);
  * made way for while something of the app opens over them (their pictures shown in their place meanwhile).
@@ -19,6 +22,29 @@ export class PageLayout {
   /** A tab's page is on the screen now. */
   isShown(id: string): boolean {
     return this.shownIds.has(id)
+  }
+  /** Where a tab's page is in the window while it is on the screen (not covered by the app); else none. */
+  boxOf(id: string): { x: number; y: number; width: number; height: number } | undefined {
+    const t = this.host.tabs.get(id)
+    return t && !t.asleep && !this.covered && this.shownIds.has(id) ? t.view.getBounds() : undefined
+  }
+  /** A tab's page to take the keyboard (its tab clicked): at once when shown, else as soon as the next layout shows it. */
+  private focusWanted?: { id: string; until: number }
+  focus(id: string): void {
+    const t = this.host.tabs.get(id)
+    if (!t) return
+    if (!t.asleep && !this.covered && this.shownIds.has(id)) return void (this.focusWanted = undefined, t.view.webContents.focus())
+    this.focusWanted = { id, until: Date.now() + FOCUS_WAIT_MS }
+  }
+  /** The page waited for, now on the screen: it takes the keyboard (asked long ago — not any more). */
+  private focusIfWanted(): void {
+    const w = this.focusWanted
+    if (!w || this.covered) return
+    if (Date.now() > w.until) return void (this.focusWanted = undefined)
+    const t = this.host.tabs.get(w.id)
+    if (!t || t.asleep || !this.shownIds.has(w.id)) return
+    this.focusWanted = undefined
+    t.view.webContents.focus()
   }
   /** A tab closed (or its page made anew: shown again by the next layout). */
   forget(id: string): void {
@@ -68,6 +94,7 @@ export class PageLayout {
       }
     }
     this.shownIds = new Set([...want].filter((id) => this.host.tabs.has(id)))
+    this.focusIfWanted()
   }
   /**
    * The shown pages' pictures (and their docked tools'), to stand in their place while something of the app is over
