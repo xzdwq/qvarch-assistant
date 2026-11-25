@@ -13,7 +13,7 @@ import { commentsOf } from '@nb/workspace/noteComments'
 import { Compartment, EditorState, Transaction } from '@codemirror/state'
 import { splicesOf } from '@shared/textSplice'
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers, placeholder } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab, redo, undo } from '@codemirror/commands'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { codeFolding, foldGutter, foldKeymap } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -32,7 +32,9 @@ import { noteComponents } from '@nb/editor/components/componentWidget'
 import { componentGuard, componentTail } from '@nb/editor/components/componentOps'
 import { loopBands } from '@nb/editor/loopBands'
 import { recordingMarker, showRecordingPlace, takeRecordingPlace } from '@nb/editor/recording'
-import { wrapSelection } from '@nb/editor/formatting'
+import { markKey, runEdit } from '@nb/editor/formatting'
+import type { ToolAction } from '@nb/editor/toolbar/toolbarItems'
+import { noteCommand } from '@nb/commands/registry'
 import { useCommandMenu } from '@nb/editor/commandMenu/useCommandMenu'
 import CommandMenu from '@nb/editor/commandMenu/CommandMenu.vue'
 import { useEditorContextMenu } from '@nb/editor/contextMenu/useEditorContextMenu'
@@ -70,7 +72,7 @@ const hostApi = editorHost.of({
   requestRecording: () => emit('record'),
   requestImage: () => emit('pickImage'),
 })
-const { menu: commandMenu, extensions: commandMenuExtensions } = useCommandMenu(getView)
+const { menu: commandMenu, extensions: commandMenuExtensions, runAtCursor } = useCommandMenu(getView)
 const { menu: contextMenu, extension: contextMenuExtension } = useEditorContextMenu(getView, (text, at) => emit('toEvent', text, at))
 
 // ---------- a recording going on: shown where it will be ----------
@@ -137,7 +139,7 @@ onMounted(() => {
         contextMenuExtension,
         placeholder('Пишите… # заголовок, **жирный**, - список, - [ ] задача, [[другая заметка]]'),
         keymap.of([{ key: 'ArrowUp', run: exitUpFromFirstLine }]),
-        keymap.of([{ key: 'Mod-b', run: wrapSelection('**') }, { key: 'Mod-i', run: wrapSelection('*') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
+        keymap.of([{ key: 'Mod-b', run: markKey('bold') }, { key: 'Mod-i', run: markKey('italic') }, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap]),
         EditorView.updateListener.of((u) => {
           // this person's cursor in a shared note: told to the others (typing — once it pauses)
           const sel = u.state.selection.main
@@ -281,8 +283,23 @@ function revealAt(line: number, col = 0, len = 0): void {
   view.focus()
 }
 
+/** A toolbar button carried out at the cursor: a formatting edit, an «@» command, a step of the history. */
+function runTool(a: ToolAction): void {
+  if (!view || props.readonly) return
+  view.focus()
+  switch (a.kind) {
+    case 'edit':
+      return runEdit(view, a.edit)
+    case 'command':
+      return runAtCursor(noteCommand(a.id))
+    case 'history':
+      return void (a.dir === 'undo' ? undo : redo)(view)
+  }
+}
+
 defineExpose({
   focus: () => view?.focus(),
+  runTool,
   /**
    * A click on the note's empty places (under its last line, beside it in the margins): the cursor to the nearest
    * place of the text — under the text, its end; beside a line, that line's nearest end.

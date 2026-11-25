@@ -9,6 +9,8 @@ import type { BrowserStore } from './browserStore'
 import type { CheckTabs } from './checkTabs'
 import type { DockedDevTools } from './dockedDevTools'
 import type { HookSearch } from './hookSearch'
+import { openExternalFrom } from './externalApps'
+import { reportFound } from './findOnPage'
 import { handlePageKeys } from './pageKeys'
 import { wirePopups } from './popupWindows'
 import type { ScenarioRecorder } from './scenarioRecorder'
@@ -119,8 +121,10 @@ export function wireTab(b: TabEventsHost, tab: Tab): void {
   wc.on('zoom-changed', (_e, dir) => b.zoom(t.id, t.zoom + (dir === 'in' ? PAGE_ZOOM.step : -PAGE_ZOOM.step)))
   // the link under the pointer: shown in the page's bottom corner
   wc.on('update-target-url', (_e, url) => b.linkStatus.hover(t.id, url))
+  // Ctrl+F: the search's counts
+  reportFound(wc, t.id, b.emit)
   // target=_blank: a new tab next to this one; a popup (a sign-in) — a window of its own that keeps its opener
-  wirePopups(wc, { owner: () => b.window(), toTab: (url) => b.create(url, t.id), chrome: () => b.uaOverride(), preload: b.files.preload })
+  wirePopups(wc, { owner: () => b.window(), toTab: (url) => b.create(url, t.id), toApp: (from, url) => void openExternalFrom(b, from, url), chrome: () => b.uaOverride(), preload: b.files.preload })
   wc.on('login', (e, _details, info, cb) => {
     e.preventDefault()
     b.askLogin(tab, info, (u, p) => (u === undefined ? cb() : cb(u, p ?? '')))

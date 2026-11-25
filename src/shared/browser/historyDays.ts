@@ -12,7 +12,7 @@ export function dayTitle(k: string, now = Date.now()): string {
   return new Date(`${k}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: k.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric' })
 }
 /** The visits holding every word of the search (in the title or the address, any case). */
-export function findVisits(visits: Visit[], q: string): Visit[] {
+export function findVisits<T extends Visit>(visits: T[], q: string): T[] {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
   if (!words.length) return visits
   return visits.filter((v) => {

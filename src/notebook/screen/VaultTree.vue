@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { VaultNode } from '@shared/vault'
-import { treeRows } from '@shared/vaultTree'
+import { treeRows, type TreeRow } from '@shared/vaultTree'
 import Icon from '@renderer/components/Icon.vue'
 import NodeMark from '@renderer/components/NodeMark.vue'
 import AiSignalMark from '@renderer/components/AiSignalMark.vue'
@@ -43,6 +43,22 @@ function shareTitle(n: VaultNode): string {
   if (!n.dir) return `Общий документ — ${who}`
   return `${b.whole ? 'Общая папка' : 'Общие документы в папке'} — ${who}`
 }
+/** A row's indent step and where a folder's chevron is centred in its row (px): the lines hang from there. */
+const STEP = 14
+const lineX = (col: number) => 12 + col * STEP
+/**
+ * A row's lines to the folders it is in: the folders above with more after them — a line through; its own folder's —
+ * down to it (└ at the last thing) with a stroke to it (a pair's second row only carries the line on).
+ */
+function guides(r: TreeRow): Array<{ x: number; full: boolean; w?: number }> {
+  if (!r.depth) return []
+  const out: Array<{ x: number; full: boolean; w?: number }> = []
+  for (let j = 0; j < r.depth - 1; j++) if (r.rails[j + 1]) out.push({ x: lineX(j), full: true })
+  const own = lineX(r.depth - 1)
+  if (r.grp === 'bot') return r.last ? out : [...out, { x: own, full: true }]
+  out.push({ x: own, full: !r.last, w: r.node.dir ? 6 : 20 })
+  return out
+}
 /** The node clicked is the tree's focus (new things go there); a folder: folded / unfolded; a note: opened. */
 function clickRow(n: VaultNode, e: MouseEvent): void {
   focus.value = n.path
@@ -76,7 +92,7 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
     <div
       v-for="r in rows"
       :key="r.node.path"
-      class="nrow tw:group/nrow tw:flex tw:items-center tw:gap-5 tw:h-27 tw:pr-6 tw:rounded-r2 tw:text-text-2 tw:text-[13px] tw:cursor-pointer tw:select-none tw:[&:not(.dir)]:h-auto tw:[&:not(.dir)]:min-h-38 tw:[&:not(.dir)]:py-3 tw:hover:not-[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/5 tw:[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/20 tw:[&.cur]:text-text-hi tw:[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/6 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/25 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.7)] tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-top]:mt-2 tw:[&.grp-top]:not-[&.grp-bot]:rounded-[4px_4px_0_0] tw:[&.grp-bot]:mb-2 tw:[&.grp-bot]:rounded-[0_0_4px_4px] tw:[&.grp-top]:hover:not-[&.grp-bot]:not-[&.cur]:bg-accent/13 tw:[&.grp-bot]:hover:not-[&.cur]:bg-accent/13 tw:[&&]:[&.grp-top]:[&.cur]:not-[&.grp-bot]:bg-accent/22 tw:[&&]:[&.grp-bot]:[&.cur]:bg-accent/22 tw:[&.pairdrop]:bg-accent/22 tw:[&.pairdrop]:[box-shadow:var(--shadow-ring-accent)]"
+      class="nrow tw:group/nrow tw:relative tw:flex tw:items-center tw:gap-5 tw:h-27 tw:pr-6 tw:rounded-r2 tw:text-text-2 tw:text-[13px] tw:cursor-pointer tw:select-none tw:[&:not(.dir)]:h-auto tw:[&:not(.dir)]:min-h-38 tw:[&:not(.dir)]:py-3 tw:hover:not-[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/5 tw:[&.cur]:not-[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/20 tw:[&.cur]:text-text-hi tw:[&.sel]:not-[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-white/6 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/25 tw:[&.drop]:not-[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_0_0_0_1px_rgb(var(--accent-rgb)/0.7)] tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-bot]:not-[&.pairdrop]:bg-accent/7 tw:[&.grp-top]:not-[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-bot]:not-[&.pairdrop]:[box-shadow:inset_3px_0_0_rgb(var(--accent-rgb)/0.75)] tw:[&.grp-top]:mt-2 tw:[&.grp-top]:not-[&.grp-bot]:rounded-[4px_4px_0_0] tw:[&.grp-bot]:mb-2 tw:[&.grp-bot]:rounded-[0_0_4px_4px] tw:[&.grp-top]:hover:not-[&.grp-bot]:not-[&.cur]:bg-accent/13 tw:[&.grp-bot]:hover:not-[&.cur]:bg-accent/13 tw:[&&]:[&.grp-top]:[&.cur]:not-[&.grp-bot]:bg-accent/22 tw:[&&]:[&.grp-bot]:[&.cur]:bg-accent/22 tw:[&.pairdrop]:bg-accent/22 tw:[&.pairdrop]:[box-shadow:var(--shadow-ring-accent)]"
       :class="{ dir: r.node.dir, cur: !r.node.dir && curPane()?.active === r.node.path, sel: focus === r.node.path && (r.node.dir || curPane()?.active !== r.node.path), drop: r.node.dir && dropDir === r.node.path, pairdrop: pairTarget === r.node.path, [`grp-${r.grp}`]: !!r.grp }"
       :style="{ paddingLeft: `${6 + r.depth * 14}px` }"
       :title="r.node.path"
@@ -89,6 +105,11 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
       @contextmenu.prevent.stop="openTreeMenu($event, r.node)"
       @keydown.f2="startRename(r.node.path)"
     >
+      <!-- the lines to the folders it is in -->
+      <template v-for="(g, gi) in guides(r)" :key="gi">
+        <span class="tw:absolute tw:top-0 tw:w-1 tw:bg-border-2 tw:pointer-events-none" :class="g.full ? 'tw:bottom-0' : 'tw:h-1/2'" :style="{ left: `${g.x}px` }"></span>
+        <span v-if="g.w" class="tw:absolute tw:top-1/2 tw:h-1 tw:bg-border-2 tw:pointer-events-none" :style="{ left: `${g.x}px`, width: `${g.w}px` }"></span>
+      </template>
       <Icon v-if="r.node.dir" :name="isOpen(r.node.path) ? 'chevronDown' : 'chevronRight'" :size="12" class="chev tw:[&&]:flex-none tw:text-muted" />
       <NodeMark v-if="r.node.dir && r.node.emoji" :emoji="r.node.emoji" :color="r.node.color" icon="folder" :size="14" class="fic tw:[&&]:flex-none tw:[&&]:text-accent-fg" />
       <Icon v-else-if="r.node.dir" :name="isOpen(r.node.path) ? 'folderOpen' : 'folder'" :size="14" class="fic tw:[&&]:flex-none tw:text-accent-fg" :style="r.node.color ? { color: r.node.color } : {}" />
@@ -114,6 +135,8 @@ function clickRow(n: VaultNode, e: MouseEvent): void {
         <span v-if="runsOf(r.node).length || headTagsOf(r.node).length || hasChatOf(r.node)" class="tw:block tw:min-w-0 tw:my-2 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:leading-14 tw:text-dim tw:text-[10px]" :title="chipsTitle(r.node)"><b v-for="t in headTagsOf(r.node)" :key="`#${t}`" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-tag-chip tw:font-normal tw:text-tag-chip-fg">{{ chipWord(t) }}</b><b v-if="hasChatOf(r.node)" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-accent/18 tw:font-data tw:font-normal tw:text-accent-fg">chat</b><b v-for="c in runsOf(r.node)" :key="c" class="tw:inline-block tw:mr-3 tw:px-4 tw:rounded-r1 tw:bg-white/7 tw:font-data tw:font-normal tw:text-text-2">{{ c }}</b></span>
         <small class="vtree-date">{{ shortDate(r.node.ctime) }}</small>
       </span>
+      <!-- a folder: what is right in it (its folders and documents, not theirs) -->
+      <span v-if="r.items !== undefined && renaming !== r.node.path" class="tw:flex-none tw:font-data tw:text-[10.5px] tw:text-dim" :title="`В папке: ${r.items} (папки и документы, без вложенных)`">{{ r.items }}</span>
       <span v-if="treeBadges.get(r.node.path)" class="tw:inline-flex tw:flex-none tw:items-center tw:gap-2 tw:h-16 tw:px-4 tw:rounded-[8px] tw:font-data tw:text-[10.5px] tw:[&.whole]:bg-accent/16 tw:[&.whole]:text-accent-fg tw:[&.part]:bg-warn/16 tw:[&.part]:text-warn-fg" :class="treeBadges.get(r.node.path)!.whole ? 'whole' : 'part'" :title="shareTitle(r.node)"><Icon name="users" :size="10" /><template v-if="treeBadges.get(r.node.path)!.people">{{ treeBadges.get(r.node.path)!.people }}</template></span>
       <span v-if="r.node.pair" class="npair tw:inline-flex tw:flex-none tw:text-accent-fg tw:group-[.grp-top]/nrow:not-group-[.grp-bot]/nrow:hidden tw:group-[.grp-bot]/nrow:hidden" :title="'Связано с: ' + noteName(r.node.pair)"><Icon name="link" :size="11" /></span>
       <span v-if="!r.node.dir && isDirty(r.node.path)" class="ndot tw:flex-none tw:w-6 tw:h-6 tw:rounded-[50%] tw:bg-warn" title="Сохраняется…"></span>

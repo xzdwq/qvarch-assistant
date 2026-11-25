@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { bLayout, type BPane } from '../../lib/browser'
 import { useBrowserView } from './browserViewContext'
+import PaneFindBar from './PaneFindBar.vue'
 import PaneNavBar from './PaneNavBar.vue'
 import PanePage from './PanePage.vue'
 import PaneTabBar from './PaneTabBar.vue'
@@ -14,6 +15,7 @@ const { tabDrag, zone } = useBrowserView().paneDrag
   <section class="pane tw:relative tw:min-w-0 tw:flex tw:flex-col tw:[&.cur]:after:content-[''] tw:[&.cur]:after:absolute tw:[&.cur]:after:top-0 tw:[&.cur]:after:left-0 tw:[&.cur]:after:right-0 tw:[&.cur]:after:h-2 tw:[&.cur]:after:bg-accent/80 tw:[&.cur]:after:pointer-events-none" :class="{ cur: bLayout.cur === pi && bLayout.panes.length > 1 }" :style="{ flex: bLayout.panes.length > 1 ? `${pi ? 1 - bLayout.split : bLayout.split} 1 0` : '1 1 0' }" @pointerdown.capture="bLayout.cur = pi">
     <PaneTabBar :p="p" :pi="pi" />
     <PaneNavBar :p="p" :pi="pi" />
+    <PaneFindBar :p="p" />
     <PanePage :p="p" />
     <template v-if="tabDrag">
       <template v-if="bLayout.panes.length === 1 && p.tabs.length > 1">

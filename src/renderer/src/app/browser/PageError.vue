@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { PAGE_GONE_TEXT } from '@shared/browser'
+import { exitCodeText, goneReasonText, PAGE_GONE_TEXT } from '@shared/browser'
 import Icon from '../../components/Icon.vue'
 import type { BPane } from '../../lib/browser'
 import { useBrowserView } from './browserViewContext'
@@ -15,6 +15,12 @@ const { byId } = view.tabs
 const { nav, trust } = view.site
 const err = computed(() => byId(props.p.active)!.error!)
 const gone = computed(() => (err.value.gone ? PAGE_GONE_TEXT[err.value.gone] : undefined))
+/** Its process ended: why (Chromium's reason) and its exit code, as read. */
+const crash = computed(() => {
+  if (err.value.gone !== 'crashed') return undefined
+  const code = exitCodeText(err.value.code)
+  return { why: goneReasonText(err.value.desc), detail: code ? `${err.value.desc} · ${code}` : err.value.desc }
+})
 </script>
 
 <template>
@@ -22,6 +28,8 @@ const gone = computed(() => (err.value.gone ? PAGE_GONE_TEXT[err.value.gone] : u
     <Icon name="globe" :size="28" />
     <b class="tw:text-text-hi tw:text-[16px]">{{ gone ? gone.title : err.cert ? 'Сертификат сайта не доверенный' : 'Страница не открылась' }}</b>
     <span class="muted tw:text-muted">{{ err.url }}</span>
+    <p v-if="crash" class="tw:max-w-520 tw:text-text">{{ crash.why }}</p>
+    <code v-if="crash" class="tw:text-down-fg tw:font-data">{{ crash.detail }}</code>
     <p v-if="gone" class="muted tw:max-w-520 tw:text-muted">{{ gone.hint }}</p>
     <code v-else class="tw:text-down-fg tw:font-data">{{ err.desc }} ({{ err.code }})</code>
     <p v-if="err.cert" class="muted tw:max-w-520 tw:text-muted">Так бывает у внутренних сайтов с собственным сертификатом. Если вы доверяете сайту <b class="tw:text-text-hi tw:text-[16px]">{{ err.host }}</b>, его можно открыть — до выхода из Qvarch.</p>

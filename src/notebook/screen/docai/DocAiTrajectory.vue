@@ -10,7 +10,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useDraft } from '@renderer/lib/drafts'
 import type { DocTurn, TurnOutcome } from '@shared/agent/docAi'
 import { TRAJ_LANES, type TrajKind, type TrajLane, type TrajStep } from '@shared/agent/trajectory'
-import { timeBar, turnSteps } from '@shared/agent/trajectoryView'
+import { journalStamp, timeBar, turnSteps } from '@shared/agent/trajectoryView'
+import { fullStepOf, type TurnLog } from '@shared/agent/turnLog'
+import DocAiStepDetail from './DocAiStepDetail.vue'
 import { tokensText, usageText, usageTotal } from '@shared/agent/usage'
 import Icon from '@renderer/components/Icon.vue'
 
@@ -65,8 +67,27 @@ const idOf = (ti: number, si: number) => `${ti}:${si}`
 function toggle(id: string): void {
   const n = new Set(opened.value)
   if (n.has(id)) n.delete(id)
-  else n.add(id)
+  else {
+    n.add(id)
+    void loadLog(rows.value[Number(id.split(':')[0])]?.turn.id)
+  }
   opened.value = n
+}
+
+// ---------- the turns' whole records (on the computer that ran them) ----------
+/** A turn's record: absent — not asked yet / loading, null — not on this computer. */
+const logs = ref(new Map<string, TurnLog | null>())
+async function loadLog(turn: string | undefined): Promise<void> {
+  if (!turn || logs.value.has(turn) || loading.has(turn)) return
+  loading.add(turn)
+  const log = await window.qa.agentTurnLog(turn).catch(() => undefined)
+  loading.delete(turn)
+  logs.value = new Map(logs.value).set(turn, log ?? null)
+}
+const loading = new Set<string>()
+const fullOf = (ti: number, si: number) => {
+  const log = logs.value.get(rows.value[ti].turn.id)
+  return log ? fullStepOf(log, si, rows.value[ti].steps) : undefined
 }
 const list = ref<HTMLElement>()
 /** A stretch clicked: its step shown and opened. */
@@ -79,11 +100,6 @@ onMounted(toEnd)
 watch(() => props.turns.length, toEnd)
 
 const secs = (ms: number) => (ms < 1000 ? `${ms} мс` : ms < 60_000 ? `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} с` : `${Math.floor(ms / 60_000)} мин ${Math.round((ms % 60_000) / 1000)} с`)
-function when(at: number): string {
-  const d = new Date(at)
-  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} ${hm}`
-}
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`
 </script>
 
@@ -127,7 +143,7 @@ const pct = (v: number) => `${(v * 100).toFixed(3)}%`
           <div class="tw:sticky tw:top-0 tw:z-1 tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:mt-4 tw:py-3 tw:px-6 tw:bg-pop tw:border-b tw:border-border tw:text-[11px] tw:whitespace-nowrap">
             <span class="tw:flex-none tw:px-5 tw:rounded-r1 tw:bg-white/8 tw:font-data tw:text-muted">Ход {{ ti + 1 }}</span>
             <Icon :name="OUTCOME[r.turn.outcome].icon" :size="11" class="tw:flex-none" :class="OUTCOME[r.turn.outcome].cls" :title="OUTCOME[r.turn.outcome].title" />
-            <span class="tw:flex-none tw:font-data tw:text-muted">{{ when(r.turn.at) }}</span>
+            <span class="tw:flex-none tw:font-data tw:text-muted">{{ journalStamp(r.turn.at) }}</span>
             <b class="tw:flex-none tw:inline-flex tw:items-center tw:gap-3 tw:text-accent-fg" :title="`ИИ участника ${r.turn.owner}`"><Icon name="sparkles" :size="10" />{{ r.turn.agent }}</b>
             <span class="tw:min-w-0 tw:truncate tw:text-muted">спросил {{ r.turn.asker }}</span>
             <span class="tw:flex-1"></span>
@@ -137,22 +153,25 @@ const pct = (v: number) => `${(v * 100).toFixed(3)}%`
             <span class="tw:flex-none tw:font-data tw:text-muted">{{ secs(r.turn.ms) }}</span>
           </div>
           <template v-for="(s, si) in r.steps" :key="si">
-            <div
-              v-if="hit(s)"
-              :data-step="idOf(ti, si)"
-              class="tw:grid tw:grid-cols-[84px_minmax(0,1fr)_auto] tw:items-start tw:gap-8 tw:py-3 tw:px-6 tw:border-b tw:border-white/4 tw:cursor-pointer tw:hover:bg-white/4 tw:[&.on]:bg-white/6"
-              :class="{ on: lit === idOf(ti, si) }"
-              @pointerenter="lit = idOf(ti, si)"
-              @pointerleave="lit = undefined"
-              @click="toggle(idOf(ti, si))"
-            >
-              <span class="tw:justify-self-end tw:mt-1 tw:px-5 tw:rounded-r1 tw:font-data tw:text-[9.5px] tw:font-semibold tw:tracking-[0.04em]" :style="{ color: KIND[s.kind].color, background: `color-mix(in srgb, ${KIND[s.kind].color} 14%, transparent)` }">{{ KIND[s.kind].word }}</span>
-              <span class="tw:min-w-0 tw:text-[12px] tw:text-text-2 tw:[&.full]:whitespace-pre-wrap tw:[&.full]:break-words tw:[&:not(.full)]:truncate" :class="{ full: opened.has(idOf(ti, si)), 'tw:font-data': s.kind === 'tool' }">
-                <template v-if="s.kind === 'tool'"><b class="tw:text-text" :class="{ 'tw:text-down-fg': s.failed }">{{ s.tool }}</b> {{ s.text }}<template v-if="s.result !== undefined"> <span class="tw:text-muted">→</span> <span :class="s.failed ? 'tw:text-down-fg' : 'tw:text-muted'">{{ s.result }}</span></template></template>
-                <template v-else>{{ s.text }}</template>
-              </span>
-              <span class="tw:font-data tw:text-[10.5px] tw:text-muted tw:whitespace-nowrap">{{ s.ms ? secs(s.ms) : '' }}</span>
-            </div>
+            <template v-if="hit(s)">
+              <div
+                :data-step="idOf(ti, si)"
+                class="tw:grid tw:grid-cols-[84px_minmax(0,1fr)_auto] tw:items-start tw:gap-8 tw:py-3 tw:px-6 tw:border-b tw:border-white/4 tw:cursor-pointer tw:hover:bg-white/4 tw:[&.on]:bg-white/6"
+                :class="{ on: lit === idOf(ti, si) }"
+                :title="`${journalStamp(r.turn.at + s.at)} · нажмите, чтобы ${opened.has(idOf(ti, si)) ? 'свернуть' : 'посмотреть целиком'}`"
+                @pointerenter="lit = idOf(ti, si)"
+                @pointerleave="lit = undefined"
+                @click="toggle(idOf(ti, si))"
+              >
+                <span class="tw:justify-self-end tw:mt-1 tw:px-5 tw:rounded-r1 tw:font-data tw:text-[9.5px] tw:font-semibold tw:tracking-[0.04em]" :style="{ color: KIND[s.kind].color, background: `color-mix(in srgb, ${KIND[s.kind].color} 14%, transparent)` }">{{ KIND[s.kind].word }}</span>
+                <span class="tw:min-w-0 tw:truncate tw:text-[12px] tw:text-text-2" :class="{ 'tw:font-data': s.kind === 'tool' }">
+                  <template v-if="s.kind === 'tool'"><b class="tw:text-text" :class="{ 'tw:text-down-fg': s.failed }">{{ s.tool }}</b> {{ s.text }}<template v-if="s.result !== undefined"> <span class="tw:ml-6 tw:text-warn-fg" title="Ответ инструмента ушёл в ИИ">→ в ИИ:</span> <span :class="s.failed ? 'tw:text-down-fg' : 'tw:text-muted'">{{ s.result }}</span></template></template>
+                  <template v-else>{{ s.text }}</template>
+                </span>
+                <span class="tw:font-data tw:text-[10.5px] tw:text-muted tw:whitespace-nowrap">{{ s.ms ? secs(s.ms) : '' }}</span>
+              </div>
+              <DocAiStepDetail v-if="opened.has(idOf(ti, si))" :step="s" :full="fullOf(ti, si)" :log="logs.has(r.turn.id) ? logs.get(r.turn.id) : undefined" :owner="r.turn.owner" />
+            </template>
           </template>
         </template>
       </div>

@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import Icon from '@renderer/components/Icon.vue'
 import NodeMark from '@renderer/components/NodeMark.vue'
 import MdEditor from '@renderer/components/MdEditor.vue'
+import NoteToolbar from '@nb/editor/toolbar/NoteToolbar.vue'
 import { docs, reloadDoc, setText } from '@nb/workspace/noteDocs'
 import { layout, type Pane } from '@nb/workspace/paneLayout'
 import { dropAudio } from '@nb/workspace/noteSync'
@@ -13,7 +14,7 @@ import { NoteEditors } from './noteEditors'
 import { BASE_PX, colorOf, createdOf, emojiOf, setZoom } from './nodeInfo'
 
 /**
- * A note's text in its pane: the folders over it, its title (the file's name), when it was made, the editor; the
+ * A note's text in its pane: the formatting toolbar (kept on top), the folders over it, its title (the file's name), when it was made, the editor; the
  * text's scale — Ctrl + wheel. A click on the empty places puts the cursor into the text.
  */
 const props = defineProps<{
@@ -72,6 +73,7 @@ async function onTitleKey(e: KeyboardEvent): Promise<void> {
 
 <template>
   <div class="pscroll tw:flex-1 tw:min-h-0 tw:overflow-y-auto tw:flex tw:flex-col tw:group-[.paired]/pbody:[&:not(.pairsw)]:mr-26" :style="{ fontSize: `${(BASE_PX * (layout.zoom || 100)) / 100}px` }" @wheel="onPaneWheel" @mousedown="onPaneDown($event)">
+    <NoteToolbar v-if="docs.get(path)?.loaded && !readonlyPath(path)" @act="(a) => editors.get(editorKey())?.runTool(a)" />
     <div class="crumbs tw:flex-none tw:flex tw:items-center tw:justify-center tw:gap-4 tw:pt-8 tw:pr-12 tw:pb-0 tw:pl-12 tw:text-muted tw:text-[12px] tw:last:flex-1">
       <template v-for="(c, ci) in dirOf(path).split('/').filter(Boolean)" :key="ci"><span>{{ c }}</span><Icon name="chevronRight" :size="10" /></template>
       <span class="leaf tw:text-text-2"><NodeMark v-if="emojiOf(path) || colorOf(path)" :emoji="emojiOf(path)" :color="colorOf(path)" icon="note" :size="13" />{{ noteName(path) }}</span>

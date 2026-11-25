@@ -18,6 +18,11 @@ extraResources:
     to: webappanalyzer
 win:
   icon: build/icon.png
+  # the app's exe left as Electron ships it (its icon and version info not written in): an edit drops Electron's
+  # signature, and endpoint security (application control) then restricts the unknown exe — the browser's sandboxed
+  # pages crash at start (0x80000003), as VS Code / Chrome are let through by theirs. The window, the taskbar and the
+  # portable launcher keep our icon (set at run time / the launcher's own).
+  signAndEditExecutable: false
   target:
     - nsis
     - portable
@@ -33,6 +38,9 @@ portable:
   # folder each run made a new 'app' in the taskbar settings), and a new version overwrites the old copy
   unpackDirName: QvarchAssistant
 asar: true
+# no asar checksum written into the exe (it would edit Electron's exe — see win.signAndEditExecutable; the fuse that
+# checks it is off anyway)
+disableAsarIntegrity: true
 # the terminal's native PTY must live outside the asar
 asarUnpack:
   - "**/node_modules/@lydell/**"

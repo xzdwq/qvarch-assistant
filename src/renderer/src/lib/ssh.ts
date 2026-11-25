@@ -1,5 +1,5 @@
 import { shallowRef } from 'vue'
-import { needsPassword, type SshEventArgs } from '@shared/ssh/api'
+import { needsPassword, needsSudo, type SshEventArgs } from '@shared/ssh/api'
 import type { SshSession } from '@shared/ssh/sessions'
 import type { Transfer } from '@shared/ssh/transfers'
 import { remoteError } from '@shared/remoteError'
@@ -34,6 +34,31 @@ export function useSshTransfers() {
 
 /** The password asked for a session (the dialog shows it; answered — the promise settles). */
 export const passwordAsk = shallowRef<{ session: SshSession; reason: string; answer: (a?: { password: string; save: boolean }) => void }>()
+
+/** sudo's password asked for (the dialog shows it; answered — the promise settles; `useSsh` — the kept SSH one). */
+export const sudoAsk = shallowRef<{ session?: SshSession; what: string; reason: string; answer: (a?: { password: string; useSsh: boolean }) => void }>()
+
+/**
+ * A call made as root: sudo's password asked for as long as the server wants one (none given, or it did not fit),
+ * the call made again after each answer. undefined — the person cancelled; any other failure is thrown.
+ * `what` — what is done, said in the dialog.
+ */
+export async function withSudo<T>(id: string, what: string, fn: () => Promise<T>): Promise<T | undefined> {
+  start()
+  for (;;) {
+    try {
+      return await fn()
+    } catch (e) {
+      const msg = remoteError(e)
+      if (!needsSudo(msg)) throw new Error(msg)
+      const session = sessions.value.find((s) => s.id === id)
+      const a = await new Promise<{ password: string; useSsh: boolean } | undefined>((answer) => (sudoAsk.value = { session, what, reason: msg, answer }))
+      sudoAsk.value = undefined
+      if (!a) return undefined
+      await window.qa.ssh('sudoPassword', id, a.password, a.useSsh)
+    }
+  }
+}
 
 /**
  * A session's connection made, a password asked for as long as it is needed (none kept, or it did not fit): true —

@@ -16,7 +16,7 @@ export const PW_ANSWERS = ['save', 'no', 'never'] as const
 export type PwAnswer = (typeof PW_ANSWERS)[number]
 
 /** A page's keys that are the section's own (sent to the window): a new tab, the address line… */
-export const PAGE_KEY_COMMANDS = ['newTab', 'reopenTab', 'closeTab', 'focusUrl', 'bookmark', 'device', 'history', 'terminal'] as const
+export const PAGE_KEY_COMMANDS = ['newTab', 'reopenTab', 'closeTab', 'focusUrl', 'bookmark', 'device', 'history', 'terminal', 'find'] as const
 export type PageKeyCommand = (typeof PAGE_KEY_COMMANDS)[number]
 
 /** A download's state: going, or how it ended (Electron's DownloadItem states). */

@@ -4,6 +4,8 @@
  * The pieces live in ./browser/; this entry keeps one import for all of them.
  */
 export * from './browser/tabs'
+export * from './browser/pageGone'
+export * from './browser/closedTabs'
 export * from './browser/session'
 export * from './browser/devices'
 export * from './browser/recording'

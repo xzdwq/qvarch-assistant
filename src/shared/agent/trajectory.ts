@@ -26,6 +26,8 @@ export interface TrajStep {
 
 /** A turn keeps this many steps (a long one — its first ones and its end). */
 export const TRAJ_STEPS_MAX = 40
+/** Of a long turn, this many last steps are kept (the rest — its first ones). */
+export const TRAJ_TAIL_KEPT = 6
 /** A step's text kept, characters. */
 export const TRAJ_TEXT_MAX = 240
 /** This many latest turns keep their steps (older ones — their summary only). */
@@ -49,9 +51,17 @@ export const trajStep = (s: TrajStep): TrajStep => ({
 export function keptSteps(steps: readonly TrajStep[]): TrajStep[] {
   const all = steps.map(trajStep)
   if (all.length <= TRAJ_STEPS_MAX) return all
-  const tail = 6
-  return [...all.slice(0, TRAJ_STEPS_MAX - tail), ...all.slice(-tail)]
+  return [...all.slice(0, TRAJ_STEPS_MAX - TRAJ_TAIL_KEPT), ...all.slice(-TRAJ_TAIL_KEPT)]
 }
+
+/**
+ * Which way a step's text went: into the model (its instructions, the context, the question — and what a tool gave
+ * back), out of it (its words, the answer, a tool's arguments), or the app's own (an error).
+ */
+export const TRAJ_FLOWS = ['toAi', 'fromAi', 'app'] as const
+export type TrajFlow = (typeof TRAJ_FLOWS)[number]
+/** The flow of a step's own text (`text`); a tool's `result` always went into the model. */
+export const TRAJ_TEXT_FLOW: Record<TrajKind, TrajFlow> = { system: 'toAi', context: 'toAi', user: 'toAi', model: 'fromAi', tool: 'fromAi', answer: 'fromAi', error: 'app' }
 
 /** The lanes of the time bar: which kinds go to which. */
 export const TRAJ_LANES = { context: ['system', 'context', 'user'], model: ['model', 'answer', 'error'], tools: ['tool'] } as const satisfies Record<string, readonly TrajKind[]>

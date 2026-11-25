@@ -2,7 +2,8 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { EditorView } from '@codemirror/view'
 import { canComment, newComment } from '@nb/workspace/noteComments'
 import { editorHost } from '../editorHost'
-import { selectionLinesAs, selectionToCode, wrapSelection } from '../formatting'
+import { runEdit, selectionToCode } from '../formatting'
+import { setHeading, toggleLines, toggleMark } from '../toolbar/formatEdits'
 
 /**
  * The editor's right-click menu: cut / copy / paste / select all, and for a selection — «В событие» and Markdown
@@ -67,14 +68,16 @@ export function useEditorContextMenu(getView: () => EditorView | undefined, toEv
         newComment(v.state.facet(editorHost).notePath(), r.from, r.to)
         return
       case 'bold':
-        wrapSelection('**')(v)
+        runEdit(v, toggleMark('bold'))
         break
       case 'code':
         selectionToCode(v)
         break
       case 'heading':
+        runEdit(v, setHeading(2))
+        break
       case 'list':
-        selectionLinesAs(v, what)
+        runEdit(v, toggleLines('bullet'))
         break
     }
     v.focus()

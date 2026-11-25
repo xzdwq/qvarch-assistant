@@ -9,7 +9,7 @@ import { chatFeedMd, chatMd } from '@nb/blocks/chat/model'
 import { spaceOfPath } from '@nb/workspace/sharedDocs'
 import { newTable, tableMd } from '@nb/blocks/table/model'
 import { TABLE_VAR_BASE } from '@nb/domain/tableVars'
-import type { CommandEffect } from '@nb/commands/command'
+import type { CommandEffect, NoteCommand } from '@nb/commands/command'
 import { pickerMode } from '@nb/commands/registry'
 import { eventsNow } from '@renderer/lib/noteEvents'
 import { searchEmoji, useEmoji, type Emoji } from '@renderer/lib/emoji'
@@ -114,6 +114,7 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
   }
   function close(): void {
     place.value = undefined
+    toolbarQuery = undefined
   }
   /** The text scrolled (by the person, or by the editor itself while typing): the menu moves with its «@»; out of sight — false. */
   function keepAtAt(): boolean {
@@ -126,14 +127,26 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
   }
   /** Esc: closed, and not opened again for this «@» (the popover layer asks — true: Esc is the menu's). */
   function dismiss(): boolean {
+    dropToolbarQuery()
     if (place.value) dismissedAt = place.value.from
     return true
   }
   /** The popover is open while there is a place; closed by it (a press outside, a scroll, Esc) — the place cleared. */
   const open = computed({
     get: () => !!place.value,
-    set: (on) => void (on || close()),
+    set: (on) => void (on || (dropToolbarQuery(), close())),
   })
+  /** A sub-menu's «@…» the toolbar typed (not the person): taken out again when the sub-menu closes with nothing picked. */
+  let toolbarQuery: { from: number; text: string } | undefined
+  function dropToolbarQuery(): void {
+    const t = toolbarQuery
+    toolbarQuery = undefined
+    const v = getView()
+    const p = place.value
+    // (still as typed — the person has not gone on writing it)
+    if (!t || !v || !p || p.from !== t.from || p.to !== t.from + t.text.length || v.state.sliceDoc(p.from, p.to) !== t.text) return
+    v.dispatch({ changes: { from: p.from, to: p.to } })
+  }
 
   // ---------- what it offers ----------
   /** «@эмодзи …» / «@таблица» / «@доска»: a sub-menu of its own. */
@@ -212,6 +225,30 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
         }
       }
     }
+  }
+  /**
+   * A command run at the cursor without «@» typed (the toolbar): as if picked from the menu opened there — a component
+   * on lines of its own, a sub-menu (a table's size, emoji) opened at the cursor; a selection kept (put after it).
+   */
+  function runAtCursor(cmd: NoteCommand): void {
+    const v = getView()
+    if (!v) return
+    v.focus()
+    dismissedAt = -1
+    const at = v.state.selection.main.head
+    const effect = cmd.run(commandContext(v, v.state.facet(editorHost).notePath(), ''))
+    const sub = effect.kind === 'insertText' && effect.keepMenu
+    // (a sub-menu's «@» glued to a word is not one: a space put before it)
+    const glued = sub && at > 0 && !/\s/.test(v.state.sliceDoc(at - 1, at))
+    if (glued) v.dispatch({ changes: { from: at, insert: ' ' }, selection: { anchor: at + 1 } })
+    // (a component goes after the cursor's line, never splitting it)
+    const from = effect.kind === 'insertBlock' ? v.state.doc.lineAt(at).to : glued ? at + 1 : at
+    place.value = { from, to: from, query: '', ...(placeAt(v, from) ?? { x: 0, y: 0, up: false, room: MENU_ROOM }) }
+    applyEffect(effect)
+    if (!sub || effect.kind !== 'insertText') return
+    toolbarQuery = { from, text: effect.text }
+    // (the cursor scrolled to only now: the sub-menu placed once the view has moved)
+    requestAnimationFrame(() => getView() === v && follow(v))
   }
   const warn = (msg: string) => getView()?.state.facet(editorHost).warn(msg)
   /** The row picked (by its index among the pickable rows) carried out. */
@@ -316,6 +353,7 @@ export function useCommandMenu(getView: () => EditorView | undefined) {
     menu: reactive({ place, open, dismiss, keepAtAt, pickIdx, stripIdx, emojiIdx, size, listEl, mode, rows, pickable, emojiAll, emojiShown, pickAt, pickEmoji, pickTable }),
     /** Its keys (over the editor's own) and its following of the text — for the editor's extensions. */
     extensions: [keys, following],
+    runAtCursor,
   }
 }
 export type CommandMenuState = ReturnType<typeof useCommandMenu>['menu']

@@ -54,6 +54,7 @@ function onMenu(ev: MouseEvent, e?: RemoteEntry): void {
 const MENU: Array<{ label: string; icon: string; entry: boolean; run: (e?: RemoteEntry) => void }> = [
   { label: 'Открыть', icon: 'external', entry: true, run: (e) => e && void files.open(ex, e) },
   { label: 'Редактировать', icon: 'pencil', entry: true, run: (e) => e && void files.edit(ex, e) },
+  { label: 'Редактировать через sudo', icon: 'lock', entry: true, run: (e) => e && void files.edit(ex, e, true) },
   { label: 'Открыть программой Windows', icon: 'external', entry: true, run: (e) => e && void files.openInWindows(ex, e) },
   { label: 'Скачать…', icon: 'download', entry: true, run: (e) => void files.download(ex, files.picked(ex, e)) },
   { label: 'Переименовать', icon: 'pencil', entry: true, run: (e) => e && files.startNaming(ex, 'rename', e) },

@@ -34,32 +34,43 @@ export function sortNodes(ns: VaultNode[], mode: SortMode): VaultNode[] {
   return [...ns].sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : BY[mode](a, b)))
 }
 
-/** A row of the tree as shown: the node, its depth; a linked note + board — one plaque (`top` / `bot`). */
+/**
+ * A row of the tree as shown: the node, its depth; a linked note + board — one plaque (`top` / `bot`). Its lines to
+ * the folders it is in: `last` — the last thing of its folder (its line ends at it: └), `rails[i]` — its folder of
+ * depth i has more after it (that folder's own line, in column i − 1, goes on past this row; the top level has none).
+ * A folder: `items` — what is right in it (its folders and documents; not what they hold).
+ */
 export interface TreeRow {
   node: VaultNode
   depth: number
   grp?: 'top' | 'bot'
+  last: boolean
+  rails: boolean[]
+  items?: number
 }
+
 /**
  * The tree as rows: the open folders unfolded, each level sorted; a pair sorts by its note — the board waits for
- * it, then goes right under it.
+ * it, then goes right under it (the two are one thing of their folder: the board's row carries the note's line on).
  */
 export function treeRows(tree: VaultNode[], open: string[], sort: SortMode): TreeRow[] {
   const out: TreeRow[] = []
-  const walk = (ns: VaultNode[], depth: number) => {
+  const walk = (ns: VaultNode[], depth: number, rails: boolean[]) => {
     const here = new Map(ns.map((n) => [n.path, n]))
-    for (const n of ns) {
+    // the things of this folder as shown: a pair once (by its note)
+    const items = ns.filter((n) => !(!n.dir && n.board && n.pair && here.has(n.pair)))
+    items.forEach((n, i) => {
+      const last = i === items.length - 1
       const other = !n.dir && n.pair ? here.get(n.pair) : undefined
       if (other) {
-        if (n.board) continue
-        out.push({ node: n, depth, grp: 'top' }, { node: other, depth, grp: 'bot' })
-        continue
+        out.push({ node: n, depth, grp: 'top', last, rails }, { node: other, depth, grp: 'bot', last, rails })
+        return
       }
-      out.push({ node: n, depth })
-      if (n.dir && open.includes(n.path)) walk(sortNodes(n.children ?? [], sort), depth + 1)
-    }
+      out.push({ node: n, depth, last, rails, ...(n.dir ? { items: n.children?.length ?? 0 } : {}) })
+      if (n.dir && open.includes(n.path)) walk(sortNodes(n.children ?? [], sort), depth + 1, [...rails, !last])
+    })
   }
-  walk(sortNodes(tree, sort), 0)
+  walk(sortNodes(tree, sort), 0, [])
   return out
 }
 

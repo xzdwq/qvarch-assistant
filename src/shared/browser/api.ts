@@ -6,6 +6,7 @@ import type { InspectNews, InspectReq, InspectView } from './inspect/types'
 import type { ImportSource } from './browserImport'
 import type { PwRecState, RecFull, RecItem, RecState } from './recording'
 import type { BrowserSession } from './session'
+import type { ClosedPlace, ClosedTab } from './closedTabs'
 import type { Bookmark, BrowserSettings, BrowserTab, CertInfo, PasswordInfo, Visit } from './tabs'
 import type { DownloadState, NavAction, PageKeyCommand, PwAnswer } from './constants'
 
@@ -32,6 +33,10 @@ export interface BrowserEvents {
   bookmarks: Bookmark[]
   /** The history changed (the window reads it again if shown). */
   history: null
+  /** The tabs the person closed, newest first (a tab closed or opened again). */
+  closed: ClosedTab[]
+  /** A search on a tab's page: the match shown (from 1; 0 — none) of how many. */
+  found: { id: string; active: number; total: number }
   rec: { state: RecState; items: RecItem[] }
   /** The requests' recording could not start in a tab. */
   recError: string
@@ -87,7 +92,16 @@ export interface BrowserApi {
   /** The open tabs now (kept for the next run; heard only after the last ones were taken, and not while closing). */
   saveSession(s: BrowserSession): void
   create(url?: string, opener?: string): BrowserTab
-  close(id: string): void
+  /** A tab closed; `place` — the person closed it there (it goes to «Недавно закрытые»). */
+  close(id: string, place?: ClosedPlace): void
+  /** The tabs the person closed, newest first. */
+  closedTabs(): ClosedTab[]
+  /** One closed tab taken to open again (none named — the last closed). */
+  takeClosed(id?: string): ClosedTab | undefined
+  /** Text searched on a tab's page: a new search (`next` false) or the next / previous match. */
+  find(id: string, text: string, forward: boolean, next: boolean): void
+  /** The search ended (the match found stays selected). */
+  findStop(id: string): void
   go(id: string, url: string): void
   nav(id: string, action: NavAction): void
   zoom(id: string, percent: number): void
@@ -172,4 +186,4 @@ export interface BrowserApi {
   /** An element of the log (its CSS path) shown on the page (`scroll` — brought into view); no path — the mark taken off. */
   inspectShow(id: string, selector?: string, scroll?: boolean): Promise<boolean>
 }
-export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'takeSession', 'saveSession', 'create', 'close', 'go', 'nav', 'zoom', 'focusPage', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot', 'inspect', 'inspectView', 'inspectClear', 'inspectRequest', 'inspectPassport', 'inspectReport', 'inspectShow']
+export const BROWSER_METHODS: Array<keyof BrowserApi> = ['pwRecStart', 'pwRecStop', 'pwRecState', 'hooksList', 'hookPut', 'hookRemove', 'hookHits', 'hookClearHits', 'hookSkip', 'hookPause', 'hookStatus', 'hookReapply', 'list', 'takeSession', 'saveSession', 'create', 'close', 'closedTabs', 'takeClosed', 'find', 'findStop', 'go', 'nav', 'zoom', 'focusPage', 'trust', 'loginReply', 'shots', 'cover', 'bookmarks', 'setBookmarks', 'suggest', 'clearHistory', 'visits', 'visitsDelete', 'settings', 'setSettings', 'defaultUa', 'device', 'folderMenu', 'choose', 'recState', 'rec', 'recClear', 'recList', 'recFull', 'reveal', 'resetSite', 'passwords', 'pwAnswer', 'pwReveal', 'pwDelete', 'pwFill', 'importSources', 'importBookmarks', 'importPasswords', 'neverList', 'neverRemove', 'certInfo', 'ruler', 'swaggerFind', 'savePage', 'viewSource', 'apiMapHosts', 'apiMapList', 'apiMapAuth', 'apiMapClear', 'checkState', 'checkList', 'checkSet', 'checkClear', 'checkMute', 'checkNote', 'checkShow', 'checkShot', 'inspect', 'inspectView', 'inspectClear', 'inspectRequest', 'inspectPassport', 'inspectReport', 'inspectShow']

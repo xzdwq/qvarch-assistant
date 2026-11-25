@@ -1,5 +1,5 @@
 import { computed, ref, shallowRef, watch } from 'vue'
-import { DEFAULT_BROWSER_SETTINGS, type BrowserSettings, type Visit } from '@shared/browser'
+import { DEFAULT_BROWSER_SETTINGS, type BrowserSettings, type ClosedTab, type Visit } from '@shared/browser'
 import { dayBounds, dayOf, findVisits, historyDays, plural } from '@shared/browser/historyDays'
 
 /** The history's list grows by this many at a time. */
@@ -9,15 +9,25 @@ const PAGE = 300
  * The history dialog: every page opening by days, searched by words, opened (Ctrl / the middle button — in a new
  * tab), forgotten one by one, by day or by period; the history on / off (the browser's settings).
  */
-export function useBrowserHistory(deps: { openUrl: (url: string, inNew?: boolean) => void }) {
+export function useBrowserHistory(deps: { openUrl: (url: string, inNew?: boolean) => void; reopenTab: (closedId?: string) => Promise<void> }) {
   const bSettings = ref<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })
   void window.qa.browser('settings').then((v) => (bSettings.value = v))
   const histOpen = ref(false)
   const visits = shallowRef<Visit[]>([])
+  /** The tabs the person closed, newest first (main's list — told again on each change). */
+  const closed = shallowRef<ClosedTab[]>([])
+  void window.qa.browser('closedTabs').then((l) => (closed.value = l))
   const histQ = ref('')
   const histLimit = ref(PAGE)
   async function loadHistory(): Promise<void> {
-    visits.value = await window.qa.browser('visits')
+    ;[visits.value, closed.value] = await Promise.all([window.qa.browser('visits'), window.qa.browser('closedTabs')])
+  }
+  /** «Недавно закрытые» as the search finds them. */
+  const closedFound = computed(() => findVisits(closed.value, histQ.value))
+  /** A closed tab opened again where it stood; the history closed. */
+  function reopenClosed(c: ClosedTab): void {
+    void deps.reopenTab(c.id)
+    histOpen.value = false
   }
   function openHistory(): void {
     histQ.value = ''
@@ -65,5 +75,5 @@ export function useBrowserHistory(deps: { openUrl: (url: string, inNew?: boolean
   async function setHistoryOn(on: boolean): Promise<void> {
     bSettings.value = await window.qa.browser('setSettings', { history: on })
   }
-  return { bSettings, histOpen, visits, histQ, histLimit, loadHistory, openHistory, histFound, histDays, histGo, histDel, histDelDay, histClear, setHistoryOn }
+  return { bSettings, histOpen, visits, closed, closedFound, reopenClosed, histQ, histLimit, loadHistory, openHistory, histFound, histDays, histGo, histDel, histDelDay, histClear, setHistoryOn }
 }

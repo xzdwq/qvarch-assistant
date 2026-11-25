@@ -46,6 +46,8 @@ describe("a page's keys that are the browser's", () => {
     expect(run(key('d', { ctrl: true })).calls).toEqual([['send', 'bookmark']])
     expect(run(key('M', { ctrl: true, shift: true })).calls).toEqual([['send', 'device']])
     expect(run(key('h', { ctrl: true })).calls).toEqual([['send', 'history']])
+    expect(run(key('f', { ctrl: true })).calls).toEqual([['send', 'find']])
+    expect(run(key('T', { ctrl: true, shift: true })).calls).toEqual([['send', 'reopenTab']])
   })
   it("save, the source, print; any other key is the page's own", () => {
     expect(run(key('s', { ctrl: true })).calls).toEqual([['save']])

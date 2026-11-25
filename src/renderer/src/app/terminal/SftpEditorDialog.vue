@@ -23,6 +23,7 @@ function onKey(e: KeyboardEvent): void {
         <Icon name="file" :size="14" class="tw:flex-none tw:text-muted" />
         <b class="tw:flex-none tw:text-text-hi tw:text-[13px]">{{ file.name }}</b>
         <span v-if="dirty" class="tw:flex-none tw:text-warn-fg" title="Есть несохранённые изменения">●</span>
+        <span v-if="file.sudo" class="tw:flex-none tw:inline-flex tw:items-center tw:gap-3 tw:px-6 tw:rounded-full tw:bg-warn/18 tw:text-warn-fg tw:text-[11px]" title="Файл читается и сохраняется от имени root (sudo); владелец и права файла не меняются"><Icon name="lock" :size="10" />sudo</span>
         <span class="tw:min-w-0 tw:truncate tw:text-muted tw:font-data tw:text-[11.5px]" :title="file.path">{{ file.path }}</span>
         <span class="tw:flex-1"></span>
         <button class="primary tw:flex-none tw:inline-flex tw:items-center tw:gap-5 tw:h-26" :disabled="file.busy || !dirty" title="Сохранить на сервер (Ctrl+S)" @click="save()"><Icon name="check" :size="12" />Сохранить</button>
@@ -36,6 +37,7 @@ function onKey(e: KeyboardEvent): void {
       <footer v-if="file.error || file.note" class="tw:flex tw:flex-none tw:items-center tw:gap-8 tw:min-w-0 tw:text-[12px]">
         <span v-if="file.error" class="tw:min-w-0 tw:truncate tw:text-down-fg" :title="file.error">{{ file.error }}</span>
         <button v-if="file.conflict" class="tw:flex-none tw:h-24" :disabled="file.busy" @click="save(true)">Перезаписать</button>
+        <button v-else-if="file.denied" class="tw:flex-none tw:inline-flex tw:items-center tw:gap-5 tw:h-24" :disabled="file.busy" title="Записать от имени root: спросит пароль sudo; владелец и права файла останутся прежними" @click="save(false, true)"><Icon name="lock" :size="11" />Сохранить через sudo</button>
         <span v-else-if="file.note" class="tw:min-w-0 tw:truncate tw:text-up-fg" :title="file.note">{{ file.note }}</span>
       </footer>
     </section>

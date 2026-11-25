@@ -5,6 +5,8 @@ import { cleanSession, type ApiMapHost, type Bookmark, type BrowserApi, type Bro
 import type { CheckProblem, CheckSettings, CheckState } from '../shared/check'
 import type { BrowserHook, HookHit, HookStatus } from '../shared/hooks'
 import { BrowserCore } from './browser/browserCore'
+import { findOnPage, stopFindOnPage } from './browser/findOnPage'
+import type { ClosedPlace, ClosedTab } from '../shared/browser/closedTabs'
 import type { Tab } from './browser/tab'
 import { chooseMenu, folderMenu } from './browser/nativeMenus'
 import { clearSiteData, readLocalStorage } from './browser/pageTools'
@@ -70,9 +72,25 @@ export class Browser extends BrowserCore implements BrowserApi {
     return t
   }
   /** A tab closed: no block runs in it any more (its next run takes another). */
-  override close(id: string): void {
-    super.close(id)
+  override close(id: string, place?: ClosedPlace): void {
+    super.close(id, place)
     for (const [owner, tabId] of this.runTabs) if (tabId === id) this.runTabs.delete(owner)
+  }
+  closedTabs(): ClosedTab[] {
+    return this.store.closedTabs()
+  }
+  takeClosed(id?: string): ClosedTab | undefined {
+    return this.store.takeClosed(id)
+  }
+
+  // ---------- text searched on a page (Ctrl+F) ----------
+  find(id: string, text: string, forward: boolean, next: boolean): void {
+    const t = this.tabs.get(id)
+    if (t && !t.asleep) findOnPage(t.view.webContents, text, forward, next)
+  }
+  findStop(id: string): void {
+    const t = this.tabs.get(id)
+    if (t && !t.asleep) stopFindOnPage(t.view.webContents)
   }
   /** A tab's device mode told to its page again (a run's window size undone over it). */
   deviceAgain(t: Tab): void {

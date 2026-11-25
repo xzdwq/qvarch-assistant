@@ -51,6 +51,8 @@ export interface NoteBrowserHooks {
   preload: string
   navigated(wc: WebContents, url: string): void
   domReady(wc: WebContents): void
+  /** An application's link a page opened (window.open('mailto:…')): handed to it when allowed. */
+  toApp(from: string, url: string): void
 }
 
 export function setupNoteBrowser(emit: (host: WebContents, type: string, payload: unknown) => void, chrome: () => ChromeOverride, hooks: NoteBrowserHooks): void {
@@ -73,6 +75,7 @@ export function setupNoteBrowser(emit: (host: WebContents, type: string, payload
       wirePopups(guest, {
         owner: () => BrowserWindow.fromWebContents(wc) ?? undefined,
         toTab: (url) => /^https?:/i.test(url) && emit(wc, 'open', { id: guest.id, url }),
+        toApp: hooks.toApp,
         chrome,
         preload: hooks.preload,
       })

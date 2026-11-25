@@ -1,4 +1,5 @@
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions, type WebContents } from 'electron'
+import { externalScheme } from '../../shared/browser/externalLinks'
 import { newWindowPlace } from '../../shared/browser/popupRule'
 import { makeIcon } from '../icon'
 import { tellIdentity, type ChromeOverride } from './pageIdentity'
@@ -9,6 +10,8 @@ export interface PopupHost {
   owner(): BrowserWindow | undefined
   /** A new window that is not a popup (a link's new tab): a tab of the page's browser. */
   toTab(url: string): void
+  /** An application's link (window.open('mailto:…')): handed to it when allowed (the page it came from — `from`). */
+  toApp(from: string, url: string): void
   chrome(): ChromeOverride
   /** The browser pages' preload: a popup's sign-in form gets the saved login, a login sent is offered to keep. */
   preload: string
@@ -46,6 +49,9 @@ export function wirePopups(wc: WebContents, host: PopupHost): void {
       case 'tab':
         host.toTab(url)
         return { action: 'deny' }
+      case 'external':
+        host.toApp(wc.getURL(), url)
+        return { action: 'deny' }
       case 'none':
         return { action: 'deny' }
       default: {
@@ -64,7 +70,10 @@ function wirePopupWindow(opener: WebContents, win: BrowserWindow, host: PopupHos
   win.setMenu(null)
   wirePopups(wc, host)
   wc.on('will-navigate', (e, url) => {
-    if (!/^(https?:|about:)/i.test(url)) e.preventDefault()
+    if (/^(https?:|about:)/i.test(url)) return
+    e.preventDefault()
+    // (an application's link from a popup: to it, as from a tab)
+    if (externalScheme(url)) host.toApp(wc.getURL(), url)
   })
   wc.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && void chromeLike(wc, host, d.url))
   void chromeLike(wc, host)

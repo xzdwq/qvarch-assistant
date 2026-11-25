@@ -2,7 +2,7 @@ import { app, WebContentsView, type BrowserWindow, type Session, type WebContent
 import { release } from 'node:os'
 import { chromeMetadata, identityHeaders, windowsPlatformVersion, type UaMetadata, type UaSystem } from '../../shared/browser/chromeIdentity'
 import { tellIdentity } from './pageIdentity'
-import { browserId, type BrowserEmit, type BrowserTab, type NavAction } from '../../shared/browser'
+import { browserId, type BrowserEmit, type BrowserTab, type ClosedPlace, type NavAction } from '../../shared/browser'
 import { Hooks } from '../hooks'
 import { browserSession, guardPermissions, keepDownloads } from './profileSession'
 import { SOURCE_SCHEME, sourcePage } from '../viewSource'
@@ -16,7 +16,8 @@ import { TechDetector } from './inspect/techDetector'
 import { LinkStatus } from './linkStatus'
 import { PageLayout } from './pageLayout'
 import { PageZoom } from './pageZoom'
-import { wirePageLife } from './pageLife'
+import { clearSiteCaches, wirePageLife } from './pageLife'
+import { mayOpenExternal } from './externalApps'
 import { PageRulers, savePageAs } from './pageTools'
 import { PasswordVault } from './passwordVault'
 import { RequestRecorder } from './requestRecorder'
@@ -134,7 +135,7 @@ export class BrowserCore implements TabEventsHost {
     this.ses.protocol.handle(SOURCE_SCHEME, (req) => sourcePage(req.url.slice(SOURCE_SCHEME.length + 1), (u) => this.ses.fetch(u)))
     // the corporate sign-in (Windows auth) works as in Chrome
     this.ses.allowNTLMCredentialsForDomains('*')
-    guardPermissions(this.ses, () => this.store.settings.sitePermissions)
+    guardPermissions(this.ses, () => this.store.settings.sitePermissions, (page, url) => mayOpenExternal(this, page, url))
     keepDownloads(this.ses, this.emit)
     app.on('certificate-error', (e, wc, url, error, _cert, cb, isMainFrame) => {
       const tab = this.byContents(wc)
@@ -302,22 +303,29 @@ export class BrowserCore implements TabEventsHost {
   }
   /**
    * A tab's page started again at its address — its process crashed or does not answer («Перезапустить»): the view
-   * closed (its process not answering keeps no one waiting) and made anew, as a tab waking up.
+   * closed (its process not answering keeps no one waiting), the site's caches cleared (a broken cached script or
+   * compiled code, a service worker would crash it again on every start; its cookies and storage stay — the person
+   * stays signed in), and made anew, as a tab waking up.
    */
-  private restartPage(t: Tab): void {
-    if (t.asleep) return this.wake(t)
-    this.devTools.close(t)
-    this.cancelLogins(t.t.id)
-    try {
-      this.win?.contentView.removeChildView(t.view)
-      t.view.webContents.close()
-    } catch {
-      // gone already
+  private async restartPage(t: Tab): Promise<void> {
+    if (!t.asleep) {
+      this.devTools.close(t)
+      this.cancelLogins(t.t.id)
+      try {
+        this.win?.contentView.removeChildView(t.view)
+        t.view.webContents.close()
+      } catch {
+        // gone already
+      }
+      t.asleep = true
+      this.pages.forget(t.t.id)
     }
-    t.asleep = true
     t.t.error = undefined
-    t.t.loading = false
-    this.pages.forget(t.t.id)
+    // (loading while the caches go: not put to sleep; opened meanwhile — it wakes as usual, this wake then does nothing)
+    t.t.loading = true
+    this.changed()
+    await clearSiteCaches(this.ses, t.t.url)
+    if (!this.tabs.has(t.t.id)) return
     this.wake(t)
     this.pages.relayout()
   }
@@ -344,9 +352,11 @@ export class BrowserCore implements TabEventsHost {
     if (opener) this.emit('opened', { id, opener })
     return tab.t
   }
-  close(id: string): void {
+  /** A tab closed; `place` — the person closed it there: kept in «Недавно закрытые» (a blank page is not). */
+  close(id: string, place?: ClosedPlace): void {
     const t = this.tabs.get(id)
     if (!t) return
+    if (place && t.t.url !== 'about:blank') this.store.addClosed({ id: browserId(), url: t.t.url, title: t.t.title, at: Date.now(), ...place, ...(t.t.favicon ? { favicon: t.t.favicon } : {}) })
     // the recording tab closed: the recording stays (stopped from the bar) — its lines are kept
     this.tabs.delete(id)
     this.pages.forget(id)
@@ -379,7 +389,7 @@ export class BrowserCore implements TabEventsHost {
     t.t.favicon = undefined
     // an address typed in the recording tab: a line of its own
     this.scenario.onAddressTyped(id, url)
-    if (gone) this.restartPage(t)
+    if (gone) void this.restartPage(t)
     else void t.view.webContents.loadURL(url).catch(() => undefined)
     this.changed()
   }
@@ -388,7 +398,7 @@ export class BrowserCore implements TabEventsHost {
     if (!t) return
     this.wake(t)
     // (its process gone or not answering: a reload is its start anew)
-    if ((action === 'reload' || action === 'hard') && t.t.error?.gone) return this.restartPage(t)
+    if ((action === 'reload' || action === 'hard') && t.t.error?.gone) return void this.restartPage(t)
     const wc = t.view.webContents
     const h = wc.navigationHistory
     const NAV: Record<NavAction, () => void> = {

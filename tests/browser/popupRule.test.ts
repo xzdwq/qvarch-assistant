@@ -17,6 +17,11 @@ describe('where a page\'s new window goes', () => {
     expect(newWindowPlace('new-window', 'javascript:alert(1)')).toBe('none')
     expect(newWindowPlace('new-window', 'about:blank#x')).toBe('none')
   })
+  it("an application's link — that application, however it was opened", () => {
+    expect(newWindowPlace('foreground-tab', 'mailto:someone@example.com')).toBe('external')
+    expect(newWindowPlace('new-window', 'tel:+70000000000')).toBe('external')
+    expect(newWindowPlace('other', 'msteams:/l/chat/0/0')).toBe('external')
+  })
   it('a blank tab has nothing to show', () => {
     expect(newWindowPlace('foreground-tab', 'about:blank')).toBe('none')
     expect(newWindowPlace('foreground-tab', 'chrome://settings')).toBe('none')

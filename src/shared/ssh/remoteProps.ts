@@ -33,6 +33,12 @@ export interface RemoteProps {
   /** A link: where it leads, and what is there. */
   target?: string
   targetKind?: RemoteKind
+  /** The folder it is in: its owner and group (offered when changing them — «как у папки»). */
+  parentOwner?: string
+  parentGroup?: string
+  /** The signed-in user and their main group (offered too). */
+  me?: string
+  myGroup?: string
 }
 
 /** A folder's contents counted. */
@@ -50,8 +56,29 @@ export const STAT_FORMAT = '%U|%G|%W|%Z|%i|%h|%F'
 /** Splits the props command's output: stat's line, then file's. */
 export const PROPS_SPLIT = '--qvarch-props--'
 
-/** The props command for a path (quoted already): `stat`, then `file` where there is one; errors left out. */
-export const propsCommand = (quoted: string) => `LC_ALL=C stat -c '${STAT_FORMAT}' -- ${quoted} 2>/dev/null; echo '${PROPS_SPLIT}'; command -v file >/dev/null 2>&1 && LC_ALL=C file -b -- ${quoted} 2>/dev/null`
+/** Splits off the last part: the folder's owner and group, the signed-in user and their group. */
+export const PROPS_WHO_SPLIT = '--qvarch-who--'
+
+/**
+ * The props command for a path (quoted already): `stat`, then `file` where there is one, then the folder's owner and
+ * group and `id`; errors left out.
+ */
+export const propsCommand = (quoted: string) =>
+  `LC_ALL=C stat -c '${STAT_FORMAT}' -- ${quoted} 2>/dev/null; echo '${PROPS_SPLIT}'; command -v file >/dev/null 2>&1 && LC_ALL=C file -b -- ${quoted} 2>/dev/null; ` +
+  `echo '${PROPS_WHO_SPLIT}'; LC_ALL=C stat -c '%U|%G' -- "$(dirname -- ${quoted})" 2>/dev/null || echo '|'; id -un 2>/dev/null || echo; id -gn 2>/dev/null || echo`
+
+/** The last part's lines → the folder's owner and group, the user and their group. */
+function parseWho(part: string): Partial<RemoteProps> {
+  const [folder = '', me = '', myGroup = ''] = part.replace(/^\r?\n/, '').split(/\r?\n/).slice(0, 3).map((l) => l.trim())
+  const [parentOwner, parentGroup] = folder.split('|')
+  const r: Partial<RemoteProps> = {}
+  const keep = (k: 'parentOwner' | 'parentGroup' | 'me' | 'myGroup', v?: string) => v && v !== 'UNKNOWN' && (r[k] = v)
+  keep('parentOwner', parentOwner)
+  keep('parentGroup', parentGroup)
+  keep('me', me)
+  keep('myGroup', myGroup)
+  return r
+}
 
 /** Seconds as `stat` writes them → ms (0, `-`, `?` — unknown). */
 const secs = (s: string | undefined) => {
@@ -61,8 +88,9 @@ const secs = (s: string | undefined) => {
 
 /** What the props command printed → the fields it adds (none it could not tell). */
 export function parsePropsOutput(out: string): Partial<RemoteProps> {
-  const [statPart = '', filePart = ''] = out.split(PROPS_SPLIT)
-  const r: Partial<RemoteProps> = {}
+  const [head, whoPart] = out.split(PROPS_WHO_SPLIT)
+  const [statPart = '', filePart = ''] = head.split(PROPS_SPLIT)
+  const r: Partial<RemoteProps> = whoPart === undefined ? {} : parseWho(whoPart)
   const line = statPart.trim().split(/\r?\n/).pop() ?? ''
   const f = line.split('|')
   if (f.length >= 7) {

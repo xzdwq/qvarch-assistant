@@ -12,12 +12,16 @@ const BY_ID = new Map<string, NoteCommand>([...ALL_BLOCK_SPECS.flatMap((s) => s.
 /** The menu's order (ids; every command once — checked by a test). */
 export const MENU_ORDER = ['audio', 'emoji', 'http', 'pw', 'sql', 'fuzz', 'files', 'regress', 'browser', 'loop', 'tpl', 'save', 'cron', 'js', 'shell', 'data', 'ref', 'work', 'board', 'chat', 'table', 'chart', 'mermaid', 'callout', 'toggle', 'toc', 'image', 'todo', 'code', 'divider', 'date'] as const
 
+export type NoteCommandId = (typeof MENU_ORDER)[number]
+
 /** Every «@» command in the menu's order. */
 export const NOTE_COMMANDS: readonly NoteCommand[] = MENU_ORDER.map((id) => {
   const c = BY_ID.get(id)
   if (!c) throw new Error(`«@»: no command «${id}»`)
   return c
 })
+/** A command by its id (every id of the menu's order has one). */
+export const noteCommand = (id: NoteCommandId): NoteCommand => BY_ID.get(id)!
 /** Commands registered but missing from the menu's order (a test keeps this empty). */
 export const unorderedCommandIds = () => [...BY_ID.keys()].filter((id) => !(MENU_ORDER as readonly string[]).includes(id))
 

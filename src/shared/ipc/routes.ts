@@ -250,6 +250,7 @@ export const QA_ROUTES = {
   agentModels: invoke('qa:agentModels'),
   agentRun: invoke('qa:agentRun'),
   agentStop: send('qa:agentStop'),
+  agentTurnLog: invoke('qa:agentTurnLog'),
   harnessState: invoke('qa:harnessState'),
   harnessSaveSettings: invoke('qa:harnessSaveSettings'),
   harnessSaveRoomSettings: invoke('qa:harnessSaveRoomSettings'),

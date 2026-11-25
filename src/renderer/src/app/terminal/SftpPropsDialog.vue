@@ -9,6 +9,8 @@ import type { DirSummary, RemoteProps } from '@shared/ssh/remoteProps'
 import { sizeText } from '@shared/ssh/transfers'
 import { remoteError } from '@shared/remoteError'
 import Icon from '../../components/Icon.vue'
+import { sudoAsk } from '../../lib/ssh'
+import SftpAccessEditor from './SftpAccessEditor.vue'
 
 const props = defineProps<{ sessionId: string; path: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -18,22 +20,25 @@ const error = ref('')
 const count = ref<DirSummary>()
 const counting = ref(false)
 const countError = ref('')
-watch(
-  () => props.path,
-  async (path) => {
+/** The entry's properties read (`again` — after a change: what is shown stays until the new ones come). */
+async function load(path: string, again = false): Promise<void> {
+  if (!again) {
     info.value = undefined
-    error.value = ''
     count.value = undefined
     countError.value = ''
-    try {
-      const r = await window.qa.ssh('props', props.sessionId, path)
-      if (path === props.path) info.value = r
-    } catch (e) {
-      if (path === props.path) error.value = remoteError(e)
-    }
-  },
-  { immediate: true },
-)
+    editing.value = false
+  }
+  error.value = ''
+  try {
+    const r = await window.qa.ssh('props', props.sessionId, path)
+    if (path === props.path) info.value = r
+  } catch (e) {
+    if (path === props.path) error.value = remoteError(e)
+  }
+}
+/** The rights / owner editor shown (a link's are its target's — changed there). */
+const editing = ref(false)
+watch(() => props.path, (path) => void load(path), { immediate: true })
 async function countDir(): Promise<void> {
   const path = props.path
   counting.value = true
@@ -89,7 +94,8 @@ const copyPath = () => void navigator.clipboard.writeText(props.path)
 
 // Esc closes it (and goes no further)
 function onKey(e: KeyboardEvent): void {
-  if (e.key !== 'Escape') return
+  // (sudo's password asked over it: its own Esc)
+  if (e.key !== 'Escape' || sudoAsk.value) return
   e.preventDefault()
   e.stopPropagation()
   emit('close')
@@ -125,10 +131,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey, true))
             </span>
           </template>
           <span class="tw:text-muted">Доступ</span>
-          <span class="tw:flex tw:flex-col tw:gap-2">
-            <span v-for="r in rightsBy" :key="r.who"><span class="tw:text-text-2">{{ r.who }}:</span> {{ r.what }}</span>
+          <span class="tw:flex tw:items-start tw:gap-8">
+            <span class="tw:flex tw:flex-col tw:gap-2 tw:flex-1 tw:min-w-0">
+              <span v-for="r in rightsBy" :key="r.who"><span class="tw:text-text-2">{{ r.who }}:</span> {{ r.what }}</span>
+            </span>
+            <button v-if="info.kind !== 'link'" class="tw:flex-none tw:inline-flex tw:items-center tw:gap-4 tw:h-24 tw:py-0 tw:px-10 tw:rounded-full tw:text-[11.5px]" :class="{ on: editing }" title="Изменить права, владельца и группу (от своего имени или через sudo)" @click="editing = !editing"><Icon name="pencil" :size="11" />Изменить</button>
           </span>
         </div>
+        <SftpAccessEditor v-if="info && editing && info.kind !== 'link'" class="tw:flex-none" :session-id="sessionId" :info="info" @changed="load(path, true)" />
       </section>
     </div>
   </Teleport>

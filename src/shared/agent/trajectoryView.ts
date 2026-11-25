@@ -7,6 +7,13 @@ import { laneOf, type TrajLane, type TrajStep } from './trajectory'
  * model, tools). A turn kept before steps were (or past the latest ones that keep them) — drawn from its summary.
  */
 
+const two = (n: number) => String(n).padStart(2, '0')
+/** A moment as the journal writes it: `дд.мм.гг чч:мм:сс` (local time). */
+export function journalStamp(at: number): string {
+  const d = new Date(at)
+  return `${two(d.getDate())}.${two(d.getMonth() + 1)}.${two(d.getFullYear() % 100)} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`
+}
+
 /** A turn's rows: its steps; none kept — its question, its tools in a line, how it ended. */
 export function turnSteps(t: DocTurn): TrajStep[] {
   if (t.steps?.length) return t.steps

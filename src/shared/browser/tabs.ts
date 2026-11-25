@@ -31,9 +31,12 @@ export interface BrowserTab {
 /** What became of a page's process: it ended (crashed, killed, out of memory) or it does not answer. */
 export const PAGE_GONE = ['crashed', 'hung'] as const
 export type PageGone = (typeof PAGE_GONE)[number]
-/** How each is told on the page's place («Перезапустить» starts its process again at the same address). */
+/**
+ * How each is told on the page's place («Перезапустить» starts its process again at the same address, the site's
+ * caches cleared first; `crashed` — its reason told too: goneReasonText).
+ */
 export const PAGE_GONE_TEXT: Record<PageGone, { title: string; hint: string }> = {
-  crashed: { title: 'Страница перестала работать', hint: 'Её процесс завершился (не хватило памяти или сбой). Перезапуск откроет её снова по тому же адресу.' },
+  crashed: { title: 'Страница перестала работать', hint: 'Перезапуск сбросит кэш этого сайта (вход и данные сайта останутся) и откроет страницу снова по тому же адресу.' },
   hung: { title: 'Страница не отвечает', hint: 'Скрипт страницы занят и не отвечает. Можно подождать — сообщение уйдёт само, когда она ответит, — или перезапустить её.' },
 }
 export interface Bookmark {

@@ -12,6 +12,7 @@ import { qvarchTools } from '../mcpTools'
 import { componentsBrief } from '../../notebook/blocks/catalog'
 import type { AgentStore } from './agentStore'
 import { TurnTrajectory } from './turnTrajectory'
+import type { TurnLogStore } from './turnLogStore'
 import { claudeCodeTurn, claudeVersion } from './claudeCode'
 import { anthropicError, anthropicModels, AnthropicSession } from './sessions/anthropicSession'
 import { harnessTurn, type RemoteTool } from './sessions/harnessSession'
@@ -174,6 +175,8 @@ export class AgentRunner {
     private readonly store: AgentStore,
     /** The harness's instructions now (a harness turn reads and plans by them). */
     private readonly guides: () => HarnessGuide[],
+    /** The turns' full records (on this computer only). */
+    private readonly logs: TurnLogStore,
   ) {}
 
   async run(req: TurnRequest): Promise<TurnAnswer> {
@@ -188,17 +191,18 @@ export class AgentRunner {
     const touches: Touch[] = []
     /** The turn step by step (the journal's trajectory). */
     const traj = new TurnTrajectory()
-    const answer = (a: Omit<TurnAnswer, 'trace' | 'touches' | 'steps'>): TurnAnswer => ({
-      ...a,
-      trace,
-      ...(touches.length ? { touches: touches.slice(0, TOUCHES_MAX) } : {}),
-      steps: traj.ended(a.text, a.error),
-    })
+    const t0 = Date.now()
+    /** What the model was given (kept whole in the turn's own record, on this computer only). */
+    let given: { system: string; prompt: string } = { system: '', prompt: '' }
+    const answer = (a: Omit<TurnAnswer, 'trace' | 'touches' | 'steps'>): TurnAnswer => {
+      const steps = traj.ended(a.text, a.error)
+      this.logs.save({ id: req.turn, at: t0, ...given, steps })
+      return { ...a, trace, ...(touches.length ? { touches: touches.slice(0, TOUCHES_MAX) } : {}), steps }
+    }
     try {
       // an agent writes in the background (the note one is in never switches), its lines marked as its
       const ui = <T>(op: string, args: Record<string, unknown>) => this.host.toolCtx.ui<T>(op, { ...args, quiet: true, by: { turn: req.turn, name: req.agentName } })
       const vault = this.app.vault
-      const t0 = Date.now()
       // a harness turn: its plan and report tools (what they give goes back to the window, which leads the run)
       const harness = req.harness ? new HarnessTurn(this.guides()) : undefined
       const own = turnTools({
@@ -213,6 +217,7 @@ export class AgentRunner {
       })
       const tools = touchedBy(touches, req.doc?.path ?? '', traj.timed([...(req.harness?.checks?.length ? harnessGuarded(own, req.harness.checks) : own), ...(harness?.tools() ?? [])]))
       const pack = buildPack({ agentName: req.agentName, owner: req.owner, instructions: profile.instructions, doc: req.doc, links: req.links, folder: req.folder, messages: req.messages, question: req.question, budget: AGENT_PROVIDERS[profile.provider].budget, tools: !runner.ownTools, components: componentsBrief(), ...(req.memory ? { memory: req.memory } : {}), ...(req.harness ? { harness: req.harness.system } : {}) })
+      given = { system: pack.system, prompt: pack.prompt }
       traj.given(pack, Date.now() - t0, req.messages[req.question]?.text ?? '', { memory: !!req.memory?.memory, links: req.links.length, messages: req.messages.length })
       const out = await runner.turn({ profile, key: this.store.key(profile.id), pack, tools, signal: ac.signal, onTrace: (t) => void trace.push(t), onModel: (m) => traj.model(m), onRemoteTool: (t) => traj.remote(t), session: `qvarch-${req.room}-${profile.id}` }, this.host)
       const said = harness ? harness.ended(out.text) : { text: out.text }

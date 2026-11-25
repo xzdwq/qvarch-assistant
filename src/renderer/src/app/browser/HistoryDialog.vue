@@ -4,8 +4,10 @@ import { hostOf } from '../../lib/browser'
 import { useBrowserView } from './browserViewContext'
 
 /** The history (teleported): by days, searched, opened, forgotten; kept or not. */
-const { bSettings, histOpen, visits, histQ, histLimit, histFound, histDays, histGo, histDel, histDelDay, histClear, setHistoryOn } = useBrowserView().history
+const { bSettings, histOpen, visits, closedFound, reopenClosed, histQ, histLimit, histFound, histDays, histGo, histDel, histDelDay, histClear, setHistoryOn } = useBrowserView().history
 const hhmm = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+/** A closed tab's time: today — the time, earlier — the day too. */
+const closedAt = (t: number) => (new Date(t).toDateString() === new Date().toDateString() ? hhmm(t) : new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }))
 </script>
 
 <template>
@@ -21,6 +23,16 @@ const hhmm = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-d
       <label class="hsearch tw:flex-none tw:flex tw:items-center tw:gap-8 tw:h-34 tw:mt-12 tw:mr-16 tw:mb-4 tw:ml-16 tw:py-0 tw:px-10 tw:border tw:border-border-2 tw:rounded-r2 tw:bg-bg tw:text-muted tw:focus-within:border-accent/60"><Icon name="search" :size="13" /><input class="tw:flex-1 tw:min-w-0 tw:h-32 tw:p-0 tw:border-0 tw:bg-transparent tw:text-text tw:outline-none" :ref="(el) => el && histOpen && !histQ && (el as HTMLInputElement).focus()" v-model="histQ" placeholder="Поиск: название или адрес" spellcheck="false" /><span v-if="histQ" class="muted tw:text-muted tw:font-data tw:text-[11.5px]">{{ histFound.length }}</span></label>
       <p v-if="!bSettings.history" class="hoff tw:flex-none tw:mt-8 tw:mr-16 tw:mb-0 tw:ml-16 tw:py-8 tw:px-10 tw:rounded-r2 tw:bg-history-off/10 tw:text-text-2 tw:text-[12px]">История не сохраняется: новые страницы не запоминаются. Уже сохранённое осталось — его можно удалить.</p>
       <div class="hlist tw:flex-1 tw:min-h-0 tw:overflow-y-auto tw:pt-0 tw:pr-10 tw:pb-8 tw:pl-16">
+        <!-- the tabs the person closed (the last 20): a click opens one again where it stood -->
+        <template v-if="closedFound.length">
+          <div class="hist-day tw:sticky tw:top-0 tw:z-1 tw:flex tw:items-center tw:gap-8 tw:h-36 tw:pt-6 tw:pr-6 tw:pb-0 tw:pl-6 tw:bg-panel tw:text-text-hi tw:text-[12.5px] tw:font-semibold"><Icon name="undo" :size="12" class="tw:text-muted" /><span>Недавно закрытые</span><span class="muted tw:text-muted tw:font-data tw:text-[11px] tw:font-normal">{{ closedFound.length }}</span><span class="tw:ml-auto tw:text-muted tw:text-[11px] tw:font-normal">Ctrl+Shift+T — последняя</span></div>
+          <div v-for="c in closedFound" :key="c.id" class="hist-row" :title="`${c.url}\nОткрыть снова на прежнем месте`" @click="reopenClosed(c)">
+            <span class="hist-time">{{ closedAt(c.at) }}</span>
+            <span class="htt tw:flex tw:items-center tw:gap-6 tw:min-w-0 tw:overflow-hidden tw:text-text tw:text-[13px] tw:whitespace-nowrap"><img v-if="c.favicon" :src="c.favicon" alt="" class="tw:flex-none tw:w-14 tw:h-14" /><span class="tw:min-w-0 tw:truncate">{{ c.title || c.url }}</span></span>
+            <span class="hurl tw:max-w-240 tw:overflow-hidden tw:text-muted tw:text-[12px] tw:text-ellipsis tw:whitespace-nowrap">{{ hostOf(c.url) }}</span>
+            <span></span>
+          </div>
+        </template>
         <template v-for="d in histDays" :key="d.k">
           <div class="hist-day tw:group/hday tw:sticky tw:top-0 tw:z-1 tw:flex tw:items-center tw:gap-8 tw:h-36 tw:pt-6 tw:pr-6 tw:pb-0 tw:pl-6 tw:bg-panel tw:text-text-hi tw:text-[12.5px] tw:font-semibold"><span class="hdt tw:first-letter:uppercase">{{ d.title }}</span><span class="muted tw:text-muted tw:font-data tw:text-[11px] tw:font-normal">{{ d.total }}</span><button class="hist-del tw:inline-flex tw:items-center tw:justify-center tw:w-24 tw:h-24 tw:p-0 tw:border-0 tw:rounded-r2 tw:bg-transparent tw:text-muted tw:opacity-0 tw:ml-auto tw:hover:bg-white/8 tw:hover:text-text tw:hover:enabled:border-border-3" title="Удалить этот день из истории" @click="histDelDay(d.k, d.title)"><Icon name="trash" :size="12" /></button></div>
           <div v-for="v in d.items" :key="v.id" class="hist-row" :title="v.url" @click="histGo(v, $event)" @mousedown.middle.prevent @auxclick.prevent="$event.button === 1 && histGo(v, $event)">

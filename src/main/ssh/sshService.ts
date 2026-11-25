@@ -5,7 +5,10 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { app, dialog, shell, type BrowserWindow } from 'electron'
 import { baseRemote, localSafeName } from '../../shared/ssh/remotePath'
 import type { DirSummary, RemoteProps } from '../../shared/ssh/remoteProps'
-import { backup, readText, writeText, type RemoteText } from './remoteText'
+import { backup, backupSudo, readText, readTextSudo, writeText, writeTextSudo, type RemoteText, type SavedText } from './remoteText'
+import { accessArgs, cleanAccessChange, type AccessChange } from '../../shared/ssh/remoteAccess'
+import { ACCESS_SCRIPT } from '../../shared/ssh/sudo'
+import { runError, SudoRunner } from './sudoRunner'
 import { countDir, readProps } from './remoteProps'
 import type { SshApi, SshEmit } from '../../shared/ssh/api'
 import type { RemoteListing } from '../../shared/ssh/remoteFiles'
@@ -27,6 +30,7 @@ export class SshService implements SshApi {
   readonly store: SshSessionStore
   readonly connections: SshConnections
   private readonly queue: TransferQueue
+  private readonly sudo: SudoRunner
 
   constructor(
     root: string,
@@ -34,7 +38,12 @@ export class SshService implements SshApi {
     private readonly emit: SshEmit,
   ) {
     this.store = new SshSessionStore(root)
-    this.connections = new SshConnections(this.store, window, (id, reason) => emit('closed', { id, reason }))
+    this.connections = new SshConnections(this.store, window, (id, reason) => {
+      // sudo's password lives as long as the connection
+      this.sudo.forget(id)
+      emit('closed', { id, reason })
+    })
+    this.sudo = new SudoRunner(this.connections, this.store)
     this.queue = new TransferQueue(this.connections, (list) => emit('transfers', list))
   }
 
@@ -84,14 +93,29 @@ export class SshService implements SshApi {
   open(id: string, remotePath: string): Promise<void> {
     return this.queue.download(id, [remotePath], join(OPEN_DIR, randomUUID()), (t) => void shell.openPath(t.to))
   }
-  async readText(id: string, path: string): Promise<RemoteText> {
+  async readText(id: string, path: string, sudo = false): Promise<RemoteText> {
+    if (sudo) return readTextSudo(this.sudo, id, String(path))
     return readText(await this.connections.sftp(id), path)
   }
-  async writeText(id: string, path: string, text: string, mtime?: number, force = false): Promise<number> {
-    return writeText(await this.connections.sftp(id), path, String(text), typeof mtime === 'number' ? mtime : undefined, !!force)
+  async writeText(id: string, path: string, text: string, mtime?: number, force = false, sudo = false): Promise<SavedText> {
+    const at = typeof mtime === 'number' ? mtime : undefined
+    const sftp = await this.connections.sftp(id)
+    if (sudo) return writeTextSudo(this.sudo, sftp, id, String(path), String(text), at, !!force)
+    return writeText(sftp, path, String(text), at, !!force)
   }
-  async backup(id: string, path: string): Promise<string> {
+  async backup(id: string, path: string, sudo = false): Promise<string> {
+    if (sudo) return backupSudo(this.sudo, id, String(path))
     return backup(await this.connections.sftp(id), path)
+  }
+  async setAccess(id: string, path: string, change: AccessChange, sudo = false): Promise<void> {
+    const c = cleanAccessChange(change)
+    if (!c.ok) throw new Error(c.error)
+    const args = accessArgs(String(path), c.change)
+    const r = sudo ? await this.sudo.sudo(id, ACCESS_SCRIPT, args) : await this.sudo.self(id, ACCESS_SCRIPT, args)
+    if (r.code !== 0) throw runError(r, String(path))
+  }
+  sudoPassword(id: string, password?: string, useSsh = false): void {
+    this.sudo.remember(String(id), typeof password === 'string' ? password : undefined, !!useSsh)
   }
   async saveLocal(name: string, text: string): Promise<string | undefined> {
     const opts: Electron.SaveDialogOptions = { title: 'Сохранить копию на этот ПК', defaultPath: join(app.getPath('downloads'), localSafeName(String(name))) }

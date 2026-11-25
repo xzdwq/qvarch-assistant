@@ -8,6 +8,7 @@ import { useBookmarks } from './useBookmarks'
 import { useBrowserHistory } from './useBrowserHistory'
 import { useBrowserTabs } from './useBrowserTabs'
 import { useDeviceMode } from './useDeviceMode'
+import { useFindInPage } from './useFindInPage'
 import { usePageLayout } from './usePageLayout'
 import { usePaneDrag } from './usePaneDrag'
 import { usePasswords } from './usePasswords'
@@ -17,7 +18,7 @@ import { useSiteTools } from './useSiteTools'
 import { useSwaggerSearch } from './useSwaggerSearch'
 
 /** The browser's news the section itself handles (each one has its handler below — the compiler checks). */
-type SectionEvent = 'opened' | 'pageFocus' | 'key' | 'open' | 'login' | 'download' | 'recError' | 'deviceError' | 'pwAsk' | 'passwords' | 'history' | 'settings'
+type SectionEvent = 'opened' | 'pageFocus' | 'key' | 'open' | 'login' | 'download' | 'recError' | 'deviceError' | 'pwAsk' | 'passwords' | 'history' | 'settings' | 'closed' | 'found'
 
 /**
  * Everything the Браузер section's parts share — its tabs and panes, the address lines, where the pages go, the
@@ -39,6 +40,7 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
   const swagger = useSwaggerSearch({ ...tabs, openHttp })
   const history = useBrowserHistory(tabs)
   const passwords = usePasswords(tabs)
+  const find = useFindInPage({ ...tabs, active })
 
   /** A key pressed in a page that is the section's (by its name): what it does there. */
   const PAGE_KEYS: Record<PageKeyCommand, (id: string, pi: number) => void> = {
@@ -50,6 +52,7 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
     bookmark: (id) => bookmarks.toggleStar(id),
     device: (id) => device.toggleDevice(id),
     history: () => history.openHistory(),
+    find: (_id, pi) => find.openFind(pi),
   }
   /** The browser's news the section handles, by name (the tabs, the recording, bookmarks — lib/browser keeps those). */
   const EVENTS: BrowserEventTable<SectionEvent> = {
@@ -71,9 +74,11 @@ function createBrowserView(active: () => boolean, openHttp: (requestId: string) 
     passwords: (p) => (passwords.passwords.value = p),
     history: () => history.histOpen.value && void history.loadHistory(),
     settings: (p) => (history.bSettings.value = p),
+    closed: (p) => (history.closed.value = p),
+    found: (p) => find.onFound(p),
   }
   onBrowserEvent((...e) => dispatchBrowserEvent(EVENTS, ...e))
-  return { tabs, address, paneDrag, side, layout, device, bookmarks, bookmarkDrag, site, recording, swagger, history, passwords }
+  return { tabs, address, paneDrag, side, layout, device, bookmarks, bookmarkDrag, site, recording, swagger, history, passwords, find }
 }
 export type BrowserView = ReturnType<typeof createBrowserView>
 const BROWSER_VIEW: InjectionKey<BrowserView> = Symbol('browserView')

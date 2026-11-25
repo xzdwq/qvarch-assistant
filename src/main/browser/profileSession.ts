@@ -14,9 +14,15 @@ export function browserSession(): Session {
 /** The app's own pages in the browser (the source viewer) — not a site. */
 const isOwnPage = (url: string) => url.startsWith(`${SOURCE_SCHEME}:`)
 
-/** A page's permission asked: by the rule table (shared/browser/permissions.ts) and the browser's setting as it is now. */
-export function guardPermissions(ses: Session, sitesAllowed: () => boolean): void {
-  ses.setPermissionRequestHandler((_wc, perm, cb, details) => cb(permissionAllowed(perm, isOwnPage(details.requestingUrl ?? ''), sitesAllowed())))
+/**
+ * A page's permission asked: by the rule table (shared/browser/permissions.ts) and the browser's setting as it is now;
+ * a link to another application (mailto:, tel:… — Chromium's «openExternal») — as `mayOpenApp` answers.
+ */
+export function guardPermissions(ses: Session, sitesAllowed: () => boolean, mayOpenApp: (pageUrl: string, url: string) => Promise<boolean>): void {
+  ses.setPermissionRequestHandler((_wc, perm, cb, details) => {
+    if (perm === 'openExternal') return void mayOpenApp(details.requestingUrl ?? '', 'externalURL' in details ? (details.externalURL ?? '') : '').then(cb, () => cb(false))
+    cb(permissionAllowed(perm, isOwnPage(details.requestingUrl ?? ''), sitesAllowed()))
+  })
 }
 
 /** Downloads go to the system's Downloads folder (a name taken — numbered), their progress told to the window. */

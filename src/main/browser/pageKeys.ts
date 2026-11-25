@@ -1,5 +1,6 @@
 import type { Input, WebContents } from 'electron'
 import type { NavAction, PageKeyCommand } from '../../shared/browser/constants'
+import { shortcutLetter } from '../../shared/browser/shortcutKey'
 import { PAGE_ZOOM } from '../../shared/browser/zoom'
 
 /** A key pressed in a page, as the rules read it. */
@@ -48,6 +49,7 @@ const PAGE_KEYS: Array<{ when: (i: PageKey) => boolean; run: (a: PageKeyActions,
   { when: (i) => i.ctrl && i.shift && i.k === 'i', run: (a) => a.nav('devtools') },
   { when: (i) => i.ctrl && i.shift && i.k === 'm', run: (a) => a.send('device') },
   { when: (i) => i.ctrl && i.k === 'h', run: (a) => a.send('history') },
+  { when: (i) => i.ctrl && i.k === 'f', run: (a) => a.send('find') },
 ]
 
 /** What a key does in a page — none: the key is the page's own. */
@@ -59,7 +61,8 @@ export function pageKeyAction(i: PageKey): ((a: PageKeyActions) => void) | undef
 export function handlePageKeys(wc: WebContents, actions: PageKeyActions): void {
   wc.on('before-input-event', (e, input: Input) => {
     if (input.type !== 'keyDown') return
-    const run = pageKeyAction({ key: input.key, k: input.key.toLowerCase(), ctrl: input.control || input.meta, shift: input.shift, alt: input.alt, code: input.code })
+    // (a letter by its place: Ctrl+T is Ctrl+T in any keyboard layout)
+    const run = pageKeyAction({ key: input.key, k: shortcutLetter(input.key, input.code), ctrl: input.control || input.meta, shift: input.shift, alt: input.alt, code: input.code })
     if (!run) return
     e.preventDefault()
     // (a key held: done once — a held Ctrl+W must not close tab after tab)

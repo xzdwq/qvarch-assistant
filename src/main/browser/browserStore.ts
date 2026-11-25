@@ -2,6 +2,8 @@ import { join } from 'node:path'
 import { readJsonFile, writeJsonQuietly } from '../fsAtomic'
 import { browserId, cleanSession, DEFAULT_BROWSER_SETTINGS, type Bookmark, type BrowserSession, type BrowserEmit, type BrowserSettings, type HistoryItem, type Visit } from '../../shared/browser'
 import { cleanZoomMemory, clampDevtoolsZoom, siteZoom, withSiteZoom, type ZoomMemory } from '../../shared/browser/zoom'
+import { cleanClosed, takeClosed, withClosed, type ClosedTab } from '../../shared/browser/closedTabs'
+import { cleanExternalMemory, externalAllowed, withExternalAllowed, type ExternalMemory } from '../../shared/browser/externalLinks'
 import type { Tab } from './tab'
 
 const MAX_HISTORY = 3000
@@ -9,7 +11,17 @@ const MAX_HISTORY = 3000
 const MAX_VISITS = 30000
 const VISITS_DAYS = 90
 
-type BrowserData = { bookmarks: Bookmark[]; history: HistoryItem[]; settings: BrowserSettings; session?: BrowserSession; zoom: ZoomMemory }
+type BrowserData = {
+  bookmarks: Bookmark[]
+  history: HistoryItem[]
+  settings: BrowserSettings
+  session?: BrowserSession
+  zoom: ZoomMemory
+  /** The tabs the person closed, newest first («Недавно закрытые», Ctrl+Shift+T). */
+  closed: ClosedTab[]
+  /** The sites let open an application's links without asking (site → schemes). */
+  external: ExternalMemory
+}
 
 /** The settings as written (anything missing or wrong — the default). */
 function readSettings(st: Partial<BrowserSettings>): BrowserSettings {
@@ -50,14 +62,46 @@ export class BrowserStore {
   }
   private read(): BrowserData {
     // a broken file is set aside — the bookmarks in it are not overwritten by the first save
-    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings>; session: unknown; zoom: unknown }>>(this.file) ?? {}
+    const d = readJsonFile<Partial<{ bookmarks: Bookmark[]; history: HistoryItem[]; settings: Partial<BrowserSettings>; session: unknown; zoom: unknown; closed: unknown; external: unknown }>>(this.file) ?? {}
     return {
       bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
       history: Array.isArray(d.history) ? d.history : [],
       settings: readSettings(d.settings ?? {}),
       session: cleanSession(d.session),
       zoom: cleanZoomMemory(d.zoom),
+      closed: cleanClosed(d.closed),
+      external: cleanExternalMemory(d.external),
     }
+  }
+
+  // ---------- the tabs the person closed ----------
+  closedTabs(): ClosedTab[] {
+    return this.data.closed
+  }
+  addClosed(tab: ClosedTab): void {
+    this.setClosed(withClosed(this.data.closed, tab))
+  }
+  /** One taken to open again (none named — the last closed). */
+  takeClosed(id?: string): ClosedTab | undefined {
+    const { tab, rest } = takeClosed(this.data.closed, id)
+    if (tab) this.setClosed(rest)
+    return tab
+  }
+  private setClosed(list: ClosedTab[]): void {
+    this.data.closed = list
+    this.save()
+    this.emit('closed', list)
+  }
+
+  // ---------- an application's links (mailto:…) let through without asking ----------
+  externalAllowed(site: string, scheme: string): boolean {
+    return externalAllowed(this.data.external, site, scheme)
+  }
+  allowExternal(site: string, scheme: string): void {
+    const next = withExternalAllowed(this.data.external, site, scheme)
+    if (next === this.data.external) return
+    this.data.external = next
+    this.save()
   }
 
   // ---------- the zoom (each site's, the DevTools') ----------
@@ -167,7 +211,8 @@ export class BrowserStore {
     this.visitList = []
     for (const t of this.tabs()) t.visit = undefined
     this.saveVisits()
-    this.save()
+    // (the tabs closed are part of the history: forgotten with it)
+    this.setClosed([])
     this.emit('history', null)
   }
   /** A page opened (`fresh` — a navigation, not its title coming): kept, unless the history is off. */

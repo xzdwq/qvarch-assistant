@@ -170,16 +170,21 @@ export function useSftpPanels(shells: TermShells, editor: SftpEditor) {
   async function open(ex: Explorer, e: RemoteEntry): Promise<void> {
     if (e.kind === 'dir' || e.toDir) return go(ex, e.path)
     const r = await withConnection(ex, () => editor.open(ex.sessionId, e))
-    if (r && !r.ok) await openInWindows(ex, e)
+    if (!r || r.ok || 'cancelled' in r) return
+    // no right to read it: the same as root (sudo's password asked — its dialog is the person's yes)
+    if (r.denied) return edit(ex, e, true)
+    await openInWindows(ex, e)
   }
   /** A file brought over and opened by the program Windows has for it. */
   async function openInWindows(ex: Explorer, e: RemoteEntry): Promise<void> {
     await withConnection(ex, () => window.qa.ssh('open', ex.sessionId, e.path))
   }
-  /** A file opened in the editor (said why when it cannot be). */
-  async function edit(ex: Explorer, e: RemoteEntry): Promise<void> {
-    const r = await withConnection(ex, () => editor.open(ex.sessionId, e))
-    if (r && !r.ok) ex.error = r.reason
+  /** A file opened in the editor (`sudo` — as root; no right to read it — tried as root; said why when it cannot be). */
+  async function edit(ex: Explorer, e: RemoteEntry, sudo = false): Promise<void> {
+    const r = await withConnection(ex, () => editor.open(ex.sessionId, e, sudo))
+    if (!r || r.ok || 'cancelled' in r) return
+    if (r.denied && !sudo) return edit(ex, e, true)
+    ex.error = r.reason
   }
 
   /** The entries picked (the one clicked when nothing is). */

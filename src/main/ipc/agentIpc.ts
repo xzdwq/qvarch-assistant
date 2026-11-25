@@ -3,6 +3,7 @@ import type { TurnRequest } from '../../shared/agent/turn'
 import { AgentRunner } from '../agent/agentRunner'
 import { AgentStore } from '../agent/agentStore'
 import { HarnessStore } from '../agent/harnessStore'
+import { TurnLogStore } from '../agent/turnLogStore'
 import { GuideStore } from '../agent/guideStore'
 import { guideIdOf } from '../../shared/agent/harness/guides'
 import type { AppContext } from '../app/appContext'
@@ -13,7 +14,9 @@ import { handle, listen } from './router'
 export function registerAgentIpc(app: AppContext, host: McpHost): void {
   const store = new AgentStore(app.store.root, () => app.store.cfg.transport.name)
   const guides = new GuideStore(app.store.db.db)
-  const runner = new AgentRunner(app, host, store, () => guides.list())
+  const logs = new TurnLogStore(app.store.root)
+  const runner = new AgentRunner(app, host, store, () => guides.list(), logs)
+  handle('agentTurnLog', (_e, id) => logs.get(String(id)))
   handle('agentProfiles', () => store.profiles())
   handle('agentSave', (_e, profile, key) => store.save(profile, typeof key === 'string' ? key : undefined))
   handle('agentRemove', (_e, id) => store.remove(String(id)))

@@ -5,6 +5,7 @@ import { SQL_METHODS } from '../../shared/sql'
 import { TEST_FILES_METHODS } from '../../shared/testFiles'
 import type { AppContext } from '../app/appContext'
 import { Browser } from '../browser'
+import { openExternalFrom } from '../browser/externalApps'
 import { guestOf, netClear, netListen, setupNoteBrowser } from '../noteBrowser'
 import { registerBrowserPageIpc } from './browserPageIpc'
 import { emit, handle, handleDispatch, listen } from './router'
@@ -42,6 +43,8 @@ export function registerBrowserIpc(app: AppContext): void {
     preload,
     navigated: (wc, url) => browser.scenario.onNavigated(wc, url),
     domReady: (wc) => browser.scenario.onDomReady(wc),
+    // (the same profile: the same sites let through as the section's)
+    toApp: (from, url) => void openExternalFrom(browser, from, url),
   })
   handle('nbNet', (e, id, on, preserve) => netListen(e.sender, Number(id), !!on, !!preserve, nbEmit))
   handle('nbNetClear', (e, id) => netClear(e.sender, Number(id)))

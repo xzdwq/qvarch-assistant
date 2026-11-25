@@ -5,7 +5,7 @@ import type { SFTPWrapper } from 'ssh2'
 import { baseRemote, joinRemote, localSafeName } from '../../shared/ssh/remotePath'
 import { kindOfMode } from '../../shared/ssh/remoteFiles'
 import { partName, transfersToStart, trimEnded, type Transfer, type TransferDir } from '../../shared/ssh/transfers'
-import { makeDirs, readDir, renameOver, sftpError, statOf } from './sftpService'
+import { makeDirs, readDir, replaceKeeping, sftpError, statOf } from './sftpService'
 import type { SshConnections } from './sshConnections'
 
 /** Progress goes to the window at most this often. */
@@ -148,7 +148,7 @@ export class TransferQueue {
   }
   private put(sftp: SFTPWrapper, t: Transfer): Promise<void> {
     const part = partName(t.to)
-    return new Promise<void>((ok, fail) => sftp.fastPut(t.from, part, { step: (done) => this.step(t)(done) }, (e) => (e ? fail(sftpError(e, t.to)) : ok()))).then(() => renameOver(sftp, part, t.to))
+    return new Promise<void>((ok, fail) => sftp.fastPut(t.from, part, { step: (done) => this.step(t)(done) }, (e) => (e ? fail(sftpError(e, t.to)) : ok()))).then(() => replaceKeeping(sftp, part, t.to))
   }
   private get(sftp: SFTPWrapper, t: Transfer): Promise<void> {
     const part = partName(t.to)

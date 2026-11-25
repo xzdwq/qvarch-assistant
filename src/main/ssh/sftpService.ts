@@ -1,11 +1,12 @@
 import type { SFTPWrapper, Stats } from 'ssh2'
+import { SSH_NO_ACCESS } from '../../shared/ssh/api'
 import { joinRemote, normRemote, parentRemote } from '../../shared/ssh/remotePath'
 import { kindOfMode, LISTING_MAX, rightsOf, sortEntries, type RemoteEntry, type RemoteListing } from '../../shared/ssh/remoteFiles'
 
 /** SFTP's status codes in plain words (the rest — as the server says it). */
 const SFTP_ERRORS: Record<number, string> = {
   2: 'нет такого файла или папки',
-  3: 'нет доступа',
+  3: SSH_NO_ACCESS,
   4: 'сервер не смог выполнить операцию',
 }
 export function sftpError(e: unknown, what: string): Error {
@@ -82,6 +83,19 @@ export async function renameOver(sftp: SFTPWrapper, from: string, to: string): P
   }
   await callVoid((cb) => sftp.unlink(to, cb)).catch(() => undefined)
   await callVoid((cb) => sftp.rename(from, to, cb))
+}
+
+/**
+ * A finished upload put in place of the file there (if any) — keeping that file's rights, and its owner and group
+ * where the server lets (a new file is the uploader's, with default rights, otherwise).
+ */
+export async function replaceKeeping(sftp: SFTPWrapper, from: string, to: string): Promise<void> {
+  const was = await statOf(sftp, to).catch(() => undefined)
+  await renameOver(sftp, from, to)
+  if (!was || kindOfMode(was.mode) !== 'file') return
+  // (chown first: it clears setuid / setgid, chmod then puts the rights back)
+  await callVoid((cb) => sftp.chown(to, was.uid, was.gid, cb)).catch(() => undefined)
+  await callVoid((cb) => sftp.chmod(to, was.mode & 0o7777, cb)).catch(() => undefined)
 }
 
 export async function renamePath(sftp: SFTPWrapper, from: string, to: string): Promise<void> {

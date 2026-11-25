@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { cleanSession, type BrowserSession } from '@shared/browser'
+import { shortcutLetter } from '@shared/browser/shortcutKey'
 import { bLayout, placeTab, syncLayout, tabs, tabsLoaded } from '../../lib/browser'
 
 /** Where the open tabs were kept before main kept them: read once (then main has them) and dropped. */
@@ -14,8 +15,6 @@ function legacySession(): BrowserSession | undefined {
   }
 }
 export const isBlank = (url?: string) => !url || url === 'about:blank'
-/** How many closed tabs Ctrl+Shift+T can bring back. */
-const CLOSED_KEPT = 25
 
 /**
  * The section's tabs in one or two panes (each pane its own tabs, like the terminal): made, closed, shown, the
@@ -42,22 +41,23 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
       making--
     }
   }
-  /** Tabs closed, the last one last: their address and place (Ctrl+Shift+T opens them again). */
-  const closed: Array<{ url: string; pi: number; index: number }> = []
+  /** A tab closed by the person: main keeps it with its place («Недавно закрытые», Ctrl+Shift+T). */
   function closeTab(id: string): void {
     const pi = paneOf(id)
-    const url = byId(id)?.url
-    if (url && !isBlank(url) && pi >= 0) closed.splice(0, Math.max(0, closed.length - CLOSED_KEPT + 1), { url, pi, index: bLayout.panes[pi].tabs.indexOf(id) })
-    void window.qa.browser('close', id)
+    void window.qa.browser('close', id, pi >= 0 ? { pane: pi, index: bLayout.panes[pi].tabs.indexOf(id) } : undefined)
   }
-  /** The tab closed last opened again where it was (its pane gone — in the current one). */
-  async function reopenTab(): Promise<void> {
-    const c = closed.pop()
+  /**
+   * A closed tab opened again where it was (its pane gone — in the current one): the one named, or the last closed.
+   * (main keeps the list: it outlives the section's leaving and the app's restart)
+   */
+  async function reopenTab(closedId?: string): Promise<void> {
+    const c = await window.qa.browser('takeClosed', closedId)
     if (!c) return
     making++
     try {
       const t = await window.qa.browser('create', c.url)
-      placeTab(bLayout.panes[c.pi] ? c.pi : bLayout.cur, t.id, undefined, c.index)
+      const pi = c.pane !== undefined && bLayout.panes[c.pane] ? c.pane : bLayout.cur
+      placeTab(pi, t.id, undefined, c.pane === pi ? c.index : undefined)
     } finally {
       making--
     }
@@ -147,7 +147,8 @@ export function useBrowserTabs(deps: { active: () => boolean; focusUrl: (pi: num
   }
   function onKey(e: KeyboardEvent): void {
     if (!deps.active() || !(e.ctrlKey || e.metaKey)) return
-    const k = e.key.toLowerCase()
+    // (a letter by its place: Ctrl+Shift+T works in a Russian layout too)
+    const k = shortcutLetter(e.key, e.code)
     if (Object.hasOwn(CTRL_KEYS, k)) CTRL_KEYS[k](e)
   }
   onMounted(() => window.addEventListener('keydown', onKey))

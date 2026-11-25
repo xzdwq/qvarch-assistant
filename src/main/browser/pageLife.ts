@@ -1,5 +1,21 @@
-import { dialog } from 'electron'
+import { dialog, type Session } from 'electron'
+import { restartOrigin } from '../../shared/browser'
 import type { BrowserHost, Tab } from './tab'
+
+/**
+ * A site's caches cleared before its page starts again (its process gone or hung): the HTTP cache with the compiled
+ * code and the service workers — what this profile keeps of a site apart from another browser, so a broken entry
+ * there would crash the page on every start. Its cookies and storage stay (the person stays signed in).
+ */
+export async function clearSiteCaches(ses: Session, url: string): Promise<void> {
+  const origin = restartOrigin(url)
+  if (!origin) return
+  try {
+    await ses.clearData({ origins: [origin], dataTypes: ['cache', 'serviceWorkers'] })
+  } catch {
+    // (not cleared — the page starts again all the same)
+  }
+}
 
 /**
  * A tab's page watched by its own events: its process gone (a crash, out of memory) or not answering — told on its
@@ -11,6 +27,7 @@ export function wirePageLife(b: BrowserHost, tab: Tab): void {
   const t = tab.t
   wc.on('render-process-gone', (_e, d) => {
     if (d.reason === 'clean-exit' || wc !== tab.view.webContents) return
+    console.warn(`[browser] page process gone: ${d.reason} (${d.exitCode}) at ${t.url}`)
     t.error = { code: d.exitCode, desc: d.reason, url: t.url, gone: 'crashed' }
     t.loading = false
     b.changed()

@@ -30,4 +30,26 @@ describe('the vault tree', () => {
       ['b.md', 0, ''],
     ])
   })
+  it("each row's lines to its folders: the last of a folder ends its line, a folder with more after it carries its line on", () => {
+    const rows = treeRows(tree, ['f', 'f/sub'], 'name')
+    expect(rows.map((r) => [r.node.path, r.last, r.rails])).toEqual([
+      ['f', false, []],
+      ['f/sub', false, [true]],
+      ['f/sub/d.md', true, [true, true]],
+      ['f/c.md', true, [true]],
+      // a pair is one thing of its folder: both rows share its place
+      ['a.md', false, []],
+      ['z.qboard', false, []],
+      ['b.md', true, []],
+    ])
+  })
+  it('a folder counts what is right in it: its folders and documents, not what they hold; empty — 0', () => {
+    const rows = treeRows([...tree, n('e', { dir: true, children: [] }), n('m', { dir: true, children: [n('m/t', { dir: true, children: [] })] })], ['f'], 'name')
+    const items = (p: string) => rows.find((r) => r.node.path === p)?.items
+    expect(items('f')).toBe(2)
+    expect(items('f/sub')).toBe(1)
+    expect(items('m')).toBe(1)
+    expect(items('e')).toBe(0)
+    expect(items('a.md')).toBeUndefined()
+  })
 })

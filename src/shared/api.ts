@@ -1,5 +1,6 @@
 import type { AgentProfile, AgentProfileView } from './agent/profiles'
 import type { TurnAnswer, TurnRequest } from './agent/turn'
+import type { TurnLog } from './agent/turnLog'
 import type { DocAi } from './agent/docAi'
 import type { CronJob, CronRun } from './cronJobs'
 import type { ValueFileApi } from './valueFiles'
@@ -469,6 +470,8 @@ export interface QaApi {
   /** An agent's turn (a chat called it): its answer when done. */
   agentRun(req: TurnRequest): Promise<TurnAnswer>
   agentStop(turn: string): void
+  /** A turn's full record — what went to the model and what it said (only the turns this computer ran). */
+  agentTurnLog(turn: string): Promise<TurnLog | undefined>
   /** The harness: its settings (a new chat's), each room's own (set in its chat), each room's last run (kept after every step). */
   harnessState(): Promise<{ settings: HarnessSettings; rooms: Record<string, HarnessSettings>; runs: HarnessRun[] }>
   harnessSaveSettings(s: HarnessSettings): Promise<HarnessSettings>
